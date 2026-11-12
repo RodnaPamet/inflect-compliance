@@ -12,7 +12,9 @@
  *   • the tool picker offers exactly the tools the agent is granted;
  *   • Test run (Step 2c) starts the version's run and opens the Runs tab when
  *     it can, and otherwise is disabled, says why, and starts nothing;
- *   • a refusal from the save is shown beside the field it concerns.
+ *   • a refusal from the save is shown beside the field it concerns;
+ *   • a drawn flow, which the approval hash covers, is shown and diffed for
+ *     the reviewer like the instructions, and its Test run is disabled.
  */
 import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -98,6 +100,7 @@ function version(over: Partial<ProfileVersionView> = {}): ProfileVersionView {
         instructions: 'Summarise the open risks for the weekly review.',
         instructionsHash: HASH_1,
         toolNames: ['list_risks'],
+        flow: null,
         skillRefs: [],
         modelTier: 'balanced',
         effort: 'medium',
@@ -272,6 +275,73 @@ describe('instructions are text everywhere', () => {
         expect((within(editor).getByRole('textbox', { name: copy('field.instructions') }) as HTMLTextAreaElement).value).toBe(XSS);
         expect(document.querySelector('img')).toBeNull();
         expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+    });
+});
+
+const FLOW_V1 = {
+    nodes: [
+        { key: 'risks', kind: 'read' as const, label: 'Gather the open risks', tool: 'list_risks' },
+        { key: 'answer', kind: 'synthesis' as const, label: 'Summarise by owner' },
+    ],
+    edges: [{ from: 'risks', to: 'answer' }],
+};
+const FLOW_V2 = {
+    nodes: [
+        { key: 'risks', kind: 'read' as const, label: `Read every risk ${XSS}`, tool: 'list_risks' },
+        { key: 'rate', kind: 'subagent' as const, label: 'Ask the risk agent to rate each risk', profileRef: 'prof-rater' },
+        { key: 'answer', kind: 'synthesis' as const, label: 'Summarise by owner' },
+    ],
+    edges: [
+        { from: 'risks', to: 'rate' },
+        { from: 'rate', to: 'answer' },
+    ],
+};
+
+describe('a drawn flow is shown to the person who approves it', () => {
+    it('every step, tool, profile reference and connection the hash covers is on screen and in a diff, as text', async () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V2, toolNames: ['list_risks'] }), version({ flow: FLOW_V1 })]));
+        const open = screen.getByTestId('behaviour-open');
+        const body = within(open).getByTestId('behaviour-version-2-flow').textContent ?? '';
+        expect(body).toContain('[READ] Read every risk');
+        expect(body).toContain('(tool: list_risks)');
+        expect(body).toContain('[SUBAGENT] Ask the risk agent to rate each risk {rate} (profile: prof-rater)');
+        expect(body).toContain('rate -> answer');
+        // Labels are text, as the instructions are.
+        expect(body).toContain('<img src=x onerror=');
+        expect(document.querySelector('img')).toBeNull();
+
+        const flowDiff = within(open).getByTestId('behaviour-review-flow-diff');
+        expect(flowDiff.textContent).toContain('Ask the risk agent to rate each risk');
+        expect(within(open).getByText(copy('review.flowDiffIntro', { from: 1, to: 2 }))).toBeTruthy();
+        expect(open.textContent).toContain(copy('review.hashNoteWithFlow'));
+        expect(open.textContent).not.toContain(copy('review.hashNote'));
+
+        fetchMock.mockResolvedValue(ok({ status: 'APPROVED' }));
+        await act(async () => {
+            fireEvent.click(within(open).getByTestId('behaviour-approve'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ instructionsHash: HASH_2 });
+    });
+
+    it('a flow added where the version in force had none is diffed from nothing', () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V1 }), version()]));
+        expect(screen.getByTestId('behaviour-review-flow-diff').textContent).toContain('Gather the open risks');
+        expect(screen.getByTestId('behaviour-version-2-flow').textContent).toContain('risks -> answer');
+        expect(screen.queryByTestId('behaviour-version-1-flow')).toBeNull();
+    });
+
+    it('a version with no flow shows no flow, no flow diff, and the plain hash note', () => {
+        renderTab(view([SUBMITTED(), version()]));
+        expect(screen.queryByTestId('behaviour-version-2-flow')).toBeNull();
+        expect(screen.queryByTestId('behaviour-review-flow-diff')).toBeNull();
+        expect(screen.getByTestId('behaviour-open').textContent).toContain(copy('review.hashNote'));
+    });
+
+    it('a flow version\'s Test run is disabled and says no engine runs a drawn flow yet', () => {
+        renderTab(view([SUBMITTED({ flow: FLOW_V1 }), version()], { testRun: { available: true } }));
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.FLOW_NOT_RUNNABLE'));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
     });
 });
 

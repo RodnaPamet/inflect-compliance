@@ -6339,6 +6339,7 @@
         "signalRejectionRate": "Rejection rate",
         "signalToolMix": "Tool mix",
         "signalGuardBlock": "Guard blocks",
+        "signalBehaviourAnomaly": "Behaviour anomaly (daily)",
         "anomalousBadge": "Anomalous",
         "countedYes": "Counted",
         "countedAnomalous": "Excluded — anomalous",
@@ -9628,7 +9629,14 @@
       "toggleMaterializeFindings": "Escalate posture into Findings",
       "materializeFindingsHint": "Automatically turn posture events (breaches, expiries, TLS drops) into Findings.",
       "settingsSaveFailed": "Failed to update monitoring settings",
-      "stubMode": "Demo"
+      "stubMode": "Demo",
+      "tlsStale": "Stale",
+      "tlsLastFetch": "Last check {date}: {outcome}",
+      "tlsFetchOutcome": {
+        "REFUSED": "the site refused the monitor",
+        "UNREACHABLE": "the site could not be reached",
+        "BLOCKED": "the vendor's domain cannot be checked; correct it on the vendor record"
+      }
     },
     "dashboard": {
       "loadForbidden": "You don't have access to the vendor figures.",
@@ -13353,6 +13361,7 @@
       },
       "field": {
         "instructions": "Instructions",
+        "flow": "Drawn flow: the steps, in the order the agent is told to follow them, then every connection",
         "tools": "Tools",
         "skills": "Skills",
         "modelTier": "Model tier",
@@ -13394,6 +13403,8 @@
       "review": {
         "diffIntro": "Changes from version {from}, in force now, to version {to}:",
         "hashNote": "Approving approves this text, by its hash:",
+        "flowDiffIntro": "Changes to the drawn flow from version {from}, in force now, to version {to}:",
+        "hashNoteWithFlow": "Approving approves this text and this drawn flow, together, by their hash:",
         "authorCannotDecide": "You wrote this version, so another person must approve or reject it.",
         "approve": "Approve",
         "reject": "Reject"
@@ -13404,7 +13415,8 @@
           "ENGINE_DOES_NOT_RUN_PROFILES": "This workspace runs agents on the {engine}, which does not run agent profiles. An owner can choose the Tool Runner engine under Admin → AI features → Agent engines.",
           "ENGINE_NOT_IN_FORCE": "This workspace has chosen the Tool Runner engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
-          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them."
+          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
+          "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -16591,5 +16603,67 @@
     "proposalQuarantinedDescription": "This did not enter the review queue and nothing was created.",
     "openReviewQueue": "Open the approval queue",
     "shortcutDescription": "Open the assistant"
+  },
+  "agentCanvas": {
+    "openOnCanvas": "Open on canvas",
+    "readOnly": "Read-only",
+    "tabCanvas": "Canvas",
+    "tabElements": "Elements",
+    "legend": "What defines this agent, drawn from its register entry and its profile. A solid line is a relation; a dashed line is a step order the engine may deviate from. Nothing here can be changed.",
+    "instructions": "Profile instructions",
+    "loadingAria": "Loading the agent on the canvas",
+    "versionNotInForce": "Showing version {version} ({status}), which is not the approved version in force.",
+    "forbiddenTitle": "Agent canvas unavailable",
+    "forbiddenMessage": "Opening an agent on the canvas needs the same access as its page in the agent register.",
+    "profileAbsent": {
+      "OFF": "Agent profiles are off for this workspace, so only the register entry is drawn.",
+      "NOT_PERMITTED": "Reading this agent’s profile needs the agent register permission, so only its register entry is drawn.",
+      "NONE": "This agent has no profile version yet, so only its register entry is drawn."
+    },
+    "kind": {
+      "hub": "Agent",
+      "trigger": "Trigger",
+      "tool": "Tool",
+      "skill": "Skill",
+      "output": "Output",
+      "step": "Workflow step",
+      "map": "Process map"
+    },
+    "badge": {
+      "status": "Status {status}",
+      "autonomy": "Autonomy {level}",
+      "unscored": "Unscored: every tool is denied",
+      "ceiling": "Ceiling {ceiling} ({tier})",
+      "policyCard": "Policy card v{version}",
+      "breaker": "Breaker {state}",
+      "killed": "Stopped by a {scope} kill switch",
+      "profileVersion": "Profile v{version} ({status})",
+      "model": "Model {tier}, effort {effort}, up to {turns} turns",
+      "read": "Read",
+      "propose": "Propose",
+      "offered": "Offered to a run",
+      "narrowed": "Narrowed away",
+      "notInProfile": "Granted, not in the profile",
+      "notProbed": "Not checked by this view",
+      "invokes": "Invokes this agent",
+      "tenantSkill": "Workspace skill",
+      "shippedSkill": "Built-in skill",
+      "readOnly": "Read surface only",
+      "step": "{workflow}, step {n} ({kind})"
+    },
+    "reason": {
+      "SCOPE": "Not offered: your access does not reach this tool, and a run you start acts within it.",
+      "AUTONOMY": "Not offered: the tool needs a higher autonomy rung than this agent’s ceiling.",
+      "UNCONVERTIBLE_SCHEMA": "Not offered: the engine cannot describe this tool’s input to the model.",
+      "READ_ONLY_WORKFLOW": "Not offered: this profile answers only, so it gets no propose tools.",
+      "PROFILE_TOOL_NOT_GRANTED": "Not offered: the agent is no longer granted this tool.",
+      "CONNECTION_READ_ONLY": "Not offered: the tool writes and its connection takes no writes.",
+      "AGENT_NOT_ACTIVE": "Not offered: the agent is not active, so none of its runs are admitted.",
+      "BEYOND_CEILING": "Unreachable: the tool needs a higher autonomy rung than this agent’s ceiling.",
+      "SKILL_NOT_MOUNTABLE": "Not mounted: no run can mount this skill as it stands.",
+      "VERSION_NOT_RUNNABLE": "Not offered: no run of this version is admitted. Only the approved version in force runs, and a version submitted for review only as a Test run.",
+      "TEST_RUN_READ_ONLY": "Not offered: this version can run only as a Test run, which gets no propose tools.",
+      "EXTERNAL_NOT_PROBED": "Not checked: a run offers an external server’s tool only after a live check of that server’s catalogue, which this view does not make."
+    }
   }
 }

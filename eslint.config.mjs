@@ -451,6 +451,23 @@ const config = [
         rules: { 'local/anthropic-client-single-seam': 'off' },
     },
     {
+        // ── One way into the vector store (Layer 4, D-L4-1 pgvector first) ──
+        //
+        // `src/app-layer/repositories/VectorRepository.ts` takes the tenant
+        // from the request context, refuses any record carrying more than a
+        // key, a content hash and a vector (D-L4-2, vectors only), and bounds
+        // every read. So no other file under `src/` may load a backend under
+        // `repositories/vector/`, or name the store's table in a literal.
+        // See eslint-rules/rules/vector-store-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/vector-store-single-seam': 'error' },
+    },
+    {
+        // The seam and its backends.
+        files: ['src/app-layer/repositories/VectorRepository.ts', 'src/app-layer/repositories/vector/**/*.ts'],
+        rules: { 'local/vector-store-single-seam': 'off' },
+    },
+    {
         // ── The engine-neutral tool core imports no engine (Step 0a) ──
         //
         // `src/lib/agentic/engine-tools/` is what every engine Inflect runs
@@ -704,6 +721,41 @@ const config = [
         },
         rules: {
             '@typescript-eslint/no-floating-promises': 'error',
+        },
+    },
+    {
+        // THE AGENT-FLOW CANVAS IS TLDRAW, NEVER XYFLOW (D-L2-3, 2026-10-29;
+        // docs/ai-architecture/langflow.md). The process canvas is retiring
+        // xyflow (#2962), and a feature built on it would be built twice and
+        // would block that removal. Error level, over every agent-flow file:
+        // the projection, its graph, its shapes and its route.
+        //
+        // This REPLACES the base block's `no-restricted-imports` for these
+        // files, so the table-barrel pattern is repeated here rather than lost.
+        files: [
+            'src/lib/agentic/agent-canvas-projection.ts',
+            'src/app-layer/usecases/agent-canvas-projection.ts',
+            'src/lib/processes/agent-view/**/*.{ts,tsx}',
+            'src/components/processes/agent-view/**/*.{ts,tsx}',
+            'src/app/t/**/processes/agents/**/*.{ts,tsx}',
+        ],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['@xyflow/*', 'reactflow', 'reactflow/*'],
+                            message:
+                                'The agent-flow canvas is drawn by tldraw only (D-L2-3); xyflow is being retired (#2962).',
+                        },
+                        {
+                            group: ['@/components/ui/table/*'],
+                            message: "Import from '@/components/ui/table' (barrel) instead of deep sub-modules.",
+                        },
+                    ],
+                },
+            ],
         },
     },
 ];

@@ -176,6 +176,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // read as covering them.
     AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
     AGENT_DRIVER_TOOL_RUNNER: 'operator feature flag selecting the Tool Runner engine — an in-process loop over the existing Anthropic sub-processor, not an endpoint of its own; its data category ("tenant-authored agent instructions") is recorded on the Anthropic row since Step 2c',
+    VECTOR_STORE_BACKEND: 'operator switch for the vector store (D-L4-1): `pgvector` keeps vectors in the deployment\'s own Postgres through an in-database extension, so no data leaves the database — not an external endpoint, and not a sub-processor',
     // Agent INTERACTIVE-RUN seam (#3868 step 2) — admits a new STARTER for a
     // run, a signed-in person in a browser, beside the job, credential and
     // automation-rule starters that already exist. It names no host, opens no
@@ -192,6 +193,9 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // not to this entry — so this flag must not be read as covering it.
     AGENT_INTERACTIVE_RUNS: 'operator feature flag admitting a browser-started agent run — a new starter for the existing engine, not an external endpoint, and not a sub-processor',
     AGENT_PROFILES: 'operator feature flag exposing the agent profile surface — tables and routes in this deployment, not an external endpoint, and not a sub-processor; the Tool Runner engine sends profile instructions to the Anthropic row, which names that data category since Step 2c',
+    AGENT_BEHAVIOUR_DETECTOR: 'operator switch for the nightly agent behaviour fingerprint (Morpheus Phase 1) — an in-worker computation over this deployment\'s own ledger, no external endpoint, not a sub-processor',
+    AGENT_BEHAVIOUR_DETECTOR_LATCH: 'operator switch letting that detector latch the existing circuit breaker — in-process, no external endpoint, not a sub-processor',
+    AGENT_BEHAVIOUR_DETECTOR_TENANTS: 'operator allowlist of tenant slugs the behaviour fingerprint scores — this deployment\'s own tenants, not an external endpoint, not a sub-processor',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
     // ambient-headers variable. The models are ids at the EXISTING Anthropic
@@ -208,6 +212,34 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AI_LOCAL_BASE_URL: 'base URL of the tenant\'s OWN self-hosted OpenAI-compatible LLM gateway (AI sovereignty) — in-jurisdiction inference, not an external sub-processor',
     AI_LOCAL_MODEL: 'model name served by the tenant\'s self-hosted gateway — a config string, not an external endpoint',
     AI_LOCAL_API_KEY: 'optional bearer for the tenant\'s OWN local gateway — internal, not sent to any third party',
+    // The embedding and rerank seam (Layer 4, src/lib/ai/embeddings/). Every
+    // route is in-deployment (`inflect-local`); an external embedding
+    // provider would be a sub-processor and does not exist.
+    AI_EMBED_LOCAL_BASE_URL: 'base URL of the deployment\'s OWN embedding service (TEI inside the perimeter) — not an external sub-processor',
+    AI_EMBED_LOCAL_MODEL: 'embedding model name served by the in-deployment service — a config string, not an endpoint',
+    AI_EMBED_LOCAL_DIMENSIONS: 'vector length of the configured embedding model — a number, not an endpoint',
+    AI_EMBED_LOCAL_QUERY_PREFIX: 'query prefix the configured embedding model expects — a config string, not an endpoint',
+    AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage prefix the configured embedding model expects — a config string, not an endpoint',
+    AI_RERANK_LOCAL_BASE_URL: 'base URL of the deployment\'s OWN rerank service (TEI inside the perimeter) — not an external sub-processor',
+    AI_RERANK_LOCAL_MODEL: 'rerank model name served by the in-deployment service — a config string, not an endpoint',
+    // The AI guard's second provider (NeMo Guardrails roadmap, Phase 1.4).
+    // Every guarded text — LOCAL_ONLY tenants' included, and every egress
+    // payload — is POSTed here, so the triage is a decision, not bookkeeping:
+    // it is a host WE operate, never a vendor's. Pointing it at a third party's
+    // endpoint would make that party a sub-processor of every tenant's AI
+    // content and is the sub-processor change process, not a config change.
+    AI_GUARD_NEMO_BASE_URL: 'base URL of a NeMo Guardrails server (open source, Apache-2.0) WE operate, running LLM-free rails; no data leaves our infrastructure, so not a sub-processor — operator deployment config, unreachable from any tenant setting; a third-party host here would be a sub-processor change',
+    // PII detector (docs/ai-architecture/presidio.md, Phase 1). Presidio runs as
+    // a CPU service INSIDE the deployment — the roadmap rejects a cloud PII API
+    // precisely because it would be a sub-processor receiving every payload. The
+    // service's register row (G2, legacy-mcp style) lands with its container in
+    // Phase 1.1; these two vars only name where it is and what it was built from.
+    // The base URL is held to the in-deployment rule (G6 as amended 2026-11-12):
+    // every address it resolves to must be inside the deployment, so pointing it
+    // at a third party's host refuses every call rather than making that party
+    // a sub-processor.
+    AI_PII_BASE_URL: 'base URL of the in-deployment Presidio PII analyzer — operator-run, inside the perimeter, not a third-party processor',
+    AI_PII_CONFIG_HASH: 'hash naming the recogniser configuration the deployed PII analyzer was built from — a config string, not an endpoint',
     // Internal secrets (env-provided; stored in AWS Secrets Manager, itself listed).
     AUTH_SECRET: 'internal JWT/session signing secret',
     JWT_SECRET: 'internal JWT signing secret',
@@ -260,8 +292,36 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // restriction that makes the Jev host a code constant. Jev itself is NOT here:
     // TYPESAFE_API_KEY names a real sub-processor and is covered by the
     // docs/sub-processors.md row that Step 6a added.
+    // ragflow.md Phase 1 (D-L4-4) — the Docling-class parsing service. The
+    // owner's decision is that it is a service WE run inside the deployment,
+    // and Phase 1.3 lands it as a worker-network container. Phase 1.5 adds the
+    // inventory row then, describing the shipped deployment rather than a plan.
+    DOC_PARSER_BASE_URL:
+        'base URL of the Docling-class parsing-only service the OPERATOR runs ' +
+        'inside the deployment (D-L4-4): stateless, keeps nothing, deployment ' +
+        'config never reachable from a tenant setting. Pointing it at a host ' +
+        'OUTSIDE the deployment makes that host a sub-processor (G2) — an ' +
+        'inventory entry and a register change, not an allowlist one.',
+    DOC_PARSER_API_KEY:
+        'credential for that same operator-run parsing service (sent as ' +
+        'X-Api-Key); names no service of its own and is sent only to ' +
+        'DOC_PARSER_BASE_URL.',
     LAYA_BASE_URL: "base URL of a Laya System One server WE operate (open weights, Apache-2.0); no data leaves our infrastructure, so not a sub-processor — deployment config, unreachable from any tenant setting",
     LAYA_API_KEY: 'optional bearer for our own Laya server; most deployments sit behind a network boundary instead — our infrastructure, not a third party, so not a sub-processor',
+    // Web Bot Auth Phase 1 (owner decisions D-L1-5/6/7, 2026-11-11). The
+    // deployment's ONE Ed25519 signing seed, and its predecessor during a
+    // rotation's grace. Neither names an external service: the seed signs our
+    // own outbound requests and its public half is served from OUR OWN key
+    // directory. Nothing is sent anywhere by holding it, and no third party
+    // receives it — a site that verifies a signature fetches the public key
+    // from us. If a hosted signing service ever replaces the local seed, that
+    // service is an inventory entry, not an allowlist one.
+    WEB_BOT_AUTH_SIGNING_KEY:
+        'Deployment-held Ed25519 signing seed for Web Bot Auth (one per deployment, never per tenant). ' +
+        'A local secret; names no external service, and only its public half is published, from our own key directory.',
+    WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY:
+        'The previous Web Bot Auth signing seed, published beside the current one during a rotation\'s grace. ' +
+        'A local secret; names no external service.',
 };
 
 /**

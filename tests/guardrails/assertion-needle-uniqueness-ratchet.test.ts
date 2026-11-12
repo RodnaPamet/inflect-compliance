@@ -632,7 +632,14 @@ const HIGH_MULTIPLICITY = 5;
 // 'production'` line was a second match for the encryption-key guard's
 // `/NODE_ENV.*['"]production['"]/` in each file. The fail-fast check is now the
 // only line that satisfies it. No test changed. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1133;
+//
+// 1133 -> 1132 on 2026-11-11 (web-bot-auth Phase 1). src/env.ts gained two
+// refined variables, which took the encryption-key guard's whole-file
+// `toMatch(/\.superRefine\(/)` from four positions to five. It now asks for the
+// ONE `superRefine` call carrying the DATA_ENCRYPTION_KEY production refusal
+// (`allCallExpressionsOf` + `toHaveLength(1)`), which binds where the regex
+// never did. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1132;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

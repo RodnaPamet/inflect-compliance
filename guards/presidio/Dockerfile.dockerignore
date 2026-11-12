@@ -1,0 +1,14 @@
+# The PII detector image's build context: an allowlist. Everything in the
+# checkout is left out, and only what the Dockerfile COPYs is let back in.
+# BuildKit reads this file in place of the root `.dockerignore` because it sits
+# beside the Dockerfile with the Dockerfile's name. The root file excludes
+# `tests/`, which held back the committed fixture corpus the test stage reads,
+# so the test stage could not be built from it.
+# tests/unit/presidio-image-context.test.ts holds this list to the COPY lines.
+*
+!guards/presidio/requirements.txt
+!guards/presidio/requirements-test.txt
+!guards/presidio/inflect_pii
+!guards/presidio/tests
+!tests/fixtures/pii/corpus.json
+!tests/fixtures/pii/corpus.sha256

@@ -67,6 +67,7 @@ jest.mock('@/app-layer/ai/risk-assessment/anthropic-provider', () => ({
 import { getProvider } from '@/app-layer/ai/risk-assessment';
 import { LocalRiskSuggestionProvider } from '@/app-layer/ai/risk-assessment/local-provider';
 import type { RiskAssessmentInput } from '@/app-layer/ai/risk-assessment/types';
+import { repoRelativeFiles } from '../helpers/repo-files';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -358,5 +359,67 @@ describe('structural — the 6b decision factory constructs nothing external bef
         const jevIdx = source.indexOf('new JevDecisionProvider');
         expect(gateIdx).toBeGreaterThan(-1);
         expect(jevIdx).toBeGreaterThan(gateIdx);
+    });
+});
+
+/**
+ * ─── The embedding and rerank factory (Layer 4, nemotron-retriever Phases 1-2) ─
+ *
+ * A THIRD factory, for text that goes to an embedding or rerank model. Today
+ * it can construct only in-deployment providers — there is no external
+ * embedding route, because one would be a sub-processor (G2). The pin is what
+ * keeps that true: an external provider added to `select.ts` fails here until
+ * somebody classifies it, and it must then be constructed after the
+ * `LOCAL_ONLY` return.
+ *
+ * Its own section rather than a shared helper, for the reason the 6b section
+ * gives: the providers are named `…EmbeddingProvider` / `…RerankProvider`, and
+ * a helper parameterised on a suffix would pass vacuously over an empty match.
+ */
+describe('structural — the embedding factory constructs nothing external before the guard', () => {
+    const FACTORY = path.resolve(__dirname, '../../src/lib/ai/embeddings/select.ts');
+    const src = () => fs.readFileSync(FACTORY, 'utf8');
+
+    /** In-deployment providers. Every other constructor is external by definition. */
+    const IN_DEPLOYMENT = ['TeiEmbeddingProvider', 'TeiRerankProvider'];
+
+    function constructedProviders(source: string): string[] {
+        const names = [...source.matchAll(/new\s+(\w*(?:Embedding|Rerank)Provider)\b/g)].map((m) => m[1]);
+        return [...new Set(names)].sort();
+    }
+
+    it('pins the exact constructor set — no external provider, and never the stub', () => {
+        // Also the denominator: an empty match would make the ordering check
+        // below hold over nothing.
+        expect(constructedProviders(src())).toEqual([...IN_DEPLOYMENT].sort());
+    });
+
+    it('every LOCAL_ONLY branch returns before the non-LOCAL_ONLY route is reached', () => {
+        const source = src();
+        for (const fn of ['resolveEmbeddingRoute', 'resolveRerankRoute']) {
+            const start = source.indexOf(`export function ${fn}(`);
+            const guard = source.indexOf("sel?.residency === 'LOCAL_ONLY'", start);
+            const firstReturn = source.indexOf('return ', guard);
+            const guardEnd = source.indexOf('\n    }\n', guard);
+            expect({
+                fn,
+                guardFound: start > -1 && guard > start,
+                returnsInsideGuard: firstReturn > -1 && firstReturn < guardEnd,
+            }).toEqual({ fn, guardFound: true, returnsInsideGuard: true });
+        }
+    });
+
+    it('nothing outside the seam reaches a provider or the transport around the factory', () => {
+        // A `new TeiEmbeddingProvider(...)` elsewhere would pick a route without
+        // asking the residency question at all. Import specifiers are checked
+        // rather than constructor names, so an alias cannot slip past.
+        const DIRECT = ["'@/lib/ai/embeddings/tei-provider'", "'@/lib/ai/embeddings/http'"];
+        const offenders = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f) && !f.startsWith('src/lib/ai/embeddings/'))
+            .filter((f) => {
+                const source = fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8');
+                return DIRECT.some((spec) => source.includes(spec));
+            });
+        expect(offenders).toEqual([]);
     });
 });

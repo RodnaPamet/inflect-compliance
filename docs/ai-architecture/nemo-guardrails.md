@@ -19,7 +19,7 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 | Wave | 3 |
 | Depends on | [`garak.md`](./garak.md) Phase 1 (the before/after measurement); [`presidio.md`](./presidio.md) Phase 1 for PII rails |
 | Unblocks | model-based rails on the assistant and run input; closes the Flue audit's F5 residual (run input unscanned) by a second route |
-| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) |
+| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) — **adopted, owner, 2026-11-11** (source: the owner decisions of 2026-11-11 relayed in the roadmap coordinator's brief for this work; the master's decision-table row is initialled by the coordinator) |
 | Complete at | Phase 3, with LLM-backed rails on the external route by API key |
 
 ## At a glance
@@ -63,12 +63,62 @@ flowchart LR
   model context; egress on result text before a third-party provider. Legacy
   data reaches a model only through it (legacy-access invariant 3). The
   product's own skills carry mandatory `injection` cases.
-- **One known gap, recorded 2026-10-09 against 3.164.1 and not re-verified
-  since:** `guardUntrustedInput` was applied only in `tools-adapter.ts`, so a
-  run's *initial input* reached prompt assembly unscanned (Flue audit finding
-  F5). The first PR under this roadmap re-checks that on `main`.
-- **No NeMo Guardrails, no Colang, no model-based rail.** The scanners are
-  pattern sets; nothing asks a model "is this a jailbreak".
+- **The run input is scanned at admission, for every engine** (Flue audit
+  finding F5, recorded 2026-10-09 against 3.164.1; re-verified 2026-11-11
+  against 3.364.1, `f1644fb26`, and closed). `startWorkflowRun` passes every
+  string value of the run input through `guardUntrustedInput`
+  (`workflow-run-input:<key>`) before the engine is chosen and before the run
+  row exists, and `assertNoReviewRequired` refuses both `flag` and `block`;
+  the tenant's `audit` mode records and refuses nothing. `createSealedRun` has
+  that one caller, so no run reaches Flue or the Tool Runner without the scan.
+  Both engines build the model's message only through `runMessage` from
+  `openDeclaredRunInput`, which reads the declared keys out of the SEALED,
+  chain-verified context (the scanned bytes), then NFKC-cleans, neutralises,
+  fences and labels them `agent.run-input`. A profile run's other text, its
+  instructions, is not run input: it is scanned by the guard's own injection
+  scanner at save and approval (any verdict refuses) and re-hashed at every
+  resolution. Flue's A2A peer replies are guarded per reply on delivery. The
+  assistant's user turn and page context pass the same scanner at its door.
+  Pinned by `tests/integration/run-input-is-injection-scanned.test.ts` (static
+  engine, nested payload, clean control) and
+  `tests/integration/run-input-scan-precedes-every-engine.test.ts` (Flue and
+  Tool Runner, and the strict/audit arms).
+- **The verdict comes through a `GuardProvider` seam** (Phase 1.1, 1.2, 1.4,
+  1.5; 2026-11-11). `src/app-layer/ai/guard/providers/`: `patterns-provider.ts`
+  is the scanners above, unchanged; `compose.ts` composes worst-of, and a
+  provider that throws, returns a malformed result, or an empty provider list
+  is unavailable (`guard.provider_unavailable.<id>`: `suspicious`, so `flag`,
+  in both directions — a secret the patterns provider sees still blocks
+  egress), never `clean`; `nemo-provider.ts` is an HTTP client
+  for a NeMo Guardrails server held to the in-deployment rule (G6 as amended
+  by the owner on 2026-11-12; `src/lib/ai/in-deployment-service.ts`): http or
+  https, every address the host resolves to inside the deployment (RFC 1918,
+  loopback, IPv6 ULA) with the connection pinned to them, no redirect
+  followed, a public address refused before anything is sent, 3 s deadline
+  over resolution, request and body, 64 KiB response cap that aborts the
+  read, 1 MiB request cap. It reads only whether an activated rail of the matching type stopped,
+  and fails closed on every other answer; `registry.ts` is the only reader of
+  `AI_GUARD_NEMO_BASE_URL`. Unset, the guard is the patterns provider alone,
+  nothing else is constructed, and every outcome and audit row is
+  byte-identical to the pre-seam guard. Set, `GuardOutcome.decidedBy` and the
+  audit row's `decidedBy` name the deciding provider, and a nemo rule id is
+  namespaced `nemo.rail.<name>`, which is how the decision log's
+  `guardRuleIds` already names the provider. A provider declares `remote`,
+  and a guard call made inside an open tenant transaction (`opts.db`) does
+  not consult a remote one: a network wait inside the 5 s transaction budget
+  would surface as a "transaction closed" error rather than a verdict. That
+  call is scanned by the patterns provider alone and its outcome and audit row
+  name the withheld provider in `notConsulted`. Three callers scan inside a
+  transaction today — the A2A reply delivery (once per reply, up to 20),
+  questionnaire autofill and risk suggestions — so the nemo slice does not
+  reach them until their scans move out of the transaction.
+- **No NeMo Guardrails server runs, and no rail config exists.** Phase 1.3 is
+  held by the capacity rule (master § Capacity budget, C1). When it lands, a
+  plain `http://nemo-guardrails:8000` on the Compose network is what the
+  client expects: no TLS terminator and no egress allowlist entry. A URL that
+  resolves outside the deployment, or does not resolve, makes the guard flag
+  every input and every egress, which is the outage rule working. Nothing
+  asks a model "is this a jailbreak".
 
 ## Fit, and what is deliberately not adopted
 
@@ -107,11 +157,23 @@ verdict.
 ### Phase 0 — Re-verify the gap, decide the rails
 
 **Sub-phases.**
-- [ ] 0.1 Re-check F5 on `main`: is run input scanned before prompt assembly?
+- [x] 0.1 Re-check F5 on `main`: is run input scanned before prompt assembly?
       If not, fix it with the *existing* scanner in this phase (one call, one
-      test) — it must not wait for NeMo.
+      test) — it must not wait for NeMo. **Checked 2026-11-11 against 3.364.1:
+      already closed** (#3468 wired the admission scan; no code change was
+      needed). What was found, and what pins it, is in Current state above.
+      One difference from the mid-run arms, by design: at admission a `flag`
+      REFUSES rather than latching review, because no run exists yet to park
+      and creating one only to park it would leave a row nothing advances.
+      Whether a flagged start should instead create a run parked for review
+      is a question for the owner, not a gap. See
+      `docs/implementation-notes/2026-11-11-run-input-scan-every-engine.md`.
 - [ ] 0.2 D-L1-2: list the rails by whether they need an LLM; Phase 1 =
-      LLM-free; Phase 2 = LLM-backed on the permitted route.
+      LLM-free; Phase 2 = LLM-backed on the permitted route. **D-L1-2 decided:
+      adopted (LLM-free rails first) — owner, 2026-11-11**, taken with nine
+      other decisions that day and relayed in the roadmap coordinator's brief;
+      the master's D-L1-2 row is the coordinator's to initial. The rail-by-rail
+      list and its residency consequences remain.
 - [ ] 0.3 Baseline: garak hit rates with the deterministic guard only
       ([`garak.md`](./garak.md) Phase 0/1) — the number NeMo must move.
 
@@ -142,34 +204,44 @@ anything), G11 (a baseline before a change).
 ### Phase 1 — The `GuardProvider` seam and LLM-free rails
 
 **Sub-phases.**
-- [ ] 1.1 `src/app-layer/ai/guard/providers/`: `types.ts`
+- [x] 1.1 `src/app-layer/ai/guard/providers/`: `types.ts`
       (`GuardProvider.scan(kind: 'input' | 'egress', text, ctx) →
       GuardOutcome`), `patterns-provider.ts` (today's scanners, unchanged
-      behaviour), `nemo-provider.ts` (HTTP to the NeMo server via `safeFetch`,
-      byte-capped, deadline, degrade to `flag` on outage — never to `allow`),
+      behaviour), `nemo-provider.ts` (HTTP to the NeMo server through the
+      in-deployment dial — every resolved address inside the deployment,
+      pinned, no redirect — byte-capped, deadline, degrade to `flag` on
+      outage — never to `allow`),
       `compose.ts` (worst-of).
-- [ ] 1.2 `guardUntrustedInput` / `guardEgress` call the composed provider;
+- [x] 1.2 `guardUntrustedInput` / `guardEgress` call the composed provider;
       every verdict row records which provider decided (the decision-log
-      already records the verdict; add the provider).
+      already records the verdict; add the provider). Done as
+      `GuardOutcome.decidedBy` and the audit row's `decidedBy`, both present
+      only when more than one provider was asked, plus namespaced rule ids,
+      which the decision log's `guardRuleIds` already stores.
 - [ ] 1.3 NeMo Guardrails server as a Compose service (digest), worker/app
       network only; rails config in `guards/nemo/config/` mounted read-only;
       LLM-free rails only in this phase.
-- [ ] 1.4 Env `AI_GUARD_NEMO_BASE_URL` optional; absent = patterns only
+- [x] 1.4 Env `AI_GUARD_NEMO_BASE_URL` optional; absent = patterns only
       (G9).
-- [ ] 1.5 Tests: "nemo outage degrades to flag, never allow"; "composition is
+- [x] 1.5 Tests: "nemo outage degrades to flag, never allow"; "composition is
       worst-of" (table over the nine arm pairs); "patterns provider is
       byte-identical to the previous scanners" (fixture set).
+      `tests/unit/ai/guard-provider-seam.test.ts`,
+      `tests/unit/ai/guard-nemo-provider.test.ts`. The "garak before/after"
+      half of done waits for 1.3.
 
 **Prompt.**
 ```text
 Context (main 3.338.0 + Phase 0): guardUntrustedInput/guardEgress return a three-arm
-GuardOutcome; the review latch and circuit breaker consume it; outbound calls use
-safeFetch with byte caps and deadlines (the MCP client is the pattern); images are
+GuardOutcome; the review latch and circuit breaker consume it; outbound calls to hosts
+outside the deployment use safeFetch, and calls to a service run inside it use
+src/lib/ai/in-deployment-service.ts (G6 as amended 2026-11-12), both with byte caps and
+deadlines; images are
 digest-pinned in the repo-canonical Compose file; absent config means a feature is off.
 
 Task: the GuardProvider seam. (1) src/app-layer/ai/guard/providers/{types,patterns-
 provider,nemo-provider,compose}.ts: patterns = today's scanners unchanged; nemo = HTTP to
-the NeMo Guardrails server (safeFetch, byte cap, deadline), outage → flag with reason
+the NeMo Guardrails server (the in-deployment dial, byte cap, deadline), outage → flag with reason
 GUARD_PROVIDER_UNAVAILABLE, never allow; compose = worst-of. (2) guardUntrustedInput /
 guardEgress use the composed provider; verdicts record the deciding provider. (3) A
 `nemo-guardrails` Compose service (digest), rails config under guards/nemo/config/ with

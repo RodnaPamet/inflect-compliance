@@ -905,6 +905,18 @@ export interface JobPayloadMap {
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
     'agent-credential-hygiene': AgentCredentialHygienePayload;
     'agent-harness-estate-staleness': AgentHarnessEstateStalenessPayload;
+    'agent-fingerprint': AgentFingerprintPayload;
+}
+
+/**
+ * agent-fingerprint — the nightly agent behaviour fingerprint (Morpheus roadmap
+ * Phase 1). `tenantId` absent is the scheduled sweep over the tenants the
+ * operator named in `AGENT_BEHAVIOUR_DETECTOR_TENANTS`; present runs that one
+ * tenant, and only if the same two keys admit it. Scores the UTC day before the
+ * run; idempotent on (tenant, agent, day).
+ */
+export interface AgentFingerprintPayload {
+    tenantId?: string;
 }
 
 /**
@@ -1343,6 +1355,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         // find its own findings and open nothing — but each attempt writes an
         // execution row per tenant, and three rows for one morning would make
         // "did it run?" harder to read, not easier. Tomorrow's tick is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-fingerprint': {
+        // ONE attempt. The pass is idempotent on (tenant, agent, day), so a
+        // retry would find the scored days and write nothing — but it would
+        // add an execution row per tenant. Tomorrow's tick scores tomorrow's
+        // day; a missed night is re-run by hand with `tenantId`.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

@@ -14,6 +14,13 @@
  *
  * A new outbound sink on a tenant-derived URL must use `safeFetch` (and be added
  * to SINKS) or this fails CI.
+ *
+ * `safeFetch` is the rule for every host OUTSIDE the deployment. The services
+ * the operator runs INSIDE it — the Docling parser, the NeMo guard server, the
+ * TEI embedder and reranker — are held to the inverse rule instead (G6 as
+ * amended 2026-11-12; "THE IN-DEPLOYMENT SERVICES" below): an operator URL read
+ * by exactly one module, every resolved address inside the deployment, pinned,
+ * deadline-bounded, byte-capped, no redirect.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -25,8 +32,10 @@ jest.mock('node:dns', () => ({
 }));
 
 import { assertPublicAddress, isPrivateAddress, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
+import { IN_DEPLOYMENT_SERVICES } from '@/lib/ai/in-deployment-service';
 import { functionBodyOf, codeOf as blankComments } from '../helpers/source-blocks';
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { functionUse, functionUseIn, NON_LITERAL_LOAD_SITES, nonLiteralModuleLoads, valueImportersOf } from '../helpers/module-edges';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -118,6 +127,10 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         // time, and each hop is a fresh safeFetch.
         noBareFetchOf: 'fetchWithRetry(',
     },
+    // The PII detector's Presidio provider was an entry here until the owner's
+    // G6 amendment (2026-11-12): it is an IN-DEPLOYMENT service, and safeFetch
+    // refused the Compose network it lives on, so it moved to the in-deployment
+    // dial, where it is held below.
     {
         file: 'src/lib/security/oidc-client.ts',
         reason:
@@ -153,6 +166,10 @@ const MCP_CLIENTS: readonly string[] = [
     // another organisation's agent is exactly the request that must not find a
     // second way out.
     'src/lib/agentic/a2a/client.ts',
+    // The DocumentParser seam's Docling backend was a FOURTH entry until the
+    // owner's G6 amendment (2026-11-12): it is an IN-DEPLOYMENT service, so it
+    // left the one wire — whose `safeFetch` refused the Compose network it
+    // lives on — for the in-deployment dial, where it is held below.
 ];
 
 describe('SSRF — every tenant-controlled sink routes through safeFetch', () => {
@@ -259,6 +276,8 @@ describe('SSRF — the MCP clients reach the network only through the shared tra
         // reader checking "is the MCP client covered?" finds yes for one of two
         // and is unlikely to ask which. Pinning the denominator makes a future
         // omission loud.
+        // Three: the Docling client joined the wire and then left it for the
+        // in-deployment dial (G6 as amended 2026-11-12), where it is held below.
         expect(MCP_CLIENTS).toHaveLength(3);
     });
 });
@@ -286,6 +305,281 @@ describe('SSRF — the OIDC client reaches the identity provider only through sa
 
     it("hands jose's key-set fetch to safeFetch, not jose's default global fetch", () => {
         expect(oidcKeySetFetchesThroughTheGuard()).toBe(true);
+    });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════
+ *  THE IN-DEPLOYMENT SERVICES — the sinks that must NOT route through safeFetch
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * G6 as amended by the owner (2026-11-12): an IN-DEPLOYMENT service — an
+ * operator-set URL, read by exactly one module, never tenant-writable — must
+ * resolve to an address INSIDE the deployment (RFC 1918, loopback, IPv6 ULA;
+ * every resolved address) and is dialled with a deadline and a byte cap that
+ * aborts. `safeFetch` stays the rule for every host outside it.
+ *
+ * `safeFetch` is the WRONG test for these, not merely a stricter one: it admits
+ * only PUBLIC addresses, which for a service on the Compose network is every
+ * address but the right one. The embedding seam was in `SINKS` once and could
+ * then reach only off-perimeter hosts under the residency claim
+ * `inflect-local`; the Docling parser and the NeMo guard provider sat on the
+ * safeFetch path until the amendment, and each refused its own in-Compose
+ * server on every call.
+ *
+ * So there is ONE dial, `src/lib/ai/in-deployment-service.ts`, and this section
+ * holds the chain that makes it safe to have:
+ *
+ *   1. the dial resolves inside the deployment BEFORE it dials, pins the
+ *      connection to the checked addresses, refuses redirects, and offers no
+ *      injectable fetch;
+ *   2. exactly the registered client modules call it, and none of them — nor
+ *      any file in their directories — makes a fetch call of its own;
+ *   3. each client is constructed only by the module that reads its service's
+ *      variable;
+ *   4. each service's variable has exactly ONE reader (besides its
+ *      declaration), derived from the tree — the `AI_LOCAL_BASE_URL`
+ *      precedent below — and that reader takes it from `env`.
+ *
+ * Together: the only URL that reaches the dial is an operator's. The address
+ * rule itself, and the dial's behaviour, are exercised in
+ * `tests/unit/ai/in-deployment-service.test.ts`.
+ */
+const IN_DEPLOYMENT_DIAL = 'src/lib/ai/in-deployment-service.ts';
+
+/** The modules that call the dial, and why each is an in-deployment service. */
+const IN_DEPLOYMENT_CLIENTS: Record<string, string> = {
+    'src/lib/ai/embeddings/http.ts':
+        "The embedding seam's JSON adapter, for the TEI embedder and reranker (`inflect-local`, a residency claim).",
+    'src/lib/ai/parsing/docling-provider.ts':
+        "The DocumentParser seam's Docling backend (ragflow.md Phase 1, D-L4-4): tenant documents in, text a model will see out.",
+    'src/app-layer/ai/guard/providers/nemo-provider.ts':
+        "The AI guard's NeMo Guardrails provider: tenant text on every guarded call, and a verdict back.",
+    'src/lib/ai/pii/presidio-provider.ts':
+        "The PII detector's Presidio provider (presidio.md Phase 1): every text bound for an external model, and the spans to redact back.",
+};
+
+/**
+ * For each client module, the ONE module that imports it (step 3).
+ *
+ * Read off the syntax tree (`valueImportersOf`): any import, re-export,
+ * `require`, `import()` or `import x = require` that RESOLVES to the client, in
+ * any spelling — a regex over `'./x'` and `'@/…/x'` let a sibling directory's
+ * `'../dir/x'` through.
+ */
+const CLIENT_CONSTRUCTED_BY: Record<string, { module: string }> = {
+    'src/lib/ai/embeddings/http.ts': {
+        module: 'src/lib/ai/embeddings/tei-provider.ts',
+    },
+    'src/lib/ai/embeddings/tei-provider.ts': {
+        module: 'src/lib/ai/embeddings/select.ts',
+    },
+    'src/lib/ai/parsing/docling-provider.ts': {
+        module: 'src/lib/ai/parsing/index.ts',
+    },
+    'src/app-layer/ai/guard/providers/nemo-provider.ts': {
+        module: 'src/app-layer/ai/guard/providers/registry.ts',
+    },
+    'src/lib/ai/pii/presidio-provider.ts': {
+        module: 'src/lib/ai/pii/mount.ts',
+    },
+};
+
+/** For each service's variable, the ONE module that reads it (step 4). */
+const IN_DEPLOYMENT_READERS: Record<keyof typeof IN_DEPLOYMENT_SERVICES, string> = {
+    'doc-parser': 'src/lib/ai/parsing/index.ts',
+    'ai-guard-nemo': 'src/app-layer/ai/guard/providers/registry.ts',
+    embed: 'src/lib/ai/embeddings/select.ts',
+    rerank: 'src/lib/ai/embeddings/select.ts',
+    'pii-detector': 'src/lib/ai/pii/mount.ts',
+};
+
+/** Directories whose every file belongs to an in-deployment client, and so makes no fetch call. */
+const IN_DEPLOYMENT_CLIENT_DIRS = ['src/lib/ai/embeddings/', 'src/lib/ai/parsing/', 'src/lib/ai/pii/'];
+
+const srcTsFiles = () => repoRelativeFiles().filter((f) => f.startsWith('src/') && /\.tsx?$/.test(f));
+
+const inDeploymentClientPopulation = () =>
+    [
+        ...repoRelativeFiles().filter((f) => IN_DEPLOYMENT_CLIENT_DIRS.some((d) => f.startsWith(d)) && f.endsWith('.ts')),
+        ...Object.keys(IN_DEPLOYMENT_CLIENTS),
+    ].filter((f, i, all) => all.indexOf(f) === i);
+
+const inDeploymentClientsWithTheirOwnFetch = () =>
+    inDeploymentClientPopulation().filter((f) => ANY_FETCH_CALL.test(codeOf(f)));
+
+const inDeploymentClientsWithAFetchSeam = () =>
+    inDeploymentClientPopulation().filter((f) => codeOf(f).includes('fetchImpl'));
+
+/** Every fetch-shaped call in the dial, by the function that makes it. */
+function dialFetchCallsByFunction(): Record<string, string[]> {
+    const code = codeOf(IN_DEPLOYMENT_DIAL);
+    const out: Record<string, string[]> = {};
+    for (const fn of ['pinnedFetch', 'inDeploymentRequest']) {
+        const calls = (functionBodyOf(code, fn).match(/\w*fetch\s*\(/gi) ?? []).map((c) => c.replace(/\s+/g, ''));
+        // The extracted block starts at the signature, so `pinnedFetch(` names
+        // itself first; that is the declaration, not a call.
+        out[fn] = calls[0] === `${fn}(` ? calls.slice(1) : calls;
+    }
+    return out;
+}
+
+describe('SSRF — the in-deployment dial resolves inside the deployment, pins, and follows nothing', () => {
+    it('the only network call is undici fetch inside pinnedFetch, and every request dials through it', () => {
+        expect(dialFetchCallsByFunction()).toEqual({
+            pinnedFetch: ['undiciFetch('],
+            inDeploymentRequest: ['pinnedFetch('],
+        });
+        // And nothing else in the file makes one: the two calls above plus
+        // `pinnedFetch`'s own declaration are the whole file's.
+        expect((codeOf(IN_DEPLOYMENT_DIAL).match(/\w*fetch\s*\(/gi) ?? []).length).toBe(3);
+    });
+
+    it('pinnedFetch resolves inside the deployment before it dials, pins the connection, and refuses redirects', () => {
+        const body = functionBodyOf(codeOf(IN_DEPLOYMENT_DIAL), 'pinnedFetch');
+        const resolveAt = body.indexOf('resolvePerimeterAddresses(');
+        const dialAt = body.indexOf('undiciFetch(');
+        const spreadAt = body.indexOf('...init');
+        const manualAt = body.indexOf("redirect: 'manual'");
+        expect({
+            resolvesFirst: resolveAt > -1 && resolveAt < dialAt,
+            pinned: body.includes('dispatcher,'),
+            // After the spread, so no caller can opt back into following.
+            manualAfterSpread: spreadAt > -1 && manualAt > spreadAt,
+        }).toEqual({ resolvesFirst: true, pinned: true, manualAfterSpread: true });
+    });
+
+    it('the dial has no injectable fetch to route around the address check', () => {
+        expect(codeOf(IN_DEPLOYMENT_DIAL).includes('fetchImpl')).toBe(false);
+    });
+});
+
+describe('SSRF — the in-deployment clients reach the network only through the dial', () => {
+    it('exactly the registered clients call the dial, and nothing reaches it any other way', () => {
+        // Off the syntax tree, not the text `inDeploymentRequest(`: an alias
+        // (`import { inDeploymentRequest as reach }`), a namespace import
+        // (`svc['inDeploymentRequest'](…)`), a re-export, a `require`/`import()`
+        // of the dial, or the function passed along would each call the dial
+        // with no text match — and the dial admits exactly the private
+        // addresses safeFetch refuses.
+        const use = functionUse(IN_DEPLOYMENT_DIAL, 'inDeploymentRequest', srcTsFiles());
+        expect(use).toEqual({ callers: Object.keys(IN_DEPLOYMENT_CLIENTS).sort(), misuses: [] });
+    });
+
+    it('no file under src/ loads a module by a name the scan cannot read', () => {
+        const sites = srcTsFiles().filter((f) => nonLiteralModuleLoads(f, read(f)) > 0);
+        expect(sites).toEqual(Object.keys(NON_LITERAL_LOAD_SITES).sort());
+    });
+
+    it('the dial-use scan sees every way of reaching the dial', () => {
+        // Negative controls on synthetic source, so the clean result above means something.
+        const dial = (src: string) => functionUseIn('src/lib/ai/x.ts', src, IN_DEPLOYMENT_DIAL, 'inDeploymentRequest');
+        const imp = "import { inDeploymentRequest } from '@/lib/ai/in-deployment-service';";
+        expect(dial(`${imp} await inDeploymentRequest('embed', u, i, b);`)).toEqual({ calls: 1, misuses: [] });
+        expect(dial("import { inDeploymentRequest } from './in-deployment-service'; inDeploymentRequest();")).toEqual({ calls: 1, misuses: [] });
+        expect(dial("import { type InDeploymentFailure } from '@/lib/ai/in-deployment-service';")).toEqual({ calls: 0, misuses: [] });
+        const misused = [
+            "import { inDeploymentRequest as reach } from '@/lib/ai/in-deployment-service'; reach();",
+            "import * as svc from '@/lib/ai/in-deployment-service'; svc['inDeploymentRequest']();",
+            "import * as svc from './in-deployment-service'; svc.inDeploymentRequest();",
+            "import svc = require('./in-deployment-service'); svc.inDeploymentRequest();",
+            "const svc = require('@/lib/ai/in-deployment-service');",
+            "const { inDeploymentRequest } = await import('../ai/in-deployment-service');",
+            "export * from '@/lib/ai/in-deployment-service';",
+            "export { inDeploymentRequest } from '@/lib/ai/in-deployment-service';",
+            `${imp} const reach = inDeploymentRequest; reach();`,
+            `${imp} run(inDeploymentRequest);`,
+            `${imp} export { inDeploymentRequest };`,
+        ];
+        for (const src of misused) {
+            expect({ src, misused: dial(src).misuses.length > 0 }).toEqual({ src, misused: true });
+        }
+    });
+
+    it('no client, and no file in a client directory, makes a fetch call of its own', () => {
+        // The denominator first: the scan must cover the clients it guards.
+        expect(inDeploymentClientPopulation()).toEqual(
+            expect.arrayContaining([
+                ...Object.keys(IN_DEPLOYMENT_CLIENTS),
+                'src/lib/ai/embeddings/tei-provider.ts',
+                'src/lib/ai/embeddings/select.ts',
+                'src/lib/ai/parsing/index.ts',
+                'src/lib/ai/pii/mount.ts',
+            ]),
+        );
+        expect(inDeploymentClientsWithTheirOwnFetch()).toEqual([]);
+    });
+
+    it('no client carries a fetch seam — a path around the address rule that reads as dependency injection', () => {
+        expect(inDeploymentClientsWithAFetchSeam()).toEqual([]);
+    });
+
+    it('no client is on the safeFetch path any longer', () => {
+        // The amendment's point: a client still importing `safeFetch` or the MCP
+        // wire would be refusing its own in-Compose server again.
+        const onTheOldPath = Object.keys(IN_DEPLOYMENT_CLIENTS).filter((f) =>
+            /safeFetch|webhook-safety|wire-transport/.test(codeOf(f)),
+        );
+        expect(onTheOldPath).toEqual([]);
+    });
+
+    it('each client is imported by exactly one module, ending at the one that reads its variable', () => {
+        const importers = Object.fromEntries(
+            Object.keys(CLIENT_CONSTRUCTED_BY).map((client) => [
+                client,
+                valueImportersOf(client, srcTsFiles()),
+            ]),
+        );
+        expect(importers).toEqual(
+            Object.fromEntries(Object.entries(CLIENT_CONSTRUCTED_BY).map(([client, { module }]) => [client, [module]])),
+        );
+    });
+});
+
+describe('SSRF — each in-deployment service URL is operator config read by exactly one module', () => {
+    it('every service the dial knows has a classified reader, and no classified reader is stale', () => {
+        expect(Object.keys(IN_DEPLOYMENT_READERS).sort()).toEqual(Object.keys(IN_DEPLOYMENT_SERVICES).sort());
+    });
+
+    it('exactly its declaration and its one reader name each variable', () => {
+        const found = Object.fromEntries(
+            Object.values(IN_DEPLOYMENT_SERVICES).map((variable) => [
+                variable,
+                // Comments stripped: prose naming the variable is not a read.
+                // The dial is left out: it NAMES each variable in its registry
+                // as a string, and reads none (asserted below).
+                srcTsFiles()
+                    .filter((f) => f !== IN_DEPLOYMENT_DIAL && codeOf(f).includes(variable))
+                    .sort(),
+            ]),
+        );
+        const expected = Object.fromEntries(
+            Object.entries(IN_DEPLOYMENT_SERVICES).map(([service, variable]) => [
+                variable,
+                ['src/env.ts', IN_DEPLOYMENT_READERS[service as keyof typeof IN_DEPLOYMENT_SERVICES]].sort(),
+            ]),
+        );
+        expect(found).toEqual(expected);
+    });
+
+    it('the dial reads no environment at all, so the names in its registry are labels, not reads', () => {
+        // If the dial could read a variable itself, a caller could reach a
+        // service without going through that service's one reader.
+        const code = codeOf(IN_DEPLOYMENT_DIAL);
+        expect({ importsEnv: /from '@\/env(-client)?'/.test(code), readsProcessEnv: code.includes('process.env') }).toEqual({
+            importsEnv: false,
+            readsProcessEnv: false,
+        });
+    });
+
+    it('each reader takes its variable from the operator env module', () => {
+        const fromEnv = Object.entries(IN_DEPLOYMENT_SERVICES)
+            .filter(([service, variable]) => {
+                const code = codeOf(IN_DEPLOYMENT_READERS[service as keyof typeof IN_DEPLOYMENT_SERVICES]);
+                return code.includes(`env.${variable}`) && /from '@\/env'/.test(code);
+            })
+            .map(([service]) => service);
+        expect(fromEnv.sort()).toEqual(Object.keys(IN_DEPLOYMENT_SERVICES).sort());
     });
 });
 

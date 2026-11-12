@@ -566,6 +566,14 @@ model VendorMonitor {
   /// Latest public TLS / security-header grade (A..F) + when graded.
   tlsGrade             String?
   tlsCheckedAt         DateTime?
+  /// What the latest TLS-grade fetch came to — GRADED | REFUSED | UNREACHABLE
+  /// | BLOCKED (`TLS_FETCH_OUTCOMES`) — and when. Written on every run that
+  /// fetches, graded or not; a fetch that did not grade leaves `tlsGrade` and
+  /// `tlsCheckedAt` alone, and this is what marks them stale. NULL on a
+  /// monitor that has not fetched since the column was added. A CHECK pins the
+  /// vocabulary and pairs the two columns. Never a response body.
+  tlsFetchOutcome      String?
+  tlsFetchOutcomeAt    DateTime?
   /// Cached earliest attestation expiry across the vendor's parsed reports.
   attestationExpiresAt DateTime?
   createdAt            DateTime  @default(now())

@@ -136,7 +136,10 @@ const RICH_TEXT_COVERAGE: Readonly<
     // An agent profile's instructions (#4143): what a tenant tells its agent,
     // and the operator's block in every prompt the profile runs under.
     // Sanitised at the single write seam before they are scanned, hashed and
-    // encrypted, so the pinned hash is over the text that is stored.
+    // encrypted, so the pinned hash is over the text that is stored. A drawn
+    // flow's labels (`flowJson`, Phase 1 of the agent-flow canvas) pass the
+    // same `sanitizePlainText` in `prepareFlow` before the flow is checked
+    // again, serialised and hashed.
     AgentProfileVersion: { usecases: ['src/app-layer/usecases/agent-profiles.ts'], sanitizer: 'sanitizePlainText' },
     // The kill switch's `reason` / `liftReason` — operator free text written
     // during an incident, sanitised at the single write seam (`requireReason`)

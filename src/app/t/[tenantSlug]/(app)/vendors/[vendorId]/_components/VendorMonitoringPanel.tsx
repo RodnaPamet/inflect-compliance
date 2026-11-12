@@ -32,6 +32,9 @@ interface Monitor {
     breachCount: number;
     tlsGrade: string | null;
     tlsCheckedAt: string | null;
+    /** What the latest TLS-grade fetch came to; NULL before the first one. */
+    tlsFetchOutcome?: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED' | null;
+    tlsFetchOutcomeAt?: string | null;
     attestationExpiresAt: string | null;
 }
 interface PostureEvent {
@@ -50,6 +53,8 @@ interface Posture {
     monitor: Monitor | null;
     events: PostureEvent[];
     providers?: Providers;
+    /** The server's verdict: a grade is stale once the latest fetch did not grade. */
+    tlsGradeStale?: boolean;
 }
 
 /** The five monitor booleans the PATCH endpoint accepts. */
@@ -187,12 +192,24 @@ export function VendorMonitoringPanel({
                         <div className="text-content-muted">{t('monitoring.tlsGrade')}</div>
                         <div className="mt-1 flex items-center gap-tight">
                             <StatusBadge variant={GRADE_VARIANT(m?.tlsGrade ?? null)}>{m?.tlsGrade ?? '—'}</StatusBadge>
+                            {posture?.tlsGradeStale && (
+                                <StatusBadge variant="warning" id="vendor-tls-grade-stale">{t('monitoring.tlsStale')}</StatusBadge>
+                            )}
                             {providers?.tls === 'stub' && (
                                 <span className="text-xs font-medium uppercase tracking-wide text-content-subtle">
                                     {t('monitoring.stubMode')}
                                 </span>
                             )}
                         </div>
+                        {/* Why the grade did not move: a refusal is shown, never read as no change. */}
+                        {m?.tlsFetchOutcome && m.tlsFetchOutcome !== 'GRADED' && m.tlsFetchOutcomeAt && (
+                            <div className="mt-1 text-xs text-content-muted" id="vendor-tls-last-fetch">
+                                {t('monitoring.tlsLastFetch', {
+                                    date: formatDateTime(m.tlsFetchOutcomeAt),
+                                    outcome: t(`monitoring.tlsFetchOutcome.${m.tlsFetchOutcome}`),
+                                })}
+                            </div>
+                        )}
                     </div>
                     <div>
                         <div className="text-content-muted">{t('monitoring.breachLastSeen')}</div>

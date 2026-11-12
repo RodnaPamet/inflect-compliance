@@ -4,6 +4,7 @@ import { auth } from '@/auth';
 import { getTenantCtx } from '@/app-layer/context';
 import { getRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { agentProfilesOn } from '@/app-layer/usecases/agent-profiles';
+import { isProcessCanvasEnabled } from '@/app-layer/usecases/process-canvas-module';
 import { getInteractiveAgentDesignation } from '@/app-layer/usecases/interactive-agent-designation';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
@@ -193,6 +194,16 @@ export default async function AgentDetailPage({
             // choice (Steps 1b and 1H, #4557). Its routes answer 404 everywhere
             // else.
             profilesEnabled={await agentProfilesOn(tenantSlug)}
+            // The agent on the process canvas (Phase 2.3,
+            // docs/ai-architecture/langflow.md): offered only where the tenant
+            // has the module, because the route lives inside its segment and
+            // answers notFound() elsewhere. Best-effort: a failed read offers
+            // no link, which is the module-off answer.
+            canvasHref={
+                (await isProcessCanvasEnabled(ctx).catch(() => false))
+                    ? `/t/${tenantSlug}/processes/agents/${agent.id}`
+                    : null
+            }
         />
     );
 }

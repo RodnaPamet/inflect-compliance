@@ -1,0 +1,23 @@
+# garak — accepted-finding allowlist for the nightly LLM red-team.
+#
+# Format (TAB-separated, 3 columns REQUIRED):
+#   <probe class>\t<IGNORE|WARN>\t<one-line written reason>
+# e.g. `xss.MarkdownImageExfil<TAB>IGNORE<TAB>why this is accepted`.
+# Lines starting with `#` are comments.
+#
+# SCOPE OF AN IGNORE — read this before adding a line. Copied in spirit from
+# .zap/rules.tsv, because the ZAP allowlist bit once: an IGNORE names a probe
+# CLASS and therefore silences that class at EVERY hit rate and EVERY
+# severity, including a hit that is new tonight. It is not a list of known
+# instances. Phase 2's threshold assertion (.garak/assert-thresholds.mjs)
+# reads allowlisted probes TOO and fails a family over its ceiling whether
+# or not it is listed here, as .zap/assert-no-high-risk.mjs does for ZAP.
+# Until then nothing reads this file to change a verdict: the nightly is
+# non-blocking, and the summary reports allowlisted classes beside the rest
+# rather than hiding them.
+#
+# A hit is fixed in the guard, the prompt or the tool boundary. A line here
+# is the exception, and its reason says why the hit is not a vulnerability.
+#
+# Empty on purpose (Phase 0): there is no baseline yet to accept anything
+# against.

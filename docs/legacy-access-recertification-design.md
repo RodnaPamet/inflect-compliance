@@ -315,6 +315,13 @@ assertion.
   > (`docs/claude-tool-runner-design.md`, Step 2c), so it honours nothing yet and
   > is not counted among the five.
   >
+  > An eighth file branches on residency for the same reason:
+  > `src/lib/ai/embeddings/select.ts` routes embedding and rerank calls, and its
+  > `LOCAL_ONLY` branch returns before any other route is considered. Today the
+  > only route is in-deployment, and no running path calls the seam. So it
+  > honours nothing yet and is not counted among the five
+  > (`docs/ai-architecture/nemotron-retriever.md`).
+  >
   > The last two features arrived with steps 6c and 3b and the
   > bullet was not updated, which is criterion 11 unmet for those steps — the
   > same silent-staleness this section suffered in #3480, in the opposite

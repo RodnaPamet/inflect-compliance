@@ -469,8 +469,11 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // (`usecases/agent-profiles.ts`) before this middleware encrypts it, and
     // hashed in plaintext so a run can pin it. `rejectionReason` (Step 1b) is
     // a reviewer's sentence about those instructions, the same kind of
-    // content. Neither is filtered or sorted on.
-    AgentProfileVersion: ['instructions', 'rejectionReason'],
+    // content. `flowJson` (Phase 1 of `docs/ai-architecture/langflow.md`) is
+    // the drawn flow: its node labels are the tenant's words about the same
+    // work, sanitised at the same seam and covered by the same content hash.
+    // None is filtered or sorted on.
+    AgentProfileVersion: ['instructions', 'rejectionReason', 'flowJson'],
 
     // ─── Epic Agentic — the agent register ─────────────
     // `description` is the operator's own account of what an agent does and

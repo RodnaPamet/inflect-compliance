@@ -78,6 +78,11 @@ jest.mock('@/app-layer/usecases/vendor', () => ({
 jest.mock('@/app-layer/usecases/agent-profiles', () => ({
     agentProfilesOn: () => false,
 }));
+// The page asks whether to offer "Open on canvas" (Phase 2 of
+// docs/ai-architecture/langflow.md); this file is about the register writes.
+jest.mock('@/app-layer/usecases/process-canvas-module', () => ({
+    isProcessCanvasEnabled: async () => false,
+}));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/AgentsClient', () => ({
     AgentsClient: () => null,
 }));
