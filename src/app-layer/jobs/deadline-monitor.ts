@@ -50,6 +50,8 @@ export interface DeadlineMonitorResult {
         upcoming: number;
     };
     byEntity: Record<string, number>;
+    /** Sources whose scan hit its cap, so some deadlines were not read (#5202). */
+    cappedSources: string[];
 }
 
 // ─── Urgency Classifier ─────────────────────────────────────────────
@@ -87,13 +89,56 @@ export function classifyUrgency(
 
 // ─── Entity Scanners ────────────────────────────────────────────────
 
+type DueRange = { gte: Date; lte: Date } | { lt: Date };
+
+/**
+ * Read one source's due rows in TWO bounded passes either side of `now`
+ * (#5202): the rows coming due (`now..horizon`, soonest first) and the rows
+ * already overdue (most recently overdue first).
+ *
+ * A single `ORDER BY due ASC LIMIT n` across the fleet put the OLDEST
+ * overdue rows first, and rows that are overdue for good never leave that
+ * set — so one tenant's abandoned backlog filled the cap and every other
+ * tenant's approaching and newly overdue deadlines fell past it, with nothing
+ * recording the cut. Splitting the read keeps upcoming deadlines out of the
+ * overdue backlog's reach, and ordering the overdue pass newest-first makes
+ * the oldest abandoned rows the ones a cap drops. A source that still hits
+ * its cap is recorded in `capped` and logged.
+ */
+async function scanBothSides<T>(
+    source: string,
+    cap: number,
+    now: Date,
+    horizon: Date,
+    capped: string[],
+    fetch: (range: DueRange, order: 'asc' | 'desc', take: number) => Promise<T[]>,
+): Promise<T[]> {
+    const [upcoming, overdue] = await Promise.all([
+        fetch({ gte: now, lte: horizon }, 'asc', cap + 1),
+        fetch({ lt: now }, 'desc', cap + 1),
+    ]);
+    if (upcoming.length > cap || overdue.length > cap) {
+        capped.push(source);
+        logger.warn('deadline-monitor: scan hit cap — later deadlines dropped this run', {
+            component: 'job',
+            jobName: 'deadline-monitor',
+            source,
+            cap,
+            upcomingCapped: upcoming.length > cap,
+            overdueCapped: overdue.length > cap,
+        });
+    }
+    return [...overdue.slice(0, cap), ...upcoming.slice(0, cap)];
+}
+
 /**
  * Scan controls with nextDueAt approaching or overdue.
  */
 async function scanControls(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
@@ -108,18 +153,26 @@ async function scanControls(
     if (tenantId) where.tenantId = tenantId;
     else where.tenantId = { not: null };
 
-    const controls = await prisma.control.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            nextDueAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: 1000,
-    });
+    const controls = await scanBothSides(
+        'CONTROL',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.control.findMany({
+                where: { ...where, nextDueAt: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    name: true,
+                    nextDueAt: true,
+                    ownerUserId: true,
+                },
+                orderBy: { nextDueAt: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const c of controls) {
@@ -150,7 +203,8 @@ async function scanControls(
 async function scanPolicies(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
@@ -161,18 +215,26 @@ async function scanPolicies(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const policies = await prisma.policy.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            nextReviewAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: 1000,
-    });
+    const policies = await scanBothSides(
+        'POLICY',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.policy.findMany({
+                where: { ...where, nextReviewAt: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    title: true,
+                    nextReviewAt: true,
+                    ownerUserId: true,
+                },
+                orderBy: { nextReviewAt: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const p of policies) {
@@ -204,7 +266,8 @@ async function scanPolicies(
 async function scanTasks(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
@@ -215,18 +278,26 @@ async function scanTasks(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const tasks = await prisma.task.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            dueAt: true,
-            assigneeUserId: true,
-        },
-        orderBy: { dueAt: 'asc' },
-        take: 1000,
-    });
+    const tasks = await scanBothSides(
+        'TASK',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.task.findMany({
+                where: { ...where, dueAt: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    title: true,
+                    dueAt: true,
+                    assigneeUserId: true,
+                },
+                orderBy: { dueAt: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const t of tasks) {
@@ -257,7 +328,8 @@ async function scanTasks(
 async function scanRisks(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
@@ -268,18 +340,26 @@ async function scanRisks(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const risks = await prisma.risk.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            nextReviewAt: true,
-            ownerUserId: true,
-        },
-        orderBy: { nextReviewAt: 'asc' },
-        take: 1000,
-    });
+    const risks = await scanBothSides(
+        'RISK',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.risk.findMany({
+                where: { ...where, nextReviewAt: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    title: true,
+                    nextReviewAt: true,
+                    ownerUserId: true,
+                },
+                orderBy: { nextReviewAt: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const r of risks) {
@@ -310,7 +390,8 @@ async function scanRisks(
 async function scanTestPlans(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
 
@@ -320,19 +401,27 @@ async function scanTestPlans(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const plans = await prisma.controlTestPlan.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            name: true,
-            nextDueAt: true,
-            ownerUserId: true,
-            controlId: true,
-        },
-        orderBy: { nextDueAt: 'asc' },
-        take: 1000,
-    });
+    const plans = await scanBothSides(
+        'TEST_PLAN',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.controlTestPlan.findMany({
+                where: { ...where, nextDueAt: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    name: true,
+                    nextDueAt: true,
+                    ownerUserId: true,
+                    controlId: true,
+                },
+                orderBy: { nextDueAt: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const p of plans) {
@@ -368,7 +457,8 @@ async function scanTestPlans(
 async function scanTreatmentPlans(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
     const where: Prisma.RiskTreatmentPlanWhereInput = {
@@ -378,19 +468,27 @@ async function scanTreatmentPlans(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const plans = await prisma.riskTreatmentPlan.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            riskId: true,
-            ownerUserId: true,
-            targetDate: true,
-            risk: { select: { title: true } },
-        },
-        orderBy: { targetDate: 'asc' },
-        take: 1000,
-    });
+    const plans = await scanBothSides(
+        'TREATMENT_PLAN',
+        1000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.riskTreatmentPlan.findMany({
+                where: { ...where, targetDate: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    riskId: true,
+                    ownerUserId: true,
+                    targetDate: true,
+                    risk: { select: { title: true } },
+                },
+                orderBy: { targetDate: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const p of plans) {
@@ -423,7 +521,8 @@ async function scanTreatmentPlans(
 async function scanTreatmentMilestones(
     now: Date,
     maxWindow: number,
-    tenantId?: string,
+    tenantId: string | undefined,
+    capped: string[],
 ): Promise<DueItem[]> {
     const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
     const where: Prisma.TreatmentMilestoneWhereInput = {
@@ -433,20 +532,28 @@ async function scanTreatmentMilestones(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const milestones = await prisma.treatmentMilestone.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            dueDate: true,
-            treatmentPlan: {
-                select: { id: true, ownerUserId: true, riskId: true },
-            },
-        },
-        orderBy: { dueDate: 'asc' },
-        take: 2000,
-    });
+    const milestones = await scanBothSides(
+        'TREATMENT_MILESTONE',
+        2000,
+        now,
+        horizon,
+        capped,
+        (range, order, take) =>
+            prisma.treatmentMilestone.findMany({
+                where: { ...where, dueDate: range },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    title: true,
+                    dueDate: true,
+                    treatmentPlan: {
+                        select: { id: true, ownerUserId: true, riskId: true },
+                    },
+                },
+                orderBy: { dueDate: order },
+                take,
+            }),
+    );
 
     const items: DueItem[] = [];
     for (const m of milestones) {
@@ -575,6 +682,10 @@ export async function runDeadlineMonitor(
         // transition emits one TREATMENT_PLAN_MARKED_OVERDUE audit row.
         await transitionPlansToOverdue(now, options.tenantId);
 
+        // Sources whose scan hit its cap this run (#5202). Never silent: a
+        // capped source is logged and returned with the result.
+        const capped: string[] = [];
+
         // Run all scanners in parallel
         const [
             controls,
@@ -585,13 +696,13 @@ export async function runDeadlineMonitor(
             treatmentPlans,
             treatmentMilestones,
         ] = await Promise.all([
-            scanControls(now, maxWindow, options.tenantId),
-            scanPolicies(now, maxWindow, options.tenantId),
-            scanTasks(now, maxWindow, options.tenantId),
-            scanRisks(now, maxWindow, options.tenantId),
-            scanTestPlans(now, maxWindow, options.tenantId),
-            scanTreatmentPlans(now, maxWindow, options.tenantId),
-            scanTreatmentMilestones(now, maxWindow, options.tenantId),
+            scanControls(now, maxWindow, options.tenantId, capped),
+            scanPolicies(now, maxWindow, options.tenantId, capped),
+            scanTasks(now, maxWindow, options.tenantId, capped),
+            scanRisks(now, maxWindow, options.tenantId, capped),
+            scanTestPlans(now, maxWindow, options.tenantId, capped),
+            scanTreatmentPlans(now, maxWindow, options.tenantId, capped),
+            scanTreatmentMilestones(now, maxWindow, options.tenantId, capped),
         ]);
 
         const items = [
@@ -630,6 +741,7 @@ export async function runDeadlineMonitor(
             total: items.length,
             ...counts,
             byEntity,
+            cappedSources: capped,
         });
 
         const durationMs = Math.round(performance.now() - startMs);
@@ -644,7 +756,7 @@ export async function runDeadlineMonitor(
             itemsScanned: items.length,
             itemsActioned: counts.overdue + counts.urgent,
             itemsSkipped: counts.upcoming,
-            details: { counts, byEntity },
+            details: { counts, byEntity, cappedSources: capped },
         };
 
         return { result, items };

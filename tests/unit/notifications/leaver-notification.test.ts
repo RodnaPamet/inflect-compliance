@@ -12,12 +12,14 @@
  * surface is a plain object, and the templates are exercised for real so the
  * assertions are about rendered text rather than about the shape of a call.
  */
+import { withSkipDuplicates } from '../../helpers/outbox-double';
+
 const db = {
     tenantNotificationSettings: { findUnique: jest.fn() },
     identityAccountLink: { findMany: jest.fn() },
     tenantMembership: { findMany: jest.fn() },
     tenant: { findUnique: jest.fn() },
-    notificationOutbox: { create: jest.fn() },
+    notificationOutbox: withSkipDuplicates(jest.fn()),
 };
 
 jest.mock('@/lib/db-context', () => ({
