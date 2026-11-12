@@ -23,7 +23,7 @@
  */
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff-status';
 
-export const PROCESS_MAP_PROPOSALS_IMPLEMENTED: boolean = false;
+export const PROCESS_MAP_PROPOSALS_IMPLEMENTED: boolean = true;
 
 /**
  * The diff a row of a kind this release does not approve is shown with, or
