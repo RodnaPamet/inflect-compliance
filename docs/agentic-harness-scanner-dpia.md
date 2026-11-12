@@ -822,6 +822,7 @@ code statically under condition 15, as it already did. The ingest verifies it
 with the report and does not keep it as a column; what reaches storage is the
 `SPENDING_AGENT_UNDECLARED` finding it derives, which names the library and the
 locator, about a REGISTERED agent and keyed by the register row, so no person is
-profiled by it and no column that names a person is added. **This amendment awaits the
-owner's signature**: the reference scanner ships `/4` to a client estate only
-after the merge of the pull request carrying a signed version of this paragraph.
+profiled by it and no column that names a person is added. **The owner signed this
+amendment on 2026-11-12**: the merge of the pull request carrying this signed
+paragraph signs it, and the reference scanner may then ship `/4` to a client
+estate.

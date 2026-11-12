@@ -392,8 +392,8 @@ agentic IAM rule that a later break is a finding.
 
 **Where Phase 2 stands (2026-11-12).** 2.1, 2.2, 2.3 and 2.5 are built; 2.4
 waits for Web Bot Auth Phase 3's verifier. `/4` widens what the ingest
-accepts, so the scanner DPIA carries an amendment awaiting the owner's
-signature before the scanner ships `/4`. Phase 3 is not started: 3.1 needs
+accepts, so the scanner DPIA carries an amendment for it, which the owner
+signed on 2026-11-12; the scanner ships `/4` once that pull request merges. Phase 3 is not started: 3.1 needs
 a CHECK widening on `AgenticEvidenceArtefact.kind` and the per-agent emitter
 path, 3.2 a governance-pack report, and 3.3 the recertification pack section
 of 1.4. See
