@@ -89,6 +89,16 @@
         "reason": "The failure notifier for the weekly cross-repo restore-drill freshness check. It lives in a schedule-only workflow, so no pull_request can reach it; it fires on failure() || cancelled() of the freshness job and opens or comments on the restore-drill tracking issue.",
         "coveredBy": "tests/guards/restore-drill-freshness.test.ts runs on every PR and asserts this job exists, needs the freshness job, keeps the failure()-OR-cancelled() condition, holds job-level issues: write, and comments on an existing issue rather than opening a new one weekly."
     },
+    "retriever-benchmark.yml:bench": {
+        "kind": "never",
+        "reason": "Manual dispatch only. It downloads embedding and reranking models into Hugging Face TEI containers on a GitHub runner and spends up to four hours per candidate measuring them for owner decision D-L4-3; a record is a claim about named model revisions at one moment, not about the diff, and running it per PR would buy nothing but runner minutes.",
+        "coveredBy": "tests/unit/retriever-benchmark.test.ts runs on every PR: it re-derives the seed set's corpus from the seed and recomputes its hash, proves the scoring (recall@10, percentiles, every refusal scoreRecord makes, the D-L4-3 rule) on constructed records, and holds the workflow's shape (dispatch only, contents: read, the matrix equal to the candidate list, the TEI image by digest, records uploaded and never pushed). RESIDUAL: whether TEI serves each candidate, and the figures themselves, are known only when somebody dispatches it."
+    },
+    "retriever-benchmark.yml:summary": {
+        "kind": "never",
+        "reason": "The summary job of the same dispatch-only workflow: it downloads the bench jobs' record artifacts, recomputes every figure and applies the D-L4-3 rule to propose a candidate. No pull request can reach it because no pull request can reach the jobs it summarises.",
+        "coveredBy": "Its logic is the scoring module's summarise/decideD_L4_3, which tests/unit/retriever-benchmark.test.ts exercises on every PR, including the INCOMPLETE answer when a candidate has no scored record. RESIDUAL: the artifact download and the step summary run only on dispatch."
+    },
     "secret-rotation.yml:open-rotation-issue": {
         "kind": "never",
         "reason": "Cron-only (09:00 UTC on the 1st of Jan/Apr/Jul/Oct) plus workflow_dispatch for an off-cycle rotation after an exposure or a departure. A pull_request can never reach it, and that is the intent: it opens a rotation issue, so running it on every PR would mint an issue per PR.",

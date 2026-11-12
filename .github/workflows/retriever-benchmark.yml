@@ -1,0 +1,136 @@
+# ───────────────────────────────────────────────────────────────
+#  Retriever benchmark — the evidence for owner decision D-L4-3
+#  (docs/ai-architecture/nemotron-retriever.md, Phase 0.3-0.4)
+#
+#  D-L4-3: benchmark the Nemotron embed model against a small open model and
+#  keep the smaller unless recall@10 drops past a margin. This workflow
+#  produces that comparison: for each embed candidate it starts Hugging Face
+#  Text Embeddings Inference (CPU, by digest) on THIS RUNNER, embeds the
+#  200-pair seed set (tests/fixtures/rag/retriever-seed-set.json), and
+#  records recall@10 with and without each reranker plus p50/p95 latency.
+#
+#  ON A GITHUB RUNNER, NEVER ON THE PRODUCTION VM. The capacity rule holds
+#  any new container off the VM until capacity step C1, and a benchmark has
+#  no business sharing the app's CPU. So the latency figures are a GitHub
+#  runner's, and each record names the CPU it ran on; they are comparative
+#  across candidates, not a promise about the VM.
+#
+#  MANUAL ONLY, and no secret is required. HF_TOKEN is passed to the engine
+#  when the repository has one (for a gated model) and nothing changes when
+#  it does not. Candidates, image digest and margin live in
+#  scripts/retriever-benchmark/candidates.ts, reviewed like code, so the
+#  dispatch form has no inputs to type.
+#
+#  THE RECORDS ARE AN ARTIFACT, NOT A COMMIT (G11). A record is committed by
+#  a person or an agent through a pull request, whose CI recomputes it; this
+#  job holds `contents: read` and never pushes.
+#
+#  The texts sent to the engine are the set's synthetic questions and the
+#  seed's own policy text, to a container on 127.0.0.1. The only outbound
+#  traffic is the engine downloading model weights.
+# ───────────────────────────────────────────────────────────────
+name: Retriever benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retriever-benchmark
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    name: Benchmark (${{ matrix.embed }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      # Must equal EMBED_CANDIDATES' ids in scripts/retriever-benchmark/candidates.ts;
+      # tests/unit/retriever-benchmark.test.ts fails when they differ.
+      matrix:
+        embed:
+          - nemotron-embed-1b
+          - bge-small-en
+          - e5-small
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+
+      - name: Check the seed set is current
+        run: npx tsx scripts/retriever-benchmark/build-seed-set.ts
+
+      - name: Run the candidate and its rerankers
+        env:
+          EMBED: ${{ matrix.embed }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A candidate the engine cannot serve leaves a failure file, not a
+          # record; the records that did complete are still uploaded below.
+          status=0
+          npx tsx scripts/retriever-benchmark/run.ts bench \
+            --embed "${EMBED}" \
+            --out retriever-records \
+            --failures retriever-failures || status=$?
+          echo "status=${status}" >> "$GITHUB_ENV"
+
+      - name: Upload the records
+        uses: actions/upload-artifact@v7
+        with:
+          name: retriever-records-${{ matrix.embed }}
+          path: retriever-records/*.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload what could not run, for diagnosis
+        uses: actions/upload-artifact@v7
+        with:
+          name: retriever-failures-${{ matrix.embed }}
+          path: retriever-failures/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Fail if a stage could not run
+        run: |
+          if [ "${status:-1}" != "0" ]; then
+            echo "::error::At least one stage could not run; see the failures artifact."
+            exit 1
+          fi
+
+  summary:
+    name: Summarise and propose
+    needs: bench
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+
+      - name: Download every candidate's records
+        uses: actions/download-artifact@v8
+        with:
+          pattern: retriever-records-*
+          path: retriever-records
+          merge-multiple: true
+
+      - name: Recompute every figure and apply the D-L4-3 rule
+        run: |
+          set -euo pipefail
+          npx tsx scripts/retriever-benchmark/run.ts summarize \
+            --records retriever-records \
+            --out retriever-summary.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the summary
+        uses: actions/upload-artifact@v7
+        with:
+          name: retriever-summary
+          path: retriever-summary.json
+          retention-days: 30

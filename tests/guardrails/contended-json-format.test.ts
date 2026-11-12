@@ -144,7 +144,12 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-10 for `vm-check.yml:vm-check`, the dispatch-only
         // read-only checks of the production VM from a fixed list. Its key
         // sorts after `vm-capacity`, so it is an append again, +5/-0.
-        keyOrderSha: 'cbbac2c896e484eb61a3c42a6994a19abda1f295260c4270fdd6677050944324',
+        //
+        // Updated 2026-11-11 for `retriever-benchmark.yml:bench` and
+        // `retriever-benchmark.yml:summary`, the dispatch-only benchmark that
+        // decides D-L4-3 on a GitHub runner. Inserted in ALPHABETICAL position
+        // before `secret-rotation.yml`, so no neighbour's brace moved, +10/-0.
+        keyOrderSha: '28e7b2cbf427fcec1ca570a51007d4bd8a928ef2c05f37d05e7ad2faf9d6e3e3',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
