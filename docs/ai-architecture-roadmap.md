@@ -114,7 +114,7 @@ flowchart LR
     MO["NVIDIA Morpheus<br/>CPU detector built, off by default"]:::partial
     NG["NeMo Guardrails<br/>provider seam built; no server"]:::partial
     NC["NemoClaw<br/>reference only; runtime declined"]:::partial
-    PR["Microsoft Presidio<br/>EN + BG record; seam in progress"]:::partial
+    PR["Microsoft Presidio<br/>EN + BG record; PiiDetector seam"]:::partial
     WB["Web Bot Auth (added)<br/>key directory served; nothing signs yet"]:::partial
     MA["Mastercard Agent Pay (added)<br/>spending authority on the register"]:::partial
   end
@@ -159,9 +159,10 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   deployed (Phase 1.3, held by the capacity rule until C1), and three callers
   that scan inside a tenant transaction (A2A reply delivery, questionnaire
   autofill, risk suggestions) consult the patterns provider only, recording
-  `notConsulted: ['nemo']`. The client dials through `safeFetch`, which refuses
-  `http:` and private addresses; under G6 as amended on 2026-11-12 the
-  in-deployment server is dialled inside the perimeter instead.
+  `notConsulted: ['nemo']`. The client dials the server through the
+  in-deployment rule (`src/lib/ai/in-deployment-service.ts`, G6 as amended on
+  2026-11-12), not `safeFetch`, so a NeMo container on the Compose network is
+  reachable and an address outside the deployment is refused.
 - **Applied three ways at the tool boundary** (`flue/tools-adapter.ts`):
   egress on args before the funnel; injection on results before context;
   egress on result text before a third-party provider. The engine-neutral
@@ -183,8 +184,13 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   (`tests/fixtures/pii/`), Bulgarian recognisers in the detector image's
   sources (`guards/presidio/`, which no CI job builds yet), and the first
   precision/recall record (`evals/pii/records/`), a development-set figure that
-  is not yet a mount condition. The `PiiDetector` seam (Phase 1) is in
-  progress on a parallel branch and not built here; no detector is deployed.
+  is not yet a mount condition. The `PiiDetector` seam (Phase 1.2–1.4,
+  `src/lib/ai/pii/`) is built: a stub default, a Presidio client on the
+  in-deployment dial, an egress use that fails closed when the detector is
+  unavailable, and a mount gate that registers the provider only with a passing
+  record. No detector is deployed (Phase 1.1, held by C1), and no record can
+  mount until a held-out corpus carries at least `PII_MIN_SUPPORT` cases per
+  type and locale (D-L1-11).
 - **Run input is scanned before any engine sees it** (F5, closed 2026-11-11,
   re-verified against 3.364.1). The admission scan in `startWorkflowRun`
   (#3468) runs before engine selection, and
@@ -349,9 +355,9 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
     `RerankProvider` with fallback, a revision key carrying the rerank model,
     and a served-model check that compares the container's `model_id`
     exactly. Operator variables `AI_EMBED_LOCAL_*` and `AI_RERANK_LOCAL_*`.
-    It dials an in-deployment address inside the perimeter
-    (`perimeter.ts`), not through `safeFetch` — the pattern G6 as amended
-    names. There is no external embedding route, so no sub-processor changed.
+    It dials an in-deployment address through the shared in-deployment rule
+    (`src/lib/ai/in-deployment-service.ts`), not through `safeFetch`, as G6
+    as amended requires. There is no external embedding route, so no sub-processor changed.
     No `tei-embed` or `tei-rerank` container is deployed (Phase 1.1, held by
     C1).
   - *Vector store* (`src/app-layer/repositories/VectorRepository.ts`, the only
@@ -370,10 +376,10 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   - *Document parsing* (`src/lib/ai/parsing/`, parser Phase 1.1, 1.2, 1.4,
     1.7): a `DocumentParser` seam with a paragraph stub as the default and a
     docling-serve client (D-L4-4), read from `DOC_PARSER_BASE_URL` /
-    `DOC_PARSER_API_KEY`. The client sends through `wirePost` and `safeFetch`,
-    one of the SSRF guard's four wire clients, so a Docling container on the
-    Compose network is refused today until it moves to the in-deployment dial
-    (G6 as amended). No parsing service is deployed (Phase 1.3, held by C1).
+    `DOC_PARSER_API_KEY`. The client dials through the in-deployment rule
+    (`src/lib/ai/in-deployment-service.ts`, G6 as amended), so a Docling
+    container on the Compose network is reachable and an outside address is
+    refused. No parsing service is deployed (Phase 1.3, held by C1).
 - **The RAG and retriever evaluation sets exist; no harness or record does.**
   Ragas Phase 0 put a 52-case set at `evals/rag/sets/seed-policies.json` and a
   record schema (`src/lib/ai/evals/rag-record.ts`), grounded on the three
@@ -520,12 +526,14 @@ a new framework cannot miss one; G12 and G13 are the owner's decisions of
   sets, read by exactly one module, never tenant-writable — must resolve to an
   address **inside** the deployment (private, loopback or ULA, and every
   address it resolves to), and is dialled with a deadline and a byte cap that
-  aborts the transfer rather than truncating it. The pattern is the embedding
-  seam's `src/lib/ai/embeddings/perimeter.ts`, whose address test is the
-  inverse of `safeFetch`'s: `safeFetch` admits only public addresses, which for
-  a service that must stay inside the deployment is exactly the wrong set. The
-  NeMo and Docling clients still dial through `safeFetch` and move to the
-  in-deployment dial before their Compose services land.
+  aborts the transfer rather than truncating it. The one dial is
+  `src/lib/ai/in-deployment-service.ts`, whose address test is the inverse of
+  `safeFetch`'s: `safeFetch` admits only public addresses, which for a service
+  that must stay inside the deployment is exactly the wrong set. Its
+  `IN_DEPLOYMENT_SERVICES` table names each service, its variable and its one
+  reader — the parser, NeMo, the embedder, the reranker and the PII detector —
+  and `tests/guards/ssrf-egress-coverage.test.ts` derives each variable's
+  readers from the tree and requires exactly one.
 - **G7 — Tenant data gets RLS and a two-tenant behavioural test.** Vectors
   live in Postgres under RLS (pgvector, D-L4-1). A store outside Postgres —
   Weaviate, only if the vector store's conditional Phase 4 is triggered —
@@ -767,7 +775,7 @@ completion.
 
 | Framework | Layer | Child roadmap | Wave | Status | Phase on `main` | Complete at | Decisions open |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | Phase 0 done: D-L1-1's scope, an EN + BG fixture corpus, Bulgarian recognisers, the first precision/recall record ([note](./implementation-notes/2026-11-11-pii-redaction-decision.md)); Phase 1, the `PiiDetector` seam, **in progress** on a parallel branch, not built; no detector deployed | 0 | 3 | D-L1-11 |
+| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | Phase 0 done: D-L1-1's scope, an EN + BG fixture corpus, Bulgarian recognisers, the first precision/recall record ([note](./implementation-notes/2026-11-11-pii-redaction-decision.md)); Phase 1.2–1.4 built: the `PiiDetector` seam on the in-deployment dial, fail-closed egress use, record mount gate; 1.1 (the `presidio` container) open, held by C1; no detector deployed | 0 | 3 | D-L1-11 |
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | Phase 0's done-when met: F5 closed, D-L1-2 decided; 0.2 (the rail-by-rail list) and 0.3 (the garak baseline) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.5: `GuardProvider`, worst-of, a fail-closed NeMo client); 1.3, the server and its rails, held by C1; nothing runs | 0 | 3, LLM-backed rails by API key | — |
 | Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | Phase 0 — signal defined; seeded check (0.2) open. Phase 1 partly: the `agent-fingerprint` CPU detector built (1.1, 1.2, 1.4), off by default under three keys, thresholds unmeasured; 1.3 open | — | 1, the CPU detector | — |
 | NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | Phase 0 done; reference-only, runtime and router declined (D-L1-4, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)); Phase 1 — two collector-policy tightenings | 0 | 1 | D-L1-12 |
@@ -830,7 +838,7 @@ timeline
            : Agent-flow canvas 1-4, view every agent, author, preview, 1 done, 2 partly
            : Agent Pay 0-1, spending authority on the register, 1 partly built
   section Guards
-    Wave 3 : Presidio 0-3, PII redaction, 0 done, 1 in progress
+    Wave 3 : Presidio 0-3, PII redaction, 0 done, 1 seam built
            : NeMo Guardrails 0-3, LLM rails by API key, 0 met, 1 seam built
            : Garak 2-3, blocking
            : Morpheus 0-1, CPU detector, 1 partly built
