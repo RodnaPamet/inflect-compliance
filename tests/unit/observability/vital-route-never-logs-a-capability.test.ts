@@ -122,7 +122,6 @@ describe('the web-vitals beacon label carries no capability either', () => {
                 }),
             },
         }));
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const mod = require('@/lib/observability/web-vitals');
         return { mod, recorded };
     };
