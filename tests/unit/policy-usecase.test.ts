@@ -56,7 +56,8 @@ jest.mock('@/app-layer/repositories/PolicyVersionRepository', () => ({
 }));
 
 jest.mock('@/app-layer/repositories/PolicyApprovalRepository', () => ({
-    PolicyApprovalRepository: {},
+    // Archive and restore close open approval requests (#5149).
+    PolicyApprovalRepository: { supersedePending: jest.fn().mockResolvedValue({ count: 0 }) },
 }));
 
 jest.mock('@/app-layer/repositories/PolicyTemplateRepository', () => ({
@@ -93,6 +94,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
 import { PolicyVersionRepository } from '@/app-layer/repositories/PolicyVersionRepository';
+import { PolicyApprovalRepository } from '@/app-layer/repositories/PolicyApprovalRepository';
 import { PolicyTemplateRepository } from '@/app-layer/repositories/PolicyTemplateRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
@@ -417,6 +419,10 @@ describe('archivePolicy', () => {
         expect(payload.action).toBe('POLICY_ARCHIVED');
         expect(payload.detailsJson.fromStatus).toBe('PUBLISHED');
         expect(payload.detailsJson.toStatus).toBe('ARCHIVED');
+        // The open approval request is closed with the archive (#5149).
+        expect(PolicyApprovalRepository.supersedePending).toHaveBeenCalledWith(
+            mockDb, adminCtx, 'p-1', expect.stringMatching(/archived/i),
+        );
     });
 
     it('throws notFound when policy missing', async () => {
