@@ -8,6 +8,7 @@
 import {
     checkAgentFlow,
     compileFlow,
+    describeFlowForReview,
     flowToolNames,
     flowToolsAgree,
     FLOW_MAX_NODES,
@@ -18,7 +19,8 @@ import {
 } from '@/lib/agentic/agent-flow';
 import { runMessage } from '@/lib/agentic/flue/run-message';
 import { AgentProfileVersionSchema } from '@/app-layer/schemas/agent-profile.schemas';
-import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import type { WorkflowDefinition, ProfileRunSpec } from '@/lib/agentic/workflow-types';
+import { assertEngineRunsProfiles } from '@/app-layer/usecases/agent-profile-runs';
 
 const READ = (key: string, tool = 'list_risks') => ({ key, kind: 'read' as const, label: `read ${key}`, tool });
 const PROPOSE = (key: string, tool = 'propose_risks') => ({ key, kind: 'propose' as const, label: `propose ${key}`, tool });
@@ -159,5 +161,63 @@ describe('the request body', () => {
         expect(both.success).toBe(false);
         expect(JSON.stringify(both.error?.issues)).toContain('FLOW_TOOLS_ARE_DERIVED');
         expect(AgentProfileVersionSchema.safeParse(base).success).toBe(false);
+    });
+});
+
+describe('what the approver is shown is everything the hash covers', () => {
+    const SUB = (key: string, profileRef = 'prof-rater') => ({ key, kind: 'subagent' as const, label: `delegate ${key}`, profileRef });
+    const base = ok({
+        nodes: [READ('a'), SUB('b'), SYNTH('c')],
+        edges: [{ from: 'a', to: 'b' }, { from: 'b', to: 'c' }],
+    });
+    const text = describeFlowForReview(base);
+
+    it('lists every step in run order with its key, tool and profile reference, then every connection', () => {
+        expect(text.split('\n')).toEqual([
+            '1. [READ] read a (tool: list_risks) {a}',
+            '2. [SUBAGENT] delegate b {b} (profile: prof-rater)',
+            '3. [SYNTHESIS] answer c {c}',
+            '',
+            'a -> b',
+            'b -> c',
+        ]);
+    });
+
+    it('a change to any stored fact of the flow changes the text the reviewer reads', () => {
+        const variants: AgentFlow[] = [
+            ok({ nodes: [{ ...READ('a'), label: 'read a, and every owner email' }, SUB('b'), SYNTH('c')], edges: base.edges }),
+            ok({ nodes: [READ('a', 'list_controls'), SUB('b'), SYNTH('c')], edges: base.edges }),
+            ok({ nodes: [READ('a'), SUB('b', 'prof-other'), SYNTH('c')], edges: base.edges }),
+            ok({ nodes: [READ('a'), SUB('b'), SYNTH('c')], edges: [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }] }),
+            ok({ nodes: [READ('a'), SUB('b'), SYNTH('c')], edges: [{ from: 'b', to: 'c' }] }),
+        ];
+        for (const v of variants) {
+            expect(serializeAgentFlow(v)).not.toBe(serializeAgentFlow(base));
+            expect(describeFlowForReview(v)).not.toBe(text);
+        }
+    });
+
+    it('a flow with no connections says so rather than showing nothing', () => {
+        expect(describeFlowForReview(ok({ nodes: [READ('a')], edges: [] })).split('\n').at(-1)).toBe('(no connections)');
+    });
+});
+
+describe('admission: a drawn flow runs on no engine before Phase 5', () => {
+    const spec = (flow?: ProfileRunSpec['flow']): ProfileRunSpec =>
+        ({ ...(flow ? { flow } : {}) }) as unknown as ProfileRunSpec;
+    const reasonOfCall = (fn: () => void): string => {
+        try {
+            fn();
+        } catch (err) {
+            return String((err as { details?: { reason?: unknown } }).details?.reason);
+        }
+        return 'NO_REFUSAL';
+    };
+
+    it('a subagent step is never handed to an engine that cannot delegate: every engine refuses the flow', () => {
+        const compiled = compileFlow(ok({ nodes: [READ('a'), { key: 'b', kind: 'subagent', label: 'rate', profileRef: 'p' }], edges: [] }));
+        expect(reasonOfCall(() => assertEngineRunsProfiles('tool-runner', spec(compiled)))).toBe('PROFILE_FLOW_NOT_RUNNABLE');
+        expect(reasonOfCall(() => assertEngineRunsProfiles('tool-runner', spec()))).toBe('NO_REFUSAL');
+        expect(reasonOfCall(() => assertEngineRunsProfiles('static', spec(compiled)))).toBe('PROFILE_NEEDS_REASONING_ENGINE');
     });
 });

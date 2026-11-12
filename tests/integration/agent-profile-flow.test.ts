@@ -7,8 +7,9 @@
  * grants, sanitised, encrypted at rest, frozen by the version trigger, and
  * covered by the content hash the approver names and the resolver recomputes.
  *
- * The flag is mocked at the env boundary, as `agent-profiles.test.ts` does; the
- * usecases, the resolver and the database are real.
+ * The flag is mocked at the env boundary, as `agent-profiles.test.ts` does, and
+ * so is the tenant's engine decision (the Tool Runner, the one engine that runs
+ * profiles); the usecases, the resolver, admission and the database are real.
  */
 jest.mock('@/env', () => {
     const actual = jest.requireActual('@/env') as { env: Record<string, unknown> };
@@ -18,6 +19,11 @@ jest.mock('@/env', () => {
         }),
     };
 });
+
+jest.mock('@/lib/agentic/agent-driver-policy', () => ({
+    ...jest.requireActual('@/lib/agentic/agent-driver-policy'),
+    resolveDriverForRun: jest.fn(async () => ({ driver: 'tool-runner', reason: null })),
+}));
 
 import { PrismaClient, type Role } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -36,6 +42,7 @@ import {
     submitAgentProfileVersion,
 } from '@/app-layer/usecases/agent-profiles';
 import { resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
+import { startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { serializeAgentFlow } from '@/lib/agentic/agent-flow';
@@ -58,6 +65,8 @@ const AGENTS = {
     sub: `ag-sub-${SUITE}`,
     delegator: `ag-dele-${SUITE}`,
     tamper: `ag-tamper-${SUITE}`,
+    runner: `ag-runner-${SUITE}`,
+    rater: `ag-rater-${SUITE}`,
     b: `ag-b-${SUITE}`,
 };
 
@@ -110,6 +119,8 @@ async function reasonOf(p: Promise<unknown>): Promise<string> {
 
 async function cleanup(): Promise<void> {
     const tenants = [TA, TB];
+    await prisma.workflowStep.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => {});
+    await prisma.workflowRun.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => {});
     await prisma.agentProfileVersion.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => {});
     await prisma.agentProfile.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => {});
     await prisma.registeredAgentTool.deleteMany({ where: { tenantId: { in: tenants } } }).catch(() => {});
@@ -173,6 +184,8 @@ describeFn('the flow inside the profile version (real DB)', () => {
         await agent(TA, AGENTS.sub, USERS.authorA, ['list_risks']);
         await agent(TA, AGENTS.delegator, USERS.authorA, both);
         await agent(TA, AGENTS.tamper, USERS.authorA, both);
+        await agent(TA, AGENTS.runner, USERS.authorA, both);
+        await agent(TA, AGENTS.rater, USERS.authorA, ['list_risks']);
         await agent(TB, AGENTS.b, USERS.authorB, ['list_risks']);
     });
 
@@ -216,6 +229,38 @@ describeFn('the flow inside the profile version (real DB)', () => {
             'Summarise by owner',
         ]);
         expect(stored?.nodes.map((n) => n.key)).toEqual(['risks', 'controls', 'answer']);
+    });
+
+    it('a flow version is admitted on no engine before Phase 5, and no run row is written', async () => {
+        // A subagent step is the case that matters: no engine can hand work to
+        // another profile, so running it would record a delegation that never
+        // happened. Every flow is refused, so no drawn step is ever a line the
+        // model cannot act on.
+        const rater = await approved('A', AGENTS.rater, plainVersion());
+        const target = await approved('A', AGENTS.runner, plainVersion());
+        const flowVersion = await createAgentProfileVersion(
+            authorA(),
+            AGENTS.runner,
+            version({
+                flow: {
+                    nodes: [
+                        { key: 'risks', kind: 'read', label: 'Gather risks', tool: 'list_risks' },
+                        { key: 'rate', kind: 'subagent', label: 'Ask the risk agent to rate each risk', profileRef: rater.profileId },
+                    ],
+                    edges: [{ from: 'risks', to: 'rate' }],
+                },
+            }),
+        );
+        await submitAgentProfileVersion(authorA(), AGENTS.runner, 2);
+        await approveAgentProfileVersion(reviewerA(), AGENTS.runner, 2, { instructionsHash: flowVersion.instructionsHash });
+        const key = profileRunKey(target.profileId, 2);
+
+        // It resolves: created, approved by a second person, and compiled.
+        const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.runner }), key);
+        expect(def.profile?.flow?.stepsSpec.map((s) => s.kind)).toEqual(['READ', 'SUBAGENT']);
+        // It does not run, on the one engine that runs profiles.
+        expect(await reasonOf(startWorkflowRun(authorA({ agentId: AGENTS.runner }), key))).toBe('PROFILE_FLOW_NOT_RUNNABLE');
+        expect(await prisma.workflowRun.count({ where: { tenantId: TA, workflowKey: key } })).toBe(0);
     });
 
     it('a flow with no propose node runs read-only, even when the version may propose', async () => {

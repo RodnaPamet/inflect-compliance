@@ -497,8 +497,10 @@ export async function startWorkflowRun(
     // known and before the run row exists, so the refusal leaves nothing behind
     // and names its reason. Only the Tool Runner runs a profile (`runsProfiles`,
     // since #4150); Flue stays false by the owner's decision of 2026-10-26, and
-    // the static engine cannot.
-    if (def.profile) assertEngineRunsProfiles(chosenDriver);
+    // the static engine cannot. No engine runs a version carrying a drawn flow
+    // before Phase 5 of `docs/ai-architecture/langflow.md`
+    // (`PROFILE_FLOW_NOT_RUNNABLE`).
+    if (def.profile) assertEngineRunsProfiles(chosenDriver, def.profile);
 
     // ── A FLUE RUN MUST BE VOUCHED FOR BY THE REGISTER ──────────────────────
     //

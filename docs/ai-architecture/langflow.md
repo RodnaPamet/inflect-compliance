@@ -255,7 +255,7 @@ reasoning engine receives. No UI yet.
 
 **Status: done** (branch `wf/agent-flow-phase1`; implementation note
 `docs/implementation-notes/2026-11-11-agent-flow-phase1.md`). Four facts the
-build settled that the sub-phases below did not say:
+build and its review settled that the sub-phases below did not say:
 - The content hash keeps its column name, `instructionsHash`. With no flow it
   is the instructions' hash byte for byte, so every existing version and run pin
   still verifies; with a flow it covers both (`profileContentHash`).
@@ -269,6 +269,18 @@ build settled that the sub-phases below did not say:
 - `profileRef` is an `AgentProfile` id. A profile naming itself is refused
   (`FLOW_SUBAGENT_SELF`); a longer loop through another profile's flow is not
   yet detected, and nothing runs a `subagent` node before Phase 5.
+- No engine runs a flow version (`runsFlows`, false for every engine in
+  `src/lib/agentic/agent-profile.ts`): admission refuses it with
+  `PROFILE_FLOW_NOT_RUNNABLE` before the run row exists, even on the Tool
+  Runner, which has run profiles since Step 2c. A `subagent` step would
+  otherwise reach a model with no way to delegate, and the run would record a
+  delegation that never happened. Phase 5 turns an entry on.
+- The approver is shown what the hash covers. "No UI yet" held for authoring,
+  but not for review: the Behaviour tab renders a version's flow as text
+  (`describeFlowForReview`: every step in run order with its key, tool and
+  profile reference, then every connection), diffs it against the version in
+  force beside the instructions, and its hash note names the flow. A flow
+  version's Test run is disabled and says why.
 
 **Sub-phases.**
 - [x] 1.1 `src/lib/agentic/agent-flow.ts`: a strict zod schema for a flow.
@@ -344,12 +356,10 @@ rls-coverage, schema-index-coverage) and the fresh-DB migration gate are green.
   hand.
 
 **Done when.** A version with a flow can be created, approved by a second
-person and resolved through `agent-profile:<id>@v<n>`. Met. The roadmap
-expected admission to refuse it on every engine, but the Tool Runner has run
-profiles since Step 2c, so a flow version runs there today: its steps are
-listed, in order and whole, in the run message, its tools are the flow's tools
-intersected with the grants, and a flow with no propose node runs read-only.
-Order stays advice until Phase 5.
+person and resolved through `agent-profile:<id>@v<n>`. Admission still refuses
+it on every engine. That is correct until Phase 5. Met: the Tool Runner runs
+profiles since Step 2c, so the refusal is `PROFILE_FLOW_NOT_RUNNABLE`
+(`runsFlows`) rather than `runsProfiles`.
 
 ### Phase 2 — View every agent on the canvas
 

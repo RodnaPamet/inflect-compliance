@@ -13361,6 +13361,7 @@
       },
       "field": {
         "instructions": "Instructions",
+        "flow": "Drawn flow: the steps, in the order the agent is told to follow them, then every connection",
         "tools": "Tools",
         "skills": "Skills",
         "modelTier": "Model tier",
@@ -13402,6 +13403,8 @@
       "review": {
         "diffIntro": "Changes from version {from}, in force now, to version {to}:",
         "hashNote": "Approving approves this text, by its hash:",
+        "flowDiffIntro": "Changes to the drawn flow from version {from}, in force now, to version {to}:",
+        "hashNoteWithFlow": "Approving approves this text and this drawn flow, together, by their hash:",
         "authorCannotDecide": "You wrote this version, so another person must approve or reject it.",
         "approve": "Approve",
         "reject": "Reject"
@@ -13412,7 +13415,8 @@
           "ENGINE_DOES_NOT_RUN_PROFILES": "This workspace runs agents on the {engine}, which does not run agent profiles. An owner can choose the Tool Runner engine under Admin → AI features → Agent engines.",
           "ENGINE_NOT_IN_FORCE": "This workspace has chosen the Tool Runner engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
-          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them."
+          "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
+          "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it."
         },
         "engine": {
           "STATIC": "built-in engine",

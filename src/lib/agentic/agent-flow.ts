@@ -328,3 +328,31 @@ export function compileFlow(flow: AgentFlow): CompiledFlow {
 export function renderFlowStep(step: FlowStepSpec, position: number): string {
     return `${position}. [${step.kind}] ${step.label}${step.tool ? ` (tool: ${step.tool})` : ''}`;
 }
+
+/**
+ * THE FLOW AS THE APPROVER READS IT: every fact the content hash covers, as
+ * plain text, so a second person never approves a flow they were not shown.
+ *
+ * The steps come first, in the order the run message would list them
+ * (`renderFlowStep`, so the reviewer reads the model's own lines), each with
+ * its key and, for a `subagent` step, the profile it names; then every
+ * connection. Nothing the stored flow carries is left out: a change to a
+ * label, a tool, a profile reference, the order or a connection changes this
+ * text, which is why the Behaviour tab renders it and diffs it beside the
+ * instructions. Language-neutral on purpose, because it is the specification,
+ * not a translation of it. Pure, so the client renders what the server hashed.
+ */
+export function describeFlowForReview(flow: AgentFlow): string {
+    const order = topologicalOrder(flow) ?? flow.nodes;
+    const steps = order.map((n, i) => {
+        const line = renderFlowStep(
+            n.kind === 'read' || n.kind === 'propose'
+                ? { kind: SPEC_KIND[n.kind], label: n.label, tool: n.tool }
+                : { kind: SPEC_KIND[n.kind], label: n.label },
+            i + 1,
+        );
+        return `${line} {${n.key}}${n.kind === 'subagent' ? ` (profile: ${n.profileRef})` : ''}`;
+    });
+    const edges = canonicalFlow(flow).edges.map((e) => `${e.from} -> ${e.to}`);
+    return [...steps, '', ...(edges.length > 0 ? edges : ['(no connections)'])].join('\n');
+}

@@ -29,7 +29,10 @@
  * A version carrying a FLOW (Phase 1 of `docs/ai-architecture/langflow.md`) is
  * compiled with it: the content hash recomputed covers the flow, a stored flow
  * this build cannot read or whose tools disagree with `toolNames` resolves to
- * nothing, and a flow with no propose node makes the definition read-only.
+ * nothing, and a flow with no propose node makes the definition read-only. It
+ * RESOLVES but does not RUN: admission refuses it on every engine
+ * (`PROFILE_FLOW_NOT_RUNNABLE`, `runsFlows`) until Phase 5 gives an engine a
+ * way to perform every step a flow can draw, a `subagent` step included.
  *
  * THE WORKER does not resolve by approval: it executes what admission PINNED.
  * `resolvePinnedRunDefinition` rebuilds the definition from the run's own
@@ -50,6 +53,7 @@ import {
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    runsFlows,
     runsProfiles,
     type ProfileSkillRef,
     type ProfileTrigger,
@@ -66,6 +70,7 @@ export type ProfileRunRefusal =
     | 'PROFILE_HASH_MISMATCH'
     | 'PROFILE_NEEDS_REASONING_ENGINE'
     | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
+    | 'PROFILE_FLOW_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
     | 'PROFILE_TRIGGER_NOT_ALLOWED';
 
@@ -308,15 +313,21 @@ export async function resolvePinnedRunDefinition(
     );
     if (!row || row.profile.id !== parsed.profileId || row.version !== parsed.version) return undefined;
     if (profileContentHash(row.instructions, row.flowJson) !== run.profileInstructionsHash) return undefined;
-    return compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun }) ?? undefined;
+    const def = compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun });
+    // Admission refuses a flow version on every engine; a run carrying one was
+    // not admitted by this build, so it continues as nothing.
+    if (!def || (def.profile?.flow && !runsFlows(def.driver ?? 'static'))) return undefined;
+    return def;
 }
 
 /**
- * Admission's check that the chosen engine can run a profile. Called after the
- * engine is chosen and before the run row exists, so a refusal leaves nothing
- * behind.
+ * Admission's check that the chosen engine can run THIS profile version. Called
+ * after the engine is chosen and before the run row exists, so a refusal leaves
+ * nothing behind. It takes the profile, not only the engine, so a caller cannot
+ * ask whether an engine runs profiles and forget to ask whether it runs the
+ * version's flow.
  */
-export function assertEngineRunsProfiles(driver: AgentDriver): void {
+export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRunSpec): void {
     if (!isReasoningEngine(driver)) {
         throw refuse(
             'PROFILE_NEEDS_REASONING_ENGINE',
@@ -328,6 +339,15 @@ export function assertEngineRunsProfiles(driver: AgentDriver): void {
             'PROFILE_ENGINE_CANNOT_RUN_PROFILES',
             `The ${driver} engine does not run agent profiles. A profile runs once an engine that renders its ` +
                 'instructions is available.',
+        );
+    }    // A drawn flow runs only on an engine that performs every step it can
+    // draw. None does before Phase 5: a `subagent` step would be a line the
+    // model cannot act on, recorded as drawn and never performed.
+    if (profile.flow && !runsFlows(driver)) {
+        throw refuse(
+            'PROFILE_FLOW_NOT_RUNNABLE',
+            'This version carries a drawn flow, and no engine performs a drawn flow yet. Write a version ' +
+                'without a flow to run this profile.',
         );
     }
 }

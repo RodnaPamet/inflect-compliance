@@ -2,8 +2,9 @@
 
 **Commit:** `wf/agent-flow-phase1` — feat(agentic): a drawn flow as data on the agent profile version
 
-Phase 1 of `docs/ai-architecture/langflow.md`. No UI: the canvas (Phase 3)
-will write what this phase stores.
+Phase 1 of `docs/ai-architecture/langflow.md`. No authoring UI: the canvas
+(Phase 3) will write what this phase stores. The review surface does render a
+flow, because the approval hash covers it (see Decisions).
 
 ## Design
 
@@ -30,7 +31,12 @@ agent-profile-runs.ts  resolve: recompute content hash (PROFILE_HASH_MISMATCH)
                        compileFlow → ProfileRunSpec.flow, readOnly if no propose
      │
      ▼
-flue/run-message.ts    lists the flow's steps whole, in topological order
+workflow-runs.ts       admission: assertEngineRunsProfiles(driver, profile)
+                       refuses a flow on every engine (PROFILE_FLOW_NOT_RUNNABLE)
+                       until Phase 5; flue/run-message.ts can already list one
+
+BehaviourTab.tsx       renders describeFlowForReview(flow) and diffs it against
+                       the version in force; the hash note names the flow
 ```
 
 `src/lib/agentic/agent-flow.ts` is pure (zod and the leaf tool catalogue), so
@@ -49,6 +55,9 @@ Phase 3's canvas can hold the same schema the server enforces.
 | `src/app-layer/usecases/agent-profile-runs.ts` | Content hash at the resolver and the worker, compiled flow, read-only |
 | `src/lib/agentic/workflow-types.ts` | `ProfileRunSpec.flow` |
 | `src/lib/agentic/flue/run-message.ts` | Renders a flow's steps |
+| `src/lib/agentic/agent-profile.ts` | `runsFlows`: false for every engine until Phase 5 |
+| `src/app-layer/usecases/workflow-runs.ts` | Admission passes the profile, so a flow is refused before the run row |
+| `src/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/BehaviourTab.tsx`, `behaviour-types.ts`, `messages/*.json` | The reviewer is shown and diffed the flow; a flow version's Test run is disabled |
 
 ## Decisions
 
@@ -88,6 +97,22 @@ Phase 3's canvas can hold the same schema the server enforces.
   Self-reference is refused. A loop through another profile's flow is not
   detected yet: nothing executes a `subagent` node before Phase 5, where the
   delegation gate is the enforcement.
+- **A flow version does not run before Phase 5.** The roadmap's done-when said
+  admission refuses it "because `runsProfiles` is false", but the Tool Runner
+  has run profiles since Step 2c. Letting a flow run there would hand a model a
+  `subagent` step it has no tool to perform, and the run would settle COMPLETED
+  with the delegation recorded as drawn: the "looks enforced and is not" defect
+  the checkpoint refusal exists to prevent. So `runsFlows` is its own
+  `Record<AgentDriver, boolean>`, false everywhere, asked inside
+  `assertEngineRunsProfiles`, which now takes the profile so a caller cannot ask
+  one question without the other. The worker's pinned path refuses one too.
+- **The approver sees the flow.** Four-eyes approval sends a hash over the
+  instructions AND the flow, so the Behaviour tab renders every fact the hash
+  covers (`describeFlowForReview`: steps in run order with key, tool and
+  profile reference, then every connection, as text, never markup), diffs it
+  beside the instructions and names the flow in the hash note. Without it a
+  second person would approve model-directed labels they were never shown. The
+  rendering is language-neutral because it is the specification itself.
 - **No new route, no new permission.** The two version routes already parse the
   schema and call the usecase; `admin.agent_registry`, the audit rows and the
   404 when profiles are switched off are unchanged. Audit rows carry the node
@@ -104,7 +129,8 @@ Phase 3's canvas can hold the same schema the server enforces.
 - **Encryption.** A new manifest column is picked up by both rotation sweeps,
   which read the manifest. The fan-out encrypt path matches field names across
   models; no other model has a `flowJson` field.
-- **Exposure.** The whole surface sits behind `AGENT_PROFILES`, off by default.
+- **Exposure.** The whole surface sits behind `AGENT_PROFILES`, off by default,
+  and no flow version runs on any engine before Phase 5.
   A flow can only narrow: its tools are a subset of the grants at save, at
   approval and at run time, and it can make a run read-only, never the reverse.
 - **Blast radius of a bug.** A malformed stored flow makes that one version
