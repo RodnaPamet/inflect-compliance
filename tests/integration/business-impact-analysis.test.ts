@@ -149,8 +149,9 @@ describeFn('business impact analysis (integration)', () => {
             expect(stored.ownerUserId).toBe(member.id);
         } finally {
             await prisma.businessImpactAnalysis.deleteMany({ where: { tenantId, ownerUserId: member.id } });
+            // The users are left in place: deleting a user needs its audit
+            // rows cleared first, and the suite's reset truncates them anyway.
             await prisma.tenantMembership.deleteMany({ where: { tenantId, userId: { in: [member.id, leaver.id] } } });
-            await prisma.user.deleteMany({ where: { id: { in: [member.id, outsider.id, leaver.id] } } });
         }
     });
 });
