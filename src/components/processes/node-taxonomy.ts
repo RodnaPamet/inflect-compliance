@@ -88,7 +88,13 @@ import {
     Timer,
     // #3471 — the INVOKE_AGENT leaf.
     Bot,
+    // langflow.md Phase 3 — the agent-flow kinds.
+    Search,
+    Send,
+    Sparkles,
+    GitFork,
 } from 'lucide-react';
+import type { FlowNodeKind } from '@/lib/agentic/agent-flow';
 
 export type ProcessNodeKind =
     | 'processStep'
@@ -526,4 +532,18 @@ export const AGENT_VIEW_NODE_TAXONOMY: Record<AgentViewNodeKind, { icon: LucideI
     output: { icon: StickyNote, accent: 'neutral' },
     step: { icon: Box, accent: 'brand' },
     map: { icon: GroupIcon, accent: 'subtle' },
+};
+
+/**
+ * THE AGENT-FLOW EDITOR'S NODE KINDS (Phase 3 of
+ * `docs/ai-architecture/langflow.md`): the four kinds a flow may hold and the
+ * palette offers, and no checkpoint (D-L2-2). A record of their own for the
+ * reason the agent-view kinds have one: a flow step is stored in a profile
+ * version's `flowJson`, never in `ProcessNode.nodeType`.
+ */
+export const AGENT_FLOW_NODE_TAXONOMY: Record<FlowNodeKind, { icon: LucideIcon; accent: NodeAccent }> = {
+    read: { icon: Search, accent: 'brand' },
+    propose: { icon: Send, accent: 'warning' },
+    synthesis: { icon: Sparkles, accent: 'success' },
+    subagent: { icon: GitFork, accent: 'brand-secondary' },
 };

@@ -206,7 +206,7 @@ export async function agentProfilesOn(tenantSlug: string | null | undefined): Pr
  * The flag, then the key. The flag first, so a deployment without the surface
  * answers every caller the same 404 and says nothing about who may act.
  */
-async function assertMayManageProfiles(ctx: RequestContext): Promise<void> {
+export async function assertMayManageProfiles(ctx: RequestContext): Promise<void> {
     if (!(await agentProfilesOn(ctx.tenantSlug))) throw refuse('PROFILES_DISABLED', 'Not found.');
     if (ctx.permissions.canRead !== true || ctx.appPermissions?.admin?.agent_registry !== true) {
         throw new AppError('Agent profiles require admin.agent_registry.', 'FORBIDDEN', 403, true);
@@ -1323,3 +1323,40 @@ const TEST_RUN_UNAVAILABLE_MESSAGE: Record<Exclude<ProfileTestRunState, { availa
         'This workspace has chosen the Tool Runner engine, but it is not running on this deployment yet.',
     AGENT_NOT_READY: 'A Test run runs as the agent, so the agent must be active and risk-assessed.',
 };
+
+// ─── The flow editor's subagent picker (Phase 3 of langflow.md) ─────
+
+/** One profile a flow's `subagent` step may name. */
+export interface FlowSubagentOption {
+    profileId: string;
+    agentName: string;
+    version: number;
+}
+
+/**
+ * The profiles a `subagent` step may hand work to: APPROVED, in force, in this
+ * workspace, of an agent that is neither retired nor deleted, and never the
+ * agent's own. The rule `assertSubagentRefsApproved` applies at save and at
+ * approval, read here so the picker offers nothing the save would refuse. The
+ * save still asks: a picker is a convenience, the writer is the gate.
+ */
+export async function listFlowSubagentOptions(ctx: RequestContext, agentId: string): Promise<FlowSubagentOption[]> {
+    await assertMayManageProfiles(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.agentProfile.findMany({
+            where: { tenantId: ctx.tenantId, currentApprovedVersion: { not: null }, agentId: { not: agentId } },
+            select: {
+                id: true,
+                currentApprovedVersion: true,
+                agent: { select: { name: true, status: true, deletedAt: true } },
+                versions: { where: { status: 'APPROVED' }, select: { version: true }, take: 1 },
+            },
+            orderBy: { createdAt: 'asc' },
+            take: 200,
+        });
+        return rows
+            .filter((p) => p.agent.status !== 'RETIRED' && p.agent.deletedAt === null)
+            .filter((p) => p.versions.length === 1 && p.versions[0].version === p.currentApprovedVersion)
+            .map((p) => ({ profileId: p.id, agentName: p.agent.name, version: p.currentApprovedVersion as number }));
+    });
+}

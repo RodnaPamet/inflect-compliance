@@ -754,6 +754,8 @@ const config = [
             'src/app-layer/usecases/agent-canvas-projection.ts',
             'src/lib/processes/agent-view/**/*.{ts,tsx}',
             'src/components/processes/agent-view/**/*.{ts,tsx}',
+            'src/lib/processes/agent-flow/**/*.{ts,tsx}',
+            'src/components/processes/agent-flow/**/*.{ts,tsx}',
             'src/app/t/**/processes/agents/**/*.{ts,tsx}',
         ],
         rules: {

@@ -49,6 +49,7 @@ import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver'
 import {
     isProfileRunKey,
     parseProfileRunKey,
+    profileRunKey,
     PROFILE_EFFORTS,
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
@@ -59,7 +60,8 @@ import {
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
-import { agentProfilesOn, profileContentHash } from './agent-profiles';
+import { runMessage } from '@/lib/agentic/flue/run-message';
+import { agentProfilesOn, assertMayManageProfiles, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
     | 'PROFILES_DISABLED'
@@ -350,4 +352,58 @@ export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRu
                 'without a flow to run this profile.',
         );
     }
+}
+
+// ─── The preview (Phase 4 of `docs/ai-architecture/langflow.md`) ────
+
+/** What an engine would be handed for one stored version, as the approver reads it. */
+export type ProfileRunPreview =
+    | {
+          readonly state: 'SHOWN';
+          readonly version: number;
+          /** The run this version can have: itself in force, a Test run under review, or none. */
+          readonly runAs: 'RUN' | 'TEST_RUN' | null;
+          /** The run message, from `runMessage`, the function the engines call. */
+          readonly message: string;
+          /** The run is offered the read surface only. */
+          readonly readOnly: boolean;
+      }
+    /** No such version on this agent's profile. */
+    | { readonly state: 'NOT_FOUND' }
+    /** The stored content no longer verifies, or carries a setting this build cannot read: no run has a message. */
+    | { readonly state: 'UNRUNNABLE' };
+
+/**
+ * THE EXACT RUN MESSAGE a stored version would give an engine (Phase 4.1).
+ *
+ * Built by the run path's own two functions and nothing else:
+ * `compileProfileDefinition`, which the resolver and the worker call, and
+ * `runMessage`, which the Tool Runner and Flue call, at the first step with no
+ * declared input (a profile declares none). So the panel cannot show a message
+ * the engine would not send. The content hash is recomputed first, as the
+ * resolver does: a version whose content no longer verifies has no message.
+ *
+ * Read under the profile surface's own gate (`admin.agent_registry`, 404 when
+ * profiles are off). Writes nothing.
+ */
+export async function previewProfileRunMessage(
+    ctx: RequestContext,
+    agentId: string,
+    version: number,
+): Promise<ProfileRunPreview> {
+    await assertMayManageProfiles(ctx);
+    const row = await runInTenantContext(ctx, (db) =>
+        db.agentProfileVersion.findFirst({
+            where: { tenantId: ctx.tenantId, version, profile: { agentId } },
+            select: VERSION_SELECT,
+        }),
+    );
+    if (!row || row.profile.agentId !== agentId) return { state: 'NOT_FOUND' };
+    if (profileContentHash(row.instructions, row.flowJson) !== row.instructionsHash) return { state: 'UNRUNNABLE' };
+    const inForce = row.status === 'APPROVED' && row.profile.currentApprovedVersion === row.version;
+    const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
+    const testRun = runAs === 'TEST_RUN';
+    const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, { testRun });
+    if (!def) return { state: 'UNRUNNABLE' };
+    return { state: 'SHOWN', version: row.version, runAs, message: runMessage(def, 0), readOnly: def.readOnly === true };
 }

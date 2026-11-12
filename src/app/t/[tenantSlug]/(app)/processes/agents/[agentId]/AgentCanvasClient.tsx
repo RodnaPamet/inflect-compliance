@@ -9,10 +9,12 @@
  * gets. Neither tab can change anything.
  */
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
+import { buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -63,6 +65,20 @@ export function AgentCanvasClient({
                         {t('readOnly')}
                     </StatusBadge>
                 </span>
+            }
+            // The editor is offered where the profile layer is shown: the
+            // viewer holds the register key and profiles are on, which is
+            // what the editor's page asks again (Phase 3).
+            actions={
+                profile.state === 'SHOWN' ? (
+                    <Link
+                        href={`/t/${tenantSlug}/processes/agents/${projection.agent.id}/flow`}
+                        id="agent-canvas-edit-flow"
+                        className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                    >
+                        {t('editFlow')}
+                    </Link>
+                ) : undefined
             }
             tabs={[
                 { key: 'canvas', label: t('tabCanvas') },
