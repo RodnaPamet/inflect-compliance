@@ -374,7 +374,6 @@ const ADMIN_ONLY_ROUTES = [
     'admin/identity-write-journal/[journalId]/route.ts',
     'admin/identity-write-journal/restorable/[accountId]/route.ts',
     'admin/identity-write-journal/unsettled/route.ts',
-    'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',
     // Epic 1, PR 3 — token-redemption invite flow (admin invite management)

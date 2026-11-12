@@ -98,7 +98,7 @@ describe('MCP propose — boundary validation + sanitisation', () => {
         expect(usecase).toMatch(/CreateRiskSchema/);
         expect(usecase).toMatch(/CreateControlSchema/);
         expect(usecase).toMatch(/CreatePolicySchema/);
-        expect(usecase).toMatch(/CreateFindingSchema/);
+        expect(usecase).toMatch(/ProposedFindingSchema/);
         expect(usecase).toMatch(/\.safeParse\(/);
     });
 

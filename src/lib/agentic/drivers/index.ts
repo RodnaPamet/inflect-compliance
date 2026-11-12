@@ -40,9 +40,10 @@ export type { RunDriver, RunDriverOutcome } from './types';
 const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     static: runStaticDriver,
     flue: runFlueDriver,
-    // Mapped and gated, as Flue was: `DRIVER_IMPLEMENTED['tool-runner']` is
-    // false until Step 2c, so `resolveAgentDriver` never permits this key and
-    // `selectRunDriver` never chooses it.
+    // Mapped and gated, as Flue is: `DRIVER_IMPLEMENTED['tool-runner']` is true
+    // since Step 2c, but `resolveAgentDriver` permits this key only when the
+    // tenant chose it and the Tool Runner is available to the workspace
+    // (`AGENT_DRIVER_TOOL_RUNNER`, or its organization's choice when unset).
     'tool-runner': runToolRunnerDriver,
 };
 

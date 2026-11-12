@@ -29,6 +29,9 @@ import { recordTenantCreated } from '@/lib/observability/business-metrics';
 import { assertProvisionedRegion } from '@/lib/regions';
 import { BUILT_IN_SCOPE_REFUSAL, builtInScopeRoleMessage, mayCarryCustomRole } from '@/lib/roles';
 import type { PrismaClient, TenantRegion } from '@prisma/client';
+import type { Plan } from '@/lib/billing/entitlements';
+import { changeTenantPlan, type ChangeTenantPlanResult } from '@/app-layer/usecases/billing';
+import { buildTenantSystemJobContext } from '@/app-layer/context-system';
 
 // ─── createTenantWithOwner ──────────────────────────────────────────
 
@@ -352,4 +355,26 @@ export async function transferTenantOwnership(
         fromOwnerId: input.currentOwnerUserId,
         toOwnerId: newOwnerUser.id,
     };
+}
+
+/**
+ * The platform operator sets a tenant's plan (`POST /api/admin/tenants/:slug/plan`,
+ * platform-admin key). The change is audited in the tenant's trail as its
+ * system user, since no member of the tenant made it.
+ */
+export async function setTenantPlanAsPlatform(input: {
+    tenantSlug: string;
+    plan: Plan;
+}): Promise<ChangeTenantPlanResult> {
+    const tenant = await prisma.tenant.findUnique({
+        where: { slug: input.tenantSlug },
+        select: { id: true, slug: true },
+    });
+    if (!tenant) throw new NotFoundError(`Tenant not found: ${input.tenantSlug}`);
+    const ctx = await buildTenantSystemJobContext({
+        tenantId: tenant.id,
+        tenantSlug: tenant.slug,
+        job: 'platform-admin-plan-change',
+    });
+    return changeTenantPlan(ctx, input.plan);
 }

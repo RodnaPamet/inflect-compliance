@@ -639,7 +639,7 @@ const HIGH_MULTIPLICITY = 5;
 // ONE `superRefine` call carrying the DATA_ENCRYPTION_KEY production refusal
 // (`allCallExpressionsOf` + `toHaveLength(1)`), which binds where the regex
 // never did. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1132;
+const AMBIGUOUS_NEEDLE_BASELINE = 1131;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

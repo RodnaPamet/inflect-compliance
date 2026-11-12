@@ -5,8 +5,8 @@
  *   1. `addOrgMember` — create OrgMembership; if role=ORG_ADMIN, fan
  *      out ADMIN memberships into every child tenant.
  *   2. `removeOrgMember` — fan in the deprovision (delete only auto-
- *      provisioned rows), then delete the OrgMembership. Manually-
- *      granted tenant memberships survive.
+ *      provisioned rows), then delete the OrgMembership, in one
+ *      transaction. Manually-granted tenant memberships survive.
  *   3. `changeOrgMemberRole` — atomic ORG_READER ↔ ORG_ADMIN transition
  *      that pairs the role UPDATE with the matching tenant fan-out
  *      (promotion) or fan-in (demotion) inside one transaction. No
@@ -44,10 +44,12 @@
  *
  * Removing — or demoting — the last ORG_ADMIN of an org would orphan
  * it (no one left to manage tenants/members). Both `removeOrgMember`
- * and `changeOrgMemberRole` enforce the guard at the usecase layer.
- * Mirrors the spirit of Epic 1's `tenant_membership_last_owner_guard`
- * — but at the usecase layer only, no DB trigger. A future iteration
- * can add a trigger if cross-code-path safety becomes a concern.
+ * and `changeOrgMemberRole` enforce the guard at the usecase layer, and
+ * the last ORG_OWNER is also held by the `org_membership_last_owner_guard`
+ * trigger. Each re-checks its counts inside its transaction AFTER taking
+ * the organization's advisory lock (`org-owner:<id>`, the key the trigger
+ * takes too): without it two owners demoting each other at once each
+ * counted the other as still an owner and both committed (#5373).
  */
 
 import prisma from '@/lib/prisma';
@@ -62,7 +64,7 @@ import { ORG_ADMIN_TIER_ROLES, isOrgAdminTier, isOrgOwner, orgRoleRank } from '@
 import { hashForLookup } from '@/lib/security/encryption';
 import type { OrgContext } from '@/app-layer/types';
 import { forbidden } from '@/lib/errors/types';
-import { OrgAuditAction, type OrgRole } from '@prisma/client';
+import { OrgAuditAction, type OrgRole, type Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { appendAuditEntry } from '@/lib/audit';
 import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
@@ -435,6 +437,46 @@ async function assertMayChangeOwnerRow(
     });
 }
 
+/**
+ * Serialise every change to an organization's owners and administrators
+ * (#5373). Two owners demoting each other at once used to each count the
+ * other as still an owner under READ COMMITTED, write different rows, and
+ * both commit — leaving no owner. Taken FIRST in the transaction, before the
+ * counts: a count that runs after this returns reads the committed result of
+ * whichever change held it before. The key is the one
+ * `check_not_last_org_owner` takes (migration 20261112130500), so the
+ * trigger's re-entry is free and the two layers queue on one lock; `org-owner:`
+ * is distinct from the org audit chain's `org:` key.
+ */
+async function lockOrgAdministrators(
+    db: Pick<Prisma.TransactionClient, '$executeRawUnsafe'>,
+    organizationId: string,
+): Promise<void> {
+    await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `org-owner:${organizationId}`);
+}
+
+/** Refuse a change that would leave the organization with no owner or admin. */
+async function assertNotLastAdministrator(
+    db: Pick<typeof prisma, 'orgMembership'>,
+    ctx: OrgContext,
+    verb: 'remove' | 'demote',
+): Promise<void> {
+    const adminCount = await db.orgMembership.count({
+        where: {
+            organizationId: ctx.organizationId,
+            role: { in: [...ORG_ADMIN_TIER_ROLES] },
+        },
+    });
+    if (adminCount <= 1) {
+        // No "delete the organization" (#4848): there is no way to.
+        throw new ConflictError(
+            `Cannot ${verb} the last owner or admin of an organization. ` +
+                'Make another member an admin first.',
+            { reason: 'LAST_ORG_ADMIN' },
+        );
+    }
+}
+
 /** Refuse a change that would leave the organization with no owner (#4576). */
 async function assertNotLastOwner(
     db: Pick<typeof prisma, 'orgMembership'>,
@@ -494,40 +536,32 @@ export async function removeOrgMember(
 
     // An owner's membership is changed only by another owner (#4576).
     await assertMayChangeOwnerRow(ctx, membership.role, userId, 'remove');
+
+    // Last-owner and last-administrator guards. If the target is the only
+    // remaining owner, or administrator (owner or admin), refuse the removal —
+    // orphaning the org breaks tenant/member management. Checked here for a
+    // refusal that opens no transaction, and again under the lock below.
     if (isOrgOwner(membership.role)) await assertNotLastOwner(prisma, ctx, 'remove');
+    if (isOrgAdminTier(membership.role)) await assertNotLastAdministrator(prisma, ctx, 'remove');
 
-    // Last-administrator guard. If the target is the only remaining
-    // administrator (owner or admin), refuse the removal — orphaning the org
-    // breaks tenant/member management.
-    if (isOrgAdminTier(membership.role)) {
-        const adminCount = await prisma.orgMembership.count({
-            where: {
-                organizationId: ctx.organizationId,
-                role: { in: [...ORG_ADMIN_TIER_ROLES] },
-            },
-        });
-        if (adminCount <= 1) {
-            // No "delete the organization" (#4848): there is no way to.
-            throw new ConflictError(
-                'Cannot remove the last owner or admin of an organization. ' +
-                    'Make another member an admin first.',
-                { reason: 'LAST_ORG_ADMIN' },
-            );
+    // The fan-in and the delete commit together (#5373). The fan-in used to
+    // commit on its own before a delete the last-owner trigger could still
+    // refuse, leaving the member with the org role and no tenant access.
+    const deprovision = await prisma.$transaction(async (tx) => {
+        let fanIn: DeprovisionResult | undefined;
+        if (isOrgAdminTier(membership.role)) {
+            await lockOrgAdministrators(tx, ctx.organizationId);
+            if (isOrgOwner(membership.role)) await assertNotLastOwner(tx, ctx, 'remove');
+            await assertNotLastAdministrator(tx, ctx, 'remove');
+            // Fan-in BEFORE deleting the OrgMembership, inside the same
+            // transaction, so the user's tenant-side ADMIN rows go only
+            // if the org-admin status goes too.
+            fanIn = await deprovisionOrgAdmin(ctx.organizationId, userId, tx);
         }
-    }
-
-    let deprovision: DeprovisionResult | undefined;
-    if (isOrgAdminTier(membership.role)) {
-        // Fan-in BEFORE deleting the OrgMembership so the user's
-        // tenant-side ADMIN rows are gone before they lose
-        // org-admin status. The order doesn't change correctness —
-        // both operations are idempotent — but it preserves the
-        // logical sequence for any concurrent observer.
-        deprovision = await deprovisionOrgAdmin(ctx.organizationId, userId);
-    }
-
-    await prisma.orgMembership.delete({
-        where: { id: membership.id },
+        await tx.orgMembership.delete({
+            where: { id: membership.id },
+        });
+        return fanIn;
     });
 
     if (deprovision && deprovision.tenantIds.length > 0) {
@@ -692,51 +726,26 @@ export async function changeOrgMemberRole(
         };
     }
 
-    // Last-admin guard for ADMIN→READER. Read the count outside the
-    // transaction — the transaction below will refuse to commit if
-    // racing demotions reduce the count further (the row's role is
-    // updated under the count's read snapshot in the same tx, and the
-    // re-check inside the tx tightens the window to a single read-
-    // verify-write under the same read view).
+    // Last-owner and last-admin guards, read outside the transaction for a
+    // refusal that opens none. They are decided by the re-check under the
+    // organization's lock inside it (#5373): without the lock two owners
+    // demoting each other each counted the other as still an owner.
     if (isOrgOwner(existing.role)) await assertNotLastOwner(prisma, ctx, 'demote');
     if (isOrgAdminTier(existing.role) && newRole === 'ORG_READER') {
-        const adminCount = await prisma.orgMembership.count({
-            where: {
-                organizationId: ctx.organizationId,
-                role: { in: [...ORG_ADMIN_TIER_ROLES] },
-            },
-        });
-        if (adminCount <= 1) {
-            throw new ConflictError(
-                'Cannot demote the last owner or admin of an organization. ' +
-                    'Make another member an admin first.',
-                { reason: 'LAST_ORG_ADMIN' },
-            );
-        }
+        await assertNotLastAdministrator(prisma, ctx, 'demote');
     }
 
     const transition = transitionOf(existing.role, newRole);
 
     const result = await prisma.$transaction(async (tx) => {
-        // Re-check the last-admin guard INSIDE the transaction so a
-        // racing demotion can't slip past the outer count read.
-        // Postgres's READ COMMITTED default makes this a tight check
-        // for the demote case.
+        // Re-check the guards INSIDE the transaction, after taking the
+        // organization's lock (#5373). The lock is what makes this tight:
+        // READ COMMITTED alone let two concurrent demotions each count the
+        // other's row as unchanged, and both commit.
+        if (isOrgAdminTier(existing.role)) await lockOrgAdministrators(tx, ctx.organizationId);
         if (isOrgOwner(existing.role)) await assertNotLastOwner(tx, ctx, 'demote');
-        if (transition === 'admin_to_reader') {
-            const adminCount = await tx.orgMembership.count({
-                where: {
-                    organizationId: ctx.organizationId,
-                    role: { in: [...ORG_ADMIN_TIER_ROLES] },
-                },
-            });
-            if (adminCount <= 1) {
-                throw new ConflictError(
-                    'Cannot demote the last owner or admin of an organization. ' +
-                        'Make another member an admin first.',
-                    { reason: 'LAST_ORG_ADMIN' },
-                );
-            }
+        if (isOrgAdminTier(existing.role) && newRole === 'ORG_READER') {
+            await assertNotLastAdministrator(tx, ctx, 'demote');
         }
 
         const updated = await tx.orgMembership.update({
