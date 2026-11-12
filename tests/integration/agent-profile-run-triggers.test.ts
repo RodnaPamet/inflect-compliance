@@ -44,7 +44,6 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
-import { startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { startInteractiveRun } from '@/app-layer/usecases/interactive-agent-runs';
 import { runAgentInvokeDispatch } from '@/app-layer/jobs/agent-invoke-dispatch';
 import { POST as START_RUN } from '@/app/api/t/[tenantSlug]/agent-runs/route';
