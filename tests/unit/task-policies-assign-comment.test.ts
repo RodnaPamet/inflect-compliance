@@ -82,7 +82,7 @@ describe('assertCanAssignTasks', () => {
     });
 });
 
-describe('assertCanCommentOnTasks — today\'s behaviour, pinned (owner question open)', () => {
+describe('assertCanCommentOnTasks — tasks.edit alone (owner decision 2026-11-12)', () => {
     it.each(['OWNER', 'ADMIN', 'EDITOR'] as const)('admits built-in %s', (role) => {
         allowed(assertCanCommentOnTasks, makeRequestContext(role));
     });
@@ -101,30 +101,23 @@ describe('assertCanCommentOnTasks — today\'s behaviour, pinned (owner question
         refused(assertCanAssignTasks, ctx);
     });
 
-    it('refuses a custom role over READER that grants tasks.edit — the READER literal decides', () => {
+    it('admits a custom role over READER that grants tasks.edit — the key decides, as the route does', () => {
         const ctx = customRole('READER', { tasks: { edit: true } });
         expect(ctx.appPermissions.tasks.edit).toBe(true);
-        refused(assertCanCommentOnTasks, ctx);
-        refused(assertCanWriteTasks, ctx);
-    });
-
-    it('ADMITS a custom role over AUDITOR that grants tasks.edit, which may not edit (divergence)', () => {
-        const ctx = customRole('AUDITOR', { tasks: { edit: true } });
-        expect(ctx.permissions.canWrite).toBe(false);
         allowed(assertCanCommentOnTasks, ctx);
-        refused(assertCanWriteTasks, ctx);
     });
 
-    describe('with no granular layer, only the READER literal is checked', () => {
+    it('admits a custom role over AUDITOR that grants tasks.edit', () => {
+        const ctx = customRole('AUDITOR', { tasks: { edit: true } });
+        allowed(assertCanCommentOnTasks, ctx);
+    });
+
+    describe('with no granular layer, the coarse write tier stands in', () => {
         it.each(['OWNER', 'ADMIN', 'EDITOR'] as const)('admits %s', (role) => {
             allowed(assertCanCommentOnTasks, noGranular(role));
         });
-        it('refuses READER', () => {
-            refused(assertCanCommentOnTasks, noGranular('READER'));
-        });
-        it.each(['AUDITOR', 'AI_ADMIN'] as const)('ADMITS %s, which may not write tasks (divergence)', (role) => {
-            allowed(assertCanCommentOnTasks, noGranular(role));
-            refused(assertCanWriteTasks, noGranular(role));
+        it.each(['READER', 'AUDITOR', 'AI_ADMIN'] as const)('refuses %s', (role) => {
+            refused(assertCanCommentOnTasks, noGranular(role));
         });
     });
 });
