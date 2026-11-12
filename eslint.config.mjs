@@ -723,6 +723,41 @@ const config = [
             '@typescript-eslint/no-floating-promises': 'error',
         },
     },
+    {
+        // THE AGENT-FLOW CANVAS IS TLDRAW, NEVER XYFLOW (D-L2-3, 2026-10-29;
+        // docs/ai-architecture/langflow.md). The process canvas is retiring
+        // xyflow (#2962), and a feature built on it would be built twice and
+        // would block that removal. Error level, over every agent-flow file:
+        // the projection, its graph, its shapes and its route.
+        //
+        // This REPLACES the base block's `no-restricted-imports` for these
+        // files, so the table-barrel pattern is repeated here rather than lost.
+        files: [
+            'src/lib/agentic/agent-canvas-projection.ts',
+            'src/app-layer/usecases/agent-canvas-projection.ts',
+            'src/lib/processes/agent-view/**/*.{ts,tsx}',
+            'src/components/processes/agent-view/**/*.{ts,tsx}',
+            'src/app/t/**/processes/agents/**/*.{ts,tsx}',
+        ],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: ['@xyflow/*', 'reactflow', 'reactflow/*'],
+                            message:
+                                'The agent-flow canvas is drawn by tldraw only (D-L2-3); xyflow is being retired (#2962).',
+                        },
+                        {
+                            group: ['@/components/ui/table/*'],
+                            message: "Import from '@/components/ui/table' (barrel) instead of deep sub-modules.",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
 ];
 
 export default config;

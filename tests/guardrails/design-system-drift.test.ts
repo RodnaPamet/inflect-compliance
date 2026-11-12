@@ -36,6 +36,11 @@ const MIGRATED_PAGES = [
     // Relative to TENANT_ROUTES_DIR, like every entry here — not to src/app.
     'agents/ask/page.tsx',
     'agents/ask/AskClient.tsx',
+    // One agent on the process canvas, read-only (Phase 2 of
+    // docs/ai-architecture/langflow.md). Native from birth: EntityDetailLayout,
+    // StatusBadge, InlineNotice, Accordion, semantic tokens only.
+    'processes/agents/[agentId]/page.tsx',
+    'processes/agents/[agentId]/AgentCanvasClient.tsx',
     'admin/modules/ModulesClient.tsx',
     // Identity write journal (#2877 f52) — the surface for what a disable
     // replaced and which writes never settled. Design-system-native from

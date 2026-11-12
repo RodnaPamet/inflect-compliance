@@ -387,14 +387,22 @@ never defined would show the reader a plan nobody wrote, the same false signal
 as a node that renders and does nothing.
 
 **Sub-phases.**
-- [ ] 2.1 `projectAgentForCanvas(ctx, agentId, { versionId? })`, a usecase that
+- [x] 2.1 `projectAgentForCanvas(ctx, agentId, { versionId? })`, a usecase that
       returns a graph built from the layers above.
       - It reads through the existing repositories under RLS.
       - Tool states come from `offerToolSet`, the function the engines use
         (G3), so the view cannot disagree with a run.
       - Layout is computed deterministically from the graph and never stored:
         nothing to persist means nothing to write.
-- [ ] 2.2 Read-only rendering on **tldraw**.
+      - Landed as `usecases/agent-canvas-projection.ts` (shape in
+        `src/lib/agentic/agent-canvas-projection.ts`). Each layer is read
+        through the usecase that owns it: `getRegisteredAgent` (the tenant
+        boundary), `listAgentTools`, and `getAgentProfile`, whose gate is
+        caught and named (`OFF`, `NOT_PERMITTED`), never copied. The probe runs
+        against `resolveMcpInvocation({ ...ctx, agentId })`, the invocation a
+        run of the agent started by the viewer gets, and only for an ACTIVE
+        agent; any other agent's profile tools read `AGENT_NOT_ACTIVE`.
+- [x] 2.2 Read-only rendering on **tldraw**.
       - Agent node kinds (hub, trigger, tool, skill, output) join
         `node-taxonomy.ts` and are drawn by tldraw shape utils beside
         `ProcessNodeShapeUtil`, with a Tooltip naming each narrowing or refusal
@@ -406,6 +414,14 @@ as a node that renders and does nothing.
         process-canvas segment, so `processCanvasEnabled` gates it.
       - An ESLint `no-restricted-imports` entry refuses `@xyflow/*` in every
         agent-flow file.
+      - Landed. The seven kinds are `AGENT_VIEW_NODE_TAXONOMY` in
+        `node-taxonomy.ts`, a record of their own rather than members of
+        `ProcessNodeKind`, because no map may ever store one. They are drawn by
+        `AgentViewNodeShapeUtil`; edges are tldraw's own arrows. Positions come
+        from `computeAutoLayout` directly: `auto-layout-host.ts` reads
+        positions out of a live editor, and this view has none to read before
+        it draws. The page has a Canvas and an Elements tab over the same
+        graph, the second listing every narrowing in words.
 - [ ] 2.3 Entry points.
       - "Open on canvas" on the agent page and the Behaviour tab: a plain link
         into the processes segment, shown only when the tenant has the module
@@ -415,18 +431,24 @@ as a node that renders and does nothing.
         through `drill-scope-host.ts`, on tldraw maps. On a map a tenant still
         draws with xyflow, the node offers the same link; it gains no xyflow
         drill-down of its own.
+      - Partly landed: the agent page's header carries the link. The Behaviour
+        tab's link and the drill-down from a map's `agent` node are open.
 - [ ] 2.4 A diff for approvers of **form-edited** versions too: the projection
       of the submitted version against the version in force, computed with
       `canvas-changes-tldraw.ts` and drawn by `CanvasDiffOverlay`, showing
       tools, skills, triggers and model tier added or removed.
-- [ ] 2.5 Permission parity per layer: the envelope needs what the agent page
+- [x] 2.5 Permission parity per layer: the envelope needs what the agent page
       already needs; the profile layer needs `admin.agent_registry`, as reading
       a profile does, and answers 404 when `AGENT_PROFILES` is off. Instructions
       are business content; the view shows them only in a collapsed panel to
-      readers who hold that permission.
-- [ ] 2.6 Read-only rendering of code-registered workflows from
-      `workflow-registry.ts`.
-- [ ] 2.7 en + bg message parity; rendered tests testid-first.
+      readers who hold that permission. (The page names a missing profile
+      layer rather than leaving it blank.)
+- [x] 2.6 Read-only rendering of code-registered workflows from
+      `workflow-registry.ts`: each workflow key an `INVOKE_AGENT` rule names
+      for the agent, its steps in the code's order, drawn dashed where the
+      definition asks for a reasoning engine (order advisory) and solid where
+      the static engine walks it.
+- [x] 2.7 en + bg message parity; rendered tests testid-first.
 
 **Prompt.**
 ```text
