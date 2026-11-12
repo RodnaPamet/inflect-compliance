@@ -441,7 +441,7 @@ describe('a secret-shaped value anywhere is found, and named by path', () => {
         expect(root).toBe('<key>');
         const nested = firstSecretShapedPath({ rows: [{ id: 'a' }, { labels: { [secret()]: 'plain' } }] });
         expect(nested).toBe('rows[1].labels.<key>');
-        for (const at of [root, nested]) expect(at).not.toContain(secret());
+        for (const at of [root, nested]) expect(at?.includes(secret())).toBe(false);
         // The name is refused whatever its value holds, and before the value is looked at.
         expect(firstSecretShapedPath({ a: { [secret()]: { deeper: secret() } } })).toBe('a.<key>');
         // Members are read in order: an earlier secret-shaped value is still the one named.
