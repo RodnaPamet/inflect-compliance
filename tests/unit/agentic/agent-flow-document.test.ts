@@ -19,6 +19,7 @@ import {
     flowVersionBody,
     layoutForDraft,
     nextNodeKey,
+    type FlowDiagnosticContext,
     type FlowDraft,
 } from '@/lib/processes/agent-flow/agent-flow-document';
 
@@ -30,11 +31,11 @@ const FLOW: AgentFlow = {
     edges: [{ from: 'read-1', to: 'synthesis-1' }],
 };
 
-const CTX = {
+const CTX: FlowDiagnosticContext = {
     grants: ['get_compliance_posture', 'list_risks', 'propose_finding'],
     approvedProfileIds: ['prof-other'],
     selfProfileId: 'prof-self',
-    outputKind: 'ANSWER_AND_PROPOSALS' as const,
+    outputKind: 'ANSWER_AND_PROPOSALS',
 };
 
 const BASE = {
@@ -79,6 +80,13 @@ describe('the round-trip contract (#2963, for an agent flow)', () => {
         const unconnected = draftFromFlow(FLOW);
         unconnected.edges = [];
         expect(draftChangesFlow(FLOW, unconnected)).toBe(true);
+    });
+
+    it('a label differing only by surrounding space is the stored label, as the writer trims it', () => {
+        const padded = draftFromFlow(FLOW);
+        padded.nodes[0].label = '  Read posture ';
+        expect(draftChangesFlow(FLOW, padded)).toBe(false);
+        expect((flowFromDraft(padded) as AgentFlow).nodes[0].label).toBe('Read posture');
     });
 });
 

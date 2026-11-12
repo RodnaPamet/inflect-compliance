@@ -137,6 +137,9 @@ const AGENTIC_ROUTES: readonly string[] = [
     // layout's module gate covers it; linked from the agent's own page, and
     // only where the tenant has the process-canvas module.
     '/processes/agents/[agentId]',
+    // The same agent's flow editor (Phases 3 and 4). Linked from the canvas
+    // view above ("Edit the flow"), inside the same module-gated segment.
+    '/processes/agents/[agentId]/flow',
 ] as const;
 
 /**
@@ -568,8 +571,28 @@ const NOT_A_LINK: readonly string[] = [
  * hole, because that is how a link to a detail page is actually written:
  * `` router.push(`/t/${tenantSlug}/agents/${row.original.id}`) ``.
  */
+/**
+ * A route whose dynamic segment is NOT the last one (`/x/[id]/flow`): every
+ * `[param]` becomes one template interpolation, and the literal tail must
+ * follow it. The trailing-segment needle below cannot express that — it strips
+ * only a LAST `[param]`, so for such a route it searched for the literal text
+ * `[id]/flow/${`, which no link contains.
+ */
+function interiorDynamicNeedle(route: string): RegExp | null {
+    const segments = route.split('/');
+    const interior = segments.slice(0, -1).some((s) => s.startsWith('['));
+    if (!interior || segments[segments.length - 1].startsWith('[')) return null;
+    const body = segments
+        .map((s) => (s.startsWith('[') ? '\\$\\{[^}]+\\}' : s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+        .join('/');
+    // Followed by the end of the string or template, so `/x/${id}/flowing` is
+    // not a link to `/x/[id]/flow`.
+    return new RegExp(`${body}(?=['"\`?#])`);
+}
+
 function inboundLinkers(route: string): string[] {
     const own = ownDir(route);
+    const interior = interiorDynamicNeedle(route);
     const needles = route.includes('[')
         ? // A dynamic route: the literal prefix followed by an interpolation.
           [route.replace(/\/\[[^\]]+\]$/, '') + '/${']
@@ -579,6 +602,7 @@ function inboundLinkers(route: string): string[] {
     return SOURCES.filter(({ rel, code }) => {
         if (rel.startsWith(own)) return false;
         if (NOT_A_LINK.includes(rel)) return false;
+        if (interior) return interior.test(code);
         return needles.some((n) => code.includes(n));
     }).map(({ rel }) => rel);
 }
@@ -596,6 +620,18 @@ describe('the scan has a population and a needle that work at all', () => {
         expect(inboundLinkers('/agents')).toContain(
             'src/components/layout/SidebarNav.tsx',
         );
+    });
+
+    it('a route with an INTERIOR dynamic segment needs its literal tail after the interpolation', () => {
+        // Planted, both ways: the parent's link is not a link to its child, and
+        // a longer sibling segment is not either.
+        const needle = interiorDynamicNeedle('/processes/agents/[agentId]/flow');
+        expect(needle).not.toBeNull();
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}/flow`}')).toBe(true);
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}`}')).toBe(false);
+        expect(needle!.test('href={`/t/${slug}/processes/agents/${agent.id}/flowing`}')).toBe(false);
+        // A trailing dynamic segment keeps the prefix needle.
+        expect(interiorDynamicNeedle('/processes/agents/[agentId]')).toBeNull();
     });
 
     it('the needle does NOT match a path that is only in prose', () => {

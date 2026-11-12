@@ -116,7 +116,14 @@ function props(over: Partial<AgentFlowEditorProps> = {}): AgentFlowEditorProps {
         inForce: null,
         grants: ['get_compliance_posture', 'list_risks', 'propose_finding'],
         subagentOptions: [{ profileId: 'prof-other', agentName: 'Vendor agent', version: 3 }],
-        preview: { state: 'SHOWN', version: 2, runAs: null, message: 'THE SERVER MESSAGE\n1. [READ] Read posture', readOnly: true },
+        preview: {
+            state: 'SHOWN',
+            version: 2,
+            runAs: null,
+            runRefused: null,
+            message: 'THE SERVER MESSAGE\n1. [READ] Read posture',
+            readOnly: true,
+        },
         toolStates: [
             { name: 'get_compliance_posture', offered: true },
             { name: 'list_risks', offered: false, reason: 'PROFILE_TOOL_NOT_GRANTED' },
@@ -223,6 +230,26 @@ describe('the one write', () => {
         expect(refresh).toHaveBeenCalled();
     });
 
+    it('after a save the draft is the version the server wrote, so a normalised label offers no second save', () => {
+        // The server sanitises each label before it stores it. The draft held
+        // the text as typed; once the refresh opens the version written, the
+        // draft must be that version's flow, or Save stays on for ever.
+        const { rerender } = render(<AgentFlowEditor {...props()} />);
+        fireEvent.click(screen.getByTestId('probe-select-read-1'));
+        fireEvent.change(document.getElementById('agent-flow-step-label') as HTMLElement, {
+            target: { value: 'Read &amp; the <b>posture</b>' },
+        });
+        expect(screen.getByTestId('agent-flow-save')).toHaveProperty('disabled', false);
+        const written: AgentFlow = {
+            ...FLOW,
+            nodes: [{ ...FLOW.nodes[0], label: 'Read & the posture' }, FLOW.nodes[1]],
+        };
+        rerender(<AgentFlowEditor {...props({ opened: { ...props().opened, version: 3, flow: written } })} />);
+        expect(screen.getByTestId('agent-flow-save')).toHaveProperty('disabled', true);
+        expect(screen.getByTestId('agent-flow-submit')).toBeTruthy();
+        expect(screen.queryByTestId('agent-flow-compiled-stale')).toBeNull();
+    });
+
     it('an unedited draft version is submitted through the existing submit route', async () => {
         render(<AgentFlowEditor {...props()} />);
         await act(async () => {
@@ -242,6 +269,21 @@ describe('the Compiled panel (Phase 4)', () => {
             /no longer granted this tool/,
         );
         expect(screen.queryByTestId('agent-flow-compiled-stale')).toBeNull();
+    });
+
+    it('never says a run receives the message of a version admission refuses on every engine', () => {
+        const base = props().preview;
+        if (base.state !== 'SHOWN') throw new Error('fixture');
+        render(
+            <AgentFlowEditor
+                {...props({ preview: { ...base, runAs: 'RUN', runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' } })}
+            />,
+        );
+        expect(screen.getByTestId('agent-flow-compiled-refused').textContent).toMatch(
+            /no engine performs a drawn flow yet/,
+        );
+        expect(screen.queryByTestId('agent-flow-compiled-run-as')).toBeNull();
+        expect(screen.getByTestId('agent-flow-editor').textContent).not.toMatch(/a run receives this message/);
     });
 
     it('says the preview is of the saved version once the draft differs from it', () => {

@@ -38,6 +38,7 @@ import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import type { AgentCanvasProfileToolState } from '@/lib/agentic/agent-canvas-projection';
 import type { AgentFlow, FlowNodeKind } from '@/lib/agentic/agent-flow';
@@ -72,7 +73,15 @@ export interface OpenedFlowVersion extends FlowVersionBase {
 
 /** The server's preview of the opened version (`ProfileRunPreview`, client copy). */
 export type FlowRunPreview =
-    | { state: 'SHOWN'; version: number; runAs: 'RUN' | 'TEST_RUN' | null; message: string; readOnly: boolean }
+    | {
+          state: 'SHOWN';
+          version: number;
+          runAs: 'RUN' | 'TEST_RUN' | null;
+          /** Admission refuses this version on every engine: no run receives the message. */
+          runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null;
+          message: string;
+          readOnly: boolean;
+      }
     | { state: 'NOT_FOUND' }
     | { state: 'UNRUNNABLE' };
 
@@ -102,6 +111,19 @@ export function AgentFlowEditor(props: AgentFlowEditorProps) {
     const [draft, setDraft] = useState<FlowDraft>(() => draftFromFlow(opened.flow));
     const [held, setHeld] = useState<FlowLayout>({});
     const [selected, setSelected] = useState<string | null>(null);
+    // The draft is SEEDED from the opened version, and re-seeded whenever a
+    // different version opens — which is what a save does: the server writes
+    // the next version (with each label sanitised and trimmed), the refresh
+    // opens it, and the draft becomes that version's flow. Without this the
+    // draft kept the text as typed, so a label the server normalised left the
+    // draft different from the stored flow for good: Save stayed on, Submit
+    // stayed hidden, and every click wrote another identical DRAFT.
+    const [seededFrom, setSeededFrom] = useState(opened.version);
+    if (seededFrom !== opened.version) {
+        setSeededFrom(opened.version);
+        setDraft(draftFromFlow(opened.flow));
+        setSelected(null);
+    }
     const [mode, setMode] = useState<Mode>('edit');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -273,7 +295,7 @@ export function AgentFlowEditor(props: AgentFlowEditorProps) {
                     )}
                 </span>
             </div>
-            <p className="text-sm text-content-muted">{changed ? t('unsaved') : t('noChanges')}</p>
+            <p className="text-sm text-content-muted">{changed ? t('unsaved') : t('noChangesBody')}</p>
             {error && (
                 <InlineNotice variant="error" data-testid="agent-flow-error">
                     {error}
@@ -419,7 +441,7 @@ function StepInspector({
                         selected={toolOptions.find((o) => o.value === step.tool) ?? null}
                         setSelected={(o) => onChange({ tool: o?.value })}
                         placeholder={tStep('field.toolPlaceholder')}
-                        emptyState={tStep('field.noTools')}
+                        emptyState={tStep('field.noToolsHint')}
                     />
                 </FormField>
             )}
@@ -431,7 +453,7 @@ function StepInspector({
                         selected={profileOptions.find((o) => o.value === step.profileRef) ?? null}
                         setSelected={(o) => onChange({ profileRef: o?.value })}
                         placeholder={tStep('field.profilePlaceholder')}
-                        emptyState={tStep('field.noProfiles')}
+                        emptyState={tStep('field.noProfilesHint')}
                     />
                 </FormField>
             )}
@@ -471,7 +493,7 @@ function CompiledPanel({
     const tCanvas = useTranslations('agentCanvas');
     return (
         <section className="space-y-default" data-testid="agent-flow-compiled">
-            <h2 className="text-base font-semibold text-content-emphasis">{tPanel('compiled.title')}</h2>
+            <Heading level={2}>{tPanel('compiled.title')}</Heading>
             {stale && (
                 <InlineNotice variant="info" data-testid="agent-flow-compiled-stale">
                     {tPanel('compiled.stale')}
@@ -483,10 +505,18 @@ function CompiledPanel({
                 </InlineNotice>
             ) : (
                 <>
-                    <p className="text-sm text-content-muted">
-                        {tPanel(`compiled.runAs.${preview.runAs ?? 'NONE'}`, { version: preview.version })}
-                        {preview.readOnly ? ` ${tPanel('compiled.readOnly')}` : ''}
-                    </p>
+                    {preview.runRefused !== null ? (
+                        // Never "a run receives this message" for a version
+                        // admission refuses on every engine.
+                        <InlineNotice variant="warning" data-testid="agent-flow-compiled-refused">
+                            {tPanel(`compiled.refused.${preview.runRefused}`, { version: preview.version })}
+                        </InlineNotice>
+                    ) : (
+                        <p className="text-sm text-content-muted" data-testid="agent-flow-compiled-run-as">
+                            {tPanel(`compiled.runAs.${preview.runAs ?? 'NONE'}`, { version: preview.version })}
+                            {preview.readOnly ? ` ${tPanel('compiled.readOnly')}` : ''}
+                        </p>
+                    )}
                     <pre
                         className="whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs text-content-default"
                         data-testid="agent-flow-compiled-message"

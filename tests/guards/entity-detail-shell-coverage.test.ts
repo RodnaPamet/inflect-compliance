@@ -68,6 +68,9 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // docs/ai-architecture/langflow.md). Server page delegates to
   // AgentCanvasClient, which mounts <EntityDetailLayout>.
   { page: "src/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/AgentCanvasClient.tsx", entity: "Agent on the canvas" },
+  // The same agent's flow editor (Phases 3 and 4 of langflow.md). Server page
+  // delegates to AgentFlowClient, which mounts <EntityDetailLayout>.
+  { page: "src/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/flow/AgentFlowClient.tsx", entity: "Agent flow editor" },
   // Business Continuity (BIA) — server page delegates to BiaDetailClient
   // which mounts <EntityDetailLayout> (same pattern as access-reviews).
   { page: "src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx", entity: "Business impact analysis" },

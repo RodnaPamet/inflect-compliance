@@ -40,7 +40,7 @@ export function AgentFlowClient({
         >
             {editor === null ? (
                 <InlineNotice variant="info" data-testid="agent-flow-no-version">
-                    {t('noVersion')}{' '}
+                    {t('noVersionBody')}{' '}
                     <Link className="underline" href={`/t/${tenantSlug}/agents/${agentId}`}>
                         {t('openBehaviour')}
                     </Link>

@@ -16694,7 +16694,7 @@
     "forbiddenMessage": "Editing an agent’s flow needs the agent register permission.",
     "crumb": "Flow",
     "title": "{name}: flow",
-    "noVersion": "This agent has no profile version yet. Write the first version on its Behaviour tab; a flow is then drawn on top of it.",
+    "noVersionBody": "This agent has no profile version yet. Write the first version on its Behaviour tab; a flow is then drawn on top of it.",
     "openBehaviour": "Open the agent",
     "openedVersion": "Version {version} · {status}",
     "showDiff": "Compare with version {version} in force",
@@ -16702,7 +16702,7 @@
     "save": "Save as a new draft version",
     "submit": "Submit for approval",
     "unsaved": "The flow has changes. Saving writes a new draft version, which a second person approves before it runs.",
-    "noChanges": "No changes to the flow. Moving a step changes only the layout and writes no version.",
+    "noChangesBody": "No changes to the flow. Moving a step changes only the layout and writes no version.",
     "saveFailed": "The flow could not be saved.",
     "submitFailed": "The version could not be submitted.",
     "palette": "Add a step",
@@ -16733,10 +16733,10 @@
       "tool": "Tool",
       "toolHint": "Only tools the agent is granted, of this step’s kind.",
       "toolPlaceholder": "Choose a tool",
-      "noTools": "The agent is granted no tool of this kind.",
+      "noToolsHint": "The agent is granted no tool of this kind.",
       "profile": "Profile",
       "profilePlaceholder": "Choose an approved profile",
-      "noProfiles": "No other agent has an approved profile.",
+      "noProfilesHint": "No other agent has an approved profile.",
       "next": "Next steps",
       "nextPlaceholder": "Choose the steps that follow"
     },
@@ -16766,6 +16766,10 @@
       "stale": "This is the saved version. Save the flow to see what its changes would send.",
       "NOT_FOUND": "There is no saved version to compile.",
       "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
+      "refused": {
+        "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
+        "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
+      },
       "runAs": {
         "RUN": "Version {version} is in force; a run receives this message.",
         "TEST_RUN": "Version {version} is under review; a Test run receives this message.",

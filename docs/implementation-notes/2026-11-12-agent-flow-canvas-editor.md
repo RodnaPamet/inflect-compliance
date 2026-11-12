@@ -63,7 +63,12 @@ the canvas changes the flow.
 - **Save is offered only for a change to the flow.** `draftChangesFlow`
   compares the canonical stored text, so an unedited open, a moved box or a
   reordered connection list offers no save and can create no spurious DRAFT.
-  That is #2963's round-trip contract applied to this document.
+  That is #2963's round-trip contract applied to this document. Two things
+  keep it true after a save, where the writer sanitises and trims each label:
+  `flowFromDraft` trims as the writer does, and the editor RE-SEEDS its draft
+  from the version the refresh opens (keyed on the version number). Without
+  the re-seed a label the writer altered left the draft different from the
+  stored flow for good, so every Save click wrote another identical DRAFT.
 - **Layout is not stored in this slice.** The roadmap asks for a layout record
   outside the version. That is a new tenant-scoped table, so a migration (RLS,
   index, retention classification) and a write route under the register key.
@@ -81,13 +86,21 @@ the canvas changes the flow.
   rendering in the browser would be the copy that drifts. So the panel shows
   `previewProfileRunMessage` (the resolver's `compileProfileDefinition` and
   the engines' `runMessage`, after the content hash is recomputed) for the
-  version the editor opened, and says so once the draft differs. Previewing a
+  version the editor opened, and says so once the draft differs. It never
+  says a run receives the message of a version admission refuses: the preview
+  asks `assertEngineRunsProfiles` for every driver, and while no engine runs a
+  drawn flow (`runsFlows` is false for all, until Phase 5) every flow version
+  is shown as refused `PROFILE_FLOW_NOT_RUNNABLE`, in force or not. Previewing a
   draft before save would need a read route; saving a draft is cheap and
   reversible (a new DRAFT supersedes it).
 - **The diff is the flow's, not the process map's.** `canvas-changes-tldraw.ts`
   and `CanvasDiffOverlay` diff process-map rows; a flow is not one. `diffFlows`
   matches steps by key and connections as a set, and the same canvas draws the
   union read-only with each change marked, beside a list in words.
+- **The canvas is writable while it draws.** tldraw drops every shape write
+  while the instance is read-only, so each sync clears read-only, draws, and
+  then sets it to the prop. Setting it only after the draw left the diff's
+  drawing on the edit canvas when the approver went back to editing.
 - **No checkpoint anywhere.** The palette is the schema's four kinds
   (D-L2-2); nothing in the editor names a checkpoint.
 

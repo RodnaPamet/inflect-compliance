@@ -16,6 +16,7 @@ jest.mock('next-intl', () => ({
     useLocale: () => 'en',
 }));
 
+import type * as React from 'react';
 import { act, render } from '@testing-library/react';
 import type { Editor } from 'tldraw';
 
@@ -31,15 +32,24 @@ const BASE: Omit<AgentFlowCanvasProps, 'onEditorReady'> = {
     layout: { 'read-1': { x: 0, y: 0 }, 'synthesis-1': { x: 400, y: 0 } },
 };
 
+let rerenderCanvas: (over: Partial<AgentFlowCanvasProps>) => Promise<void> = async () => {};
+
 async function mount(over: Partial<AgentFlowCanvasProps> = {}): Promise<Editor> {
     let editor: Editor | undefined;
+    const tree = (o: Partial<AgentFlowCanvasProps>) => (
+        <div style={{ width: 800, height: 600 }}>
+            <AgentFlowCanvas {...BASE} {...o} onEditorReady={(e) => (editor = e)} />
+        </div>
+    );
+    let rerender: ((ui: React.ReactElement) => void) | undefined;
     await act(async () => {
-        render(
-            <div style={{ width: 800, height: 600 }}>
-                <AgentFlowCanvas {...BASE} {...over} onEditorReady={(e) => (editor = e)} />
-            </div>,
-        );
+        rerender = render(tree(over)).rerender;
     });
+    rerenderCanvas = async (o) => {
+        await act(async () => {
+            rerender?.(tree(o));
+        });
+    };
     if (!editor) throw new Error('the canvas did not finish mounting');
     return editor;
 }
@@ -101,5 +111,32 @@ describe('the agent-flow canvas on a live editor', () => {
         expect((editor.getShape(stepShapeId('synthesis-1')) as unknown as Shape).props.change).toBe('added');
         const arrow = shapes(editor).find((s) => s.type === 'arrow');
         expect(arrow?.props.color).toBe('green');
+    });
+
+    it('leaving the diff redraws the edit flow: no removed step and no change marks stay behind', async () => {
+        const removed = { key: 'read-9', kind: 'read' as const, label: 'Read risks', detail: 'list_risks', problems: [], change: 'removed' };
+        const editor = await mount({
+            readOnly: true,
+            nodes: [{ ...BASE.nodes[0], change: 'changed' }, { ...BASE.nodes[1], change: 'added' }, removed],
+            edges: [{ from: 'read-1', to: 'synthesis-1', change: 'added' }],
+            layout: { ...BASE.layout, 'read-9': { x: 0, y: 200 } },
+        });
+        expect(editor.getShape(stepShapeId('read-9'))).toBeDefined();
+
+        await rerenderCanvas({ readOnly: false });
+        expect(editor.getInstanceState().isReadonly).toBe(false);
+        expect(editor.getShape(stepShapeId('read-9'))).toBeUndefined();
+        const marks = shapes(editor)
+            .filter((s) => s.type === AGENT_FLOW_NODE_SHAPE_TYPE)
+            .map((s) => s.props.change);
+        expect(marks).toEqual(['', '']);
+        expect(shapes(editor).find((s) => s.type === 'arrow')?.props.color).toBe('grey');
+
+        // And a redraw while ALREADY read-only draws too.
+        await rerenderCanvas({ readOnly: true });
+        expect(editor.getInstanceState().isReadonly).toBe(true);
+        await rerenderCanvas({ readOnly: true, nodes: [{ ...BASE.nodes[0], change: 'changed' }, BASE.nodes[1]] });
+        expect(editor.getInstanceState().isReadonly).toBe(true);
+        expect((editor.getShape(stepShapeId('read-1')) as unknown as Shape).props.change).toBe('changed');
     });
 });

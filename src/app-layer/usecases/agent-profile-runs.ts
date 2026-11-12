@@ -45,7 +45,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ValidationError, badRequest } from '@/lib/errors/types';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import type { ProfileRunSpec, WorkflowDefinition } from '@/lib/agentic/workflow-types';
-import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { AGENT_DRIVERS, isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
 import {
     isProfileRunKey,
     parseProfileRunKey,
@@ -363,6 +363,12 @@ export type ProfileRunPreview =
           readonly version: number;
           /** The run this version can have: itself in force, a Test run under review, or none. */
           readonly runAs: 'RUN' | 'TEST_RUN' | null;
+          /**
+           * Set when admission would refuse this version on EVERY engine, so no
+           * run — whatever `runAs` says it would be — receives the message.
+           * `PROFILE_FLOW_NOT_RUNNABLE` for any flow version until Phase 5.
+           */
+          readonly runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null;
           /** The run message, from `runMessage`, the function the engines call. */
           readonly message: string;
           /** The run is offered the read surface only. */
@@ -404,6 +410,35 @@ export async function previewProfileRunMessage(
     const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
     const testRun = runAs === 'TEST_RUN';
     const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, { testRun });
-    if (!def) return { state: 'UNRUNNABLE' };
-    return { state: 'SHOWN', version: row.version, runAs, message: runMessage(def, 0), readOnly: def.readOnly === true };
+    if (!def || !def.profile) return { state: 'UNRUNNABLE' };
+    return {
+        state: 'SHOWN',
+        version: row.version,
+        runAs,
+        runRefused: refusedOnEveryEngine(def.profile),
+        message: runMessage(def, 0),
+        readOnly: def.readOnly === true,
+    };
+}
+
+/**
+ * Would admission refuse this version on every engine there is? Asked through
+ * `assertEngineRunsProfiles` itself, once per driver, so the panel cannot say
+ * "a run receives this message" for a version admission refuses — which,
+ * before Phase 5, is every version carrying a flow.
+ */
+function refusedOnEveryEngine(
+    profile: ProfileRunSpec,
+): 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null {
+    const someEngineRuns = AGENT_DRIVERS.some((driver) => {
+        try {
+            assertEngineRunsProfiles(driver, profile);
+            return true;
+        } catch (err) {
+            if (err instanceof AppError) return false;
+            throw err;
+        }
+    });
+    if (someEngineRuns) return null;
+    return profile.flow ? 'PROFILE_FLOW_NOT_RUNNABLE' : 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }

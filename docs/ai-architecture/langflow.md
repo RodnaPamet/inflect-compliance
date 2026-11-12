@@ -658,6 +658,9 @@ re-derive it.
       the resolver's `compileProfileDefinition` and the engines' `runMessage`,
       after the content hash is recomputed; an integration test holds it equal,
       byte for byte, to `runMessage` over `resolveRunDefinition`'s definition.
+      It asks admission's own `assertEngineRunsProfiles` for every engine, so a
+      flow version (refused `PROFILE_FLOW_NOT_RUNNABLE` until Phase 5) is shown
+      as refused, never as "a run receives this message".
       Tool states are the Phase 2 projection's (`offerToolSet`), with the
       reasons worded once for both surfaces.
 - [~] 4.2 Enforced or advisory, per element: enforced elements drawn solid,

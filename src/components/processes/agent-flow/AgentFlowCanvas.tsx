@@ -108,6 +108,12 @@ export function AgentFlowCanvas({ nodes, edges, layout, onMove, onSelect, readOn
         if (!editor) return;
         syncing.current = true;
         try {
+            // Writable for the sync, read-only (or not) after it. tldraw drops
+            // every create, update and delete while the instance is read-only,
+            // so a sync run with the diff's read-only still set — the switch
+            // back to editing, or any redraw of the diff — would change nothing
+            // and leave the previous drawing on the page.
+            editor.updateInstanceState({ isReadonly: false });
             editor.run(() => {
                 const wantedSteps = new Set(nodes.map((n) => stepShapeId(n.key)));
                 const wantedEdges = new Set(edges.map((e) => edgeShapeId(e)));

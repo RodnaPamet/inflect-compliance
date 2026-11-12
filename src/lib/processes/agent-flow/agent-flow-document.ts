@@ -97,18 +97,24 @@ export function draftFromFlow(flow: AgentFlow | null): FlowDraft {
  * The draft as the flow a request carries: exactly the fields a flow node has
  * for its kind, and nothing a layout knows. Unchecked — `checkAgentFlow`
  * decides whether it is a flow at all.
+ *
+ * Each label is TRIMMED, as the writer trims it before it stores and hashes
+ * the flow, so a label typed with a trailing space is the stored label and not
+ * a change. (The writer also sanitises; a label that sanitising alters still
+ * differs until the save, and the editor re-seeds from the version it wrote.)
  */
 export function flowFromDraft(draft: FlowDraft): unknown {
     return {
         nodes: draft.nodes.map((n) => {
+            const label = n.label.trim();
             switch (n.kind) {
                 case 'read':
                 case 'propose':
-                    return { key: n.key, kind: n.kind, label: n.label, tool: n.tool ?? '' };
+                    return { key: n.key, kind: n.kind, label, tool: n.tool ?? '' };
                 case 'synthesis':
-                    return { key: n.key, kind: n.kind, label: n.label };
+                    return { key: n.key, kind: n.kind, label };
                 case 'subagent':
-                    return { key: n.key, kind: n.kind, label: n.label, profileRef: n.profileRef ?? '' };
+                    return { key: n.key, kind: n.kind, label, profileRef: n.profileRef ?? '' };
             }
         }),
         edges: draft.edges.map((e) => ({ from: e.from, to: e.to })),

@@ -32,7 +32,12 @@ import {
     listFlowSubagentOptions,
     submitAgentProfileVersion,
 } from '@/app-layer/usecases/agent-profiles';
-import { previewProfileRunMessage, resolveRunDefinition } from '@/app-layer/usecases/agent-profile-runs';
+import {
+    assertEngineRunsProfiles,
+    previewProfileRunMessage,
+    resolveRunDefinition,
+} from '@/app-layer/usecases/agent-profile-runs';
+import { AGENT_DRIVERS } from '@/lib/agentic/agent-driver';
 import type { AgentProfileVersionInput } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import type { AgentFlow } from '@/lib/agentic/agent-flow';
@@ -171,7 +176,13 @@ describeFn('the flow editor’s reads, and its one write (real DB)', () => {
         expect(preview.state).toBe('SHOWN');
         if (preview.state !== 'SHOWN') return;
         expect(preview.runAs).toBe('RUN');
+        // In force, yet no run receives it: admission refuses a flow version
+        // on every engine until Phase 5, and the panel must say so.
+        expect(preview.runRefused).toBe('PROFILE_FLOW_NOT_RUNNABLE');
         const { def } = await resolveRunDefinition(author(), profileRunKey(edProfileId, 1), { trigger: 'ASK' });
+        for (const driver of AGENT_DRIVERS) {
+            expect(() => assertEngineRunsProfiles(driver, def.profile!)).toThrow();
+        }
         expect(preview.message).toBe(runMessage(def, 0));
         // And it is the flow's specification, steps in run order.
         expect(preview.message).toContain('1. [READ] Gather the open risks (tool: list_risks)');
