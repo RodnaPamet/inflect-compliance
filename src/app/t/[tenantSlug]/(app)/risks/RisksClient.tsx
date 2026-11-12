@@ -194,6 +194,8 @@ interface RisksClientProps {
     bulkPermissions: RiskBulkPermissions;
     /** Whether to offer Create and Import; see `riskCanCreate`. */
     canCreate: boolean;
+    /** Whether the create dialog offers control links (`controls.edit`). */
+    canLinkControls: boolean;
     translations: {
         title: string;
         listDescription: string;
@@ -283,6 +285,7 @@ function RisksPageInner({
     tenantSlug,
     bulkPermissions,
     canCreate,
+    canLinkControls,
     translations: t,
 }: RisksClientProps) {
     const tx = useTranslations('risks');
@@ -1539,6 +1542,7 @@ function RisksPageInner({
                     setOpen={setIsCreateOpen}
                     tenantSlug={tenantSlug}
                     apiUrl={apiUrl}
+                    canLinkControls={canLinkControls}
                 />
             )}
         </ListPageShell>

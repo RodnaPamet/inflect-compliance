@@ -163,6 +163,11 @@ export default function RiskDetailPage() {
     // the dashboard for any tenant not on euros.
     const money = useMoneyFormatter();
     const canWrite = tenant.permissions.canWrite;
+    // `PUT /risks/:id`, `PATCH /risks/:id/status`, `PUT /risks/:id/fair` and
+    // the attached-evidence routes take `risks.edit` on top of the write tier,
+    // so their affordances follow both. The task, traceability and
+    // treatment-plan affordances keep their own keys below.
+    const canEditRisk = canWrite && tenant.appPermissions.risks.edit;
     const { data: riskMembers } = useTenantMembers(tenant.tenantSlug);
     // P1 item 3 — the treatment-plan owner picker was dead (empty roster),
     // so the required Owner combobox was unfillable and no plan could be
@@ -506,7 +511,7 @@ export default function RiskDetailPage() {
                     >
                         {tWhereUsed('button')}
                     </Button>
-                    {canWrite && (
+                    {canEditRisk && (
                         <Combobox
                             hideSearch
                             id="risk-status-select"
@@ -589,7 +594,7 @@ export default function RiskDetailPage() {
                             endpoint={`/risks/${riskId}/evidence/attached`}
                             apiUrl={apiUrl}
                             tenantHref={href}
-                            canWrite={canWrite}
+                            canWrite={canEditRisk}
                         />
                     </div>
                     <div className="space-y-default">
@@ -622,6 +627,7 @@ export default function RiskDetailPage() {
                         status: risk.status,
                     }}
                     canWrite={canWrite}
+                    canEditRisk={canEditRisk}
                     canAdmin={tenant.permissions.canAdmin}
                     ownerChoices={treatmentOwnerChoices}
                     onRiskUpdated={() => riskQuery.mutate()}
@@ -664,7 +670,7 @@ export default function RiskDetailPage() {
                 <>
             {/* Detail Card */}
             <div className={cn(cardVariants(), 'space-y-default')} id="risk-detail">
-                {canWrite && (
+                {canEditRisk && (
                     <div className="flex justify-end -mt-1 -mb-2">
                         {/* B2 — icon-only edit affordance; opens the Edit
                             Risk modal, mirroring the control detail page. */}
@@ -788,7 +794,7 @@ export default function RiskDetailPage() {
 
             {/* Edit Risk modal — opened by the Overview-tab Edit button.
                 Mirrors the control detail page's EditControlModal. */}
-            {canWrite && (
+            {canEditRisk && (
                 <EditRiskModal
                     open={editing}
                     setOpen={setEditing}

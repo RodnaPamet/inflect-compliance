@@ -10,6 +10,9 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import * as React from 'react';
 
+// `mock`-prefixed so the hoisted factory below may read it.
+let mockRisksEdit = true;
+
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     // RQ3-OB-A — delegate to the real canonical formatter so the
@@ -20,9 +23,11 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     // asserts canWrite). These tests are about calibration aids, and several
     // assert the save button stays ENABLED through a warning — so they need a
     // writer. The gate itself is covered in risk-write-permission-gates.
+    // Save also needs `risks.edit`: `PUT /risks/:id/fair` takes it.
     useTenantContext: () => ({
         tenantSlug: 'acme',
         permissions: { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true },
+        appPermissions: { risks: { view: true, create: true, edit: mockRisksEdit } },
     }),
 }));
 
@@ -196,5 +201,18 @@ describe('seedTriples — backward-compatible migration', () => {
             fairInputsJson: { tef: { min: 0.1, mode: 0.2, max: 0.5 } },
         });
         expect(t.tef).toEqual({ min: 0.1, mode: 0.2, max: 0.5 });
+    });
+});
+
+describe('FairAnalysisPanel — Save follows risks.edit', () => {
+    afterEach(() => {
+        mockRisksEdit = true;
+    });
+
+    it('a writer without risks.edit is not offered Save, and is told the exploration is local', () => {
+        mockRisksEdit = false;
+        render(<FairAnalysisPanel riskId="r-1" initial={BLANK} />);
+        expect(screen.queryByRole('button', { name: /Save FAIR ranges/ })).toBeNull();
+        expect(screen.getByText(/changes here are not saved/)).toBeInTheDocument();
     });
 });
