@@ -396,6 +396,20 @@ describe('Test run (Step 2c)', () => {
         expect(onOpenRuns).not.toHaveBeenCalled();
     });
 
+    it('a version naming only propose tools is disabled, since a Test run is read-only (#5374)', () => {
+        renderTab(
+            view([SUBMITTED({ toolNames: ['propose_risks'] }), version({ toolNames: ['list_risks', 'propose_risks'] })], {
+                testRun: { available: true },
+            }),
+        );
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.NO_READ_TOOL'));
+        // One read tool is enough: the in-force version can still be tried.
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(screen.getByTestId('behaviour-test-run-2-button'));
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('is not offered on a draft', () => {
         renderTab(view([version({ status: 'DRAFT', decidedBy: null, decidedAt: null })]));
         expect(screen.queryByTestId('behaviour-test-run-1')).toBeNull();
@@ -449,6 +463,24 @@ describe('the editor', () => {
         expect(document.getElementById('behaviour-tools')?.getAttribute('aria-describedby')).toContain('behaviour-tools-error');
         expect(document.getElementById('behaviour-instructions-error')).toBeNull();
         expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
+    });
+
+    it('editing a version with a drawn flow keeps the flow, and sends it in place of a tool list (#5374)', async () => {
+        renderTab(view([version({ flow: FLOW_V1, toolNames: ['list_risks'] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        // Said before the save, and the flow's tools are shown, not offered.
+        expect(within(editor).getByTestId('behaviour-editor-flow-kept').textContent).toBe(copy('editor.flowKept', { nodes: 2 }));
+        expect(within(editor).getByTestId('behaviour-editor-flow-tools').textContent).toBe('list_risks');
+        expect(document.getElementById('behaviour-tools')).toBeNull();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.flow).toEqual(FLOW_V1);
+        // Never both: the save refuses a tool list beside a flow.
+        expect(body).not.toHaveProperty('toolNames');
     });
 
     describe('the skill catalogue budget (#4590)', () => {

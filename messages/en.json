@@ -11984,6 +11984,10 @@
             "hint": "The agent a harness scan found, newest seen first. The run reviews what the scans observed about it."
           }
         }
+      },
+      "profileRun": {
+        "run": "Behaviour v{version}",
+        "testRun": "Behaviour v{version} — Test run"
       }
     },
     "quarantine": {
@@ -13416,7 +13420,8 @@
           "ENGINE_NOT_IN_FORCE": "This workspace has chosen the Tool Runner engine, but it is not running yet. Admin → AI features → Agent engines shows what it still needs.",
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
           "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
-          "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it."
+          "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it.",
+          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -13462,7 +13467,8 @@
         "save": "Save draft",
         "saving": "Saving…",
         "saved": "Draft saved.",
-        "failed": "Couldn't save this version."
+        "failed": "Couldn't save this version.",
+        "flowKept": "This version carries a drawn flow of {nodes} steps. The new version keeps it as drawn and takes its tools from it; the flow cannot be changed here."
       },
       "reject": {
         "title": "Reject version {version}?",

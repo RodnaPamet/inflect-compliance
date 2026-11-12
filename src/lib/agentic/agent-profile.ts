@@ -15,6 +15,8 @@
  * approved version into a run definition is
  * `src/app-layer/usecases/agent-profile-runs.ts`.
  */
+import { MCP_PROPOSE_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+
 import type { AgentDriver } from './agent-driver';
 import { ENGINE_CAPS } from './workflow-types';
 
@@ -115,6 +117,39 @@ export function parseProfileRunKey(
     const m = RUN_KEY.exec(key);
     if (!m) return null;
     return { profileId: m[1], version: Number(m[2]), testRun: m[3] === PROFILE_TEST_RUN_SUFFIX };
+}
+
+/**
+ * The `agents` message key, and its values, naming a profile run for a person
+ * (#5374): "Behaviour v3" or "Behaviour v3 — Test run". Null for a key that is
+ * not a well-formed profile run key, which the caller names as it always did.
+ *
+ * The run lists and the run page name a run by its workflow definition, and a
+ * profile key has none, so they used to print the raw key.
+ */
+export function profileRunLabel(
+    workflowKey: string,
+): { key: 'runs.profileRun.run' | 'runs.profileRun.testRun'; values: { version: number } } | null {
+    const parsed = parseProfileRunKey(workflowKey);
+    if (!parsed) return null;
+    return { key: parsed.testRun ? 'runs.profileRun.testRun' : 'runs.profileRun.run', values: { version: parsed.version } };
+}
+
+// ─── What a Test run can reach ──────────────────────────────────────
+
+/**
+ * Does a version name NO tool a read-only run is offered (#5374)?
+ *
+ * A Test run is read-only: it withholds the propose surface. A version whose
+ * tools are all propose tools therefore offers it nothing, and the run would
+ * settle `EMPTY_CATALOGUE` having sent nothing. The Test-run start refuses it
+ * up front (`TEST_RUN_NO_READ_TOOL`), and the Behaviour tab disables the
+ * button with the same reason. Every tool not on the propose catalogue is a
+ * read tool, an external tool included, so this asks the propose list only.
+ */
+export function profileNamesNoReadTool(toolNames: readonly string[]): boolean {
+    const propose: readonly string[] = MCP_PROPOSE_TOOL_NAMES;
+    return !toolNames.some((name) => !propose.includes(name));
 }
 
 // ─── Which engines run a profile ────────────────────────────────────
