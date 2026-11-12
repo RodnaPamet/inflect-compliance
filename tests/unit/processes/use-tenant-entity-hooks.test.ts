@@ -131,7 +131,7 @@ interface HookCase {
     reset: () => void;
     /** Expected request URL for tenant slug "acme". */
     url: string;
-    /** Wrapper key the endpoint may nest rows under. */
+    /** Wrapper key the endpoint nests rows under (the capped list, #5183). */
     wrapperKey: string;
     /** Prefix of the surfaced error message. */
     errorPrefix: string;
@@ -145,12 +145,13 @@ const CASES: HookCase[] = [
         hook: useTenantControls,
         reset: __resetTenantControlsCacheForTests,
         url: "/api/t/acme/controls",
-        wrapperKey: "controls",
+        wrapperKey: "rows",
         errorPrefix: "Could not load controls",
+        // A Control row as GET /controls returns it: `code` and `name`.
         row: (id, status) => ({
             id,
-            ref: `${id}-ref`,
-            title: `${id} title`,
+            code: `${id}-ref`,
+            name: `${id} title`,
             status,
         }),
     },
@@ -159,7 +160,7 @@ const CASES: HookCase[] = [
         hook: useTenantRisks,
         reset: __resetTenantRisksCacheForTests,
         url: "/api/t/acme/risks",
-        wrapperKey: "risks",
+        wrapperKey: "rows",
         errorPrefix: "Could not load risks",
         row: (id, status) => ({ id, title: `${id} title`, status }),
     },
@@ -168,7 +169,7 @@ const CASES: HookCase[] = [
         hook: useTenantAssets,
         reset: __resetTenantAssetsCacheForTests,
         url: "/api/t/acme/assets",
-        wrapperKey: "assets",
+        wrapperKey: "rows",
         errorPrefix: "Could not load assets",
         row: (id, status) => ({
             id,
@@ -207,10 +208,12 @@ describe.each(CASES)("$name — shared refusal + fallback contract", (c) => {
         expect(result.current.options).toHaveLength(1);
     });
 
-    it("normalises the endpoint's wrapper envelope into options", async () => {
+    it("reads the rows out of the route's capped envelope (#5183)", async () => {
         installFetch(
             okJson({
                 [c.wrapperKey]: [c.row("a", "OPEN"), c.row("b", "CLOSED")],
+                truncated: false,
+                kpiCounts: {},
             }),
         );
         const { result } = renderHook(() => c.hook("acme"));
@@ -223,10 +226,9 @@ describe.each(CASES)("$name — shared refusal + fallback contract", (c) => {
     });
 
     it("yields NO options for a body that matches no known shape", async () => {
-        // A `{ rows: [...] }` body served with a 200 is the shape this
-        // arm exists for: the hook must degrade to an empty picker,
-        // not throw and not surface a spurious error string.
-        installFetch(okJson({ unexpected: true, rows: [c.row("a", "OPEN")] }));
+        // A 200 whose body carries no row list: the hook must degrade to
+        // an empty picker, not throw and not surface a spurious error.
+        installFetch(okJson({ unexpected: true, items: [c.row("a", "OPEN")] }));
         const { result } = renderHook(() => c.hook("acme"));
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.options).toHaveLength(0);
@@ -377,9 +379,18 @@ describe.each(CASES)("$name — shared refusal + fallback contract", (c) => {
 describe("useTenantControls — control-specific fallbacks", () => {
     beforeEach(resetAllCaches);
 
-    it("substitutes '(no title)' for a non-string title and nulls a non-string ref", async () => {
+    it("labels a control by its code and name (#5183)", async () => {
         installFetch(
-            okJson([{ id: "c1", ref: 7, title: { en: "Access" }, status: "DONE" }]),
+            okJson({ rows: [{ id: "c1", code: "AC-1", name: "Access", status: "DONE" }], truncated: false }),
+        );
+        const { result } = renderHook(() => useTenantControls("acme"));
+        await waitFor(() => expect(result.current.options).toHaveLength(1));
+        expect(result.current.options[0]).toMatchObject({ ref: "AC-1", title: "Access" });
+    });
+
+    it("substitutes '(no title)' for a non-string name and nulls a non-string code", async () => {
+        installFetch(
+            okJson([{ id: "c1", code: 7, name: { en: "Access" }, status: "DONE" }]),
         );
         const { result } = renderHook(() => useTenantControls("acme"));
         await waitFor(() => expect(result.current.options).toHaveLength(1));
@@ -387,42 +398,10 @@ describe("useTenantControls — control-specific fallbacks", () => {
         expect(opt?.title).toBe("(no title)");
         expect(opt?.ref).toBeNull();
     });
-
-    it("does NOT accept a { data } wrapper (that shape is risks/assets only)", async () => {
-        // Locks the asymmetry deliberately: the controls endpoint has
-        // no paginated `{ data }` form, so accepting one here would be
-        // a silent behaviour change rather than a bug fix.
-        installFetch(
-            okJson({ data: [{ id: "c1", ref: null, title: "t", status: null }] }),
-        );
-        const { result } = renderHook(() => useTenantControls("acme"));
-        await waitFor(() => expect(result.current.loading).toBe(false));
-        expect(result.current.options).toHaveLength(0);
-    });
 });
 
-describe("useTenantRisks / useTenantAssets — { data } wrapper", () => {
+describe("useTenantRisks / useTenantAssets — fallbacks", () => {
     beforeEach(resetAllCaches);
-
-    it("useTenantRisks reads rows out of a { data } envelope", async () => {
-        installFetch(
-            okJson({ data: [{ id: "r1", title: "Data loss", status: "OPEN" }] }),
-        );
-        const { result } = renderHook(() => useTenantRisks("acme"));
-        await waitFor(() => expect(result.current.options).toHaveLength(1));
-        expect(result.current.options[0]?.id).toBe("r1");
-    });
-
-    it("useTenantAssets reads rows out of a { data } envelope", async () => {
-        installFetch(
-            okJson({
-                data: [{ id: "a1", key: "SRV-1", name: "Server", status: "ACTIVE" }],
-            }),
-        );
-        const { result } = renderHook(() => useTenantAssets("acme"));
-        await waitFor(() => expect(result.current.options).toHaveLength(1));
-        expect(result.current.options[0]?.id).toBe("a1");
-    });
 
     it("useTenantRisks substitutes '(untitled)' for a non-string title", async () => {
         installFetch(okJson([{ id: "r1", title: 12, status: "OPEN" }]));

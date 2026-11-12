@@ -189,6 +189,20 @@ describe('new-task form — staged links show names, not codes', () => {
         expect(list).not.toHaveTextContent(OTHER_CONTROL.id);
     });
 
+    it('offers no framework-requirement link type: this form cannot name a framework (#5129)', async () => {
+        mount();
+        const typePicker = await waitFor(() => {
+            const el = document.getElementById('link-entity-type');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+        fireEvent.click(typePicker);
+        const listbox = await screen.findByRole('listbox');
+        const offered = within(listbox).getAllByRole('option').map((o) => o.textContent?.trim());
+        expect(offered).toContain(LINK.CONTROL);
+        expect(offered).not.toContain(LINK.FRAMEWORK_REQUIREMENT);
+    });
+
     it('the link-failure warning names the link the same way', async () => {
         writes.link = { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'nope' } } };
         mount({ preset: true });

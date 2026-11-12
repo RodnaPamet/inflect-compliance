@@ -58,12 +58,6 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
             expect(src).toMatch(/\/api\/t\/\$\{tenantSlug\}\/risks/);
         });
 
-        it("normalises bare-array AND { risks } AND { data } response shapes", () => {
-            expect(src).toMatch(/Array\.isArray\(body\)/);
-            expect(src).toMatch(/risks\?: unknown\[\]/);
-            expect(src).toMatch(/data\?: unknown\[\]/);
-        });
-
         it("empty-string slug short-circuits to a no-op", () => {
             expect(src).toMatch(/tenantSlug === ""/);
         });

@@ -25,6 +25,8 @@
  */
 import { useEffect, useState } from "react";
 
+import { unwrapCappedList, type CappedList } from "@/lib/list-backfill-cap";
+
 import {
     isSessionExpired,
     noteUnauthorized,
@@ -83,29 +85,27 @@ async function fetchTenantControls(
         throw new Error(`Could not load controls (${res.status})`);
     }
     const body = (await res.json()) as unknown;
-    // The endpoint shape (`{ controls: [...] }` vs bare array)
-    // varies between paginated + non-paginated paths. Normalise
-    // both shapes here.
-    const rows = Array.isArray(body)
-        ? (body as unknown[])
-        : Array.isArray((body as { controls?: unknown[] })?.controls)
-          ? (body as { controls: unknown[] }).controls
-          : [];
+    // GET /controls returns the capped `{ rows, truncated, kpiCounts }`
+    // envelope. No branch here read `rows`, so the canvas pickers were
+    // always empty (#5183).
+    const rows = unwrapCappedList(body as CappedList<unknown> | unknown[] | null);
     return rows
         .map((r) => {
+            // A Control row carries `code` and `name`; the option calls
+            // them `ref` and `title` (#5183).
             const row = r as {
                 id?: unknown;
-                ref?: unknown;
-                title?: unknown;
+                code?: unknown;
+                name?: unknown;
                 status?: unknown;
             };
             if (typeof row.id !== "string") return null;
             return {
                 id: row.id,
-                ref: typeof row.ref === "string" ? row.ref : null,
+                ref: typeof row.code === "string" && row.code !== "" ? row.code : null,
                 title:
-                    typeof row.title === "string"
-                        ? row.title
+                    typeof row.name === "string"
+                        ? row.name
                         : "(no title)",
                 status: typeof row.status === "string" ? row.status : null,
             };
