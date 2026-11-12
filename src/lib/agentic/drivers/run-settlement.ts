@@ -115,6 +115,11 @@ export async function haltRunAtGuard(
     runId: string,
     verdict: 'FLAGGED' | 'QUARANTINED',
     ruleIds: readonly string[],
+    /**
+     * The engine's name in the message, as `haltRunAtKill` takes it (#5372): a
+     * Tool Runner run settled at the guard must not read as a Flue one.
+     */
+    enginePrefix: 'flue' | 'tool_runner' = 'flue',
 ): Promise<string> {
     const blocked = verdict === 'QUARANTINED';
     const status = blocked ? 'ABORTED' : 'AWAITING_APPROVAL';
@@ -122,8 +127,8 @@ export async function haltRunAtGuard(
     // adapter's `ReviewFlag` follows. What an operator needs is which rule
     // fired; the text that matched it is the thing the guard exists to contain.
     const message = blocked
-        ? `flue_run_guard_blocked: the content guard refused this run's traffic (${ruleIds.join(', ') || 'no rule ids recorded'}). Nothing was committed.`
-        : `flue_run_guard_flagged: the content guard requires human review before this run may continue (${ruleIds.join(', ') || 'no rule ids recorded'}).`;
+        ? `${enginePrefix}_run_guard_blocked: the content guard refused this run's traffic (${ruleIds.join(', ') || 'no rule ids recorded'}). Nothing was committed.`
+        : `${enginePrefix}_run_guard_flagged: the content guard requires human review before this run may continue (${ruleIds.join(', ') || 'no rule ids recorded'}).`;
 
     await updateRun(ctx, runId, {
         status,
