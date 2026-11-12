@@ -11813,7 +11813,11 @@
         "processMapNotAvailable": "Process-map proposals cannot be approved yet. You can still reject this one.",
         "processMapNotEditable": "A process map is approved exactly as proposed. To change it, reject it and propose the corrected map.",
         "processMapNeedsProcessesEdit": "Approving a process map creates it as you, so it needs permission to edit process maps. Somebody who has it can approve this one.",
-        "processMapUnreadable": "This process map can no longer be read, so it cannot be approved. Reject it."
+        "processMapUnreadable": "This process map can no longer be read, so it cannot be approved. Reject it.",
+        "findingNeedsCreate": "Approving this finding creates it as you, so it needs permission to create findings. Somebody who has it can approve this one.",
+        "findingNeedsEdit": "Approving this change edits the finding as you, so it needs permission to edit findings. Somebody who has it can approve this one.",
+        "riskNeedsCreate": "Approving this risk creates it as you, so it needs permission to create risks. Somebody who has it can approve this one.",
+        "riskNeedsEdit": "Approving this change edits the risk as you, so it needs permission to edit risks. Somebody who has it can approve this one."
       }
     },
     "runs": {

@@ -42,8 +42,9 @@ export function riskBulkPermissions(ctx: {
  * the empty register's button on the list, the dashboard and the board, and
  * AI Assist (the list's panel and the `/risks/ai` page). Every way in is gated
  * twice, like the bulk actions: the create, import and AI generate / apply
- * routes check `risks.create`, and `createRisk` / `bulkImportRisks` /
- * `generateRiskSuggestions` / `applySession` assert the coarse write tier. A
+ * routes check `risks.create`, `createRisk` asserts it as well (#5369), and
+ * `bulkImportRisks` / `generateRiskSuggestions` / `applySession` assert the
+ * coarse write tier. A
  * custom role can hold one without the other, so the page used to offer
  * Create on the tier alone and the server then refused it.
  */

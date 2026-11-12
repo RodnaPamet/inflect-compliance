@@ -25,10 +25,21 @@ const viewer = (role: Role, appPermissions: PermissionSet = getPermissionsForRol
 });
 
 describe('the approve-permission table', () => {
-    it('names processes.edit for a process map, and nothing for the record kinds', () => {
-        expect(PROPOSAL_KIND_APPROVE_PERMISSION).toEqual({ PROCESS_MAP: 'processes.edit' });
+    it('names processes.edit for a process map and the route keys for a finding and a risk, per operation', () => {
+        expect(PROPOSAL_KIND_APPROVE_PERMISSION).toEqual({
+            PROCESS_MAP: { CREATE: 'processes.edit', UPDATE: 'processes.edit' },
+            FINDING: { CREATE: 'findings.create', UPDATE: 'findings.edit' },
+            RISK: { CREATE: 'risks.create', UPDATE: 'risks.edit' },
+        });
         expect(approvePermissionFor('PROCESS_MAP')).toBe('processes.edit');
-        for (const kind of PROPOSAL_KINDS.filter((k) => k !== 'PROCESS_MAP')) {
+        expect(approvePermissionFor('FINDING')).toBe('findings.create');
+        expect(approvePermissionFor('FINDING', 'CREATE')).toBe('findings.create');
+        expect(approvePermissionFor('FINDING', 'UPDATE')).toBe('findings.edit');
+        expect(approvePermissionFor('RISK', null)).toBe('risks.create');
+        expect(approvePermissionFor('RISK', 'UPDATE')).toBe('risks.edit');
+        // CONTROL and POLICY floor on their granular keys inside the usecase;
+        // EXTERNAL_WRITE creates no record of ours.
+        for (const kind of PROPOSAL_KINDS.filter((k) => !['PROCESS_MAP', 'FINDING', 'RISK'].includes(k))) {
             expect({ kind, key: approvePermissionFor(kind) }).toEqual({ kind, key: null });
         }
         expect(approvePermissionFor('constructor')).toBeNull();
@@ -46,6 +57,17 @@ describe('viewerMayApproveProposal', () => {
         expect(viewerMayApproveProposal(viewer(role), 'RISK')).toBe(false);
     });
 
+    it('a custom role withholding findings.create may approve a risk, and a finding UPDATE only with findings.edit', () => {
+        const editor = getPermissionsForRole('EDITOR');
+        const custom = { ...editor, findings: { ...editor.findings, create: false } };
+        expect(viewerMayApproveProposal(viewer('EDITOR', custom), 'FINDING', 'CREATE')).toBe(false);
+        expect(viewerMayApproveProposal(viewer('EDITOR', custom), 'FINDING', 'UPDATE')).toBe(true);
+        expect(viewerMayApproveProposal(viewer('EDITOR', custom), 'RISK', 'CREATE')).toBe(true);
+        const noRiskEdit = { ...editor, risks: { ...editor.risks, edit: false } };
+        expect(viewerMayApproveProposal(viewer('EDITOR', noRiskEdit), 'RISK', 'UPDATE')).toBe(false);
+        expect(viewerMayApproveProposal(viewer('EDITOR', noRiskEdit), 'RISK', 'CREATE')).toBe(true);
+    });
+
     it('a custom role withholding processes.edit on a write-capable base may approve a risk, never a map', () => {
         const custom = { ...getPermissionsForRole('EDITOR'), processes: { edit: false } };
         expect(viewerMayApproveProposal(viewer('EDITOR', custom), 'RISK')).toBe(true);
@@ -53,12 +75,16 @@ describe('viewerMayApproveProposal', () => {
     });
 });
 
-describe('a process map’s refusals are worded, in both languages', () => {
+describe('a process map’s, a finding’s and a risk’s refusals are worded, in both languages', () => {
     it.each([
         ['PROCESS_MAP_PROPOSAL_NOT_EDITABLE', 'processMapNotEditable'],
         ['PROCESS_MAP_APPROVER_NEEDS_PROCESSES_EDIT', 'processMapNeedsProcessesEdit'],
         ['PROCESS_MAP_PROPOSAL_UNREADABLE', 'processMapUnreadable'],
         ['PROCESS_MAP_PROPOSALS_NOT_AVAILABLE', 'processMapNotAvailable'],
+        ['FINDING_APPROVER_NEEDS_FINDINGS_CREATE', 'findingNeedsCreate'],
+        ['FINDING_APPROVER_NEEDS_FINDINGS_EDIT', 'findingNeedsEdit'],
+        ['RISK_APPROVER_NEEDS_RISKS_CREATE', 'riskNeedsCreate'],
+        ['RISK_APPROVER_NEEDS_RISKS_EDIT', 'riskNeedsEdit'],
     ])('%s → refused.%s', (reason, key) => {
         expect(proposalRefusalKey({ error: { details: { reason } } })).toBe(key);
         for (const messages of [en, bg]) {

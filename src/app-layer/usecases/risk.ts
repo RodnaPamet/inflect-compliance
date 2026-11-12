@@ -3,6 +3,7 @@ import { RiskRepository, RiskFilters, RiskListParams } from '../repositories/Ris
 import { TaskRepository } from '../repositories/TaskRepository';
 import { RiskTemplateRepository } from '../repositories/RiskTemplateRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
+import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.policies';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { calculateRiskScore } from '@/lib/risk-scoring';
@@ -222,7 +223,7 @@ export async function createRisk(ctx: RequestContext, data: {
     targetDate?: string | null;
     nextReviewAt?: string | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanCreateRisk(ctx);
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
@@ -433,7 +434,7 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     /// an array (possibly empty) replaces it (normalized to valid codes).
     linddunCategories?: string[] | null;
 }) {
-    assertCanWrite(ctx);
+    assertCanUpdateRisk(ctx);
 
     const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
         // Tenant lookup is global (Tenant table has no RLS)
