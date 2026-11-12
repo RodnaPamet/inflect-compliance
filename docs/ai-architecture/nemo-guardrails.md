@@ -19,7 +19,7 @@ inflect · ai architecture · nemo guardrails · roadmap v1 · 2026-10-29
 | Wave | 3 |
 | Depends on | [`garak.md`](./garak.md) Phase 1 (the before/after measurement); [`presidio.md`](./presidio.md) Phase 1 for PII rails |
 | Unblocks | model-based rails on the assistant and run input; closes the Flue audit's F5 residual (run input unscanned) by a second route |
-| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) — **adopted, owner, 2026-11-11** |
+| Owner decisions | **D-L1-2** (LLM-free rails first; LLM-backed rails only on the tenant's permitted route) — **adopted, owner, 2026-11-11** (source: the owner decisions of 2026-11-11 relayed in the roadmap coordinator's brief for this work; the master's decision-table row is initialled by the coordinator) |
 | Complete at | Phase 3, with LLM-backed rails on the external route by API key |
 
 ## At a glance
@@ -136,7 +136,9 @@ verdict.
       `docs/implementation-notes/2026-11-11-run-input-scan-every-engine.md`.
 - [ ] 0.2 D-L1-2: list the rails by whether they need an LLM; Phase 1 =
       LLM-free; Phase 2 = LLM-backed on the permitted route. **D-L1-2 decided:
-      adopted (LLM-free rails first) — owner, 2026-11-11.** The rail-by-rail
+      adopted (LLM-free rails first) — owner, 2026-11-11**, taken with nine
+      other decisions that day and relayed in the roadmap coordinator's brief;
+      the master's D-L1-2 row is the coordinator's to initial. The rail-by-rail
       list and its residency consequences remain.
 - [ ] 0.3 Baseline: garak hit rates with the deterministic guard only
       ([`garak.md`](./garak.md) Phase 0/1) — the number NeMo must move.

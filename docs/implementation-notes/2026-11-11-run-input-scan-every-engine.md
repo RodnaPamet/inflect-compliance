@@ -38,7 +38,11 @@ below the driver choice, or gated on the static engine, would have left it
 green. The new integration test turns both switches on, has a tenant choose
 each reasoning engine, and asserts the hostile input is refused by the guard
 while the clean control reaches the register gate, which only a reasoning
-engine asks. It also pins the arms: STRICT (block) refuses, AUDIT (allow)
+engine asks. Because that clean control is refused for having no agent, the
+file also runs the case a reasoning engine actually admits: a caller bound to
+an ACTIVE registered agent. There the hostile input is refused with no row and
+nothing enqueued, and the clean input creates a row recorded `FLUE` /
+`TOOL_RUNNER` and is handed to `agent-run-execute`. It also pins the arms: STRICT (block) refuses, AUDIT (allow)
 creates the run.
 
 ## Files
@@ -62,7 +66,13 @@ creates the run.
 - **Mutation-checked.** Moving the scan below the driver choice and gating it on
   the static engine fails the two hostile reasoning-engine cells while the
   sibling static-engine file stays green; replacing `assertNoReviewRequired`
-  with "any non-clean verdict refuses" fails the AUDIT cell.
+  with "any non-clean verdict refuses" fails the AUDIT cell; skipping the scan
+  for agent-bound callers (`if (!ctx.agentId) …`) fails the two agent-bound
+  hostile cells while every unbound cell stays green.
+- **The master roadmap is not edited here.** Its F5 and F12 residuals, the F5
+  node and the D-L1-2 decision row are the coordinator's to update when it
+  integrates this branch; the child doc's "Updating the master" section lists
+  them.
 - **F12 fixed by naming where to look, not how many.** The comment was
   corrected once (#3469) to "two definitions set `driver`" and was wrong again
   within weeks (six registered workflows ask for `flue`, and every compiled
