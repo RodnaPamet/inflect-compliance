@@ -25,6 +25,12 @@ export class ReportRepository {
      * A soft delete is the product's statement that a row is no longer part of
      * the register. A report that contradicts that is not showing more data, it
      * is showing wrong data.
+     *
+     * The same holds one join down, for the CONTROLS column. Soft-deleting a
+     * control keeps its `RiskControl` rows, and the soft-delete extension
+     * filters top-level reads only — never a nested `include` — so a control in
+     * the trash was still listed as mitigating the risk (#5376). The nested
+     * `where` is the same `control: { deletedAt: null }` the coverage joins use.
      */
     static async getRiskRegisterData(db: PrismaTx, ctx: RequestContext) {
         return db.risk.findMany({
@@ -32,7 +38,10 @@ export class ReportRepository {
             orderBy: { inherentScore: 'desc' },
             take: RISK_REGISTER_MAX_ROWS,
             include: {
-                controls: { include: { control: { select: { name: true, annexId: true } } } },
+                controls: {
+                    where: { control: { deletedAt: null } },
+                    include: { control: { select: { name: true, annexId: true } } },
+                },
             },
         });
     }
