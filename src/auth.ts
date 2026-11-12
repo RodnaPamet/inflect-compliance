@@ -647,17 +647,29 @@ function membershipTenantIds(token: JWT): Set<string> {
  * it wants a code, as sign-in would have asked (`pendingAfterMembershipRefresh`).
  * A failed read leaves the set as it was.
  */
-async function refreshPendingMfaWorkspaces(token: JWT, before: ReadonlySet<string>): Promise<void> {
+async function refreshPendingMfaWorkspaces(
+    token: JWT,
+    before: ReadonlySet<string>,
+    primary: { tenantId: string | null | undefined; pending: boolean },
+): Promise<void> {
     if (!token.userId) return;
     try {
-        token.mfaPendingTenantIds = await pendingAfterMembershipRefresh(token.userId, {
+        const next = await pendingAfterMembershipRefresh(token.userId, {
             pending: token.mfaPendingTenantIds ?? [],
             // A token minted before the set existed has never asked its other
             // workspaces: every one of them counts as gained.
             before: token.mfaPendingTenantIds === undefined ? new Set<string>() : before,
             after: (token.memberships ?? []).map((m) => m.tenantId),
             primaryTenantId: token.tenantId,
+            primaryBefore: primary.tenantId,
+            primaryPendingBefore: primary.pending,
         });
+        token.mfaPendingTenantIds = next.pending;
+        // A new primary takes the state it had as a pending workspace. An
+        // unchanged primary keeps its flag: only its own challenge clears it.
+        if (token.tenantId !== primary.tenantId) {
+            token.mfaPending = next.primaryPending;
+        }
     } catch {
         // Unchanged.
     }
@@ -1044,8 +1056,9 @@ export const authOptions: NextAuthOptions = {
             // session-revocation + OAuth-refresh checks below.
             if (trigger === 'update' && token.email) {
                 const before = membershipTenantIds(token);
+                const primary = { tenantId: token.tenantId, pending: token.mfaPending === true };
                 await applyMembershipClaims(token);
-                await refreshPendingMfaWorkspaces(token, before);
+                await refreshPendingMfaWorkspaces(token, before, primary);
             }
 
             // Epic C.3 — verify session row still exists + isn't revoked.
@@ -1172,8 +1185,9 @@ export const authOptions: NextAuthOptions = {
                         // no longer described reality).
                         if (token.email) {
                             const before = membershipTenantIds(token);
+                            const primary = { tenantId: token.tenantId, pending: token.mfaPending === true };
                             await applyMembershipClaims(token);
-                            await refreshPendingMfaWorkspaces(token, before);
+                            await refreshPendingMfaWorkspaces(token, before, primary);
                         }
                         // Stamped LAST so a failed read retries on the next
                         // request instead of being skipped for five minutes.
