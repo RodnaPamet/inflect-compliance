@@ -43,6 +43,7 @@ const LOCAL_RULES = [
     'anthropic-client-single-seam',
     'no-positional-comment-strip',
     'vector-store-single-seam',
+    'web-bot-auth-single-seam',
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {

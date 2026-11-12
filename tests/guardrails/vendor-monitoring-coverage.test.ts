@@ -110,14 +110,18 @@ describe('vendor-monitoring — external signals ride the shared seam', () => {
         expect(BREACH).toMatch(/fetchWithRetry\(/);
     });
 
-    it('the TLS grade, a tenant-entered host, fetches only through safeFetch', () => {
+    it('the TLS grade, a tenant-entered host, fetches only through the bot seam (safeFetch underneath)', () => {
         // The vendor domain is typed by a tenant, so its request is an SSRF
-        // sink (tests/guards/ssrf-egress-coverage.test.ts lists it). This
-        // file used to require fetchWithRetry here, which pinned the hole.
-        expect(TLS).toMatch(/from '@\/app-layer\/automation\/webhook-safety'/);
-        expect(TLS).toMatch(/safeFetch\(/);
+        // sink. This file used to require fetchWithRetry here, which pinned
+        // the hole; since Web Bot Auth Phase 2 every request is `botFetch`,
+        // which is `safeFetch` plus the bot's User-Agent and signature
+        // (tests/guards/ssrf-egress-coverage.test.ts lists the seam).
+        expect(TLS).toMatch(/from '@\/lib\/web-bot-auth\/bot-fetch'/);
+        // The homepage request itself (the robots.txt read is the other call).
+        expect(TLS).toMatch(/res = await botFetch\(url, \{/);
         expect(TLS).not.toMatch(/fetchWithRetry/);
         expect(TLS).not.toMatch(/(^|[^\w.])fetch\(/m);
+        expect(TLS).not.toMatch(/(^|[^\w.])safeFetch\(/m);
     });
 
     it('every provider ships a deterministic, network-free stub (CI-safe default)', () => {

@@ -1,0 +1,37 @@
+{
+    "record": "web-bot-auth request signing conformance",
+    "roadmap": "docs/ai-architecture/web-bot-auth.md Phase 2 (sub-phase 1.4 request half)",
+    "oracle": {
+        "package": "web-bot-auth",
+        "version": "0.2.0",
+        "role": "independent verifier; devDependency only"
+    },
+    "wireFormat": "docs/implementation-notes/2026-11-11-web-bot-auth-decisions.md",
+    "inputs": {
+        "key": "RFC 9421 Appendix B.1.4 Ed25519 test key",
+        "keyid": "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U",
+        "method": "GET",
+        "url": "https://vendor.example/",
+        "directoryAuthority": "app.inflect.example",
+        "created": 1794528000,
+        "nonce": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw=="
+    },
+    "produced": {
+        "headers": {
+            "Signature-Agent": "\"https://app.inflect.example/.well-known/http-message-signatures-directory\"",
+            "Signature-Input": "sig1=(\"@method\" \"@authority\" \"@path\" \"signature-agent\");created=1794528000;expires=1794528060;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";nonce=\"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw==\";tag=\"web-bot-auth\"",
+            "Signature": "sig1=:6F7vi4l/Y4MhF6z+nAcRF01NZlDrQCpvpelUEjALQ1eV3SZTZst90vcpqaL4/2uckYN6VTYY0zZ7YcErGM04Ag==:"
+        },
+        "signatureBase": "\"@method\": GET\n\"@authority\": vendor.example\n\"@path\": /\n\"signature-agent\": \"https://app.inflect.example/.well-known/http-message-signatures-directory\"\n\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"signature-agent\");created=1794528000;expires=1794528060;keyid=\"poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U\";alg=\"ed25519\";nonce=\"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw==\";tag=\"web-bot-auth\""
+    },
+    "verdicts": {
+        "the request as signed": "VERIFIED",
+        "a HEAD signed as HEAD": "VERIFIED",
+        "presented at another path": "REFUSED",
+        "presented at another authority": "REFUSED",
+        "presented with another method": "REFUSED",
+        "with the Signature-Agent swapped for another directory": "REFUSED",
+        "after the window closed": "REFUSED",
+        "checked against another key": "REFUSED"
+    }
+}

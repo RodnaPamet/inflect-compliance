@@ -1916,6 +1916,15 @@ let _vendorTlsFetch: Counter | null = null;
 export function recordVendorTlsFetch(attrs: {
     provider: string;
     outcome: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED';
+    /**
+     * Web Bot Auth Phase 2. `ROBOTS` when the site's robots.txt disallowed the
+     * monitor (its stated policy, not its door), else `NONE`; and whether the
+     * requests were signed. Phase 2.5 measures the REFUSED share with
+     * `reason=NONE`, signed against the unsigned baseline. Still two small
+     * closed sets: no vendor or tenant label.
+     */
+    reason?: 'ROBOTS' | 'NONE';
+    signed?: boolean;
 }): void {
     if (!_vendorTlsFetch) {
         _vendorTlsFetch = getMeter().createCounter('vendor_monitor.tls_fetch', {
@@ -1923,5 +1932,10 @@ export function recordVendorTlsFetch(attrs: {
             unit: '1',
         });
     }
-    _vendorTlsFetch.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+    _vendorTlsFetch.add(1, {
+        provider: attrs.provider,
+        outcome: attrs.outcome,
+        reason: attrs.reason ?? 'NONE',
+        signed: attrs.signed ? 'true' : 'false',
+    });
 }

@@ -56,10 +56,22 @@ export interface BreachProvider {
 export const TLS_FETCH_OUTCOMES = ['GRADED', 'REFUSED', 'UNREACHABLE', 'BLOCKED'] as const;
 export type TlsFetchOutcome = (typeof TLS_FETCH_OUTCOMES)[number];
 
+/**
+ * Why a REFUSED fetch was refused, when the site said so in policy rather than
+ * at its door: `ROBOTS` — its robots.txt disallows the monitor's product token,
+ * so the homepage was never requested (Web Bot Auth Phase 2, D-L1-6).
+ */
+export const TLS_REFUSAL_REASONS = ['ROBOTS'] as const;
+export type TlsRefusalReason = (typeof TLS_REFUSAL_REASONS)[number];
+
 export interface TlsSignal {
     source: string;
     /** What the fetch came to. `grade` is non-null exactly when this is GRADED. */
     outcome: TlsFetchOutcome;
+    /** Set only on a REFUSED outcome whose reason is the site's stated policy. */
+    refusalReason?: TlsRefusalReason;
+    /** Whether the provider's requests carried the deployment's Web Bot Auth signature. */
+    signed?: boolean;
     /** Letter grade A..F, or null when the domain couldn't be graded. */
     grade: string | null;
     /** ISO timestamp of the grade. */

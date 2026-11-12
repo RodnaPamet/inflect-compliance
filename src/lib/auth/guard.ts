@@ -46,6 +46,10 @@ const PUBLIC_PATH_EXACT = new Set([
     // per-IP read budget is charged in the handler. EXACT path: no other
     // `/.well-known/` path is opened by this entry.
     '/.well-known/http-message-signatures-directory',
+    // The vendor monitor's public bot page (Web Bot Auth Phase 2, D-L1-6):
+    // its User-Agent links here. Reads no database row and names no tenant.
+    // EXACT path: nothing else under `/bots/` is opened by this entry.
+    '/bots/vendor-monitor',
 ]);
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|gif|svg|webp|css|js|woff|woff2|ttf|eot|map|json)$/;

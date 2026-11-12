@@ -28,6 +28,25 @@
  * and no credential, so a public hop leaks nothing. A hop to http, or to a
  * private address, ends the grade with nothing graded, as `BLOCKED`.
  *
+ * ── Every request is the deployment's bot, through `botFetch` ──
+ *
+ * Since Web Bot Auth Phase 2 the provider never calls `safeFetch` directly:
+ * `botFetch` is `safeFetch` plus the bot's honest User-Agent and, when the
+ * deployment has a key, an HTTP Message Signature (each hop and each retry
+ * signed on its own). No key, no signature, and the request is the unsigned
+ * one it always was.
+ *
+ * ── robots.txt is honoured before the homepage is requested ──
+ *
+ * Once per origin per grade (the start origin, and the origin of any redirect
+ * target), `https://<origin>/robots.txt` is read through the same seam and
+ * judged for the bot's product token (RFC 9309, `src/lib/web-bot-auth/robots.ts`).
+ * A disallowed path is REFUSED with reason ROBOTS and the homepage is never
+ * requested. A robots.txt that is missing or "unavailable" (a 4xx) restricts
+ * nothing; one that is "unreachable" (a 5xx or a network failure) means
+ * complete disallow (RFC 9309 §2.3.1.4), so nothing is requested and the
+ * grade is UNREACHABLE.
+ *
  * ── A fetch that does not grade says why ──
  *
  * Every signal carries an outcome (`TlsFetchOutcome`): GRADED, REFUSED,
@@ -35,14 +54,12 @@
  * GRADED and records the outcome, so a site that starts refusing the monitor
  * shows as a stale grade rather than an unchanged one.
  */
-import {
-    RedirectNotAllowedError,
-    SsrfBlockedError,
-    safeFetch,
-} from '@/app-layer/automation/webhook-safety';
+import { RedirectNotAllowedError, SsrfBlockedError } from '@/app-layer/automation/webhook-safety';
 import { logger } from '@/lib/observability';
+import { botFetch, botFetchSigns, VENDOR_MONITOR_BOT_TOKEN } from '@/lib/web-bot-auth/bot-fetch';
+import { ROBOTS_MAX_BYTES, robotsAllows } from '@/lib/web-bot-auth/robots';
 import { gradeSecurityHeaders } from './evaluate';
-import type { TlsFetchOutcome, TlsProvider, TlsSignal } from './types';
+import type { TlsFetchOutcome, TlsProvider, TlsRefusalReason, TlsSignal } from './types';
 
 /**
  * Deterministic stub — grades from the domain hash, no network. A given
@@ -69,8 +86,6 @@ export class TestModeTlsProvider implements TlsProvider {
         };
     }
 }
-
-const USER_AGENT = 'InflectCompliance-VendorMonitor/1.0';
 
 /** The bounds of one grade. Exported so the tests assert against them. */
 export const HOMEPAGE_FETCH_LIMITS = {
@@ -126,6 +141,8 @@ interface Ungraded {
     outcome: Exclude<TlsFetchOutcome, 'GRADED'>;
     /** For the log line only: an HTTP status, a challenge vendor, a cause. */
     detail: string;
+    /** Why a REFUSED fetch was refused, when the reason is the site's stated policy. */
+    reason?: TlsRefusalReason;
 }
 
 type HomepageRead = { headers: Record<string, string> } | Ungraded;
@@ -148,7 +165,16 @@ export class HeaderGradeTlsProvider implements TlsProvider {
                 outcome: u.outcome,
                 detail: u.detail,
             });
-            return { source: this.name, outcome: u.outcome, grade: null, checkedAt: now, presentHeaders: [], missingHeaders: [] };
+            return {
+                source: this.name,
+                outcome: u.outcome,
+                ...(u.reason ? { refusalReason: u.reason } : {}),
+                signed: botFetchSigns(),
+                grade: null,
+                checkedAt: now,
+                presentHeaders: [],
+                missingHeaders: [],
+            };
         };
 
         const start = vendorHomepageUrl(domain);
@@ -181,6 +207,7 @@ export class HeaderGradeTlsProvider implements TlsProvider {
         return {
             source: this.name,
             outcome: 'GRADED',
+            signed: botFetchSigns(),
             grade: g.grade,
             checkedAt: now,
             presentHeaders: g.presentHeaders,
@@ -195,8 +222,15 @@ export class HeaderGradeTlsProvider implements TlsProvider {
      */
     private async fetchHomepageHeaders(startUrl: string): Promise<HomepageRead> {
         const deadline = Date.now() + HOMEPAGE_FETCH_LIMITS.deadlineMs;
+        const robotsRead = new Set<string>();
         let url = startUrl;
         for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
+            const target = new URL(url);
+            if (!robotsRead.has(target.origin)) {
+                robotsRead.add(target.origin);
+                const refusal = await this.robotsRefusal(target, deadline);
+                if (refusal) return refusal;
+            }
             let attempt: AttemptResult;
             try {
                 attempt = await this.getWithRetry(url, deadline);
@@ -218,6 +252,56 @@ export class HeaderGradeTlsProvider implements TlsProvider {
     }
 
     /**
+     * What the origin's robots.txt says about requesting `target`, or null when
+     * it may be requested. One request (plus redirect hops), never retried: a
+     * robots.txt that cannot be read today is read again tomorrow. Throws
+     * `SsrfBlockedError` when the robots URL or a hop is refused.
+     */
+    private async robotsRefusal(target: URL, deadline: number): Promise<Ungraded | null> {
+        let robotsUrl = `${target.origin}/robots.txt`;
+        for (let hop = 0; hop <= HOMEPAGE_FETCH_LIMITS.maxRedirects; hop++) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) return { outcome: 'UNREACHABLE', detail: 'deadline reached before robots.txt' };
+            let res: Response;
+            try {
+                res = await botFetch(robotsUrl, {
+                    signal: AbortSignal.timeout(Math.min(HOMEPAGE_FETCH_LIMITS.requestTimeoutMs, remaining)),
+                });
+            } catch (err) {
+                if (err instanceof SsrfBlockedError) throw err;
+                if (err instanceof RedirectNotAllowedError) {
+                    // RFC 9309 §2.3.1.2: a redirect without a target leaves
+                    // robots.txt "unavailable", which restricts nothing.
+                    if (!err.location) return null;
+                    robotsUrl = new URL(err.location, robotsUrl).href;
+                    continue;
+                }
+                // §2.3.1.4: unreachable means complete disallow.
+                return { outcome: 'UNREACHABLE', detail: 'robots.txt network failure or timeout' };
+            }
+            const challenge = recognisedChallenge(res.headers);
+            if (challenge) {
+                await discardBody(res);
+                return { outcome: 'REFUSED', detail: `robots.txt ${res.status} ${challenge} challenge` };
+            }
+            if (res.ok) {
+                const text = await readTextCapped(res, ROBOTS_MAX_BYTES);
+                const path = `${target.pathname}${target.search}`;
+                return robotsAllows(text, VENDOR_MONITOR_BOT_TOKEN, path)
+                    ? null
+                    : { outcome: 'REFUSED', detail: 'robots.txt disallows the monitor', reason: 'ROBOTS' };
+            }
+            await discardBody(res);
+            if (res.status === 429) return { outcome: 'REFUSED', detail: 'robots.txt 429' };
+            if (res.status >= 500) return { outcome: 'UNREACHABLE', detail: `robots.txt ${res.status}` };
+            // §2.3.1.3: any other 4xx is "unavailable" and restricts nothing.
+            return null;
+        }
+        // §2.3.1.2: past the redirect limit robots.txt MAY be treated as unavailable.
+        return null;
+    }
+
+    /**
      * One URL, up to `maxAttempts` tries inside the deadline. Returns the 2xx
      * response, or what the last try came to. A redirect and a refused address
      * propagate as `safeFetch` throws them; neither is retried. Only a network
@@ -231,9 +315,7 @@ export class HeaderGradeTlsProvider implements TlsProvider {
             if (remaining <= 0) return last;
             let res: Response;
             try {
-                res = await safeFetch(url, {
-                    method: 'GET',
-                    headers: { 'User-Agent': USER_AGENT },
+                res = await botFetch(url, {
                     signal: AbortSignal.timeout(Math.min(HOMEPAGE_FETCH_LIMITS.requestTimeoutMs, remaining)),
                 });
             } catch (err) {
@@ -272,6 +354,42 @@ async function discardBody(res: Response): Promise<void> {
     } catch {
         // Already consumed or closed: nothing to release.
     }
+}
+
+/**
+ * The body as text, reading at most `maxBytes` and cancelling the stream
+ * there: a robots.txt larger than RFC 9309's floor is judged on its first
+ * 500 KiB, and nothing larger is ever buffered.
+ */
+async function readTextCapped(res: Response, maxBytes: number): Promise<string> {
+    if (!res.body) return '';
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+        while (total < maxBytes) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const take = value.subarray(0, maxBytes - total);
+            chunks.push(take);
+            total += take.length;
+        }
+    } catch {
+        // A body cut off mid-read is judged on what arrived.
+    } finally {
+        try {
+            await reader.cancel();
+        } catch {
+            // Already closed.
+        }
+    }
+    const all = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) {
+        all.set(c, at);
+        at += c.length;
+    }
+    return new TextDecoder('utf-8', { fatal: false }).decode(all);
 }
 
 function sleep(ms: number): Promise<void> {

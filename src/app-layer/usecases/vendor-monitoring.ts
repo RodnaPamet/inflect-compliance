@@ -165,6 +165,9 @@ export async function runVendorMonitor(
     let newBreachAt: Date | null = null;
     let newTlsCheckedAt: Date | null = null;
     let tlsObservation: TlsObservation | null = null;
+    // Web Bot Auth Phase 2: `ROBOTS` when the site's robots.txt refused the
+    // monitor. Not a column yet: it reaches the metric and the audit row.
+    let tlsRefusalReason: string | null = null;
 
     // ── Signal 1: attestation expiry. ──
     if (monitor.checkAttestation) {
@@ -251,7 +254,13 @@ export async function runVendorMonitor(
         // A fetch that did not grade is recorded, never read as "no change":
         // the grade and tlsCheckedAt stay, and the outcome marks them stale.
         tlsObservation = planTlsObservation(monitor.tlsGrade, signal);
-        recordVendorTlsFetch({ provider: signal.source, outcome: tlsObservation.tlsFetchOutcome });
+        recordVendorTlsFetch({
+            provider: signal.source,
+            outcome: tlsObservation.tlsFetchOutcome,
+            reason: signal.refusalReason ?? 'NONE',
+            signed: signal.signed === true,
+        });
+        tlsRefusalReason = signal.refusalReason ?? null;
         tlsGrade = tlsObservation.tlsGrade;
         newTlsCheckedAt = tlsObservation.tlsCheckedAt;
         if (tlsObservation.gradeChanged && tlsGrade && newTlsCheckedAt) {
@@ -363,7 +372,7 @@ export async function runVendorMonitor(
             entityId: vendor.id,
             details: `Monitored ${vendor.name}: attestation=${attestationStatus}, breach=${breachDetected}, tls=${tlsGrade ?? 'n/a'} — ${evCreated} posture events, ${findingsCreated} findings`,
             detailsJson: { category: 'custom', event: 'vendor_monitor_run' },
-            metadata: { vendorId: vendor.id, attestationStatus, breachDetected, tlsGrade, tlsFetchOutcome: tlsObservation?.tlsFetchOutcome ?? null, reassessmentTriggered, eventsCreated: evCreated, findingsCreated },
+            metadata: { vendorId: vendor.id, attestationStatus, breachDetected, tlsGrade, tlsFetchOutcome: tlsObservation?.tlsFetchOutcome ?? null, tlsRefusalReason, reassessmentTriggered, eventsCreated: evCreated, findingsCreated },
         });
 
         return { eventsCreated: evCreated, notified: notifiedCount };

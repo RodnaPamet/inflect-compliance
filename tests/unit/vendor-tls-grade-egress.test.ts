@@ -18,9 +18,15 @@ jest.mock('node:dns', () => ({
 }));
 
 const mockTransport = jest.fn<Promise<Response>, [string, Record<string, unknown> | undefined]>();
+// Since Web Bot Auth Phase 2 each origin's robots.txt is read before its
+// homepage. It answers 404 here ("unavailable": restricts nothing), so this
+// suite counts homepage requests only; robots.txt has its own suite
+// (vendor-tls-robots.test.ts).
+const mockRobots = jest.fn(async (_url: string) => new Response(null, { status: 404 }));
 jest.mock('undici', () => ({
     ...jest.requireActual('undici'),
-    fetch: (url: string, init?: Record<string, unknown>) => mockTransport(url, init),
+    fetch: (url: string, init?: Record<string, unknown>) =>
+        new URL(url).pathname === '/robots.txt' ? mockRobots(url) : mockTransport(url, init),
 }));
 
 import {
@@ -158,7 +164,14 @@ describe('HeaderGradeTlsProvider — redirects are followed one checked hop at a
         const signal = await provider().grade('acme.example.com');
 
         expect(requested()).toEqual(['https://acme.example.com/', 'https://www.acme.example.com/']);
-        expect(mockLookup.mock.calls.map(([host]) => host)).toEqual(['acme.example.com', 'www.acme.example.com']);
+        // Each origin resolves afresh for its robots.txt (Web Bot Auth Phase 2)
+        // and again for its page: every request is its own checked safeFetch.
+        expect(mockLookup.mock.calls.map(([host]) => host)).toEqual([
+            'acme.example.com',
+            'acme.example.com',
+            'www.acme.example.com',
+            'www.acme.example.com',
+        ]);
         expect(signal.presentHeaders).toEqual(['strict-transport-security']);
         expect(signal.grade).not.toBeNull();
     });
@@ -189,7 +202,9 @@ describe('HeaderGradeTlsProvider — redirects are followed one checked hop at a
 
         expect(signal.grade).toBeNull();
         expect(requested()).toEqual(['https://acme.example.com/']);
-        expect(mockLookup.mock.calls.map(([host]) => host)).toEqual(['acme.example.com', 'internal.example.com']);
+        // acme's robots.txt and page, then the redirect target, refused at its
+        // first request (its robots.txt) before anything was sent to it.
+        expect(mockLookup.mock.calls.map(([host]) => host)).toEqual(['acme.example.com', 'acme.example.com', 'internal.example.com']);
     });
 
     it('gives up after the redirect limit rather than following a loop', async () => {

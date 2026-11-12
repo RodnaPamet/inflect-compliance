@@ -67,5 +67,6 @@ module.exports = {
         'anthropic-client-single-seam': require('./rules/anthropic-client-single-seam'),
         'no-positional-comment-strip': require('./rules/no-positional-comment-strip'),
         'vector-store-single-seam': require('./rules/vector-store-single-seam'),
+        'web-bot-auth-single-seam': require('./rules/web-bot-auth-single-seam'),
     },
 };

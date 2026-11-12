@@ -16488,6 +16488,28 @@
         "FROZEN": "Frozen",
         "EXPORTED": "Exported"
       }
+    },
+    "botPage": {
+      "metaTitle": "Inflect vendor monitor",
+      "title": "The Inflect vendor monitor",
+      "intro": "This automated client checks the public security posture of vendors that the organisations using this deployment have chosen to monitor. It reads; it never logs in, submits forms or writes anything.",
+      "identityHeading": "How to recognise it",
+      "userAgentLabel": "Every request carries this User-Agent:",
+      "robotsToken": "Its robots.txt product token is {token}.",
+      "fetchesHeading": "What it fetches",
+      "fetchesRobots": "https://<your domain>/robots.txt, read first. If it disallows the monitor, nothing else on that origin is requested.",
+      "fetchesHomepage": "One GET of your homepage, following at most five redirects, to read its response headers (HSTS, CSP and similar). The page body is never read or stored.",
+      "fetchesBreach": "One query to the public Have I Been Pwned breach catalogue about your domain. Your own site is not contacted for this.",
+      "schedule": "It runs once a day, at about 02:00 UTC, and requests each monitored domain at most once per run, retrying a failed request once.",
+      "origin": "Requests come from the servers of the deployment that operates this page. Which organisation monitors a vendor is never disclosed in a request.",
+      "signaturesHeading": "Signed requests",
+      "signaturesOn": "Requests to your site are signed with HTTP Message Signatures under the Web Bot Auth protocol, with an Ed25519 key that belongs to this deployment. The public keys are published at:",
+      "signaturesOff": "This deployment does not sign its requests at present. Recognise the monitor by its User-Agent.",
+      "directoryLabel": "Key directory:",
+      "keyidLabel": "Current key id:",
+      "optOutHeading": "Opting out",
+      "optOutBody": "Add this to your robots.txt. It is read at the start of every run, so the monitor stops at its next run:",
+      "contact": "To reach the operator of this deployment about the monitor, use the contact details published on this site."
     }
   },
   "billing": {
