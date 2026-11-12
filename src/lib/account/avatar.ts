@@ -150,15 +150,24 @@ export async function removeOwnAvatar(userId: string): Promise<void> {
 export async function canViewAvatar(
     viewerUserId: string,
     subjectUserId: string,
+    /**
+     * The viewing session's scope (`src/lib/account/sso-scope.ts`). An
+     * SSO-scoped session shares only its own workspace with anybody, and a
+     * workspace the Entra gate refused this session is shared with nobody.
+     */
+    scope?: { ssoTenantId?: string | null; entraGateDeniedTenantIds?: readonly string[] | null },
 ): Promise<boolean> {
     // Own avatar. The chrome renders it on every page, so answering
     // this one without a round trip is the case that matters for cost.
     if (viewerUserId === subjectUserId) return true;
 
+    const denied = scope?.entraGateDeniedTenantIds ?? [];
     const shared = await prisma.tenantMembership.findFirst({
         where: {
             userId: subjectUserId,
             status: 'ACTIVE',
+            ...(scope?.ssoTenantId != null ? { tenantId: scope.ssoTenantId } : {}),
+            ...(denied.length > 0 ? { NOT: { tenantId: { in: [...denied] } } } : {}),
             tenant: {
                 deletedAt: null,
                 memberships: {

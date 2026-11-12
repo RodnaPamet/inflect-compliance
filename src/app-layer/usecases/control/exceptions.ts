@@ -373,6 +373,17 @@ export async function renewException(
                 : prior.compensatingControlId;
         const riskAcceptedByUserId =
             parsed.riskAcceptedByUserId ?? prior.riskAcceptedByUserId;
+        // The same check requestException makes, on the supplied acceptor and
+        // on one carried over from the prior exception: a renewal attributes
+        // the risk acceptance afresh, so the acceptor must still be an active
+        // member of this tenant.
+        const riskAcceptor = await db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId: riskAcceptedByUserId, status: 'ACTIVE' },
+            select: { id: true },
+        });
+        if (!riskAcceptor) {
+            throw notFound('Risk acceptor is not an active member of this tenant');
+        }
 
         const created = await ControlExceptionRepository.create(db, ctx, {
             controlId: prior.controlId,

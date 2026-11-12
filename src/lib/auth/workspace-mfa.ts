@@ -85,10 +85,18 @@ export async function workspacesPassedBySession(
 }
 
 /**
- * The pending set after the session's memberships were re-read: workspaces the
+ * The MFA state after the session's memberships were re-read: workspaces the
  * session left drop out, and a workspace it gained since sign-in is asked about,
- * as sign-in would have asked. `primaryTenantId` is never in the result; it is
- * `mfaPending`'s.
+ * as sign-in would have asked.
+ *
+ * The primary workspace can change on a re-read (the oldest membership was
+ * removed, its workspace deleted, or it now enforces SSO). Its pending state
+ * moves with it: everything pending before, the old primary included when
+ * `primaryPendingBefore`, is one set, and the new primary's flag is read from
+ * that set. Before, the new primary was dropped from the set and its own flag
+ * was never raised, so a workspace that still wanted a code stopped asking.
+ *
+ * `pending` never contains `primaryTenantId`; `primaryPending` is its flag.
  */
 export async function pendingAfterMembershipRefresh(
     userId: string,
@@ -97,13 +105,21 @@ export async function pendingAfterMembershipRefresh(
         before: ReadonlySet<string>;
         after: readonly string[];
         primaryTenantId: string | null | undefined;
+        /** The primary before the re-read, and whether it still wanted a code. */
+        primaryBefore?: string | null;
+        primaryPendingBefore?: boolean;
     },
-): Promise<string[]> {
+): Promise<{ pending: string[]; primaryPending: boolean }> {
     const reachable = new Set(args.after);
-    const kept = args.pending.filter((id) => reachable.has(id) && id !== args.primaryTenantId);
-    const gained = args.after.filter((id) => !args.before.has(id) && id !== args.primaryTenantId);
+    const wasPending = new Set(args.pending);
+    if (args.primaryPendingBefore && args.primaryBefore) wasPending.add(args.primaryBefore);
+    const kept = [...wasPending].filter((id) => reachable.has(id));
+    const gained = args.after.filter((id) => !args.before.has(id));
     const asking = await workspacesAskingForCode(userId, gained);
-    return [...new Set([...kept, ...asking])];
+    const all = new Set([...kept, ...asking]);
+    const primaryPending = args.primaryTenantId ? all.has(args.primaryTenantId) : false;
+    if (args.primaryTenantId) all.delete(args.primaryTenantId);
+    return { pending: [...all], primaryPending };
 }
 
 /**

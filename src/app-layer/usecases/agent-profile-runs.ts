@@ -12,6 +12,13 @@
  *   • `agent-profile:<profileId>@v<n>` is read INSIDE THE CALLER'S TENANT (the
  *     tenant filter and RLS both), and only an APPROVED version that is the
  *     profile's version in force resolves.
+ *   • A profile key resolves only for a caller that names the TRIGGER starting
+ *     it (#5367), and only when the version allows that trigger: `ASK` from
+ *     `startInteractiveRun`, `AUTOMATION` from the `agent-invoke` dispatcher,
+ *     `TEST_RUN` from the Test-run usecase. A start that names none — the
+ *     generic `POST /agent-runs`, a person or a key alike — is refused
+ *     `PROFILE_TRIGGER_REQUIRED`: it is none of the triggers a version can
+ *     allow, so `allowedTriggers` could not decide it.
  *   • `agent-profile:<profileId>@v<n>:test-run` is a TEST RUN, admitted only
  *     when the caller says so (`trigger: 'TEST_RUN'`, which only the Test-run
  *     usecase passes). It may name the SUBMITTED version too, so a reviewer can
@@ -72,6 +79,7 @@ export type ProfileRunRefusal =
     | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
     | 'PROFILE_FLOW_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
+    | 'PROFILE_TRIGGER_REQUIRED'
     | 'PROFILE_TRIGGER_NOT_ALLOWED';
 
 function refuse(reason: ProfileRunRefusal, message: string): AppError {
@@ -248,6 +256,19 @@ export async function resolveRunDefinition(
             'A Test run of an agent profile starts from the agent\'s Behaviour tab, and only a Test run uses its key.',
         );
     }
+    // A PROFILE KEY NAMES ITS TRIGGER (#5367). `allowedTriggers` is the
+    // version's own statement of what may start it, and it can only be held
+    // where the start says which trigger it is. A start that names none was
+    // admitted unchecked, so a version allowing only TEST_RUN ran from an
+    // automation rule or the generic start route. Before the version read:
+    // the refusal is about the request, and costs nothing.
+    if (!opts.trigger) {
+        throw refuse(
+            'PROFILE_TRIGGER_REQUIRED',
+            'An agent profile runs from the Ask page, an automation rule or the Behaviour tab\'s Test run, as ' +
+                'its version allows. This start is none of them.',
+        );
+    }
 
     const row = await runInTenantContext(ctx, (db) =>
         db.agentProfileVersion.findFirst({
@@ -274,7 +295,7 @@ export async function resolveRunDefinition(
             'The stored instructions or flow no longer match the hash their approval pinned. The version cannot run.',
         );
     }
-    if (opts.trigger && !row.allowedTriggers.includes(opts.trigger)) {
+    if (!row.allowedTriggers.includes(opts.trigger)) {
         throw refuse(
             'PROFILE_TRIGGER_NOT_ALLOWED',
             `This version does not allow the ${opts.trigger} trigger. Edit the profile to allow it.`,

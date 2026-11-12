@@ -5,6 +5,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { readWorkflowRunProvenance } from '@/app-layer/usecases/workflow-run-provenance';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { profileRunLabel } from '@/lib/agentic/agent-profile';
 import { projectRunSteps } from '@/lib/agentic/run-step-projection';
 import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
@@ -81,6 +82,9 @@ export default async function AgentRunDetailPage({
     }
 
     const def = getWorkflowDefinition(run.workflowKey);
+    // An agent profile run has no definition: it is named by its version
+    // ("Behaviour v3 — Test run", #5374), never by its raw key.
+    const profileRun = def ? null : profileRunLabel(run.workflowKey);
 
     // ONE projection, shared with the bounded feed route and the live tail
     // (#3472). It used to live here as ninety lines of reasoning about which
@@ -98,7 +102,7 @@ export default async function AgentRunDetailPage({
             run={{
                 id: run.id,
                 workflowKey: run.workflowKey,
-                workflowName: def?.name ?? run.workflowKey,
+                workflowName: def?.name ?? (profileRun ? t(profileRun.key, profileRun.values) : run.workflowKey),
                 status: run.status,
                 driver: run.driver,
                 stepCount: run.stepCount,

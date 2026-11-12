@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { getTenantCtx } from '@/app-layer/context';
 import { updateRiskFair } from '@/app-layer/usecases/risk';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 
 /** RQ-1 — FAIR quantification inputs. All optional + nullable (additive). */
@@ -39,15 +39,14 @@ const FairInputSchema = z.object({
         .optional(),
 });
 
-/** PUT — update a risk's FAIR inputs; server recomputes LEF + fairAle. */
+/**
+ * PUT — update a risk's FAIR inputs; server recomputes LEF + fairAle.
+ * `risks.edit`, like PUT /risks/:id: the inputs set the risk's ALE.
+ */
 export const PUT = withApiErrorHandling(
-    withValidatedBody(
-        FairInputSchema,
-        async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string; id: string }> }, body) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
-            const risk = await updateRiskFair(ctx, params.id, body);
-            return jsonResponse({ success: true, risk });
-        },
-    ),
+    requirePermission<{ tenantSlug: string; id: string }>('risks.edit', async (req, { params }, ctx) => {
+        const body = await parseJsonBody(req, FairInputSchema);
+        const risk = await updateRiskFair(ctx, params.id, body);
+        return jsonResponse({ success: true, risk });
+    }),
 );

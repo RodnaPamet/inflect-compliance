@@ -105,8 +105,9 @@ export default async function AgentProposalsPage({
         composedByViewer:
             oversight.composeNeedsSecondApprover && p.composedByUserId !== null && p.composedByUserId === ctx.userId,
         // Whether the approve usecase would take this viewer's approval of this
-        // kind (#5053): a process map's approver also needs `processes.edit`.
-        viewerMayApprove: viewerMayApproveProposal(ctx, p.kind),
+        // kind and operation (#5053, #5369): a process map needs `processes.edit`,
+        // a finding or a risk the key its create or edit route takes.
+        viewerMayApprove: viewerMayApproveProposal(ctx, p.kind, p.operation),
         // WHICH STEP OF WHICH RUN produced this. `listAgentProposals` has no
         // `select`, so both columns were already arriving here and were simply
         // dropped on the floor — the projection was the only thing between the

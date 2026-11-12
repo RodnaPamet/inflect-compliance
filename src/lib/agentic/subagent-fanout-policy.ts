@@ -6,7 +6,7 @@
  * pure and has to load inside the Flue ESM graph, and this half reaches Prisma
  * and cannot.
  *
- * ## A FAILED READ RESOLVES TO THE DEFAULT, NOT TO "NO CAP"
+ * ## A FAILED READ RESOLVES TO NO DELEGATION (owner decision, 2026-11-12)
  *
  * Which is the OPPOSITE of what `readCap` in `run-concurrency-policy` does,
  * and the inversion is deliberate rather than an inconsistency — so it is
@@ -17,13 +17,15 @@
  * settings row must not become an outage. Refusing every agentic run because a
  * settings table hiccupped would be a control wearing an outage's costume.
  *
- * Delegation has no such claim on us. Nothing can delegate today, so there is
- * no running work to protect and no outage to cause: a failed read that
- * resolved to "unlimited" would hand an unbounded fan-out to the one caller
- * whose settings row could not be read, which is precisely the caller about
- * whom we know least. The default is the safe answer AND the ordinary one —
- * the column is `NOT NULL DEFAULT 3`, so the default is what almost every
- * tenant has anyway.
+ * Delegation has no such claim on us. A run that cannot delegate still runs;
+ * it only does the work itself. And the settings row is where a tenant
+ * NARROWS delegation — a stored 0 means "no delegation", 1 means one per
+ * turn. This read used to fall back to the product default (3), which is wider
+ * than either: for as long as the row could not be read, a tenant that had
+ * switched delegation off had it switched back on. So a failed read resolves to
+ * 0, never wider than any choice a tenant can have stored (#5376). An ABSENT
+ * row is different and still reads as the default: it is a tenant that never
+ * chose, and the column's own default is 3.
  *
  * The log line is what keeps the fallback from being silent, exactly as it
  * does there.
@@ -35,6 +37,9 @@ import {
     DEFAULT_MAX_SUBAGENTS_PER_TURN,
     normaliseFanOutCap,
 } from './subagent-fanout';
+
+/** What an unreadable settings row resolves to: no delegation (see the header). */
+export const FAILED_READ_FAN_OUT_CAP = 0;
 
 /**
  * The tenant's fan-out cap, as a number the binding can carry.
@@ -59,13 +64,13 @@ export async function readFanOutCap(
         // PRESENT row always carries a number.
         return normaliseFanOutCap(row?.agentMaxSubagentsPerTurn ?? DEFAULT_MAX_SUBAGENTS_PER_TURN);
     } catch (err) {
-        logger.warn('subagent-fanout: settings read failed, using the product default', {
+        logger.warn('subagent-fanout: settings read failed, allowing no delegation', {
             component: 'agentic',
             tenantId,
             requestId,
-            cap: DEFAULT_MAX_SUBAGENTS_PER_TURN,
+            cap: FAILED_READ_FAN_OUT_CAP,
             error: err instanceof Error ? err.message : String(err),
         });
-        return DEFAULT_MAX_SUBAGENTS_PER_TURN;
+        return FAILED_READ_FAN_OUT_CAP;
     }
 }

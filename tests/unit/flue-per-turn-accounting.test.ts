@@ -131,7 +131,8 @@ jest.mock('@/lib/agentic/drivers/step-recorder', () => ({
     recordStep: jest.fn(async () => undefined),
 }));
 jest.mock('@/lib/agentic/drivers/run-settlement', () => ({
-    updateRun: jest.fn(async () => undefined),
+    updateRun: jest.fn(async () => true),
+    isRunAborted: jest.fn(async () => false),
     failRun: jest.fn(async () => 'FAILED'),
     haltRunAtCap: jest.fn(async () => 'FAILED'),
     haltRunAtGuard: jest.fn(async () => 'ABORTED'),

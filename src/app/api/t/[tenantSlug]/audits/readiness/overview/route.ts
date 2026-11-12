@@ -15,6 +15,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { cachedAggregationRead } from '@/lib/cache/aggregation-cache';
 import { AGGREGATIONS } from '@/lib/cache/aggregation-registry';
+import { assertCanViewPack } from '@/app-layer/policies/audit-readiness.policies';
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
@@ -25,6 +26,7 @@ export const GET = withApiErrorHandling(
             aggregation: 'audits-readiness-overview',
             dependsOn: AGGREGATIONS['audits-readiness-overview'].dependsOn,
             ttlSeconds: AGGREGATIONS['audits-readiness-overview'].ttlSeconds,
+            authorize: () => assertCanViewPack(ctx),
             compute: () => getReadinessOverview(ctx),
         });
         return jsonResponse(overview);

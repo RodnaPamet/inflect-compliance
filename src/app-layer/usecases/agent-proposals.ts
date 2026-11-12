@@ -53,7 +53,7 @@ import {
     CreateRiskSchema,
     CreateControlSchema,
     CreatePolicySchema,
-    CreateFindingSchema,
+    ProposedFindingSchema,
     UpdateRiskSchema,
     UpdateControlSchema,
     UpdateFindingSchema,
@@ -79,6 +79,7 @@ import {
     applyApprovedProcessMap,
     assertMayApproveProcessMap,
 } from '@/app-layer/usecases/process-map-proposal';
+import { assertMayApproveRecordProposal } from '@/app-layer/usecases/proposal-kind-approval';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -134,7 +135,7 @@ const SCHEMA_BY_KIND = {
     RISK: CreateRiskSchema,
     CONTROL: CreateControlSchema,
     POLICY: CreatePolicySchema,
-    FINDING: CreateFindingSchema,
+    FINDING: ProposedFindingSchema,
 } as const;
 
 /**
@@ -1730,6 +1731,14 @@ export async function approveAgentProposal(
     if (preparedMap) {
         await assertMayApproveProcessMap(ctx, proposal.id);
     }
+    // ═══ A FINDING'S OR A RISK'S APPROVER HOLDS ITS ROUTE'S KEY (#5369) ═══
+    //
+    // Same place and the same reason: approval runs `createFinding` /
+    // `updateFinding` / `createRisk` / `updateRisk` as the approver, which floor
+    // on the granular keys their routes take. Asked here so a refusal leaves the
+    // row PENDING with no signature — the usecase's own floor would refuse
+    // only after the claim, and a claim is never handed back.
+    await assertMayApproveRecordProposal(ctx, proposal.id, kind, operation);
 
     // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
     //
@@ -1918,7 +1927,7 @@ export async function approveAgentProposal(
                     break;
                 }
                 case 'FINDING': {
-                    const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                    const finding = await createFinding(ctx, ProposedFindingSchema.parse(merged));
                     createdEntityId = finding.id;
                     break;
                 }

@@ -111,6 +111,7 @@ function membershipDb(membership: { role: string; customRoleId?: string | null }
         ...membership,
     };
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(2),
@@ -286,14 +287,14 @@ describe('promoting a member who carries a custom role to OWNER — refused unti
             prismaMock.tenantMembership.findFirst
                 .mockResolvedValueOnce({ id: 'm-new', role: 'EDITOR', customRoleId: null })
                 .mockResolvedValueOnce({ id: 'm-old' });
-            const update = jest.fn().mockResolvedValue({});
+            const updateMany = jest.fn().mockResolvedValue({ count: 1 });
             prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
-                fn({ tenantMembership: { update } }),
+                fn({ $executeRawUnsafe: jest.fn().mockResolvedValue(0), tenantMembership: { updateMany } }),
             );
             await transferTenantOwnership(input);
-            expect(update.mock.calls.map((c: any[]) => c[0])).toEqual([
-                { where: { id: 'm-new' }, data: { role: 'OWNER' } },
-                { where: { id: 'm-old' }, data: { role: 'ADMIN' } },
+            expect(updateMany.mock.calls.map((c: any[]) => c[0])).toEqual([
+                { where: { id: 'm-new', tenantId: 'tenant-1', status: 'ACTIVE' }, data: { role: 'OWNER' } },
+                { where: { id: 'm-old', tenantId: 'tenant-1', role: 'OWNER', status: 'ACTIVE' }, data: { role: 'ADMIN' } },
             ]);
         });
     });
@@ -366,6 +367,7 @@ describe('PATCH /api/t/:slug/admin/members/:membershipId — neither half slips 
 describe('invites redeemed as OWNER onto a membership carrying a custom role', () => {
     function inviteDb(existing: { status: string; customRoleId: string | null } | null) {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             user: { findUnique: jest.fn().mockResolvedValue(existing ? { id: 'u-1' } : null) },
             tenantMembership: { findUnique: jest.fn().mockResolvedValue(existing) },
             // The carriage check reads the custom role (2026-10-30); a READER-based one breaks nothing.

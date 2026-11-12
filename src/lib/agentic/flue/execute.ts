@@ -17,6 +17,7 @@ import {
     haltRunAtCap,
     haltRunAtGuard,
     haltRunAtKill,
+    isRunAborted,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
@@ -157,7 +158,7 @@ function capBesideKill(latch: CapLatch, killed: KillLatch): CapBesideKill | null
 // app-layer reader importing the constant from here failed to LOAD rather than
 // failing an assertion. Re-exported so every existing importer is unaffected.
 export { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
-import { EMPTY_TOOLSET_MESSAGE } from './empty-toolset-message';
+import { emptyCatalogueMessage } from '@/lib/agentic/empty-catalogue-message';
 
 
 /**
@@ -621,6 +622,8 @@ export async function executeFlueRun(
     }
     const latch: CapLatch = { halt: null };
     const killed: KillLatch = { verdict: null, afterCap: false };
+    /** An operator's Abort, found before a model call (#5366). */
+    const aborted = { byOperator: false };
     let seq = fromSeq;
     let stepFailures = 0;
 
@@ -636,6 +639,10 @@ export async function executeFlueRun(
      * In order:
      *   1. The kill switch, uncached, for the reason the boot check gives. A
      *      read that throws refuses the call, as `assertNotKilled` does.
+     *   1b. The run's own status (#5366). An operator's Abort writes ABORTED
+     *      on the row while the dispatch runs; without this read the model was
+     *      called again and the run settled over the abort. Read only when no
+     *      kill is engaged, so a kill costs no extra query.
      *   2. A cap that latched at a tool call, or at a check below on an
      *      earlier call.
      *   3. The wall clock, which was otherwise re-checked only at a tool call.
@@ -665,6 +672,11 @@ export async function executeFlueRun(
             if (killed.verdict === null) killed.afterCap = latch.halt !== null;
             killed.verdict = kill;
             throw new Error(killRefusalMessage(kill.scope));
+        }
+
+        if (aborted.byOperator || (await isRunAborted(ctx, runId))) {
+            aborted.byOperator = true;
+            throw new Error('This run was aborted by an operator.');
         }
 
         if (latch.halt) throw new Error(latch.halt.message);
@@ -920,6 +932,11 @@ export async function executeFlueRun(
         // it.
         await settleTurns(reply.text ?? null);
 
+        // AN OPERATOR'S ABORT is the settlement (#5366): their ABORTED stands,
+        // and nothing below writes over it. `settleTurns` above is accounting
+        // and lands — the calls before the abort were made.
+        if (aborted.byOperator) return { status: 'ABORTED', stepFailures };
+
         // A KILL FOUND BEFORE A MODEL CALL wins over the reply (#4196). The
         // runtime may turn the refusal into a tidy finish; reporting that as
         // completed would hide that the run was stopped. First, before the cap:
@@ -1004,13 +1021,26 @@ export async function executeFlueRun(
 
         // ONE write, so the two outcomes cannot drift apart in the fields they
         // share — only `status` and `errorMessage` differ.
-        await updateRun(ctx, runId, {
+        const settled = await updateRun(ctx, runId, {
             status: emptyCatalogue ? 'EMPTY_CATALOGUE' : 'COMPLETED',
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            ...(emptyCatalogue ? { errorMessage: EMPTY_TOOLSET_MESSAGE } : {}),
+            // WHY it is empty (#5045): "holds no grants" only when it holds none.
+            ...(emptyCatalogue
+                ? {
+                      errorMessage: emptyCatalogueMessage('flue', {
+                          grantedTools: invocation.grantedTools,
+                          permittedTools: invocation.policyCard?.inForce.value.permittedTools ?? null,
+                          offeredTools: invocation.offeredTools,
+                          omitted: offered.omitted,
+                      }),
+                  }
+                : {}),
         });
+        // Aborted after the last model call: the write above did not land on
+        // the operator's ABORTED, and the run is not reported as finished (#5366).
+        if (!settled) return { status: 'ABORTED', stepFailures };
         // TWO literal returns rather than one ternary, deliberately. The output
         // guard pins each return expression as a literal — the assertion is
         // that model prose never escapes through the return value — so a
@@ -1029,6 +1059,10 @@ export async function executeFlueRun(
         // response never settled, and inventing one from a throw would put
         // text in the regulator's record that the model did not finish saying.
         await settleTurns(null);
+
+        // An operator's Abort explains the throw (#5366): the interceptor
+        // refused the call, and their ABORTED is the settlement.
+        if (aborted.byOperator) return { status: 'ABORTED', stepFailures };
 
         // A kill found before a model call explains the throw (#4196): the
         // interceptor refused the call. Before the cap, for the reason the

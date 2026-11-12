@@ -19,6 +19,7 @@ import { ENTRA_GATE_REFUSAL, isRefusedByEntraGate } from '@/lib/auth/entra-gate-
 import { assertAgentKeyMayActAtRest } from '@/lib/agentic/agent-key-rest-gate';
 import { WORKSPACE_MFA_REQUIRED, workspaceStillAsksThisSession } from '@/lib/auth/workspace-mfa';
 import { isMfaAllowedPath } from '@/lib/auth/guard';
+import { assertApiKeyMayReachPath } from '@/lib/auth/api-key-path-scope';
 
 /**
  * Generates or extracts a request ID.
@@ -343,6 +344,9 @@ async function tryApiKeyAuth(req: NextRequest): Promise<RequestContext | null> {
     // A key bound to an agent stops when its agent is stopped: a kill in force,
     // or any status but ACTIVE, refuses it here as at `/api/mcp` (#4481).
     await assertAgentKeyMayActAtRest(result.ctx, { method: req.method, path: req.nextUrl.pathname });
+    // A key other than `*` reaches only the paths its scopes name
+    // (`src/lib/auth/api-key-path-scope.ts`); an unmapped path is refused.
+    await assertApiKeyMayReachPath(result.ctx, { method: req.method, path: req.nextUrl.pathname });
 
     // Enrich observability context
     mergeRequestContext({

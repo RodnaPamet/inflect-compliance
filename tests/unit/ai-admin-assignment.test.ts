@@ -64,6 +64,7 @@ function membershipDb(membership: { role: string; customRoleId?: string | null }
         ...membership,
     };
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(2),
@@ -221,6 +222,7 @@ describe('Entra group mappings that yield AI_ADMIN — OWNER-only', () => {
 
     function mappingDb(existingRole: string) {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantEntraGroupMapping: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'map-1',

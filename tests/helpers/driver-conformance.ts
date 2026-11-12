@@ -70,6 +70,12 @@ export interface ConformanceRun {
     readonly residency?: 'EXTERNAL' | 'LOCAL_ONLY';
     /** Engage the kill switch once this many model calls have been made. */
     readonly killAfterModelCalls?: number;
+    /**
+     * An operator aborts the run once this many model calls have been made
+     * (#5366): the run row reads ABORTED from then on, and a write that would
+     * settle it over the abort does not land.
+     */
+    readonly abortAfterModelCalls?: number;
     /** The policy card's per-run tool-call limit. No card when absent. */
     readonly toolCallLimit?: number;
     /** What earlier segments of this run already spent. */
@@ -134,6 +140,7 @@ export interface ConformanceObservation {
 
 export type ScenarioId =
     | 'kill-switch-between-model-calls'
+    | 'operator-abort-between-model-calls'
     | 'cap-tool-calls'
     | 'cap-tokens'
     | 'cap-wall-clock'
@@ -256,6 +263,28 @@ export const CONFORMANCE_SCENARIOS: readonly ConformanceScenario[] = [
             expect(obs.modelInputs).toHaveLength(1);
             expect(obs.status).toBe('ABORTED');
             expect(obs.haltReason).toMatch(/kill/i);
+        },
+    },
+    {
+        // #5366. The kill switch is not the only stop an operator has: Abort
+        // writes ABORTED on the run row while the engine runs. An engine that
+        // reads only the switch called the model again, ran the turn's tools
+        // and settled over the abort. The fakes keep a settling write off an
+        // aborted row as `updateRun` does, so a settlement recorded here is one
+        // the engine attempted, and `haltReason` stays null only when the
+        // engine attempted none.
+        id: 'operator-abort-between-model-calls',
+        title: "an operator's abort after the first model call stops the run before the next one, and nothing is settled over it",
+        run: {
+            tools: [LIST_RISKS],
+            turns: [callTool('list_risks'), callTool('list_risks'), answer('done')],
+            abortAfterModelCalls: 1,
+        },
+        assert: (obs) => {
+            assertSomeModelCall(obs);
+            expect(obs.modelInputs).toHaveLength(1);
+            expect(obs.status).toBe('ABORTED');
+            expect(obs.haltReason).toBeNull();
         },
     },
     {

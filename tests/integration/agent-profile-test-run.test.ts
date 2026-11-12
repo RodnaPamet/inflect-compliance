@@ -50,7 +50,9 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { executeQueuedWorkflowRun, startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import {
+    approveAgentProfileVersion,
     createAgentProfile,
+    createAgentProfileVersion,
     getAgentProfile,
     startAgentProfileTestRun,
     submitAgentProfileVersion,
@@ -69,7 +71,12 @@ jest.setTimeout(120_000);
 const SUITE = `aptr-${randomUUID().slice(0, 8)}`;
 const TENANT = `t-${SUITE}`;
 const USERS = { author: `u-author-${SUITE}`, reviewer: `u-reviewer-${SUITE}` };
-const AGENTS = { main: `ag-main-${SUITE}`, askOnly: `ag-ask-${SUITE}` };
+const AGENTS = {
+    main: `ag-main-${SUITE}`,
+    askOnly: `ag-ask-${SUITE}`,
+    proposeOnly: `ag-prop-${SUITE}`,
+    edited: `ag-edit-${SUITE}`,
+};
 
 const INSTRUCTIONS =
     'Summarise the open risks for the weekly review. Call list_risks once, then answer in one sentence.';
@@ -198,6 +205,12 @@ describeFn('a Test run of an agent profile, on the Tool Runner engine (real DB, 
         // One that does not allow Test runs.
         await createAgentProfile(author(), AGENTS.askOnly, version({ allowedTriggers: ['ASK'] }));
         await submitAgentProfileVersion(author(), AGENTS.askOnly, 1);
+        // One that names only a propose tool, which a read-only run withholds.
+        await createAgentProfile(author(), AGENTS.proposeOnly, version({
+                instructions: 'Draft one risk proposal from the weekly review notes, then answer in one sentence.',
+                toolNames: ['propose_risks'],
+            }));
+        await submitAgentProfileVersion(author(), AGENTS.proposeOnly, 1);
     });
 
     afterAll(async () => {
@@ -284,5 +297,29 @@ describeFn('a Test run of an agent profile, on the Tool Runner engine (real DB, 
         } finally {
             await prisma.tenantSecuritySettings.update({ where: { tenantId: TENANT }, data: { agentDriver: 'TOOL_RUNNER' } });
         }
+    });
+
+    it('a version naming only propose tools is refused up front, by name, and no run row is written (#5374)', async () => {
+        const runsBefore = await prisma.workflowRun.count({ where: { tenantId: TENANT } });
+        expect(await reasonOf(startAgentProfileTestRun(reviewer(), AGENTS.proposeOnly, 1))).toBe('TEST_RUN_NO_READ_TOOL');
+        expect(await prisma.workflowRun.count({ where: { tenantId: TENANT } })).toBe(runsBefore);
+    });
+
+    it('the version in force stays in the view after more than a page of later versions (#5374)', async () => {
+        const v1 = await createAgentProfile(author(), AGENTS.edited, version());
+        await submitAgentProfileVersion(author(), AGENTS.edited, 1);
+        await approveAgentProfileVersion(reviewer(), AGENTS.edited, 1, { instructionsHash: v1.instructionsHash });
+        // 51 later edits, each retiring the one before: v1 is older than the
+        // newest fifty, which is all the view used to read.
+        for (let i = 2; i <= 52; i += 1) {
+            await createAgentProfileVersion(author(), AGENTS.edited, version({ instructions: `${INSTRUCTIONS} Edit ${i}.` }));
+        }
+        const view = await getAgentProfile(reviewer(), AGENTS.edited);
+        expect(view.profile?.currentApprovedVersion).toBe(1);
+        // Bounded: the newest fifty, plus the one in force.
+        expect(view.versions).toHaveLength(51);
+        expect(view.versions[0].version).toBe(52);
+        expect(view.versions.find((v) => v.status === 'APPROVED')).toMatchObject({ version: 1, instructions: INSTRUCTIONS });
+        expect(view.versions.filter((v) => v.version === 1)).toHaveLength(1);
     });
 });

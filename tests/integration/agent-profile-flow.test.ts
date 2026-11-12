@@ -221,7 +221,7 @@ describeFn('the flow inside the profile version (real DB)', () => {
         expect(row.instructionsHash).toBe(profileContentHash(INSTRUCTIONS, serializeAgentFlow(stored!)));
 
         const key = profileRunKey(created.profileId, 1);
-        const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.flow }), key);
+        const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.flow }), key, { trigger: 'ASK' });
         expect(def.profile?.toolNames).toEqual(['list_controls', 'list_risks']);
         expect(def.profile?.flow?.stepsSpec.map((s) => s.label)).toEqual([
             'Gather the open risks',
@@ -229,6 +229,22 @@ describeFn('the flow inside the profile version (real DB)', () => {
             'Summarise by owner',
         ]);
         expect(stored?.nodes.map((n) => n.key)).toEqual(['risks', 'controls', 'answer']);
+    });
+
+    it('the flow the Behaviour tab reads back is accepted unchanged as the next version\'s flow (#5374)', async () => {
+        // The editor carries a version's flow through an edit by posting the
+        // flow the view returned, in place of a tool list. That is only sound
+        // if the stored, sanitised flow is a valid save body as it stands.
+        const view = await getAgentProfile(authorA(), AGENTS.flow);
+        const from = view.versions.find((v) => v.flow !== null)!;
+        const next = await createAgentProfileVersion(
+            authorA(),
+            AGENTS.flow,
+            version({ instructions: `${INSTRUCTIONS} Keep it short.`, flow: from.flow }),
+        );
+        const after = (await getAgentProfile(authorA(), AGENTS.flow)).versions.find((v) => v.version === next.version)!;
+        expect(after.flow).toEqual(from.flow);
+        expect(after.toolNames).toEqual(from.toolNames);
     });
 
     it('a flow version is admitted on no engine before Phase 5, and no run row is written', async () => {
@@ -256,16 +272,16 @@ describeFn('the flow inside the profile version (real DB)', () => {
         const key = profileRunKey(target.profileId, 2);
 
         // It resolves: created, approved by a second person, and compiled.
-        const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.runner }), key);
+        const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.runner }), key, { trigger: 'ASK' });
         expect(def.profile?.flow?.stepsSpec.map((s) => s.kind)).toEqual(['READ', 'SUBAGENT']);
         // It does not run, on the one engine that runs profiles.
-        expect(await reasonOf(startWorkflowRun(authorA({ agentId: AGENTS.runner }), key))).toBe('PROFILE_FLOW_NOT_RUNNABLE');
+        expect(await reasonOf(startWorkflowRun(authorA({ agentId: AGENTS.runner }), key, {}, { profileTrigger: 'ASK' }))).toBe('PROFILE_FLOW_NOT_RUNNABLE');
         expect(await prisma.workflowRun.count({ where: { tenantId: TA, workflowKey: key } })).toBe(0);
     });
 
     it('a flow with no propose node runs read-only, even when the version may propose', async () => {
         const readOnly = await approved('A', AGENTS.proposer, version({ outputKind: 'ANSWER_AND_PROPOSALS' }));
-        const first = await resolveRunDefinition(authorA({ agentId: AGENTS.proposer }), profileRunKey(readOnly.profileId, 1));
+        const first = await resolveRunDefinition(authorA({ agentId: AGENTS.proposer }), profileRunKey(readOnly.profileId, 1), { trigger: 'ASK' });
         expect(first.def.readOnly).toBe(true);
 
         const proposing = await createAgentProfileVersion(
@@ -284,7 +300,7 @@ describeFn('the flow inside the profile version (real DB)', () => {
         );
         await submitAgentProfileVersion(authorA(), AGENTS.proposer, 2);
         await approveAgentProfileVersion(reviewerA(), AGENTS.proposer, 2, { instructionsHash: proposing.instructionsHash });
-        const second = await resolveRunDefinition(authorA({ agentId: AGENTS.proposer }), profileRunKey(proposing.profileId, 2));
+        const second = await resolveRunDefinition(authorA({ agentId: AGENTS.proposer }), profileRunKey(proposing.profileId, 2), { trigger: 'ASK' });
         expect(second.def.readOnly).toBeUndefined();
         expect(second.def.profile?.toolNames).toEqual(['list_risks', 'propose_risks']);
 
@@ -365,7 +381,7 @@ describeFn('the flow inside the profile version (real DB)', () => {
             good.versionId,
             other.versionId,
         );
-        expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.tamper }), profileRunKey(good.profileId, 1)))).toBe(
+        expect(await reasonOf(resolveRunDefinition(authorA({ agentId: AGENTS.tamper }), profileRunKey(good.profileId, 1), { trigger: 'ASK' }))).toBe(
             'PROFILE_HASH_MISMATCH',
         );
         await prisma.$executeRawUnsafe(

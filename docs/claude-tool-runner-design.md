@@ -32,8 +32,9 @@ Inflect would host it in the worker, the same way it hosts Flue.
 ## Current state (true today)
 
 - **The SDK is a direct dependency, and one function builds every client
-  (Step 2a, #4148).** `@anthropic-ai/sdk@1.3.0` is in `dependencies`, exact-pinned
-  and reviewed in `docs/dependency-risk-review.md`. pi-ai keeps its own nested
+  (Step 2a, #4148).** `@anthropic-ai/sdk` 1.x is in `dependencies`, exact-pinned
+  (read the version off `package.json`) and reviewed in
+  `docs/dependency-risk-review.md`. pi-ai keeps its own nested
   `0.129.0` for Flue. `clientForRun` in `src/lib/agentic/tool-runner/client.ts`
   is the only place a client is built, and `local/anthropic-client-single-seam`
   refuses a load of any `@anthropic-ai/*` package elsewhere under `src/`. It

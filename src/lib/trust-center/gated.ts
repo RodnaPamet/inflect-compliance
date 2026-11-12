@@ -139,9 +139,20 @@ export async function consumeDownloadToken(token: string, now: Date = new Date()
     if (!token || !token.startsWith('ictc_')) return null;
     const req = await prisma.trustCenterAccessRequest.findUnique({
         where: { downloadTokenHash: hashToken(token) },
-        select: { id: true, status: true, expiresAt: true, downloadedAt: true, document: { select: { fileRecordId: true } } },
+        select: {
+            id: true,
+            status: true,
+            expiresAt: true,
+            downloadedAt: true,
+            document: { select: { fileRecordId: true, trustCenter: { select: { enabled: true } } } },
+        },
     });
     if (!req || req.status !== 'APPROVED') return null;
+    // The contract above: only an ENABLED trust center serves anything. An
+    // unpublished one serves no document, whatever token was issued while it
+    // was live. The token is not spent, so it works again if the trust center
+    // is republished before it expires.
+    if (!req.document.trustCenter.enabled) return null;
     if (req.downloadedAt) return null; // single-use — already consumed
     if (req.expiresAt && req.expiresAt < now) return null;
 

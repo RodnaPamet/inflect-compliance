@@ -26,6 +26,7 @@ import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { deriveRecoveryPriority, rankFor } from '../services/bia-recovery-priority';
 import { isBiaReviewOverdue } from '@/lib/bia/review-overdue';
+import { assertActiveTenantMember } from '@/app-layer/domain/tenant-member-reference';
 
 /**
  * Requirement codes whose control is a "continuity control" (case 4a).
@@ -327,12 +328,19 @@ async function assertDependencyTargets(
     }
 }
 
+/** A BIA's owner must be an active member of the tenant; see tenant-member-reference. */
+const BIA_OWNER_REFUSAL = {
+    code: 'INVALID_OWNER',
+    message: 'The BIA owner must be an active member of this tenant.',
+};
+
 export async function createBia(ctx: RequestContext, rawInput: CreateBiaInput) {
     assertCanWrite(ctx);
     const data = CreateBiaSchema.parse(rawInput);
     return runInTenantContext(ctx, async (db) => {
         // Validate every dependency target exists in this tenant (no dangling refs).
         await assertDependencyTargets(db, ctx, data.dependencies ?? []);
+        await assertActiveTenantMember(db, ctx.tenantId, data.ownerUserId, BIA_OWNER_REFUSAL);
         const bia = await db.businessImpactAnalysis.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -635,6 +643,7 @@ export async function updateBia(ctx: RequestContext, id: string, rawInput: z.inp
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.businessImpactAnalysis.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } });
         if (!existing) throw notFound('BIA not found');
+        await assertActiveTenantMember(db, ctx.tenantId, data.ownerUserId, BIA_OWNER_REFUSAL);
         // Resolved once, then spread below — `undefined` means "not supplied"
         // and must leave the existing link alone, which is why this cannot be
         // folded into the spread unconditionally.
