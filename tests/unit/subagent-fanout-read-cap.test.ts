@@ -1,15 +1,10 @@
 /**
  * `readFanOutCap` — what a run's fan-out cap reads as (#5376).
  *
- * This PINS TODAY'S BEHAVIOUR; it does not endorse it. On a failed settings
- * read the reader returns the product default (3), and that default can be
- * WIDER than the cap the tenant stored: a tenant that set 0 ("no delegation")
- * or 1 is allowed three delegations per turn for as long as its row cannot be
- * read. The file's header argues for the default over "no cap"; it does not
- * weigh the default against the tenant's own narrower choice. Whether a failed
- * read should fail to the default or fail narrow (0) is an owner question,
- * raised on #5376. If that decision changes the behaviour, the failing case
- * below is the one to rewrite — deliberately.
+ * A failed settings read resolves to NO delegation (owner decision,
+ * 2026-11-12): the product default (3) it used to fall back to is wider than a
+ * tenant that stored 0 ("no delegation") or 1 chose. An absent row still reads
+ * as the default — a tenant that never chose.
  */
 const mockFindUnique = jest.fn();
 jest.mock('@/lib/prisma', () => ({
@@ -48,20 +43,19 @@ describe('readFanOutCap', () => {
         expect(mockWarn).not.toHaveBeenCalled();
     });
 
-    it('TODAY: a failed read returns the product default — WIDER than a tenant cap of 0 — and logs it', async () => {
-        // The tenant's stored cap is 0, but the read never gets that far.
+    it('a failed read allows NO delegation — never wider than a tenant cap of 0 — and logs it', async () => {
+        // The tenant's stored cap may be 0, but the read never gets that far.
         mockFindUnique.mockRejectedValue(new Error('connection reset'));
         const cap = await readFanOutCap('t-narrow', 'req-9');
 
-        expect(cap).toBe(DEFAULT_MAX_SUBAGENTS_PER_TURN);
-        expect(cap).toBeGreaterThan(0);
+        expect(cap).toBe(0);
         expect(mockWarn).toHaveBeenCalledTimes(1);
         expect(mockWarn).toHaveBeenCalledWith(
-            'subagent-fanout: settings read failed, using the product default',
+            'subagent-fanout: settings read failed, allowing no delegation',
             expect.objectContaining({
                 tenantId: 't-narrow',
                 requestId: 'req-9',
-                cap: DEFAULT_MAX_SUBAGENTS_PER_TURN,
+                cap: 0,
                 error: 'connection reset',
             }),
         );
@@ -69,6 +63,6 @@ describe('readFanOutCap', () => {
 
     it('never throws, whatever the read throws', async () => {
         mockFindUnique.mockRejectedValue('not even an Error');
-        await expect(readFanOutCap('t1', undefined)).resolves.toBe(DEFAULT_MAX_SUBAGENTS_PER_TURN);
+        await expect(readFanOutCap('t1', undefined)).resolves.toBe(0);
     });
 });
