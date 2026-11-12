@@ -110,18 +110,22 @@ export function assertCanAssignTasks(ctx: RequestContext) {
 }
 
 /**
- * A role that can edit tasks can comment: OWNER, ADMIN and EDITOR, and a
- * custom role that holds `tasks.edit`. READER cannot, and neither can
- * AUDITOR or AI_ADMIN, whose sets hold no `tasks.edit`. (This used to say
- * AUDITOR could comment; the granular check below never allowed it, and the
- * owner kept that rule on 2026-10-26.)
+ * Commenting takes `tasks.edit`, the key the comments route takes, and
+ * nothing else (owner decision, 2026-11-12, #5376). It used to refuse
+ * `role === 'READER'` beside the key, so a custom role over READER that
+ * granted `tasks.edit` passed the route and was refused here with no
+ * `AUTHZ_DENIED` row, while one over AUDITOR was admitted. The key a custom
+ * role grants is what decides, as the route already said.
  *
- * Gated on `edit` at the granular layer: there is no dedicated
- * `tasks.comment` flag, and a role that has had edit revoked should not be
- * able to write into the task's comment thread either.
+ * Built-in roles: OWNER, ADMIN and EDITOR hold `tasks.edit`; READER, AUDITOR
+ * and AI_ADMIN do not. With no granular layer at all (the defensive branch)
+ * the coarse write tier stands in, which admits the same built-in roles.
  */
 export function assertCanCommentOnTasks(ctx: RequestContext) {
-    if (ctx.role === 'READER' || granularTasksDenied(ctx, 'edit')) {
+    const allowed = ctx.appPermissions
+        ? ctx.appPermissions.tasks?.edit === true
+        : ctx.permissions.canWrite;
+    if (!allowed) {
         throw forbidden('You do not have permission to comment on tasks.');
     }
 }
