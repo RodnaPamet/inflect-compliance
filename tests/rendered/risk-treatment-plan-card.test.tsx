@@ -130,6 +130,45 @@ describe('RiskTreatmentPlanCard', () => {
         ).toBeNull();
     });
 
+    // #5279 — a risk whose only plan is completed may need a new one, and
+    // the server takes it. The button was keyed on "any plan" and hid for good.
+    it('offers Create when the only plan is completed, and still shows that plan', async () => {
+        installFetch(
+            [makePlanSummary({ status: 'COMPLETED', completedAt: new Date('2026-06-01').toISOString() })],
+            makePlanDetail({ status: 'COMPLETED', completedAt: new Date('2026-06-01').toISOString() }),
+        );
+        render(
+            withClient(
+                <RiskTreatmentPlanCard
+                    tenantSlug="acme"
+                    riskId="r1"
+                    ownerChoices={ownerChoices}
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        expect(await screen.findByTestId('treatment-plan-create-button')).toBeInTheDocument();
+        expect(screen.queryByTestId('treatment-plan-empty')).toBeNull();
+    });
+
+    it('offers no Create while a plan is open', async () => {
+        installFetch([makePlanSummary({ status: 'ACTIVE' })], makePlanDetail());
+        render(
+            withClient(
+                <RiskTreatmentPlanCard
+                    tenantSlug="acme"
+                    riskId="r1"
+                    ownerChoices={ownerChoices}
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        await screen.findByTestId('treatment-plan-block-plan_1');
+        expect(screen.queryByTestId('treatment-plan-create-button')).toBeNull();
+    });
+
     it('active plan block renders strategy + status + progress', async () => {
         installFetch(
             [makePlanSummary({ status: 'ACTIVE' })],

@@ -259,6 +259,23 @@ describe('updateRisk — sanitizeOptional three-state', () => {
         expect(repoArgs.treatmentNotes).toBeNull();
     });
 
+    // #5212 — clearing a date was collapsed to "leave it alone", so a cleared
+    // review date came back after a reload behind a "saved" toast.
+    it('clears nextReviewAt and targetDate on an explicit null, and leaves them on undefined', async () => {
+        const fakeDb = dbWithTenant(5);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+        await updateRisk(makeRequestContext('EDITOR'), 'r1', { nextReviewAt: null, targetDate: null });
+        const cleared = mockUpdate.mock.calls.at(-1)![3];
+        expect(cleared.nextReviewAt).toBeNull();
+        expect(cleared.targetDate).toBeNull();
+
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+        await updateRisk(makeRequestContext('EDITOR'), 'r1', { title: 't' });
+        const untouched = mockUpdate.mock.calls.at(-1)![3];
+        expect(untouched.nextReviewAt).toBeUndefined();
+        expect(untouched.targetDate).toBeUndefined();
+    });
+
     it('throws notFound when repository returns null', async () => {
         const fakeDb = dbWithTenant(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));

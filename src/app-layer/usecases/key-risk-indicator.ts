@@ -71,12 +71,24 @@ export async function createKri(ctx: RequestContext, input: CreateKriInput) {
     });
 }
 
-export interface UpdateKriInput { name?: string; description?: string | null; unit?: string | null; direction?: KriDirection; greenMax?: number | null; amberMax?: number | null; frequency?: string; ownerUserId?: string | null; targetValue?: number | null; isActive?: boolean }
+export interface UpdateKriInput { name?: string; riskId?: string | null; description?: string | null; unit?: string | null; direction?: KriDirection; greenMax?: number | null; amberMax?: number | null; frequency?: string; ownerUserId?: string | null; targetValue?: number | null; isActive?: boolean }
 
 export async function updateKri(ctx: RequestContext, kriId: string, patch: UpdateKriInput) {
     assertCanWrite(ctx);
     await runInTenantContext(ctx, async (db) => {
         await assertActiveTenantMember(db, ctx.tenantId, patch.ownerUserId, KRI_OWNER_REFUSAL);
+        // The linked risk can be changed or cleared (#5167); the PATCH schema
+        // used to drop `riskId`, so the edit modal's choice was discarded while
+        // the save reported success. A new link must be a live risk of THIS
+        // tenant, or the re-assess link and the remediation task a RED
+        // reading raises would point elsewhere.
+        if (patch.riskId) {
+            const risk = await db.risk.findFirst({
+                where: { id: patch.riskId, tenantId: ctx.tenantId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!risk) throw notFound('Risk not found.');
+        }
         await db.keyRiskIndicator.updateMany({ where: { id: kriId, tenantId: ctx.tenantId }, data: patch });
     });
 }
