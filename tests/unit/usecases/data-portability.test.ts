@@ -30,6 +30,12 @@ jest.mock('@/app-layer/services/import-service', () => ({
     deserializeBundle: jest.fn(),
 }));
 
+// Audit rows go through `logEvent` (hash chain + SIEM stream, #5262).
+const mockLogEvent = jest.fn();
+jest.mock('@/app-layer/events/audit', () => ({
+    logEvent: (...args: unknown[]) => mockLogEvent(...args),
+}));
+
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx, fn) => {
         const fakeDb = { auditLog: { create: jest.fn() } };
@@ -117,11 +123,15 @@ describe('exportBundle — RBAC', () => {
         await exportBundle(ctx, {} as never);
         expect(mockRunInTx).toHaveBeenCalled();
         const auditCb = mockRunInTx.mock.calls[0][1];
-        const fakeDb = { auditLog: { create: jest.fn() } };
-        await auditCb(fakeDb as never);
-        expect(fakeDb.auditLog.create).toHaveBeenCalledWith(
+        mockLogEvent.mockClear();
+        await auditCb({} as never);
+        expect(mockLogEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            ctx,
             expect.objectContaining({
-                data: expect.objectContaining({ action: 'DATA_EXPORT' }),
+                action: 'DATA_EXPORT',
+                entityType: 'DataPortability',
+                detailsJson: expect.objectContaining({ category: 'data_lifecycle' }),
             }),
         );
     });
@@ -183,11 +193,15 @@ describe('importBundle — RBAC stricter than export', () => {
         const ctx = makeRequestContext('ADMIN');
         await importBundle(ctx, { ...importReq, dryRun: true } as never);
         const auditCb = mockRunInTx.mock.calls[0][1];
-        const fakeDb = { auditLog: { create: jest.fn() } };
-        await auditCb(fakeDb as never);
-        expect(fakeDb.auditLog.create).toHaveBeenCalledWith(
+        mockLogEvent.mockClear();
+        await auditCb({} as never);
+        expect(mockLogEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            ctx,
             expect.objectContaining({
-                data: expect.objectContaining({ action: 'DATA_IMPORT_DRYRUN' }),
+                action: 'DATA_IMPORT_DRYRUN',
+                entityType: 'DataPortability',
+                detailsJson: expect.objectContaining({ category: 'data_lifecycle' }),
             }),
         );
     });
@@ -196,11 +210,15 @@ describe('importBundle — RBAC stricter than export', () => {
         const ctx = makeRequestContext('ADMIN');
         await importBundle(ctx, importReq as never);
         const auditCb = mockRunInTx.mock.calls[0][1];
-        const fakeDb = { auditLog: { create: jest.fn() } };
-        await auditCb(fakeDb as never);
-        expect(fakeDb.auditLog.create).toHaveBeenCalledWith(
+        mockLogEvent.mockClear();
+        await auditCb({} as never);
+        expect(mockLogEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            ctx,
             expect.objectContaining({
-                data: expect.objectContaining({ action: 'DATA_IMPORT' }),
+                action: 'DATA_IMPORT',
+                entityType: 'DataPortability',
+                detailsJson: expect.objectContaining({ category: 'data_lifecycle' }),
             }),
         );
     });
