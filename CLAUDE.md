@@ -3115,6 +3115,18 @@ edit from being undone:
     context (`TESTER_NOT_A_PERSON` otherwise), and its definition is read-only
     whatever the output kind. The key is what tells the worker it is a Test run,
     so do not drop the suffix from the stored `workflowKey`.
+  - **A profile key names its trigger, and the version decides** (#5367).
+    `resolveRunDefinition` refuses a profile key whose start names no trigger
+    (`PROFILE_TRIGGER_REQUIRED`, before the version is read) and one whose
+    trigger the version's `allowedTriggers` does not hold
+    (`PROFILE_TRIGGER_NOT_ALLOWED`). Each start path passes its own:
+    `startInteractiveRun` `ASK`, the `agent-invoke` dispatcher `AUTOMATION`,
+    `startAgentProfileTestRun` `TEST_RUN`. The generic `POST /agent-runs`, a
+    person or a key, is none of them and passes none, so it starts no profile.
+    The check used to run only when a trigger was named, and only the Test run
+    named one, so a version allowing only `TEST_RUN` ran from an automation
+    rule and from the generic route. A new start path names its trigger; do not
+    default one.
   - **The worker executes what admission PINNED.** `executeQueuedWorkflowRun`
     and resume rebuild a profile run's definition from the run's own
     `profileVersionId` while its instructions hash to `profileInstructionsHash`

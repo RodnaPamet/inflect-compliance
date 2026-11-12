@@ -312,9 +312,12 @@ profile run key is refused at admission.
   - member labels in place of user ids;
   - `testRun`.
 
-- **`allowedTriggers` is checked where a trigger starts a run.** The Test run
-  checks `TEST_RUN` (Step 2c); the Ask page and automation check theirs when they
-  gain a start path in Phase 2.
+- **`allowedTriggers` is checked where a trigger starts a run.** Admission
+  (`resolveRunDefinition`) requires every profile start to name its trigger and
+  refuses one the version does not allow (#5367): the Test run names `TEST_RUN`
+  (Step 2c), the Ask path (`startInteractiveRun`) `ASK`, and an automation rule's
+  `INVOKE_AGENT` `AUTOMATION`. The generic `POST /agent-runs` is no trigger, so
+  it starts no profile (`PROFILE_TRIGGER_REQUIRED`).
 - **The worker and resume execute what admission pinned** (Step 2c). They
   rebuild a profile run's definition from the run's own `profileVersionId`,
   while its instructions hash to `profileInstructionsHash`, never by approval

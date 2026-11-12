@@ -279,6 +279,9 @@ export async function startInteractiveRun(
     // and `ad-hoc-question` declares it.
     const started = await startWorkflowRun(interactiveRunContext(ctx, resolved.agentId), workflowKey, input, {
         readOnlyAuthority: true,
+        // The Ask path is the ASK trigger (#5367): a profile key runs from here
+        // only when its version allows it. Ignored for a registered workflow key.
+        profileTrigger: 'ASK',
     });
     return { runId: started.runId };
 }
