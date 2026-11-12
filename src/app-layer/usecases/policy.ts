@@ -1555,6 +1555,16 @@ export async function archivePolicy(ctx: RequestContext, policyId: string) {
         if (!policy) throw notFound('Policy not found');
 
         await PolicyRepository.updateStatus(db, ctx, policyId, 'ARCHIVED');
+        // Close any open approval request, as publishing does (#5149). Left
+        // PENDING, it outlived the archive: after a restore to DRAFT a new
+        // request was refused while it existed, and the old one could no
+        // longer be decided, so only the emergency bypass could publish.
+        await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was archived.',
+        );
 
         await logEvent(db, ctx, {
             action: 'POLICY_ARCHIVED',
@@ -1633,6 +1643,14 @@ export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
         }
 
         await PolicyRepository.updateStatus(db, ctx, policyId, 'DRAFT');
+        // A policy archived before #5149 can still hold a PENDING request,
+        // which would refuse every new request from the restored DRAFT.
+        await PolicyApprovalRepository.supersedePending(
+            db,
+            ctx,
+            policyId,
+            'Superseded — the policy was restored from archive.',
+        );
 
         await logEvent(db, ctx, {
             action: 'POLICY_UNARCHIVED',
@@ -1736,6 +1754,13 @@ export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]
         if (rows.length === 0) return 0;
         await PolicyRepository.bulkUpdate(db, ctx, policyIds, { status: 'ARCHIVED' });
         for (const r of rows) {
+            // As `archivePolicy` (#5149).
+            await PolicyApprovalRepository.supersedePending(
+                db,
+                ctx,
+                r.id,
+                'Superseded — the policy was archived.',
+            );
             await logEvent(db, ctx, {
                 action: 'POLICY_ARCHIVED',
                 entityType: 'Policy',
