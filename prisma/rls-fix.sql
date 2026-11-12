@@ -35,12 +35,43 @@ CREATE POLICY superuser_bypass ON "PolicyApproval"
 DROP POLICY IF EXISTS allow_all ON "PolicyApproval";
 
 -- PolicyAcknowledgement (no tenantId — child of PolicyVersion)
+--
+-- RE-ASSERTS THE CANONICAL POLICY, NOT allow_all (#5240).
+--
+-- This stanza recreated `allow_all USING (true) WITH CHECK (true)` after
+-- dropping tenant_isolation — exactly the failure this file's own header
+-- describes for PolicyApproval, EvidenceReview, FindingEvidence,
+-- AuditChecklistItem and AuditorPackAccess, which were corrected for it. This
+-- table was missed. Because the file is "safe to re-run", replaying it let any
+-- app_user session read every tenant's acknowledgements (who acknowledged which
+-- policy version) and write against other tenants' policy versions.
+--
+-- Migration 20260422180000_enable_rls_coverage gave it an EXISTS policy against
+-- the parent PolicyVersion; 20260715140000_policy_ack_assignment cites that as
+-- the live shape. Keep this identical to the migration.
+DROP POLICY IF EXISTS allow_all ON "PolicyAcknowledgement";
 DROP POLICY IF EXISTS tenant_isolation ON "PolicyAcknowledgement";
 DROP POLICY IF EXISTS tenant_isolation_insert ON "PolicyAcknowledgement";
-DROP POLICY IF EXISTS allow_all ON "PolicyAcknowledgement";
 ALTER TABLE "PolicyAcknowledgement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "PolicyAcknowledgement" FORCE ROW LEVEL SECURITY;
-CREATE POLICY allow_all ON "PolicyAcknowledgement" USING (true) WITH CHECK (true);
+CREATE POLICY tenant_isolation ON "PolicyAcknowledgement"
+    USING (
+        EXISTS (
+            SELECT 1 FROM "PolicyVersion" pv
+            WHERE pv.id = "policyVersionId"
+              AND pv."tenantId" = current_setting('app.tenant_id', true)::text
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM "PolicyVersion" pv
+            WHERE pv.id = "policyVersionId"
+              AND pv."tenantId" = current_setting('app.tenant_id', true)::text
+        )
+    );
+DROP POLICY IF EXISTS superuser_bypass ON "PolicyAcknowledgement";
+CREATE POLICY superuser_bypass ON "PolicyAcknowledgement"
+    USING (current_setting('role') != 'app_user');
 
 -- PolicyControlLink (no tenantId — junction of Policy × Control)
 -- Isolation via EXISTS against parent tables.
