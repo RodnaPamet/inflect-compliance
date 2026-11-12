@@ -8,7 +8,9 @@
  *   • a bump to an UNRELATED entity does NOT invalidate;
  *   • different scopeKey → isolated entries;
  *   • different params → different entries;
- *   • no-Redis fallback computes every time, never caches.
+ *   • no-Redis fallback computes every time, never caches;
+ *   • the caller's authorize runs on every read, a hit included, and a
+ *     refusal reads nothing.
  */
 jest.mock('ioredis', () => require('ioredis-mock'));
 process.env.REDIS_URL = 'redis://localhost:6379';
@@ -32,6 +34,7 @@ const baseOpts = {
     aggregation: 'controls-dashboard',
     dependsOn: ['control', 'task'] as const,
     ttlSeconds: 60,
+    authorize: () => undefined,
 };
 
 it('miss computes once, then reads hit the cache', async () => {
@@ -100,4 +103,31 @@ it('no-Redis fallback computes every time and never caches', async () => {
     await cachedAggregationRead({ ...baseOpts, compute });
 
     expect(calls).toBe(2);
+});
+
+it('runs authorize on a cache hit too, and a refusal never reaches the cached answer', async () => {
+    const compute = async () => ({ secret: 'aggregate' });
+    // An authorised caller fills the cache.
+    await cachedAggregationRead({ ...baseOpts, compute });
+
+    const authorize = jest.fn(() => {
+        throw new Error('forbidden: no controls.view');
+    });
+    const refusedCompute = jest.fn(compute);
+    await expect(
+        cachedAggregationRead({ ...baseOpts, authorize, compute: refusedCompute }),
+    ).rejects.toThrow(/forbidden/);
+    expect(authorize).toHaveBeenCalledTimes(1);
+    expect(refusedCompute).not.toHaveBeenCalled();
+});
+
+it('runs authorize when there is no Redis', async () => {
+    await disconnectRedis();
+    delete process.env.REDIS_URL;
+    const authorize = jest.fn(() => {
+        throw new Error('forbidden');
+    });
+    const compute = jest.fn(async () => ({ n: 1 }));
+    await expect(cachedAggregationRead({ ...baseOpts, authorize, compute })).rejects.toThrow(/forbidden/);
+    expect(compute).not.toHaveBeenCalled();
 });

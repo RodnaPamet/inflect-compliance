@@ -5,6 +5,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { cachedAggregationRead } from '@/lib/cache/aggregation-cache';
 import { AGGREGATIONS } from '@/lib/cache/aggregation-registry';
+import { assertCanReadVendors } from '@/app-layer/policies/vendor.policies';
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
     const params = await paramsPromise;
@@ -14,6 +15,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         aggregation: 'vendors-metrics',
         dependsOn: AGGREGATIONS['vendors-metrics'].dependsOn,
         ttlSeconds: AGGREGATIONS['vendors-metrics'].ttlSeconds,
+        authorize: () => assertCanReadVendors(ctx),
         compute: () => getVendorMetrics(ctx),
     });
     return jsonResponse(metrics);

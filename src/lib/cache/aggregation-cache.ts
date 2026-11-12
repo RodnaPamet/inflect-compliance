@@ -61,11 +61,20 @@ export interface CachedAggregationOptions<T> {
      * stay clear of the async-params route-typing guard.)
      */
     variant?: unknown;
+    /**
+     * The caller's read check, run on EVERY call before the cache is read —
+     * a hit included. `compute` runs only on a miss, so a check that lived
+     * only inside it would be skipped whenever the answer was cached, and a
+     * caller refused on a cold cache would read what an authorised caller had
+     * just cached. Throw to refuse. Required, so a new caller cannot forget it.
+     */
+    authorize: () => void | Promise<void>;
     /** The expensive aggregation. Called only on a cache miss. */
     compute: () => Promise<T>;
 }
 
 export async function cachedAggregationRead<T>(opts: CachedAggregationOptions<T>): Promise<T> {
+    await opts.authorize();
     const redis = getRedis();
     if (!redis) {
         // No Redis — bypass cache, behaviourally identical to uncached.

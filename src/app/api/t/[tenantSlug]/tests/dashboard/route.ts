@@ -30,6 +30,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { cachedAggregationRead } from '@/lib/cache/aggregation-cache';
 import { AGGREGATIONS } from '@/lib/cache/aggregation-registry';
+import { assertCanReadTests } from '@/app-layer/policies/test.policies';
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
@@ -45,6 +46,7 @@ export const GET = withApiErrorHandling(
             dependsOn: AGGREGATIONS['tests-dashboard'].dependsOn,
             ttlSeconds: AGGREGATIONS['tests-dashboard'].ttlSeconds,
             variant: { period: validPeriod },
+            authorize: () => assertCanReadTests(ctx),
             compute: async () => {
                 const [legacy, g2] = await Promise.all([
                     getTestDashboardMetrics(ctx, validPeriod),
