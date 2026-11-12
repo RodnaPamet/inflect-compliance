@@ -63,7 +63,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { enqueue, getQueue } from '@/app-layer/jobs/queue';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { findTenantJob } from '@/app-layer/jobs/tenant-job-lookup';
 import { API_KEY_CREATE_LIMIT } from '@/lib/security/rate-limit-middleware';
 import { badRequest, conflict } from '@/lib/errors/types';
 import { logEvent } from '@/app-layer/events/audit';
@@ -182,13 +183,10 @@ export const GET = withApiErrorHandling(
             );
         }
 
-        const job = await getQueue().getJob(jobId);
-
-        // A job id belonging to another tenant is reported as absent
-        // rather than as forbidden — the same shape key-rotation uses, so
-        // the response cannot be used to probe which ids exist elsewhere.
-        const payload = job?.data as { tenantId?: string } | undefined;
-        if (!job || (payload?.tenantId && payload.tenantId !== ctx.tenantId)) {
+        // Only this tenant's own av-rescan job is reported; any other id
+        // is absent, so the response cannot probe what else is queued.
+        const job = await findTenantJob(jobId, ctx.tenantId, 'av-rescan');
+        if (!job) {
             return NextResponse.json(
                 { error: { code: 'NOT_FOUND', message: `No job with id ${jobId}` } },
                 { status: 404 },

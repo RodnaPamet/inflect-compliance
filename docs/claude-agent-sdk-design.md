@@ -85,15 +85,21 @@ CLI. That is the gap this design closes.
 
 `src/lib/agentic/drivers/` is where an engine plugs in. A `RunDriver` is one
 function, `(ctx, runId, def, fromSeq, runStartMs) => Promise<RunDriverOutcome>`.
-`DRIVERS` maps `static` and `flue` to implementations.
+`DRIVERS` (`src/lib/agentic/drivers/index.ts`) maps `static`, `flue` and
+`tool-runner` to implementations.
 
 Which engine runs is the AND of four terms, each able only to narrow
-(`src/lib/agentic/agent-driver.ts`, `docs/implementation-notes/2026-09-20-agent-driver-seam.md`):
+(`resolveAgentDriver` in `src/lib/agentic/agent-driver.ts`, then
+`selectRunDriver`; `docs/implementation-notes/2026-09-20-agent-driver-seam.md`):
 
-1. the operator's process-wide switch (`AGENT_DRIVER_FLUE`, opt-in: only `1`
-   or `true` count);
+1. the operator's switch for the engine the tenant chose. Flue's is
+   `AGENT_DRIVER_FLUE` (opt-in: only `1` or `true` count). The Tool Runner's is
+   `AGENT_DRIVER_TOOL_RUNNER`, read as three states: `1`/`true` on everywhere,
+   any other set value off everywhere, and unset leaves it to the workspace's
+   organization (`toolRunnerDecisionFor` in
+   `src/lib/agentic/agent-switches-policy.ts`);
 2. the tenant's setting (`TenantSecuritySettings.agentDriver`, enum
-   `AgentDriverMode { STATIC FLUE }`);
+   `AgentDriverMode { STATIC FLUE TOOL_RUNNER }`);
 3. whether this build implements the engine (`DRIVER_IMPLEMENTED`);
 4. whether the workflow definition asks for it (`WorkflowDefinition.driver`).
 
@@ -191,7 +197,7 @@ adapter: it scripts the model's turns, starts a run and reads back what
 happened. The scenarios assert only on that observation, never on an internal
 call.
 
-- Ten run scenarios:
+- The run scenarios (`CONFORMANCE_SCENARIOS`, which is the authority):
   - a kill switch engaged between model calls;
   - each of the three caps;
   - the ledger accounting for every model call and tool call;
@@ -199,7 +205,8 @@ call.
   - a secret-shaped argument refused before the funnel;
   - a flagged result withheld from the model;
   - a `LOCAL_ONLY` tenant never sent to an external model;
-  - the tool surface bounded and every engine-supplied tool reported.
+  - the tool surface bounded and every engine-supplied tool reported;
+  - a skill the mount gate refuses never reaching the model.
 - One admission scenario, run against the database. An unvouched agent (no
   binding, not in the register, or suspended) is refused before the run row
   exists. A vouched agent is the positive control.

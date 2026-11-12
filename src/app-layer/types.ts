@@ -110,6 +110,21 @@ export interface RequestContext {
      * grants nothing; it only ever narrows.
      */
     a2aInbound?: A2aInboundOrigin;
+
+    /**
+     * Set on the context a READ-ONLY run's tools execute on (#5365): a run whose
+     * definition declares `readOnly` — a Test run of an agent profile, an Ask
+     * run, a Flue workflow with no PROPOSE step.
+     *
+     * Set by `offerToolSet` alone, on the invocation its `run` closures are
+     * bound to, because that is the one seam every engine's tool calls pass
+     * through and it already receives the definition's `readOnly`. The offer
+     * withholds every write-classified external tool and every A2A send from
+     * such a run; this is the BACKSTOP behind that: the external write
+     * dispatch and the A2A send refuse with nothing sent and no row written
+     * when it is set. It grants nothing; it only ever narrows.
+     */
+    readOnlyRun?: true;
 }
 
 /**

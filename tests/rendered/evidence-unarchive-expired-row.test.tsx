@@ -168,3 +168,29 @@ it('an expired row whose archive flag is off offers Unarchive, and it reaches th
 
     expect(calls).toContainEqual({ path: '/api/t/acme/evidence/ev-stuck/unarchive', method: 'POST' });
 });
+
+it('a member without evidence.edit is offered neither Archive nor Unarchive', async () => {
+    // A custom role on an Editor base that sets `evidence.edit: false`. Both
+    // routes refuse it, so the page offers neither.
+    render(
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+            <TooltipProvider>
+                <EvidenceClient
+                    initialEvidence={[STUCK, LIVE]}
+                    initialControls={[]}
+                    controlsComplete
+                    canViewControls
+                    initialMetrics={METRICS}
+                    tenantSlug="acme"
+                    permissions={{ canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true }}
+                    grants={{ evidenceEdit: false, evidenceUpload: true, adminManage: false, controlsEdit: true, tasksCreate: true, tasksEdit: true }}
+                    translations={{}}
+                />
+            </TooltipProvider>
+        </SWRConfig>,
+    );
+    await screen.findByText('Lapsed access review');
+
+    expect(document.getElementById('archive-ev-live')).toBeNull();
+    expect(document.getElementById('unarchive-ev-stuck')).toBeNull();
+});

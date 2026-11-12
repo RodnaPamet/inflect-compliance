@@ -8,7 +8,7 @@ import { runInTenantContext, PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { FindingSeverity, FindingType, FindingStatus } from '@prisma/client';
 import { z } from 'zod';
-import { CreateFindingSchema, UpdateFindingSchema } from '@/lib/schemas';
+import { UpdateFindingSchema, type CreateFindingInput } from '@/lib/schemas';
 
 /**
  * Validate that every referenced entity (assignee, control, compensating
@@ -102,7 +102,7 @@ export async function getFinding(ctx: RequestContext, id: string) {
     });
 }
 
-export async function createFinding(ctx: RequestContext, data: z.infer<typeof CreateFindingSchema>) {
+export async function createFinding(ctx: RequestContext, data: CreateFindingInput) {
     assertCanCreateFinding(ctx);
 
     return runInTenantContext(ctx, async (db) => {
