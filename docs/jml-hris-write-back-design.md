@@ -644,10 +644,11 @@ rather than shown to typecheck — point it at a live OrangeHRM instance and rec
 came back. When it needs to be shown to work *for BambooHR specifically*, it cannot be, and
 that limitation belongs in the PR body rather than in a fixture that implies otherwise.
 
-**The lab instance this section was written against is gone.** The OrangeHRM lab — the
+**The lab instance this section was written against is retired.** The OrangeHRM lab — the
 `orangehrm/orangehrm:5.9` instance, its MariaDB and the `orangehrm-mcp` adapter, with
-their two public vhosts — was retired from the production VM on 2026-11-12 by owner
-decision, to free memory under the VM's capacity budget
+their two public vhosts — was retired by owner decision on 2026-11-12 and removed from
+the repo-canonical deploy set, to free memory under the production VM's capacity budget. It
+leaves the running VM when the operator runs the retirement runbook
 ([`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md)).
 The findings in the table above were measured against it and stay true as findings. What
 is missing is a place to measure the next one: proving new HRIS behaviour against a live

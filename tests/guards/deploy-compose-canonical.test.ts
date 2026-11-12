@@ -443,6 +443,29 @@ describe('deploy compose — every container has a memory limit and a CPU cap, w
         expect(Number(found[0].svc.cpus)).toBeLessThanOrEqual(1);
     });
 
+    /**
+     * `mem_limit` moves Node's DEFAULT heap ceiling: with no flag, V8 sizes old
+     * space from the cgroup limit (measured: 2096 MiB unlimited, 792 MiB under
+     * 1536m). A heap overrun then aborts at about half the limit, exit 134,
+     * and no OOM-kill counter sees it. So the app image's two services state
+     * the ceiling, below the limit, leaving room for native memory.
+     */
+    it.each(['app', 'worker'])('%s states a V8 heap ceiling below its mem_limit', (name) => {
+        const svc = servicesOf(CANONICAL)[name] as LimitedService & {
+            environment?: Record<string, unknown>;
+        };
+        const nodeOptions = String(svc.environment?.NODE_OPTIONS ?? '');
+        const m = /(?:^|\s)--max-old-space-size=(\d+)(?:\s|$)/.exec(nodeOptions);
+        expect(m).not.toBeNull();
+        const heapMib = Number(m![1]);
+        const limitMib = mib(svc.mem_limit);
+        // Above the default the cgroup would otherwise impose (about half the
+        // limit), and at most three quarters of it: the rest is buffers, code
+        // and native allocations, which the old-space flag does not bound.
+        expect(heapMib).toBeGreaterThan(limitMib / 2);
+        expect(heapMib).toBeLessThanOrEqual(limitMib * 0.75);
+    });
+
     it('the OrangeHRM lab is retired: no overlay, and no service of it in any deploy compose file', () => {
         const composeFiles = repoRelativeFiles().filter((f) => /^deploy\/docker-compose.*\.ya?ml$/.test(f));
         expect(composeFiles).toContain(CANONICAL);

@@ -78,7 +78,7 @@
 #
 #   That measurement is of 2026-10-15. Since 2026-11-12 the repo copy no
 #   longer serves `hrm-mcp.…sslip.io` or `orangehrm-lab.…sslip.io`: the
-#   OrangeHRM lab was retired from this VM (capacity budget C1), so the next
+#   OrangeHRM lab was retired (capacity budget C1), so the next
 #   CADDY_ONLY push deliberately removes those two hostnames and no other.
 #
 # WHAT IT NEVER TOUCHES: /opt/inflect/.env and /opt/inflect/.env.prod. Those

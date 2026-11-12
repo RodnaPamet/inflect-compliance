@@ -364,9 +364,12 @@ Neither is in the canonical set: `apply.sh` does not push them and
 | `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | copied by hand, then `up -d legacy-mcp-proving` with both `-f` files |
 
 The OrangeHRM lab overlay (`docker-compose.orangehrm-lab.yml`: `orangehrm`,
-`orangehrm-db`, `orangehrm-mcp`) was **retired from the production VM on
-2026-11-12** by owner decision, with its two Caddy vhosts. The repository no
-longer carries the overlay; the adapter's source stays in
+`orangehrm-db`, `orangehrm-mcp`) was **retired by owner decision on
+2026-11-12** and removed from the repo-canonical set, with its two Caddy vhosts.
+Removing it from the running VM is the operator runbook's steps 1–2; until they
+run, the three containers and both vhosts keep serving there (the `VM check`
+workflow's `containers` check shows which). The repository no longer carries
+the overlay; the adapter's source stays in
 `deploy/orangehrm-mcp/` for a non-production instance. The operator runbook,
 including how to bring it back, is in
 [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md).
@@ -388,6 +391,13 @@ are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2
 the `app` and `worker` limits are provisional until a re-measurement that spans
 the nightly jobs. The `VM capacity` workflow (below) prints each container's
 configured limit, its peak memory and its out-of-memory kills.
+
+`app` and `worker` also state their V8 heap ceiling
+(`NODE_OPTIONS: "--max-old-space-size=1024"`), because a memory limit moves
+Node's default heap ceiling to about half the limit. A heap overrun is then a
+restart with exit code 134 and `Reached heap limit` in the log, which no
+out-of-memory counter records. The guard holds the heap between half and three
+quarters of `mem_limit`, so the two move together.
 
 A limit change is a structural change: it reaches the VM through
 `CONFIRM=1 deploy/apply.sh` for the canonical file, and through each overlay's

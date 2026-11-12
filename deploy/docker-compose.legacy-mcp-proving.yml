@@ -35,8 +35,8 @@
 #
 # ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
 #
-# The same argument the OrangeHRM lab overlay made (retired from the
-# production VM 2026-11-12), which applies here too: this is a FIXTURE. It has no business starting
+# The same argument the OrangeHRM lab overlay made (retired by owner
+# decision 2026-11-12), which applies here too: this is a FIXTURE. It has no business starting
 # because somebody ran the canonical deploy. Splitting it out means the
 # thing we push is the thing that runs, and enabling it stays a
 # deliberate act by a person who knows what it is.

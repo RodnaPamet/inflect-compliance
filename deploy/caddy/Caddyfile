@@ -107,12 +107,12 @@ inflect.34-140-180-255.sslip.io {
     import app_site
 }
 
-# ── The OrangeHRM lab — RETIRED from this VM 2026-11-12 ───────────────────
+# ── The OrangeHRM lab — RETIRED 2026-11-12 ────────────────────────────────
 #
 # Two vhosts stood here, `orangehrm-lab.…` (the OrangeHRM web application, for
 # the HRIS connector's OAuth redirect, #3594) and `hrm-mcp.…` (its MCP adapter,
-# #2861). The lab was retired from the production VM by owner decision on
-# 2026-11-12 (capacity budget C1), and both blocks went with it. Proving
+# #2861). The lab was retired by owner decision on 2026-11-12 (capacity
+# budget C1), and both blocks went with it. Proving
 # against a live OrangeHRM now needs a non-production instance; see
 # docs/implementation-notes/2026-11-12-capacity-c1.md.
 

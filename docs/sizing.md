@@ -57,8 +57,10 @@ Four more things share the machine:
   512 MB / 1.0 CPU, and its egress proxy, 256 MB / 0.5 CPU) and
   `docker-compose.legacy-mcp-proving.yml` (256 MB / 0.5 CPU) run there and are
   counted in the budget. `docker-compose.pipelock.yml` is not enabled and
-  carries no limits yet. The OrangeHRM lab overlay was retired from the VM on
-  2026-11-12.
+  carries no limits yet. The OrangeHRM lab overlay was retired on 2026-11-12 and
+  is outside the budget; its containers leave the VM when the operator runs
+  the retirement runbook in
+  [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md).
 - **One disk holds everything**: the OS, Docker images, the Postgres and Redis
   data, evidence uploads, container logs and the observability volumes. Each
   container's log is capped at three 10 MB files (`x-logging` in the compose
@@ -91,6 +93,7 @@ of shortage and does nothing for the others.
 |---|---|---|
 | Host CPU or memory near its limit | `sudo docker stats --no-stream` on the VM; the VM's CPU graph in the Compute Engine console | A larger machine type. |
 | A container at its memory limit, or restarted with out-of-memory kills | The `VM capacity` workflow: each container's limit, peak memory and OOM kills | Raise that container's `mem_limit`, within the budget, if its peak is real rather than page cache. |
+| `app` or `worker` restarting with exit code 134 and `Reached heap limit` in its log, and no OOM kill | `sudo docker inspect -f '{{.State.ExitCode}} {{.RestartCount}}'` on the container; its log | The V8 heap ceiling (`--max-old-space-size` in the service's `NODE_OPTIONS`) was reached before the memory limit. Raise both together, within the budget. |
 | API p95 near the SLO: reads 500 ms, writes 1000 ms (`docs/slos.md`, SLO 2 and 2b) | Recording rule `job:api_request_duration_ms:p95`; alert `ApiLatencySloBreach` (p95 above 750 ms for 15 minutes); the `inflect-api-overview` dashboard | If host CPU is high, a larger machine type. If it is not, find the slow route or query first. |
 | Clients waiting for a database connection | PgBouncer's admin console (`SHOW POOLS`, the `cl_waiting` column); one stats line a minute in the `pgbouncer` log (`STATS_PERIOD: 60`) | [Raise the PgBouncer pool](#database-connections), within Postgres `max_connections`. |
 | Jobs waiting | `redis-cli LLEN bull:inflect-jobs:wait`, as in the Redis triage in `docs/incident-response.md`. Where the observability stack runs: recording rule `job:job_queue_depth:max`, whose `waiting` and `prioritized` states are the backlog; alert `JobQueueDepthGrowing` (backlog above 500 and growing for 20 minutes); the `inflect-jobs-and-queues` dashboard. The worker reports them only with `OTEL_ENABLED=true` | See [worker throughput](#worker-throughput). |

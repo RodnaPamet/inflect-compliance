@@ -309,6 +309,17 @@ services:
       # container start before the app process is spawned, so the
       # operator gets a single clear error instead of a crash loop.
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
+      # Capacity budget C1 — the V8 heap ceiling, stated, because `mem_limit`
+      # moves it. With no flag Node sizes its default old space from the
+      # cgroup limit (`uv_get_constrained_memory`): measured, 2096 MiB with
+      # no limit and 792 MiB under 1536m. A heap overrun then ends in
+      # "FATAL ERROR: Reached heap limit" and exit 134 at about half the
+      # limit, which no OOM-kill counter records. 1024 keeps the abort
+      # below the limit with ~500 MiB for buffers, code and native memory.
+      # Set here, not in .env.prod: `environment:` overrides `env_file:`,
+      # and the heap must follow `mem_limit` in the same file. Change one,
+      # change the other — the guard holds the pair.
+      NODE_OPTIONS: "--max-old-space-size=1024"
       # Step 6d — where the LOCAL_ONLY adjudication model lives. A
       # DEPLOYMENT value, never a tenant one: `src/env.ts` records that no
       # tenant setting reaches it, for the same SSRF reason the Jev host is
@@ -384,6 +395,8 @@ services:
       - ./.env.prod
     environment:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
+      # As `app`: the heap ceiling stated, sized below `mem_limit`.
+      NODE_OPTIONS: "--max-old-space-size=1024"
       # Step 6d — where the LOCAL_ONLY adjudication model lives. A
       # DEPLOYMENT value, never a tenant one: `src/env.ts` records that no
       # tenant setting reaches it, for the same SSRF reason the Jev host is
