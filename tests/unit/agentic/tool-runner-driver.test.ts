@@ -33,7 +33,11 @@ interface MockSettlement {
 }
 
 const mockState = {
-    tools: [] as Array<{ name: string; result: string }>,
+    tools: [] as ConformanceRun['tools'][number][],
+    /** Has the workspace acknowledged the external-AI business-data transfer (#3872)? */
+    externalAiAcknowledged: false,
+    /** The tenant's AI Guard mode, as the guard reads it. `null` is a tenant that never chose one. */
+    aiGuardMode: null as 'STRICT' | null,
     residency: 'EXTERNAL' as 'EXTERNAL' | 'LOCAL_ONLY',
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
@@ -131,7 +135,7 @@ jest.mock('@/lib/agentic/drivers/run-settlement', () => {
         haltRunAtCap: jest.fn(async (_c: unknown, _r: string, halt: { kind: string; message: string }) =>
             settle('FAILED', halt.message, halt.kind),
         ),
-        haltRunAtGuard: jest.fn(async (_c: unknown, _r: string, worst: string) =>
+        haltRunAtGuard: jest.fn(async (_c: unknown, _r: string, worst: string, _ruleIds?: unknown, _prefix?: string) =>
             settle(worst === 'QUARANTINED' ? 'ABORTED' : 'AWAITING_APPROVAL', `ai_guard_${worst.toLowerCase()}`),
         ),
     };
@@ -178,6 +182,17 @@ jest.mock('@/lib/mcp/tools/registry', () => ({
             inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
             resourceScope: { resource: t.name, action: 'read' },
             authorize: { basis: 'effective', mirrors: `GET /${t.name}` },
+            ...(t.externalConnection
+                ? {
+                      externalConnection: {
+                          connectionId: `conn-${t.externalConnection.name}`,
+                          connectionName: t.externalConnection.name,
+                          declaresWrite: false,
+                          connectionRefusesWrites: false,
+                          reachesBusinessSystem: t.externalConnection.reachesBusinessSystem,
+                      },
+                  }
+                : {}),
         })),
     ),
     runReadTool: jest.fn(async (_inv: unknown, name: string, args: unknown) => {
@@ -203,7 +218,13 @@ jest.mock('@/lib/mcp/tools/propose-tools', () => ({
 jest.mock('@/lib/db/rls-middleware', () => {
     const db = {
         tenantSecuritySettings: {
-            findUnique: async () => ({ aiResidency: mockState.residency, aiLocalBaseUrl: null, aiLocalModel: null }),
+            findUnique: async () => ({
+                aiResidency: mockState.residency,
+                aiLocalBaseUrl: null,
+                aiLocalModel: null,
+                externalAiBusinessDataAckAt: mockState.externalAiAcknowledged ? new Date('2026-11-01T00:00:00Z') : null,
+                externalAiBusinessDataAckByUserId: mockState.externalAiAcknowledged ? 'user-conformance' : null,
+            }),
         },
         registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-conformance' }) },
         aiDecisionLog: {
@@ -222,7 +243,11 @@ jest.mock('@/lib/db/rls-middleware', () => {
 });
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) =>
-        fn({ tenantSecuritySettings: { findUnique: async () => null } }),
+        fn({
+            tenantSecuritySettings: {
+                findUnique: async () => (mockState.aiGuardMode ? { aiGuardMode: mockState.aiGuardMode } : null),
+            },
+        }),
     ),
 }));
 // Strict, so an audit export the engine reaches that this fixture forgot fails
@@ -251,6 +276,9 @@ import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { runToolRunnerDriver, planToolRunnerRun, refusalMessage } from '@/lib/agentic/tool-runner/driver';
 import { KILL_UNREADABLE_MESSAGE } from '@/lib/agentic/tool-runner/execute';
+import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
+import { haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
+import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
 import { describeDriverConformance, MOUNTABLE_REPOSITORY_SKILL } from '../../helpers/driver-conformance';
 import { conformanceSkillMount } from '../../helpers/driver-conformance-skills';
 import { pinForRow } from '@/lib/agentic/flue/skills/mount-gate';
@@ -343,10 +371,22 @@ function pinsAdmissionRecords(skills: ConformanceRun['skills']): unknown[] {
 }
 
 function reset(
-    run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'abortAfterModelCalls' | 'skills'>,
+    run: Pick<
+        ConformanceRun,
+        | 'tools'
+        | 'residency'
+        | 'alreadySpent'
+        | 'toolCallLimit'
+        | 'killAfterModelCalls'
+        | 'abortAfterModelCalls'
+        | 'skills'
+        | 'externalAiAcknowledged'
+    >,
     turns: readonly FauxTurn[],
 ): void {
     mockState.skills = run.skills;
+    mockState.externalAiAcknowledged = run.externalAiAcknowledged === true;
+    mockState.aiGuardMode = null;
     mockState.pinnedSkills = pinsAdmissionRecords(run.skills);
     mockState.tools = [...run.tools];
     mockState.residency = run.residency ?? 'EXTERNAL';
@@ -749,3 +789,72 @@ describe('each MODEL_CALL step records its request by shape', () => {
 function wire0System(): unknown {
     return wire.bodies[0]?.system;
 }
+
+// ─── #5372: a resumed run's specification, and the guard before the caps ──
+
+describe('a resumed run is handed its whole specification (#5372)', () => {
+    const TWO_STEPS = {
+        ...DEFINITION,
+        steps: [
+            { kind: 'READ', tool: 'list_risks', label: 'Read the risks' },
+            { kind: 'SYNTHESIS', label: 'Say what you found' },
+        ],
+    } as unknown as WorkflowDefinition;
+
+    it.each([1, 2, 7])('resumed at ledger seq %i, the first request still lists every declared step', async (fromSeq) => {
+        // `fromSeq` counts ledger rows (model and tool calls), not declared
+        // steps: a run that made seven calls has not covered seven steps of a
+        // two-step specification.
+        reset({ tools: [LIST_RISKS] }, [{ text: 'done' }]);
+        await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, TWO_STEPS, fromSeq, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        const sent = JSON.stringify(wire.bodies[0].messages);
+        expect(sent).toContain('1. [READ] Read the risks');
+        expect(sent).toContain('2. [SYNTHESIS] Say what you found');
+    });
+});
+
+describe('a model answer\'s guard verdict is noted before the caps are charged (#5372)', () => {
+    const SECRET_REPLY = 'Here is the key: AKIAIOSFODNN7EXAMPLE'; // pragma: allowlist secret
+
+    beforeEach(() => {
+        jest.mocked(latchOnGuardBlock).mockClear();
+    });
+
+    it('a QUARANTINED answer that also crosses the token cap settles at the guard, and latches the breaker', async () => {
+        reset({ tools: [LIST_RISKS], alreadySpent: { tokens: ENGINE_CAPS.MAX_TOKENS - 1 } }, [{ text: SECRET_REPLY }]);
+        mockState.aiGuardMode = 'STRICT';
+        await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, DEFINITION, 0, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        expect(recordedSettlement()).toEqual({ status: 'ABORTED', reason: 'ai_guard_quarantined', cap: null });
+        expect(latchOnGuardBlock).toHaveBeenCalledTimes(1);
+        // Settled under this engine's own name, not Flue's.
+        expect(jest.mocked(haltRunAtGuard).mock.calls.at(-1)?.[4]).toBe('tool_runner');
+    });
+
+    it('a QUARANTINED answer that also crosses the wall clock settles at the guard', async () => {
+        // The clock is charged after the call returns. Started just inside
+        // the cap, the call itself carries the run over it.
+        reset({ tools: [LIST_RISKS] }, [{ text: SECRET_REPLY }]);
+        mockState.aiGuardMode = 'STRICT';
+        const start = Date.now();
+        // Inside the cap until the model has answered, past it afterwards.
+        jest.spyOn(Date, 'now').mockImplementation(() => (mockState.modelCalls > 0 ? start + ENGINE_CAPS.WALL_CLOCK_MS + 1 : start));
+        try {
+            await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, DEFINITION, 0, start);
+        } finally {
+            jest.mocked(Date.now).mockRestore();
+        }
+        expect(wire.bodies).toHaveLength(1);
+        expect(recordedSettlement()).toEqual({ status: 'ABORTED', reason: 'ai_guard_quarantined', cap: null });
+        expect(latchOnGuardBlock).toHaveBeenCalledTimes(1);
+    });
+
+    it('a CLEAN answer that crosses the token cap still settles at the cap (positive control)', async () => {
+        reset({ tools: [LIST_RISKS], alreadySpent: { tokens: ENGINE_CAPS.MAX_TOKENS - 1 } }, [{ text: 'One risk, owned.' }]);
+        mockState.aiGuardMode = 'STRICT';
+        await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, DEFINITION, 0, Date.now());
+        expect(recordedSettlement()?.cap).toBe('TOKENS');
+        expect(latchOnGuardBlock).not.toHaveBeenCalled();
+    });
+});

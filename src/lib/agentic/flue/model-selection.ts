@@ -71,10 +71,10 @@ export const FLUE_PROVIDER_IDS = {
  * actually bites.
  *
  * A specifier with no `/` yields the whole string, which matches no registered
- * provider id, so an unparseable specifier is treated as "not the external
- * provider" by the gate and as unregistered by `flueModelIsRegistered` — the
- * run does not start at all, which is the right outcome and not this
- * function's to make.
+ * provider id, so an unparseable specifier is treated as "not the local
+ * provider" — outside the deployment — by the gate, and as unregistered by
+ * `flueModelIsRegistered`, so the run does not start at all, which is the
+ * right outcome and not this function's to make.
  */
 export function providerIdOf(specifier: string): string {
     const slash = specifier.indexOf('/');

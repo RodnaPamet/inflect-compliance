@@ -264,6 +264,16 @@ describe('a definition that declares no input is unchanged', () => {
         ]);
         expect(mockDispatched[0]).not.toContain(UNTRUSTED_DATA_OPEN);
     });
+
+    it.each([1, 2, 9])('resumed at ledger seq %i, is dispatched the same whole specification (#5372)', async (fromSeq) => {
+        // `fromSeq` counts committed model and tool calls, not declared steps.
+        // Slicing the step list by it sent a resumed run a partial or EMPTY
+        // specification — seq 2 on this two-step definition left no step.
+        mockRow = { costTokens: 0 };
+        await executeFlueRun(CTX, RUN, POSTURE, fromSeq, Date.now(), 'inflect-external/claude');
+        expect(mockDispatched).toHaveLength(1);
+        expect(mockDispatched[0]).toContain('1. [READ] read posture\n2. [SYNTHESIS] summarise');
+    });
 });
 
 describe('readDeclaredRunInput — declared keys only, in declaration order', () => {
@@ -297,7 +307,7 @@ describe('readDeclaredRunInput — declared keys only, in declaration order', ()
 
     it('a definition with no declared input reads nothing and builds no block', () => {
         expect(readDeclaredRunInput({}, { a: '1' })).toEqual({ ok: true, input: [] });
-        expect(runMessage({ description: 'd', steps: [] }, 0, [])).toBe(
+        expect(runMessage({ description: 'd', steps: [] }, [])).toBe(
             ['d', '', 'Cover the following, in order. Use the tools you have been given; do not assume.'].join('\n'),
         );
     });

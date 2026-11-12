@@ -41,7 +41,9 @@ interface MockSettlement {
 }
 
 const mockState = {
-    tools: [] as Array<{ name: string; result: string }>,
+    tools: [] as ConformanceRun['tools'][number][],
+    /** Has the workspace acknowledged the external-AI business-data transfer (#3872)? */
+    externalAiAcknowledged: false,
     residency: 'EXTERNAL' as 'EXTERNAL' | 'LOCAL_ONLY',
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
@@ -159,6 +161,17 @@ jest.unstable_mockModule('@/lib/mcp/tools/registry', () => ({
             inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
             resourceScope: { resource: t.name, action: 'read' },
             authorize: { basis: 'effective', mirrors: `GET /${t.name}` },
+            ...(t.externalConnection
+                ? {
+                      externalConnection: {
+                          connectionId: `conn-${t.externalConnection.name}`,
+                          connectionName: t.externalConnection.name,
+                          declaresWrite: false,
+                          connectionRefusesWrites: false,
+                          reachesBusinessSystem: t.externalConnection.reachesBusinessSystem,
+                      },
+                  }
+                : {}),
         })),
     ),
     // THE FUNNEL, at its seam. Step 0 of `authorizeToolCall` is kept: a killed
@@ -185,7 +198,13 @@ jest.unstable_mockModule('@/lib/mcp/tools/propose-tools', () => ({
 jest.unstable_mockModule('@/lib/db/rls-middleware', () => {
     const db = {
         tenantSecuritySettings: {
-            findUnique: async () => ({ aiResidency: mockState.residency, aiLocalBaseUrl: null, aiLocalModel: null }),
+            findUnique: async () => ({
+                aiResidency: mockState.residency,
+                aiLocalBaseUrl: null,
+                aiLocalModel: null,
+                externalAiBusinessDataAckAt: mockState.externalAiAcknowledged ? new Date('2026-11-01T00:00:00Z') : null,
+                externalAiBusinessDataAckByUserId: mockState.externalAiAcknowledged ? 'user-conformance' : null,
+            }),
         },
         registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-conformance' }) },
         aiDecisionLog: {
@@ -283,6 +302,7 @@ function offeredToolsIn(messages: ReadonlyArray<Record<string, unknown>>): strin
 
 async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
     mockState.tools = [...run.tools];
+    mockState.externalAiAcknowledged = run.externalAiAcknowledged === true;
     mockState.residency = run.residency ?? 'EXTERNAL';
     mockState.alreadyTokens = run.alreadySpent?.tokens ?? 0;
     mockState.toolCallLimit = run.toolCallLimit ?? null;

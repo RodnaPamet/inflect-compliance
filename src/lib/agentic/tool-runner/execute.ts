@@ -13,13 +13,15 @@
  *      and step count persisted. The row's output summary is the call's text
  *      only when the scan was clean, so a secret in model output never reaches
  *      the stored summary;
- *   3. the kill switch, uncached, and then the run's own status: a kill, or an
+ *   3. the scan's verdict, noted: anything but CLEAN settles the run at the
+ *      guard. Noted before the caps (#5372), so a blocked answer that also
+ *      crossed a cap still latches the breaker and writes the guard's row;
+ *   4. the kill switch, uncached, and then the run's own status: a kill, or an
  *      operator's Abort (#5366), breaks the loop, so the turn's tools never
  *      run;
- *   4. a stop latched while the previous turn's tools ran (a cap, a kill, a
- *      guard verdict);
- *   5. the token and wall-clock caps;
- *   6. the scan's verdict: anything but CLEAN settles the run at the guard;
+ *   5. a stop latched by now (a cap, a kill, a guard verdict, this answer's
+ *      included);
+ *   6. the token and wall-clock caps;
  *   7. the stop reason: `refusal`, `max_tokens` and a full context window each
  *      settle the run with a named reason, and run no tool from that turn.
  *
@@ -38,8 +40,11 @@
  *
  * An operator's Abort first, and it writes no settlement: the operator's
  * ABORTED stands (#5366). Then, in the order the Flue engine settles, for the
- * reasons it gives (#4230): a kill, then a cap, then a guard verdict, then the named stop reasons, then the
- * iteration bound, then the empty catalogue, then COMPLETED. Model text is
+ * reasons it gives (#4230): a kill, then a cap, then a guard verdict, then the
+ * named stop reasons, then the iteration bound, then the empty catalogue, then
+ * COMPLETED. Before the first call, a run whose offer would carry a business
+ * system's rows to Anthropic with no acknowledgement on record is refused
+ * outright (#5364). Model text is
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
  */
@@ -63,6 +68,7 @@ import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
+import { externalResidencyRefusal, type ExternalAiAcknowledgement } from '@/lib/agentic/external-residency-gate';
 import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
 import { openDeclaredRunInput, runMessage } from '@/lib/agentic/flue/run-message';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
@@ -138,6 +144,13 @@ export async function executeToolRunnerRun(
     fromSeq: number,
     runStartMs: number,
     client: Anthropic,
+    /**
+     * Where this run's model calls go, and the tenant's business-data transfer
+     * acknowledgement, both decided by the DRIVER before anything was read
+     * here (#5364). Required: the transfer gate below refuses on an absent
+     * acknowledgement, and a caller that forgot it should not compile.
+     */
+    route: { readonly providerId: string; readonly externalAiAcknowledgement: ExternalAiAcknowledgement },
 ): Promise<RunDriverOutcome> {
     // ── The kill switch, before anything is read or sent ────────────────────
     const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
@@ -162,7 +175,7 @@ export async function executeToolRunnerRun(
         const status = await failRun(ctx, runId, declared.message);
         return { status, stepFailures: 0 };
     }
-    const message = runMessage(def, fromSeq, declared.input);
+    const message = runMessage(def, declared.input);
 
     // ── The run's skills (Step 2d) ──────────────────────────────────────────
     // Through the ONE resolver every reasoning engine uses, so the gate, the
@@ -349,6 +362,30 @@ export async function executeToolRunnerRun(
         return { status: 'EMPTY_CATALOGUE', stepFailures: 1 };
     }
 
+    // ── ROUTING AN ERP'S ROWS OUTSIDE THE DEPLOYMENT IS A TRANSFER (#3872) ──
+    //
+    // Asked here for the reasons Flue asks it where it does (#5364): AFTER the
+    // offer, because a tool withheld from it transfers nothing, and BEFORE the
+    // runner sends its first request, because after that the transfer the gate
+    // exists to refuse has happened. This engine always calls Anthropic, so a
+    // business-system tool in the offer with no acknowledgement on record
+    // refuses the whole run — never by dropping those tools and carrying on.
+    const transferRefusal = externalResidencyRefusal({
+        providerId: route.providerId,
+        offered: offered.externalConnections.map((c) => ({
+            name: c.connectionName,
+            connectionId: c.connectionId,
+            connectionName: c.connectionName,
+            reachesBusinessSystem: c.reachesBusinessSystem,
+        })),
+        acknowledgement: route.externalAiAcknowledgement,
+        enginePrefix: 'tool_runner',
+    });
+    if (transferRefusal) {
+        const status = await failRun(ctx, runId, transferRefusal.message);
+        return { status, stepFailures: 0 };
+    }
+
     // The engine's own tool goes BESIDE the resolved set, after the empty check
     // above: a run that can read its skills but reach no tenant data still has
     // nothing to do with an answer.
@@ -422,6 +459,24 @@ export async function executeToolRunnerRun(
             );
             await updateRun(ctx, runId, { costTokens, stepCount: seq });
 
+            // The answer's verdict is NOTED FIRST (#5372), before the caps
+            // below can latch. It used to be noted after them, so a
+            // QUARANTINED answer that also crossed the token or wall-clock cap
+            // settled as a cap halt: no breaker latch and no guard audit row
+            // for content the guard had blocked. Noting it here makes
+            // `stopped()` answer GUARD, so the loop leaves before any cap is
+            // charged. The kill is still read: an operator's kill outranks the
+            // verdict at settlement, as it does on Flue.
+            if (outcome && textVerdict !== 'CLEAN') {
+                noteVerdict({
+                    toolCallId: `model-output:${calls}`,
+                    tool: 'model-output',
+                    slice: 'result',
+                    verdict: textVerdict,
+                    ruleIds: outcome.ruleIds,
+                });
+            }
+
             if (await checkKill()) break;
             if (stopped()) break;
 
@@ -433,17 +488,6 @@ export async function executeToolRunnerRun(
             const runtimeHalt = budget.charge('RUNTIME_MS', 0);
             if (runtimeHalt) {
                 binding.stopAtCap(runtimeHalt);
-                break;
-            }
-
-            if (outcome && textVerdict !== 'CLEAN') {
-                noteVerdict({
-                    toolCallId: `model-output:${calls}`,
-                    tool: 'model-output',
-                    slice: 'result',
-                    verdict: textVerdict,
-                    ruleIds: outcome.ruleIds,
-                });
                 break;
             }
 
@@ -495,7 +539,7 @@ export async function executeToolRunnerRun(
         if (state.worst === 'QUARANTINED' && ctx.agentId) {
             await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
         }
-        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds);
+        const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds, 'tool_runner');
         return { status, stepFailures };
     }
     if (failure !== null) {

@@ -1,0 +1,103 @@
+#
+# Named changes to the production VM, from a fixed list — the write-side
+# sibling of `VM check`.
+#
+# WHY A WORKFLOW AND NOT A SESSION. The owner chose (2026-11-12) two ways for a
+# Claude session to change production. Option 1: the owner signs a session in
+# to gcloud with their own account, for that container's life. Option 2, this
+# workflow, the durable way: a session dispatches it, the `production`
+# environment's reviewer approves the run, and the job holds the identity the
+# `Scanner VM`, `VM capacity` and `VM check` workflows hold — Workload Identity
+# Federation, no key anywhere — and reads no secret.
+#
+# A FIXED LIST, NOT A COMMAND. That identity is root on the VM, so the input is
+# a choice of named actions, each written out in `deploy/vm-apply/vm.sh` (and,
+# for the two that `deploy/apply.sh` has no mode for, `deploy/vm-apply/remote.sh`).
+# No input names a command, a path, a host or a compose argument: a free-text
+# input would make every push to this repository a way to run anything on
+# production. A new action is a pull request.
+#
+# MAIN ONLY. The compose file, the Caddyfile and the overlay this pushes are the
+# checkout's, and the VM's structure is repo-canonical: what reaches production
+# is what merged. The job-level `if` below skips a dispatch from any other ref
+# before it asks for approval.
+#
+# THAT `if` IS NOT THE BOUNDARY. A dispatch runs this file, and every script it
+# calls, from the ref the dispatcher picks, so a branch that deletes the `if`
+# or rewrites an action runs as written. GCP admits the identity on the
+# repository and the `production` environment only, not on the ref. What stops
+# a branch is the `production` environment: its deployment branches must be
+# `main` only, and its reviewer (the owner, who also dispatches, so
+# self-review is allowed) reads the branch the run names before approving. See
+# docs/deployment.md, "Named changes without a key".
+#
+# PREFLIGHT FIRST. Every action that writes runs its preflight in the same run
+# and writes only if the preflight passed.
+#
+# THE LOGS ARE PUBLIC, because the repository is. `apply.sh` runs with
+# APPLY_PUBLIC_LOG=1, which reduces everything a tool on the VM prints to its
+# shape — resource names and states, variable NAMES, counts, hashes — and the
+# remote script prints names, states, counts and limits. Never an environment
+# file, a compose file, a container's environment, command line or labels.
+#
+name: VM apply
+
+on:
+    workflow_dispatch:
+        inputs:
+            action:
+                description: Which named change to make on the production VM (each is written out in deploy/vm-apply/vm.sh)
+                required: true
+                type: choice
+                options:
+                    - preflight
+                    - apply
+                    - caddy-preflight
+                    - caddy-apply
+                    - retire-lab-vhosts-preflight
+                    - retire-lab-vhosts
+                    - host-config-preflight
+                    - host-config-apply
+                    - rollback-preflight
+                    - rollback
+                    - retire-lab-containers
+                    - recreate-legacy-mcp-proving
+
+# One at a time: two applies to one VM at once would race on its compose
+# project. Its own group, not `vm-check`'s: VM check only reads and stages in
+# its own directory (`vm-check-stage`), which this never touches, so a check
+# can look at the VM while an apply waits for approval.
+concurrency:
+    group: vm-apply
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    vm-apply:
+        name: VM apply (${{ inputs.action }})
+        if: github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        environment: production
+        # An apply preflights twice (the preflight, then apply.sh's own before
+        # it writes), recreates every container and waits on ClamAV's start.
+        timeout-minutes: 45
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Authenticate to GCP (Workload Identity Federation)
+              uses: google-github-actions/auth@v3
+              with:
+                  workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+                  service_account: ${{ vars.GCP_VM_OPERATOR_SA }}
+
+            - name: Set up gcloud
+              uses: google-github-actions/setup-gcloud@v3
+
+            - name: Run the action on the VM
+              env:
+                  ACTION: ${{ inputs.action }}
+              run: deploy/vm-apply/vm.sh "$ACTION"
