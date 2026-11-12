@@ -347,6 +347,12 @@ interface Props {
      * route's `access_reviews.close` AND `canAdmin`. Defaults to `isAdmin`.
      */
     canRegenerateEvidence?: boolean;
+    /**
+     * Holds `admin.agent_registry`. A sampled agent decision is answered by
+     * the campaign's reviewer or a holder of that key, never by `canAdmin`
+     * (`recordAgentDecisionSampleOutcome`, #5274).
+     */
+    holdsAgentRegistry?: boolean;
 }
 
 const STATUS_VARIANT: Record<Status, 'warning' | 'info' | 'success'> = {
@@ -368,6 +374,7 @@ export function AccessReviewDetailClient({
     isAdmin,
     canManage = isAdmin,
     canRegenerateEvidence = isAdmin,
+    holdsAgentRegistry = false,
 }: Props) {
     const t = useTranslations('accessReviews');
     // Roles, statuses and verdicts render through their labels (#4130), never
@@ -1101,7 +1108,7 @@ export function AccessReviewDetailClient({
                     if (first === currentUserId || ownerOf(sample.decisionId) === currentUserId) {
                         return <span className="text-xs text-content-muted">{t('sampleNotYours')}</span>;
                     }
-                    if (!(isReviewer || isAdmin)) {
+                    if (!(isReviewer || holdsAgentRegistry)) {
                         return <span className="text-xs text-content-muted">{t('pending')}</span>;
                     }
                     const url = `${apiBase}/agent-samples/${sample.id}`;
@@ -1142,7 +1149,7 @@ export function AccessReviewDetailClient({
                 },
             },
         ]),
-        [t, currentUserId, isReviewer, isAdmin, agentBusy, agentRowById, agentNameOf, ownerOf, agentAct, apiBase],
+        [t, currentUserId, isReviewer, holdsAgentRegistry, agentBusy, agentRowById, agentNameOf, ownerOf, agentAct, apiBase],
     );
 
     return (

@@ -38,7 +38,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatMonthYear } from '@inflect/ui/lib/format-date';
 import { getCategoryTone } from '@/lib/design/status-tone';
-import { usePermissions, useCurrentUserId } from '@/lib/tenant-context-provider';
+import { usePermissions, useCurrentUserId, useTenantContext } from '@/lib/tenant-context-provider';
 import {
     composeEventTitle,
     categoryLabel,
@@ -116,9 +116,15 @@ export function CalendarClient({ tenantSlug }: CalendarClientProps) {
     const t = useTranslations('calendar');
     const toast = useToast();
     const perms = usePermissions();
+    const tier = useTenantContext().permissions;
     const currentUserId = useCurrentUserId();
-    const canEditTask = perms.tasks.edit;
-    const canCreateTask = perms.tasks.create;
+    // The task writes behind Complete, Reschedule and New task ask the coarse
+    // write tier AND the granular key (`assertCanWriteTasks`,
+    // `assertCanCreateTask`). The key alone offered a READER-based custom
+    // role buttons the server refused every time (#5127), as the controls
+    // page already learned (#4325).
+    const canEditTask = tier.canWrite && perms.tasks.edit;
+    const canCreateTask = tier.canWrite && perms.tasks.create;
 
     // ── URL as the source of truth for view + month + filters ──
     //

@@ -7,6 +7,8 @@ import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
+import { apiErrorMessage } from '@/lib/api-error';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
@@ -16,7 +18,15 @@ interface TraceabilityPanelProps {
     apiBase: string;            // e.g. /api/t/acme-corp
     entityType: 'control' | 'risk' | 'asset';
     entityId: string;
-    canWrite: boolean;
+    /**
+     * Each section's links are written through a different route, gated on a
+     * different key (#5227): a control-risk link through
+     * `/controls/{id}/risks` (`controls.edit`), and every link that involves
+     * an asset through `/assets/{id}/...` (`assets.edit`). One write flag for
+     * all three offered buttons the server then refused.
+     */
+    canLinkControlRisk: boolean;
+    canLinkAsset: boolean;
     tenantHref: (path: string) => string;
     tenantSlug?: string;        // for cache key scoping
 }
@@ -73,7 +83,12 @@ interface RiskOption { id: string; title: string; status?: string; }
 interface ControlOption { id: string; code?: string | null; name: string; status?: string; }
 interface AssetOption { id: string; name: string; type?: string; }
 
-export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, entityId, canWrite, tenantHref, tenantSlug: tenantSlugProp }: TraceabilityPanelProps) {
+export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, entityId, canLinkControlRisk, canLinkAsset, tenantHref, tenantSlug: tenantSlugProp }: TraceabilityPanelProps) {
+    // On an asset's page every link involves the asset; elsewhere a risk or
+    // control row is a control-risk link and an asset row an asset link.
+    const canWriteRisks = entityType === 'asset' ? canLinkAsset : canLinkControlRisk;
+    const canWriteControls = entityType === 'asset' ? canLinkAsset : canLinkControlRisk;
+    const canWriteAssets = canLinkAsset;
     // Callers pass `apiUrl('')` which yields `/api/t/<slug>/` with a
     // trailing slash. Concatenating `${apiBase}/risks/…` then produces a
     // `//` path which Next.js middleware redirects (308) to the canonical
@@ -85,6 +100,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
     const tenantSlug = tenantSlugProp || apiBase.split('/t/')[1]?.split('/')[0] || '';
     const { mutate: swrMutate } = useSWRConfig();
     const triggerUndoToast = useToastWithUndo();
+    const toast = useToast();
     const t = useTranslations('panels');
     const tr = useTranslations();
 
@@ -260,7 +276,11 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 async () => {
                     const { url, body } = buildLinkRequest(type, linkedId, rationale, coverageType);
                     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-                    if (!res.ok) throw new Error('Link failed');
+                    if (!res.ok) {
+                        // Say why: the refusal used to be swallowed, so a
+                        // refused link just left the form open (#5227).
+                        throw new Error(apiErrorMessage(await res.json().catch(() => null), t('trace.linkFailed')));
+                    }
                     // Return undefined so SWR revalidates to the authoritative row.
                     return undefined;
                 },
@@ -290,8 +310,10 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
             // Cross-revalidate the linked entity's mirror view + parent list.
             void swrMutate(traceUrlFor(type, linkedId));
             revalidateList(type);
-        } catch {
-            // rollbackOnError restored the cache; leave the form open.
+        } catch (err) {
+            // rollbackOnError restored the cache; leave the form open and
+            // say why.
+            toast.error(err instanceof Error && err.message ? err.message : t('trace.linkFailed'));
         } finally {
             setLinking(false);
         }
@@ -380,11 +402,11 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight">{entityType === 'control' ? <><AppIcon name="shield" size={16} /> {t('trace.mitigatesRisks')}</> : <><AppIcon name="warning" size={16} /> {t('trace.associatedRisks')}</>} ({risks.length})</Heading>
-                        {canWrite && (
+                        {canWriteRisks && (
                             <Button variant="primary" size="xs" onClick={() => { setShowAddRisk(!showAddRisk); setAddId(''); }} id="add-risk-link-btn">{t('trace.linkRisk')}</Button>
                         )}
                     </div>
-                    {showAddRisk && canWrite && (
+                    {showAddRisk && canWriteRisks && (
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="risk-select"
@@ -406,7 +428,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                             <div className="p-6 text-center text-content-subtle text-sm" id="no-risks">{t('trace.emptyRisks')}</div>
                         ) : (
                             <table className="data-table" id="linked-risks-table">
-                                <thead><tr><th>{t('col.risk')}</th><th>{t('col.status')}</th><th>{t('col.score')}</th><th>{t('col.rationale')}</th>{canWrite && <th>{t('col.actions')}</th>}</tr></thead>
+                                <thead><tr><th>{t('col.risk')}</th><th>{t('col.status')}</th><th>{t('col.score')}</th><th>{t('col.rationale')}</th>{canWriteRisks && <th>{t('col.actions')}</th>}</tr></thead>
                                 <tbody>
                                     { }
                                     {risks.map((l) => {
@@ -417,7 +439,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                                 <td><StatusBadge variant={RISK_STATUS_BADGE[r?.status ?? ''] || 'neutral'}>{r?.status ? (RISK_STATUS_LABELS[r.status] ?? r.status) : '—'}</StatusBadge></td>
                                                 <td className="text-sm text-content-emphasis font-medium">{r?.score ?? '—'}</td>
                                                 <td className="text-xs text-content-muted">{l.rationale || '—'}</td>
-                                                {canWrite && (
+                                                {canWriteRisks && (
                                                     <td>
                                                         <Tooltip content={t('trace.unlinkRisk')}>
                                                             <button className="text-content-error text-xs hover:text-content-error" onClick={() => handleUnlink('risk', r?.id ?? '')} id={`unlink-risk-${r?.id}`} aria-label={t('trace.unlinkRisk')}>×</button>
@@ -439,11 +461,11 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight">{entityType === 'risk' ? <><AppIcon name="shield" size={16} /> {t('trace.mitigatedByControls')}</> : <><AppIcon name="controls" size={16} /> {t('trace.coveredByControls')}</>} ({controls.length})</Heading>
-                        {canWrite && (
+                        {canWriteControls && (
                             <Button variant="primary" size="xs" onClick={() => { setShowAddControl(!showAddControl); setAddId(''); }} id="add-control-link-btn">{t('trace.linkControl')}</Button>
                         )}
                     </div>
-                    {showAddControl && canWrite && (
+                    {showAddControl && canWriteControls && (
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="control-select"
@@ -478,7 +500,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                             <div className="p-6 text-center text-content-subtle text-sm" id="no-controls">{t('trace.emptyControls')}</div>
                         ) : (
                             <table className="data-table" id="linked-controls-table">
-                                <thead><tr><th>{t('col.code')}</th><th>{t('col.name')}</th><th>{t('col.status')}</th><th>{t('col.rationale')}</th>{canWrite && <th>{t('col.actions')}</th>}</tr></thead>
+                                <thead><tr><th>{t('col.code')}</th><th>{t('col.name')}</th><th>{t('col.status')}</th><th>{t('col.rationale')}</th>{canWriteControls && <th>{t('col.actions')}</th>}</tr></thead>
                                 <tbody>
                                     { }
                                     {controls.map((l) => {
@@ -489,7 +511,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                                 <td className="text-sm text-content-default">{c?.name || '—'}</td>
                                                 <td><StatusBadge variant="info">{c?.status ? (CONTROL_STATUS_LABELS[c.status] ?? c.status.replace(/_/g, ' ')) : '—'}</StatusBadge></td>
                                                 <td className="text-xs text-content-muted">{l.rationale || '—'}</td>
-                                                {canWrite && (
+                                                {canWriteControls && (
                                                     <td>
                                                         <Tooltip content={t('trace.unlinkControl')}>
                                                             <button className="text-content-error text-xs hover:text-content-error" onClick={() => handleUnlink('control', c?.id ?? '')} id={`unlink-control-${c?.id}`} aria-label={t('trace.unlinkControl')}>×</button>
@@ -511,11 +533,11 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                 <div>
                     <div className="flex items-center justify-between mb-3">
                         <Heading level={3} className="text-content-emphasis inline-flex items-center gap-tight"><AppIcon name="package" size={16} /> {entityType === 'control' ? t('trace.coversAssets') : t('trace.affectsAssets')} ({assets.length})</Heading>
-                        {canWrite && (
+                        {canWriteAssets && (
                             <Button variant="primary" size="xs" onClick={() => { setShowAddAsset(!showAddAsset); setAddId(''); }} id="add-asset-link-btn">{t('trace.linkAsset')}</Button>
                         )}
                     </div>
-                    {showAddAsset && canWrite && (
+                    {showAddAsset && canWriteAssets && (
                         <div className={cn(cardVariants({ density: 'compact' }), 'mb-3 space-y-tight')}>
                             <Combobox
                                 id="asset-select"
@@ -550,7 +572,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                             <div className="p-6 text-center text-content-subtle text-sm" id="no-assets">{t('trace.emptyAssets')}</div>
                         ) : (
                             <table className="data-table" id="linked-assets-table">
-                                <thead><tr><th>{t('col.name')}</th><th>{t('col.type')}</th><th>{t('col.criticality')}</th><th>{t('col.rationale')}</th>{canWrite && <th>{t('col.actions')}</th>}</tr></thead>
+                                <thead><tr><th>{t('col.name')}</th><th>{t('col.type')}</th><th>{t('col.criticality')}</th><th>{t('col.rationale')}</th>{canWriteAssets && <th>{t('col.actions')}</th>}</tr></thead>
                                 <tbody>
                                     { }
                                     {assets.map((l) => {
@@ -561,7 +583,7 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
                                                 <td className="text-xs"><StatusBadge variant="info">{a?.type ? (ASSET_TYPE_LABELS[a.type] ?? a.type.replace(/_/g, ' ')) : '—'}</StatusBadge></td>
                                                 <td className="text-xs">{a?.criticality ? <StatusBadge variant={a.criticality === 'HIGH' || a.criticality === 'CRITICAL' ? 'error' : a.criticality === 'MEDIUM' ? 'warning' : 'neutral'}>{CRIT_LABELS[a.criticality] ?? a.criticality}</StatusBadge> : '—'}</td>
                                                 <td className="text-xs text-content-muted">{l.rationale || '—'}</td>
-                                                {canWrite && (
+                                                {canWriteAssets && (
                                                     <td>
                                                         <Tooltip content={t('trace.unlinkAsset')}>
                                                             <button className="text-content-error text-xs hover:text-content-error" onClick={() => handleUnlink('asset', a?.id ?? '')} id={`unlink-asset-${a?.id}`} aria-label={t('trace.unlinkAsset')}>×</button>

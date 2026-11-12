@@ -169,7 +169,7 @@ beforeEach(() => {
     });
 });
 
-function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string } = {}) {
+function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string; holdsAgentRegistry?: boolean } = {}) {
     detailPayload = agentReview(review);
     return render(
         withClient(
@@ -178,6 +178,7 @@ function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean
                 initialReview={detailPayload as never}
                 currentUserId={opts.userId ?? 'usr_admin'}
                 isAdmin={opts.isAdmin ?? true}
+                holdsAgentRegistry={opts.holdsAgentRegistry ?? false}
             />,
         ),
     );
@@ -325,5 +326,26 @@ describe('the register reads an AGENT campaign', () => {
         expect(screen.getByText('Second preparing agent')).toBeInTheDocument();
         // Optional, and the page says what leaving it empty means.
         expect(screen.getByText(/Left empty, a person prepares that one pack/)).toBeInTheDocument();
+    });
+});
+
+describe('the sampled decisions follow the server (#5274)', () => {
+    const EN = jest.requireActual('../../messages/en.json') as { accessReviews: Record<string, string> };
+    const sample = {
+        id: 'smp-1', decisionId: '2', samplingEpoch: 'e1', sampledAt: '2026-10-19T00:00:00.000Z',
+        outcome: 'PENDING', dissentCodes: [], reviewedByUserId: null, reviewedAt: null,
+    };
+
+    it('a holder of admin.agent_registry who is not an admin may answer a sample', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], samples: [sample], evidence: null };
+        const view = renderDetail({ status: 'CLOSED' }, { isAdmin: false, userId: 'usr_aiadmin', holdsAgentRegistry: true });
+        expect(await view.findByRole('button', { name: EN.accessReviews.sampleConcur })).toBeInTheDocument();
+    });
+
+    it('an admin without admin.agent_registry is not offered the answer', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], samples: [sample], evidence: null };
+        const view = renderDetail({ status: 'CLOSED' }, { isAdmin: true, userId: 'usr_admin2', holdsAgentRegistry: false });
+        expect(await view.findAllByText(EN.accessReviews.pending)).not.toHaveLength(0);
+        expect(view.queryByRole('button', { name: EN.accessReviews.sampleConcur })).toBeNull();
     });
 });

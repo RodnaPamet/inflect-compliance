@@ -1269,7 +1269,7 @@ export default function PolicyDetailPage() {
                     tenantHref={tenantHref}
                     policyId={policyId}
                     apiUrl={apiUrl}
-                    canWrite={canWrite}
+                    canWrite={canWrite && tenant.appPermissions.controls.edit}
                 />
             )}
             {tab === 'acknowledgements' && (
