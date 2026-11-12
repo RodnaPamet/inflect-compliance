@@ -366,17 +366,18 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
         expect((row.detailsJson as { event?: string }).event).toBe('authz_denied');
     });
 
-    it('a principal who holds the domain key but not the write policy', async () => {
-        // A READER holds `audits.view`, so the key check passes and the
-        // refusal comes from the shared `assertCanWrite` the human
-        // `POST /findings` route relies on — the path that threw silently
-        // before today.
+    it('a principal who does not hold the key the human route takes (#5393)', async () => {
+        // `propose_finding` asks the principal for `findings.create`, the key
+        // `POST /findings` takes and `createFinding` floors on. A READER does
+        // not hold it, so the refusal is the same `Permission` row a denied
+        // human route writes. It asked `audits.view` + write before, and a
+        // READER was refused only by the write policy.
         const { row } = await denialFor(() =>
             callTool(keyReaderPropose, 'propose_finding', { items: [{ title: 'x' }] }),
         );
-        expect(row.entity).toBe('McpTool');
-        expect(row.entityId).toBe('propose_finding');
-        expect(reasonOf(row)).toBe('policy_denied');
+        expect(row.entity).toBe('Permission');
+        expect(row.entityId).toBe('findings.create');
+        expect((row.detailsJson as { event?: string }).event).toBe('authz_denied');
     });
 
     it('an agent whose registered autonomy does not reach the rung a propose tool needs', async () => {
