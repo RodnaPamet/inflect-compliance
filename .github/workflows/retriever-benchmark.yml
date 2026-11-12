@@ -27,7 +27,14 @@
 #
 #  The texts sent to the engine are the set's synthetic questions and the
 #  seed's own policy text, to a container on 127.0.0.1. The only outbound
-#  traffic is the engine downloading model weights.
+#  traffic is one Hub API request per model (the commit to load, carrying
+#  only the model id) and the engine downloading that commit's weights.
+#
+#  TEI's CPU image refuses Llama-based models (both Nemotron candidates)
+#  unless the repository carries ONNX. The runner checks that before starting
+#  a container, so a refused candidate costs seconds, and the summary reports
+#  its comparison BLOCKED: deciding D-L4-3 needs an engine that serves it
+#  (the nemotron-retriever.md Phase 0.2 question), not a rerun.
 # ───────────────────────────────────────────────────────────────
 name: Retriever benchmark
 
@@ -121,11 +128,21 @@ jobs:
           path: retriever-records
           merge-multiple: true
 
+      # The failure files say WHY a candidate has no record: a model the
+      # engine refuses on CPU makes its comparison BLOCKED, not INCOMPLETE.
+      - name: Download what could not run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: retriever-failures-*
+          path: retriever-failures
+          merge-multiple: true
+
       - name: Recompute every figure and apply the D-L4-3 rule
         run: |
           set -euo pipefail
           npx tsx scripts/retriever-benchmark/run.ts summarize \
             --records retriever-records \
+            --failures retriever-failures \
             --out retriever-summary.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the summary

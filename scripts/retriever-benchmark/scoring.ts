@@ -54,7 +54,7 @@ export interface RetrieverSeedSet {
 export interface ModelRef {
     /** Hugging Face model id. */
     readonly model: string;
-    /** The commit the engine reported it loaded (TEI `/info` → `model_sha`). */
+    /** The commit the engine was started with, resolved from the Hub first (`hub.ts`). */
     readonly revision: string;
     /** Declared size, from the model card; what "the smaller" compares. */
     readonly parametersM: number;
@@ -279,9 +279,16 @@ export interface ScoredPipeline {
 
 export interface D_L4_3_Decision {
     readonly rerankModel: string | null;
-    /** INCOMPLETE when an expected embed candidate has no scored record. */
-    readonly status: 'DECIDED' | 'INCOMPLETE';
+    /**
+     * DECIDED: every expected candidate has a scored record. BLOCKED: one is
+     * missing because the engine refuses a model of that pipeline on CPU, so
+     * no rerun on this engine will decide it. INCOMPLETE: one is missing for
+     * any other reason.
+     */
+    readonly status: 'DECIDED' | 'BLOCKED' | 'INCOMPLETE';
     readonly missing: readonly string[];
+    /** The refused models (embed, or this group's reranker) behind a BLOCKED status. */
+    readonly blockedBy: readonly string[];
     readonly best: ScoredPipeline | null;
     readonly chosen: ScoredPipeline | null;
     readonly margin: number;
@@ -291,26 +298,46 @@ export interface D_L4_3_Decision {
  * D-L4-3: "keep the smaller unless recall@10 drops past a margin". For each
  * reranker (and for no reranker), the chosen pipeline is the SMALLEST whose
  * recall@10 is within `margin` of the best. An expected candidate with no
- * scored record makes the comparison INCOMPLETE — a decision that never saw
- * one of the candidates is not the decision the owner asked for.
+ * scored record makes the comparison INCOMPLETE (or BLOCKED, when the engine
+ * refused it) — a decision that never saw one of the candidates is not the
+ * decision the owner asked for.
+ *
+ * Among eligible pipelines of EQUAL declared size the higher recall wins, then
+ * the model id: the size rule says nothing between two same-size models, and
+ * input order must not pick the worse one.
  */
+export function chooseSmallest(eligible: readonly ScoredPipeline[]): ScoredPipeline {
+    if (eligible.length === 0) throw new Error('no eligible pipeline to choose from');
+    return [...eligible].sort(
+        (a, b) =>
+            a.parametersM - b.parametersM ||
+            b.recallAt10 - a.recallAt10 ||
+            (a.embedModel < b.embedModel ? -1 : a.embedModel > b.embedModel ? 1 : 0),
+    )[0];
+}
+
 export function decideD_L4_3(
     pipelines: readonly ScoredPipeline[],
     expectedEmbedModels: readonly string[],
     rerankModels: readonly (string | null)[],
     margin: number,
+    engineRefused: ReadonlySet<string> = new Set(),
 ): D_L4_3_Decision[] {
     return rerankModels.map((rerankModel) => {
         const group = pipelines.filter((p) => p.rerankModel === rerankModel);
         const missing = expectedEmbedModels.filter((m) => !group.some((p) => p.embedModel === m));
+        const blockedBy = missing.length === 0
+            ? []
+            : [...missing.filter((m) => engineRefused.has(m)), ...(rerankModel !== null && engineRefused.has(rerankModel) ? [rerankModel] : [])];
+        const gap = blockedBy.length > 0 ? 'BLOCKED' : 'INCOMPLETE';
         if (group.length === 0) {
-            return { rerankModel, status: 'INCOMPLETE', missing, best: null, chosen: null, margin };
+            return { rerankModel, status: gap, missing, blockedBy, best: null, chosen: null, margin };
         }
         const best = group.reduce((a, b) => (b.recallAt10 > a.recallAt10 ? b : a));
         // The epsilon keeps a drop of exactly `margin` inside it: 0.2 - 0.05
         // is 0.15000000000000002 in binary floating point, above 0.15.
         const eligible = group.filter((p) => p.recallAt10 + 1e-9 >= best.recallAt10 - margin);
-        const chosen = eligible.reduce((a, b) => (b.parametersM < a.parametersM ? b : a));
-        return { rerankModel, status: missing.length > 0 ? 'INCOMPLETE' : 'DECIDED', missing, best, chosen, margin };
+        const chosen = chooseSmallest(eligible);
+        return { rerankModel, status: missing.length > 0 ? gap : 'DECIDED', missing, blockedBy, best, chosen, margin };
     });
 }

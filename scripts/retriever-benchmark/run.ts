@@ -13,20 +13,25 @@
  * WHAT LEAVES THE RUNNER
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * The only outbound traffic is TEI downloading model weights from Hugging
- * Face. Every text this script sends goes to the container on loopback —
- * `teiUrl` refuses any other host — and the texts are the seed set's
- * synthetic questions and seed policy chunks. A record is written to a
+ * The only outbound traffic is one Hub API request per model, carrying the
+ * model id alone (`hub.ts`: which commit to load, and whether TEI CPU can
+ * start it), and TEI downloading that commit's weights. Every text this
+ * script sends goes to the container on loopback — `teiUrl` refuses any
+ * other host — and the texts are the seed set's synthetic questions and seed
+ * policy chunks. A record is written to a
  * directory the workflow uploads as an artifact; nothing here commits.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * A STAGE THAT CANNOT RUN IS A FAILURE FILE, NEVER A RECORD
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Whether TEI can serve a candidate on CPU at all is one of the things Phase 0
- * asks (0.2). A candidate that does not load writes a failure file naming the
- * stage and the engine's last log lines, the other stages carry on, and the
- * process exits non-zero at the end. Nothing partial is written as a record:
+ * A candidate TEI CPU refuses by its own source (`teiCpuRefusal`: the
+ * Llama-based Nemotron models, unless their repository carries ONNX) is
+ * refused BEFORE a container starts, with code `ENGINE_REFUSES_ON_CPU`; the
+ * summary reports its comparison BLOCKED rather than spending runner hours to
+ * learn it. Any other candidate that does not load writes a `STAGE_FAILED`
+ * failure file naming the stage and the engine's last log lines. Either way
+ * the other stages carry on and the process exits non-zero at the end. Nothing partial is written as a record:
  * `scoreRecord` would refuse it anyway, and a refused record in the records
  * artifact reads like a result.
  *
@@ -52,10 +57,12 @@ import {
     RERANK_DEPTH,
     TEI_CPU_IMAGE,
     embedCandidate,
+    teiCpuRefusal,
     type EmbedCandidate,
     type RerankCandidate,
 } from './candidates';
 import type { CorpusChunk } from './corpus';
+import { resolveHubRevision } from './hub';
 import {
     RECALL_K,
     RECORD_SCHEMA,
@@ -74,6 +81,7 @@ const CONTAINER = 'retriever-benchmark-tei';
 const READY_TIMEOUT_MS = 20 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const CORPUS_BATCH = 32;
+const COMMIT = /^[0-9a-f]{40}$/;
 
 /** Only the loopback container. A different host is a bug, and a send of seed text elsewhere. */
 export function teiUrl(base: string, route: string): string {
@@ -169,8 +177,13 @@ function logTail(): string {
     }
 }
 
-async function startTei(model: string, revision: string | null, cacheDir: string): Promise<{ tei: Tei; info: TeiInfo }> {
-    stopContainer();
+/**
+ * The `docker run` arguments for one stage. The revision is REQUIRED and must
+ * be a commit: TEI reports back only what it was given, so an engine started
+ * without one could never be recorded.
+ */
+export function teiArgs(model: string, revision: string, cacheDir: string, withToken: boolean): string[] {
+    if (!COMMIT.test(revision)) throw new Error(`refusing to start TEI for ${model} without a commit (got ${revision})`);
     const args = [
         'run', '-d', '--name', CONTAINER,
         '-p', `127.0.0.1:${HOST_PORT}:80`,
@@ -178,10 +191,25 @@ async function startTei(model: string, revision: string | null, cacheDir: string
     ];
     // Passed by NAME: docker reads the value from this process's environment,
     // so a token never appears in an argument list or a log.
-    if (process.env.HF_TOKEN) args.push('-e', 'HF_TOKEN');
-    args.push(TEI_CPU_IMAGE, '--model-id', model, '--auto-truncate', '--max-client-batch-size', '64');
-    if (revision) args.push('--revision', revision);
-    docker(args);
+    if (withToken) args.push('-e', 'HF_TOKEN');
+    args.push(TEI_CPU_IMAGE, '--model-id', model, '--revision', revision, '--auto-truncate', '--max-client-batch-size', '64');
+    return args;
+}
+
+/** Thrown before any container starts, for a candidate TEI CPU refuses by its own source. */
+class EngineRefusedError extends Error {}
+
+/** The commit to load, resolved before the engine starts; refuses what TEI CPU cannot serve. */
+async function commitFor(model: string, pinned: string | null): Promise<string> {
+    const hub = await resolveHubRevision(model, pinned);
+    const refusal = teiCpuRefusal(hub);
+    if (refusal !== null) throw new EngineRefusedError(`TEI CPU refuses ${model}@${hub.sha}: ${refusal}`);
+    return hub.sha;
+}
+
+async function startTei(model: string, revision: string, cacheDir: string): Promise<{ tei: Tei; info: TeiInfo }> {
+    stopContainer();
+    docker(teiArgs(model, revision, cacheDir, Boolean(process.env.HF_TOKEN)));
 
     const tei = new Tei();
     const deadline = Date.now() + READY_TIMEOUT_MS;
@@ -238,10 +266,16 @@ function environment(): BenchmarkRecord['environment'] {
     };
 }
 
-function revisionOf(info: TeiInfo, model: string): string {
-    // An absent sha is written as-is; scoring refuses it as REVISION_NOT_A_COMMIT.
-    if (info.model_id && info.model_id !== model) throw new Error(`TEI loaded ${info.model_id}, not ${model}`);
-    return info.model_sha ?? 'unknown';
+/**
+ * The revision a record names: the commit the engine was started with, once
+ * `/info` confirms it loaded that model at that commit. `model_sha` is the
+ * `--revision` echoed back, so a mismatch means the argument never reached
+ * the engine; it is a failure, never a record naming something else.
+ */
+export function revisionOf(info: TeiInfo, model: string, started: string): string {
+    if (info.model_id !== model) throw new Error(`TEI loaded ${String(info.model_id)}, not ${model}`);
+    if (info.model_sha !== started) throw new Error(`TEI reports ${model} at ${String(info.model_sha)}, not the commit ${started} it was started with`);
+    return started;
 }
 
 function writeJson(dir: string, name: string, value: unknown): string {
@@ -268,7 +302,17 @@ async function bench(embedId: string, outDir: string, failDir: string, cacheDir:
     const fail = (stage: string, model: string, err: unknown) => {
         failures++;
         const name = stage === 'embed' ? embedId : `${embedId}+${stage}`;
-        writeJson(failDir, name, { stage, model, reason: (err as Error).message, engineLog: logTail(), at: new Date().toISOString() });
+        const refused = err instanceof EngineRefusedError;
+        const failure: StageFailure = {
+            stage,
+            model,
+            code: refused ? 'ENGINE_REFUSES_ON_CPU' : 'STAGE_FAILED',
+            reason: (err as Error).message,
+            // A refusal started no container, so there is no engine log to read.
+            engineLog: refused ? null : logTail(),
+            at: new Date().toISOString(),
+        };
+        writeJson(failDir, name, failure);
         process.stderr.write(`FAILED ${name}: ${(err as Error).message}\n`);
     };
 
@@ -278,10 +322,11 @@ async function bench(embedId: string, outDir: string, failDir: string, cacheDir:
     let embedRecordBase: Omit<BenchmarkRecord, 'aggregates' | 'pipeline' | 'answers' | 'probes'>;
     let embedRef: BenchmarkRecord['pipeline']['embed'];
     try {
-        const { tei, info } = await startTei(cand.model, cand.revision, cacheDir);
+        const commit = await commitFor(cand.model, cand.revision);
+        const { tei, info } = await startTei(cand.model, commit, cacheDir);
         embedRef = {
             model: cand.model,
-            revision: revisionOf(info, cand.model),
+            revision: revisionOf(info, cand.model, commit),
             parametersM: cand.parametersM,
             queryPrefix: cand.queryPrefix,
             passagePrefix: cand.passagePrefix,
@@ -331,8 +376,9 @@ async function bench(embedId: string, outDir: string, failDir: string, cacheDir:
     // ── Stage 2: each reranker over this embedder's top RERANK_DEPTH ─────
     for (const rr of RERANK_CANDIDATES as readonly RerankCandidate[]) {
         try {
-            const { tei, info } = await startTei(rr.model, rr.revision, cacheDir);
-            const rerankRef = { model: rr.model, revision: revisionOf(info, rr.model), parametersM: rr.parametersM };
+            const commit = await commitFor(rr.model, rr.revision);
+            const { tei, info } = await startTei(rr.model, commit, cacheDir);
+            const rerankRef = { model: rr.model, revision: revisionOf(info, rr.model, commit), parametersM: rr.parametersM };
             const answers: RecordedAnswer[] = [];
             for (const r of embedRanked) {
                 const c = set.cases.find((x) => x.id === r.caseId)!;
@@ -365,6 +411,17 @@ async function bench(embedId: string, outDir: string, failDir: string, cacheDir:
     return failures;
 }
 
+/** What a stage that could not run leaves in the failures directory. */
+export interface StageFailure {
+    readonly stage: string;
+    readonly model: string;
+    /** ENGINE_REFUSES_ON_CPU: refused before start by `teiCpuRefusal`. STAGE_FAILED: anything else. */
+    readonly code: 'ENGINE_REFUSES_ON_CPU' | 'STAGE_FAILED';
+    readonly reason: string;
+    readonly engineLog: string | null;
+    readonly at: string;
+}
+
 export interface Summary {
     readonly set: { readonly id: string; readonly contentHash: string };
     readonly records: ReadonlyArray<{
@@ -382,7 +439,11 @@ export interface Summary {
     readonly decisions: ReturnType<typeof decideD_L4_3>;
 }
 
-export function summarise(set: RetrieverSeedSet, files: ReadonlyArray<{ file: string; record: BenchmarkRecord }>): Summary {
+export function summarise(
+    set: RetrieverSeedSet,
+    files: ReadonlyArray<{ file: string; record: BenchmarkRecord }>,
+    failures: readonly StageFailure[] = [],
+): Summary {
     const pipelines: ScoredPipeline[] = [];
     const records = files.map(({ file, record }) => {
         const scored = scoreRecord(set, record);
@@ -414,6 +475,7 @@ export function summarise(set: RetrieverSeedSet, files: ReadonlyArray<{ file: st
         EMBED_CANDIDATES.map((c) => c.model),
         [null, ...RERANK_CANDIDATES.map((r) => r.model)],
         D_L4_3_RECALL_MARGIN,
+        new Set(failures.filter((x) => x.code === 'ENGINE_REFUSES_ON_CPU').map((x) => x.model)),
     );
     return { set: { id: set.id, contentHash: set.contentHash }, records, decisions };
 }
@@ -436,7 +498,8 @@ export function summaryMarkdown(s: Summary): string {
         ...s.decisions.map((d) =>
             `- reranker ${d.rerankModel ?? 'none'}: **${d.status}**` +
             (d.chosen ? ` — choose ${d.chosen.embedModel} (${f(d.chosen.recallAt10)}); best ${d.best?.embedModel} (${f(d.best?.recallAt10 ?? null)})` : '') +
-            (d.missing.length ? `; no scored record for ${d.missing.join(', ')}` : ''),
+            (d.missing.length ? `; no scored record for ${d.missing.join(', ')}` : '') +
+            (d.blockedBy.length ? `; the engine refuses ${d.blockedBy.join(', ')} on CPU, so this comparison needs another engine` : ''),
         ),
         ``,
         `A proposal for the owner, not a decision: D-L4-3 is initialled by a person.`,
@@ -464,15 +527,21 @@ async function main(): Promise<void> {
         const files = fs.existsSync(dir)
             ? fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => f.endsWith('.json')).sort()
             : [];
+        const failIdx = process.argv.indexOf('--failures');
+        const failDir = failIdx >= 0 ? process.argv[failIdx + 1] : undefined;
+        const failureFiles = failDir && fs.existsSync(failDir)
+            ? fs.readdirSync(failDir, { recursive: true }).map(String).filter((f) => f.endsWith('.json')).sort()
+            : [];
         const summary = summarise(
             set,
             files.map((file) => ({ file, record: JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8')) as BenchmarkRecord })),
+            failureFiles.map((f) => JSON.parse(fs.readFileSync(path.join(failDir as string, f), 'utf-8')) as StageFailure),
         );
         fs.writeFileSync(arg('out'), `${JSON.stringify(summary, null, 2)}\n`);
         process.stdout.write(summaryMarkdown(summary));
         return;
     }
-    throw new Error('usage: run.ts bench --embed <id> --out <dir> --failures <dir> | summarize --records <dir> --out <file>');
+    throw new Error('usage: run.ts bench --embed <id> --out <dir> --failures <dir> | summarize --records <dir> [--failures <dir>] --out <file>');
 }
 
 if (require.main === module) {

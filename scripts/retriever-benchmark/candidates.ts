@@ -21,10 +21,12 @@ export interface EmbedCandidate {
     readonly id: string;
     readonly model: string;
     /**
-     * A commit to pin, or null to load the default branch and RECORD the
-     * commit the engine reports. A record never names a branch: scoring
-     * refuses a revision that is not a 40-character commit. Pin each commit
-     * here once a first run has named it.
+     * A commit to pin, or null to resolve `main` to its commit through the
+     * Hub API (`hub.ts`) BEFORE the engine starts. Either way TEI is started
+     * with `--revision <commit>` and the record names that commit. TEI's
+     * `/info` cannot be asked: its `model_sha` is the `--revision` argument
+     * echoed back (router/src/lib.rs, `model_sha: revision`), null when none
+     * was passed. Pin each commit here once a first run has named it.
      */
     readonly revision: string | null;
     /** Declared on the model card; "the smaller" in D-L4-3 compares this. */
@@ -42,6 +44,7 @@ export interface EmbedCandidate {
 export interface RerankCandidate {
     readonly id: string;
     readonly model: string;
+    /** As `EmbedCandidate.revision`. */
     readonly revision: string | null;
     readonly parametersM: number;
     readonly nemotron: boolean;
@@ -93,6 +96,45 @@ export const RERANK_CANDIDATES: readonly RerankCandidate[] = [
         nemotron: false,
     },
 ];
+
+/**
+ * The model types TEI's CPU image REFUSES to start, by its own words
+ * (backends/candle/src/lib.rs at v1.9.4: `(Config::Llama(_), Device::Cpu |
+ * Device::Metal(_)) => Err(BackendError::Start("Llama is only supported on
+ * Cuda devices in fp16 with flash attention enabled"))`, and the same for
+ * Mistral and Qwen2; `llama_bidirec` is a serde alias of Llama). Tied to
+ * `TEI_CPU_IMAGE`: a new image is a re-read of that file.
+ *
+ * Both Nemotron candidates are Llama-based, so on this engine they are
+ * refused unless their repository carries an ONNX export, which TEI's ORT
+ * backend tries first (`download_onnx`: `model.onnx*` or `onnx/model.onnx*`).
+ */
+const TEI_CPU_REFUSED: Readonly<Record<string, string>> = {
+    llama: 'Llama is only supported on Cuda devices in fp16 with flash attention enabled',
+    llama_bidirec: 'Llama is only supported on Cuda devices in fp16 with flash attention enabled',
+    mistral: 'Mistral is only supported on Cuda devices in fp16 with flash attention enabled',
+    qwen2: 'Qwen2 is only supported on Cuda devices in fp16 with flash attention enabled',
+};
+
+/** What the Hub says a model revision is: enough to know whether TEI CPU starts it. */
+export interface HubModelFacts {
+    readonly modelType: string | null;
+    readonly files: readonly string[];
+}
+
+/**
+ * TEI CPU's own refusal for this model, or null when it may start it. Asked
+ * BEFORE a container starts, so a candidate the engine cannot serve costs one
+ * metadata request rather than a weights download and a failed load.
+ * An unknown model type is not refused here: the engine is asked, and a
+ * failed load is a failure file like any other.
+ */
+export function teiCpuRefusal(facts: HubModelFacts): string | null {
+    const refusal = facts.modelType === null ? undefined : TEI_CPU_REFUSED[facts.modelType];
+    if (refusal === undefined) return null;
+    const onnx = facts.files.some((f) => f.startsWith('model.onnx') || f.startsWith('onnx/model.onnx'));
+    return onnx ? null : `${refusal} (model_type ${facts.modelType}, no ONNX export in the repository)`;
+}
 
 /** Embed hits the reranker re-orders (nemotron-retriever.md Phase 2: ≤ 50). */
 export const RERANK_DEPTH = 50;
