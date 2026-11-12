@@ -21,6 +21,13 @@
  * running total keeps Save shut over the budget, so it arrives only when the
  * skills cost more than the view said.
  *
+ * A DRAWN FLOW IS CARRIED THROUGH (#5374). A version with a flow takes its
+ * tools from the flow, and the save refuses a tool list beside one, so the
+ * editor cannot redraw it: it posts the starting version's flow unchanged, in
+ * place of the tool list, and shows the flow's tools read-only. Leaving `flow`
+ * out of the body, as the sheet used to, wrote a version with no flow and
+ * retired the open one that had it, which nobody had asked for.
+ *
  * The actions sit at the end of the body, not in a `Sheet.Footer`: a footer's
  * last action must be a primary (`modal-action-order`) and the product-wide
  * primary ceiling has no slot to spend on it (`primary-secondary-ratio`), the
@@ -95,6 +102,8 @@ export function BehaviourEditorSheet({
     const toast = useToast();
 
     const granted = view.options.tools;
+    // The starting version's flow, kept as drawn. Its tools are derived from it.
+    const flow = from?.flow ?? null;
     const mountable = useMemo(() => new Set(view.options.skills.map(skillKey)), [view.options.skills]);
     const lostTools = (from?.toolNames ?? []).filter((n) => !granted.includes(n));
     const lostSkills = (from?.skillRefs ?? []).filter((s) => !mountable.has(skillKey(s))).map(skillKey);
@@ -134,7 +143,7 @@ export function BehaviourEditorSheet({
         !busy &&
         instructions.trim().length > 0 &&
         instructions.length <= max &&
-        toolNames.length > 0 &&
+        (flow !== null || toolNames.length > 0) &&
         triggers.length > 0 &&
         !overBudget;
 
@@ -146,7 +155,9 @@ export function BehaviourEditorSheet({
         setError(null);
         const body = {
             instructions,
-            toolNames,
+            // With a flow the tools are the flow's, and naming them beside it
+            // is refused (`FLOW_TOOLS_ARE_DERIVED`): the flow travels instead.
+            ...(flow !== null ? { flow } : { toolNames }),
             // The ref only: the save's schema is strict, and the cost is the server's own figure.
             skillRefs: view.options.skills
                 .filter((s) => skillKeys.includes(skillKey(s)))
@@ -233,23 +244,40 @@ export function BehaviourEditorSheet({
                         />
                     </FormField>
 
-                    <FormField
-                        label={t('field.tools')}
-                        description={t('editor.toolsHint')}
-                        error={fieldError('tools')}
-                        required
-                    >
-                        <Combobox<true, unknown>
-                            multiple
-                            id="behaviour-tools"
-                            options={toolOptions}
-                            selected={toolOptions.filter((o) => toolNames.includes(o.value))}
-                            setSelected={(opts) => setToolNames(opts.map((o) => o.value))}
-                            placeholder={t('editor.toolsPlaceholder')}
-                            emptyState={t('editor.toolsEmpty')}
-                            matchTriggerWidth
-                        />
-                    </FormField>
+                    {flow !== null ? (
+                        // Read-only, so plain text rather than a FormField: there
+                        // is no control to label, and the flow is not editable here.
+                        <div className="space-y-tight" data-testid="behaviour-editor-flow">
+                            <p className="text-sm font-medium text-content-emphasis">{t('field.tools')}</p>
+                            <InlineNotice variant="info" data-testid="behaviour-editor-flow-kept">
+                                {t('editor.flowKept', { nodes: flow.nodes.length })}
+                            </InlineNotice>
+                            <p className="text-sm text-content-default" data-testid="behaviour-editor-flow-tools">
+                                {(from?.toolNames ?? []).length > 0 ? (from?.toolNames ?? []).join(', ') : t('none')}
+                            </p>
+                            {fieldError('tools') ? (
+                                <p className="text-xs text-content-error" role="alert">{fieldError('tools')}</p>
+                            ) : null}
+                        </div>
+                    ) : (
+                        <FormField
+                            label={t('field.tools')}
+                            description={t('editor.toolsHint')}
+                            error={fieldError('tools')}
+                            required
+                        >
+                            <Combobox<true, unknown>
+                                multiple
+                                id="behaviour-tools"
+                                options={toolOptions}
+                                selected={toolOptions.filter((o) => toolNames.includes(o.value))}
+                                setSelected={(opts) => setToolNames(opts.map((o) => o.value))}
+                                placeholder={t('editor.toolsPlaceholder')}
+                                emptyState={t('editor.toolsEmpty')}
+                                matchTriggerWidth
+                            />
+                        </FormField>
+                    )}
 
                     <FormField
                         label={t('field.skills')}

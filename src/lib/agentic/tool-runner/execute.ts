@@ -68,8 +68,8 @@ import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
+import { emptyCatalogueMessage } from '@/lib/agentic/empty-catalogue-message';
 import { externalResidencyRefusal, type ExternalAiAcknowledgement } from '@/lib/agentic/external-residency-gate';
-import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
 import { openDeclaredRunInput, runMessage } from '@/lib/agentic/flue/run-message';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
 import { parseMountedSkillPins } from '@/lib/agentic/flue/skills/mount-gate';
@@ -354,7 +354,15 @@ export async function executeToolRunnerRun(
             completedAt: new Date(),
             stepCount: seq,
             costTokens,
-            errorMessage: EMPTY_TOOLSET_MESSAGE,
+            // WHY it is empty, from the offer's reasons and the invocation's
+            // pinned lists (#5045): "holds no grants" only when it holds none.
+            errorMessage: emptyCatalogueMessage('tool_runner', {
+                grantedTools: invocation.grantedTools,
+                permittedTools: invocation.policyCard?.inForce.value.permittedTools ?? null,
+                offeredTools: invocation.offeredTools,
+                omitted: offered.omitted,
+                ...(def.profile ? { profileTools: def.profile.toolNames } : {}),
+            }),
         });
         // Not written over an operator's abort (#5366), and not reported as
         // though it had been.

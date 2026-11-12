@@ -34,9 +34,10 @@
  * Test run is offered on a SUBMITTED or APPROVED version (Step 2c). It starts a
  * read-only run of that version as the agent, on the Tool Runner engine, and
  * opens the Runs tab. When it cannot start, it is disabled and says why: the
- * workspace's engine (named), the engine not in force, the agent not ready, or
- * a version that does not allow Test runs. The server refuses each of these
- * again.
+ * workspace's engine (named), the engine not in force, the agent not ready, a
+ * version that does not allow Test runs, or one that names only propose tools,
+ * which a read-only run is never offered (#5374). The server refuses each of
+ * these again.
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -55,6 +56,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { describeFlowForReview } from '@/lib/agentic/agent-flow';
+import { profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 
@@ -168,7 +170,12 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
               ? t('testRun.reason.FLOW_NOT_RUNNABLE')
               : !v.allowedTriggers.includes('TEST_RUN')
                 ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
-                : null;
+                : // A Test run is read-only: a version naming only propose
+                  // tools would be offered nothing (#5374). The start refuses
+                  // it as TEST_RUN_NO_READ_TOOL.
+                  profileNamesNoReadTool(v.toolNames)
+                  ? t('testRun.reason.NO_READ_TOOL')
+                  : null;
         return (
             <div className="space-y-tight" data-testid={`behaviour-test-run-${v.version}`}>
                 <Button

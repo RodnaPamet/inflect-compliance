@@ -133,6 +133,23 @@ describe('the agent Runs tab', () => {
         expect(link).not.toHaveTextContent('audit-prep');
     });
 
+    it('names an agent profile run by its version, never by its raw key (#5374)', () => {
+        renderTab({
+            data: [
+                run({ id: 'run-t', workflowKey: 'agent-profile:prof1@v3:test-run' }),
+                run({ id: 'run-p', workflowKey: 'agent-profile:prof1@v2' }),
+                run({ id: 'run-x', workflowKey: 'agent-profile:not a key' }),
+            ],
+            isLoading: false,
+            error: null,
+        });
+        expect(screen.getByTestId('agent-run-link-run-t')).toHaveTextContent('Behaviour v3 — Test run');
+        expect(screen.getByTestId('agent-run-link-run-p')).toHaveTextContent(/^Behaviour v2$/);
+        // A malformed key is shown as stored, which is the truth.
+        expect(screen.getByTestId('agent-run-link-run-x')).toHaveTextContent('agent-profile:not a key');
+        expect(document.body.textContent).not.toContain('agent-profile:prof1');
+    });
+
     it('shows the pending-proposal badge only when there IS one', () => {
         // The distinction the run list grew this count for: a run can be
         // AWAITING_APPROVAL with nothing queued.

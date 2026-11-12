@@ -6,6 +6,7 @@ import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings
 import { authOptions } from '@/auth';
 import { listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { profileRunLabel } from '@/lib/agentic/agent-profile';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { checkAdminAccess } from '@/lib/auth/guard';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -49,6 +50,7 @@ export default async function AgentRunsPage({
             />
         );
     }
+    const tAgents = await getTranslations('agents');
     const listed = await listWorkflowRuns(ctx, { take: RUN_LIST_CAP + 1 });
     const truncated = listed.length > RUN_LIST_CAP;
 
@@ -58,13 +60,20 @@ export default async function AgentRunsPage({
     // `pendingProposals`, so every paused run's hint then said nothing was
     // queued. It now asks the router to re-render this page instead, so every
     // row the list ever shows comes through here.
+    const runName = (workflowKey: string): string => {
+        const def = getWorkflowDefinition(workflowKey);
+        if (def) return def.name;
+        const profile = profileRunLabel(workflowKey);
+        return profile ? tAgents(profile.key, profile.values) : workflowKey;
+    };
     const rows: RunRow[] = listed.slice(0, RUN_LIST_CAP).map((r) => ({
         id: r.id,
         workflowKey: r.workflowKey,
-        // What a person calls the workflow, as the run's own page names it. A
-        // key with no registered definition (an agent profile run, or a
-        // definition since removed) is named by its key.
-        workflowName: getWorkflowDefinition(r.workflowKey)?.name ?? r.workflowKey,
+        // What a person calls the workflow, as the run's own page names it. An
+        // agent profile run has no registered definition and is named by its
+        // version ("Behaviour v3 — Test run", #5374); any other key with none
+        // (a definition since removed) is named by its key.
+        workflowName: runName(r.workflowKey),
         status: r.status,
         stepCount: r.stepCount,
         costTokens: r.costTokens,

@@ -77,6 +77,7 @@ import {
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
+    profileNamesNoReadTool,
     profileRunKey,
     type ProfileSkillOption,
     type ProfileSkillRef,
@@ -126,6 +127,7 @@ export type AgentProfileRefusal =
     | 'TEST_RUN_UNAVAILABLE'
     | 'TEST_RUN_VERSION_NOT_ELIGIBLE'
     | 'TEST_RUN_TRIGGER_NOT_ALLOWED'
+    | 'TEST_RUN_NO_READ_TOOL'
     | 'AGENT_KILL_SWITCHED'
     | 'AGENT_BREAKER_LATCHED'
     | AgentFlowRefusal
@@ -162,6 +164,7 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     TEST_RUN_UNAVAILABLE: 409,
     TEST_RUN_VERSION_NOT_ELIGIBLE: 409,
     TEST_RUN_TRIGGER_NOT_ALLOWED: 409,
+    TEST_RUN_NO_READ_TOOL: 409,
     AGENT_KILL_SWITCHED: 409,
     AGENT_BREAKER_LATCHED: 409,
     FLOW_INVALID: 400,
@@ -1115,6 +1118,12 @@ async function mountableSkills(db: PrismaTx, ctx: RequestContext): Promise<Profi
     ];
 }
 
+/**
+ * The newest this many versions are in the Behaviour tab's view, plus the
+ * version in force whenever it is older than all of them (#5374).
+ */
+const VIEW_VERSIONS = 50;
+
 /** At most this many approved tenant versions are read, and gated, for one picker. */
 const PICKER_TENANT_VERSIONS = 200;
 
@@ -1160,33 +1169,51 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
         });
         if (!profile) return { profile: null, versions: [], options, testRun, limits };
 
-        const rows = await db.agentProfileVersion.findMany({
+        const versionSelect = {
+            id: true,
+            version: true,
+            status: true,
+            instructions: true,
+            instructionsHash: true,
+            toolNames: true,
+            flowJson: true,
+            skillRefs: true,
+            modelTier: true,
+            effort: true,
+            maxTurns: true,
+            outputKind: true,
+            allowedTriggers: true,
+            authoredByUserId: true,
+            submittedAt: true,
+            decidedAt: true,
+            decidedByUserId: true,
+            rejectionReason: true,
+            retiredAt: true,
+            createdAt: true,
+        } as const;
+        const newest = await db.agentProfileVersion.findMany({
             where: { tenantId: ctx.tenantId, profileId: profile.id },
             orderBy: { version: 'desc' },
-            take: 50,
-            select: {
-                id: true,
-                version: true,
-                status: true,
-                instructions: true,
-                instructionsHash: true,
-                toolNames: true,
-                flowJson: true,
-                skillRefs: true,
-                modelTier: true,
-                effort: true,
-                maxTurns: true,
-                outputKind: true,
-                allowedTriggers: true,
-                authoredByUserId: true,
-                submittedAt: true,
-                decidedAt: true,
-                decidedByUserId: true,
-                rejectionReason: true,
-                retiredAt: true,
-                createdAt: true,
-            },
+            take: VIEW_VERSIONS,
+            select: versionSelect,
         });
+        // THE VERSION IN FORCE IS ALWAYS IN THE VIEW (#5374). The page above is
+        // the newest versions, and a profile edited more than `VIEW_VERSIONS`
+        // times since its last approval would otherwise drop the approved one:
+        // the tab then said no version was in force and offered no Test run,
+        // while runs used it. One more bounded read, only when it fell off.
+        const inForce = profile.currentApprovedVersion;
+        const missing = inForce !== null && !newest.some((r) => r.version === inForce);
+        const rows = missing
+            ? [
+                  ...newest,
+                  ...(await db.agentProfileVersion.findMany({
+                      where: { tenantId: ctx.tenantId, profileId: profile.id, version: inForce },
+                      take: 1,
+                      select: versionSelect,
+                  })),
+              ]
+            : newest;
         const labels = await memberLabels(db, ctx, rows.flatMap((r) => [r.authoredByUserId, ...(r.decidedByUserId ? [r.decidedByUserId] : [])]));
         const person = (userId: string): AgentProfilePerson => ({ label: labels.get(userId) ?? null, isViewer: userId === ctx.userId });
         const versions: AgentProfileVersionView[] = rows.map((r) => ({
@@ -1241,8 +1268,10 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
  *     term of the intersection, never a way around it;
  *   • is READ-ONLY: started with read authority, under a Test-run key whose
  *     definition withholds the propose surface, here and in the worker;
- *   • is refused, named, when the version does not allow `TEST_RUN`, when the
- *     workspace's engine does not run profiles, or when the agent is stopped.
+ *   • is refused, named, when the version does not allow `TEST_RUN`, when it
+ *     names only propose tools (so a read-only run would be offered nothing,
+ *     #5374), when the workspace's engine does not run profiles, or when the
+ *     agent is stopped.
  *
  * Admission (`startWorkflowRun` → `resolveRunDefinition`) checks the version,
  * its trigger, the engine and the agent's standing again. This usecase exists
@@ -1277,7 +1306,7 @@ export async function startAgentProfileTestRun(
         if (!profile) throw refuse('PROFILE_NOT_FOUND', 'This agent has no profile.');
         const row = await db.agentProfileVersion.findFirst({
             where: { tenantId: ctx.tenantId, profileId: profile.id, version },
-            select: { version: true, status: true, allowedTriggers: true },
+            select: { version: true, status: true, allowedTriggers: true, toolNames: true },
         });
         if (!row) throw refuse('VERSION_NOT_FOUND', 'No such version of this profile.');
         const inForce = row.status === 'APPROVED' && profile.currentApprovedVersion === row.version;
@@ -1291,6 +1320,16 @@ export async function startAgentProfileTestRun(
             throw refuse(
                 'TEST_RUN_TRIGGER_NOT_ALLOWED',
                 'This version does not allow Test runs. Write a version that allows them.',
+            );
+        }
+        // A Test run is read-only, so a version naming only propose tools would
+        // be offered nothing and settle EMPTY_CATALOGUE having sent nothing
+        // (#5374). Refused here, by name, before a run row exists.
+        if (profileNamesNoReadTool(row.toolNames)) {
+            throw refuse(
+                'TEST_RUN_NO_READ_TOOL',
+                'A Test run is read-only, so it is offered no propose tool, and this version names only propose ' +
+                    'tools. Write a version that names a read tool to try it.',
             );
         }
         return { runKey: profileRunKey(profile.id, row.version, { testRun: true }) };

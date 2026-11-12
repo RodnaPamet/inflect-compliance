@@ -15,6 +15,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { runStatusLabelKey } from '@/lib/agentic/run-labels';
+import { profileRunLabel } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 
 import type { AgentTabProps } from './types';
@@ -99,6 +100,14 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
         const key = runStatusLabelKey(status);
         return key ? tAgents(key) : status;
     };
+    // A profile run has no workflow definition: it is named by its version
+    // ("Behaviour v3 — Test run", #5374), never by its raw key.
+    const runName = (workflowKey: string) => {
+        const def = getWorkflowDefinition(workflowKey);
+        if (def) return def.name;
+        const profile = profileRunLabel(workflowKey);
+        return profile ? tAgents(profile.key, profile.values) : workflowKey;
+    };
     const tenantHref = useTenantHref();
     const { data, error, isLoading, mutate } = useTenantSWR<RunRow[]>(
         CACHE_KEYS.agentRuns.forAgent(agentId),
@@ -147,7 +156,7 @@ export function RunsTab({ agentId, refreshToken }: AgentTabProps) {
                                 className="font-medium hover:underline"
                                 data-testid={`agent-run-link-${run.id}`}
                             >
-                                {getWorkflowDefinition(run.workflowKey)?.name ?? run.workflowKey}
+                                {runName(run.workflowKey)}
                             </Link>
                             <p className="text-xs text-content-muted">
                                 {formatDateTime(run.startedAt)}

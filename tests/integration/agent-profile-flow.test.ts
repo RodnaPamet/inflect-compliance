@@ -231,6 +231,22 @@ describeFn('the flow inside the profile version (real DB)', () => {
         expect(stored?.nodes.map((n) => n.key)).toEqual(['risks', 'controls', 'answer']);
     });
 
+    it('the flow the Behaviour tab reads back is accepted unchanged as the next version\'s flow (#5374)', async () => {
+        // The editor carries a version's flow through an edit by posting the
+        // flow the view returned, in place of a tool list. That is only sound
+        // if the stored, sanitised flow is a valid save body as it stands.
+        const view = await getAgentProfile(authorA(), AGENTS.flow);
+        const from = view.versions.find((v) => v.flow !== null)!;
+        const next = await createAgentProfileVersion(
+            authorA(),
+            AGENTS.flow,
+            version({ instructions: `${INSTRUCTIONS} Keep it short.`, flow: from.flow }),
+        );
+        const after = (await getAgentProfile(authorA(), AGENTS.flow)).versions.find((v) => v.version === next.version)!;
+        expect(after.flow).toEqual(from.flow);
+        expect(after.toolNames).toEqual(from.toolNames);
+    });
+
     it('a flow version is admitted on no engine before Phase 5, and no run row is written', async () => {
         // A subagent step is the case that matters: no engine can hand work to
         // another profile, so running it would record a delegation that never
