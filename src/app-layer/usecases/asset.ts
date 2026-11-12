@@ -141,8 +141,10 @@ async function computeAssetRollups(
     assetId: string,
 ): Promise<AssetRollups> {
     const [riskCount, controlCount, cveOpenCount, topOpenVuln, scanOpenCount, scanSevs, taskCounts] = await Promise.all([
-        db.assetRiskLink.count({ where: { tenantId: ctx.tenantId, assetId } }),
-        db.controlAsset.count({ where: { tenantId: ctx.tenantId, assetId } }),
+        // A linked risk or control in the trash is not counted (#5442, owner
+        // decision 2026-11-12), as the asset page's lists do not show it.
+        db.assetRiskLink.count({ where: { tenantId: ctx.tenantId, assetId, risk: { deletedAt: null } } }),
+        db.controlAsset.count({ where: { tenantId: ctx.tenantId, assetId, control: { deletedAt: null } } }),
         db.assetVulnerability.count({ where: { tenantId: ctx.tenantId, assetId, status: 'OPEN' } }),
         db.assetVulnerability.findFirst({
             where: { tenantId: ctx.tenantId, assetId, status: 'OPEN' },
