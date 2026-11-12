@@ -91,10 +91,11 @@ Twelve actions, each written out in `vm.sh`'s `case`:
   of the ref it names, so a branch can delete the `if` and rewrite any action,
   and the Workload Identity condition reads the repository and the environment,
   not the ref. The boundary is the `production` environment: deployment
-  branches `main` only, no self-review, and a reviewer who reads the run's
-  branch. Those settings could not be read from the session, so
-  `docs/deployment.md` records them as an operator action to confirm, beside a
-  ref term for the provider's condition, which is the owner's to add.
+  branches limited to protected branches (only `main` is), and the owner, who
+  is both the dispatcher and the sole reviewer, reading the run's branch before
+  approving. Prevent self-review is therefore off on purpose. The owner
+  confirmed both settings on 2026-11-12, and `docs/deployment.md` records them
+  beside a ref term for the provider's condition, which is the owner's to add.
 - **Preflight twice for a write.** The action runs the preflight-only
   invocation, and the `CONFIRM=1` invocation only if it exited 0. `apply.sh`
   then preflights again before it writes, as it always does. The first is the

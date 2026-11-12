@@ -27,8 +27,8 @@
 # or rewrites an action runs as written. GCP admits the identity on the
 # repository and the `production` environment only, not on the ref. What stops
 # a branch is the `production` environment: its deployment branches must be
-# `main` only, its reviewer must not approve their own dispatch, and the
-# reviewer reads the branch the run names before approving. See
+# `main` only, and its reviewer (the owner, who also dispatches, so
+# self-review is allowed) reads the branch the run names before approving. See
 # docs/deployment.md, "Named changes without a key".
 #
 # PREFLIGHT FIRST. Every action that writes runs its preflight in the same run

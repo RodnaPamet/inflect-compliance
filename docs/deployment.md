@@ -692,8 +692,11 @@ this way:
   Deployment branches and tags → Selected branches and tags → `main`). A job
   from any other ref then fails before it asks for approval, whatever its file
   says. This is the setting the `if` relies on.
-- **Required reviewers, with "Prevent self-review" on**, where the person who
-  dispatches can also review.
+- **Required reviewers.** "Prevent self-review" is **off**, deliberately: a
+  session dispatches under the owner's own GitHub account, and the owner is the
+  only reviewer, so with it on no run could ever be approved. The approval is
+  therefore the owner reading the run, not a second person; a second operator
+  would turn it on.
 - **The reviewer reads the branch on the pending deployment before approving**,
   and refuses any run not from `main`.
 
@@ -706,6 +709,8 @@ a session cannot read them, because the API path is refused through its proxy),
 applies to one branch, `main`. Two things follow from that setting rather than
 from a literal `main`:
 
+- "Prevent self-review" is off (confirmed the same day), for the reason in the
+  list above.
 - A branch that later gets a branch protection rule becomes deployable to
   `production` too. Keep `main` the only protected branch, or switch the setting
   to *Selected branches and tags* with `main`.

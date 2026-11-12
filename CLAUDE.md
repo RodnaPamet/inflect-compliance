@@ -115,8 +115,9 @@ the newest compose backup that differs from the live file), the owner
 approves the run in `production`, and the job uses the same identity.
 The in-file `main`-only `if` and the action list bind only an
 unmodified branch: a dispatch runs the files of the ref it names, so
-the boundary is the `production` environment (deployment branches
-`main` only, no self-review, the reviewer reads the run's branch) —
+the boundary is the `production` environment (deployment branches:
+protected only, i.e. `main`; the owner, its sole reviewer, reads the
+run's branch before approving) —
 see `docs/deployment.md`, "Named changes without a key". Every write runs its
 preflight first in the same run. Its logs are public too, so
 `apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which reduces everything a
