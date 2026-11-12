@@ -13,7 +13,7 @@
  * Three users, because each half of the gate needs its own case: a gate on
  * the tier alone passes the second, a gate on the key alone the third.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
 import { SWRConfig } from 'swr';
 import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
@@ -122,4 +122,19 @@ it('risks.create without the write tier is refused the page', () => {
     };
     mount();
     expectRefused();
+});
+
+it('lists the assets GET /assets returns in its capped envelope (#5221)', async () => {
+    global.fetch = jest.fn(async () => ({
+        ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+            rows: [{ id: 'a1', name: 'Payroll database', type: 'DATA_STORE', criticality: 'HIGH' }],
+            truncated: false,
+        }),
+        text: async () => '',
+    }) as unknown as Response) as unknown as typeof fetch;
+    mount();
+    fireEvent.click(document.getElementById('load-assets-btn')!);
+    expect(await screen.findByText('Payroll database')).toBeTruthy();
+    expect(screen.queryByText(en.risks.ai.assetsNone)).toBeNull();
 });

@@ -249,6 +249,48 @@ describe('generateRiskSuggestions — pre-AI controls', () => {
             }),
         );
     });
+    it('a provider failure commits the dismissed session and decision log, then rethrows (#5211)', async () => {
+        mockGetProvider.mockReturnValueOnce({
+            providerName: 'mock-provider',
+            generateSuggestions: jest.fn().mockRejectedValue(new Error('provider_oom')),
+        } as never);
+        const sessionUpdate = jest.fn().mockResolvedValue({});
+        // Throwing out of the transaction callback is what rolls it back,
+        // so the callback must RETURN for the failure record to commit.
+        let callbackOutcome: 'returned' | 'threw' | undefined;
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => {
+            try {
+                const value = await fn({
+                    tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'x', maxRiskScale: 5 }) },
+                    asset: { findMany: jest.fn().mockResolvedValue([]) },
+                    control: { findMany: jest.fn().mockResolvedValue([]) },
+                    tenantSecuritySettings: { findUnique: jest.fn().mockResolvedValue(null) },
+                    riskSuggestionSession: {
+                        create: jest.fn().mockResolvedValue({ id: 's1' }),
+                        update: sessionUpdate,
+                    },
+                } as never);
+                callbackOutcome = 'returned';
+                return value;
+            } catch (err) {
+                callbackOutcome = 'threw';
+                throw err;
+            }
+        });
+
+        await expect(
+            generateRiskSuggestions(makeRequestContext('ADMIN'), apiInput),
+        ).rejects.toThrow(/provider_oom/);
+
+        expect(callbackOutcome).toBe('returned');
+        expect(sessionUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 's1' },
+                data: expect.objectContaining({ status: 'DISMISSED' }),
+            }),
+        );
+        expect(logAiDecision).toHaveBeenCalled();
+    });
 });
 
 describe('applySession — idempotency + state guard', () => {

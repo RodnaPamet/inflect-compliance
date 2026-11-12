@@ -12,9 +12,8 @@
  *   5. Patch-shape merge: a partial update preserves untouched
  *      fields from the prior effective config.
  *
- * BullMQ + Redis are bypassed — `logEvent` may attempt a write but
- * its failure is swallowed in the usecase, so the test runs without
- * a live audit-stream consumer.
+ *   6. Every update writes its audit row (#5210): `logEvent`'s failure
+ *      is no longer swallowed, so the acting user must be a real row.
  */
 
 import * as dotenv from 'dotenv';
@@ -25,6 +24,8 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+import { hashForLookup } from '@/lib/security/encryption';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import {
     getRiskMatrixConfig,
     updateRiskMatrixConfig,
@@ -35,9 +36,13 @@ import type { RequestContext } from '@/app-layer/types';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
+// Real User rows, created in beforeAll: AuditLog.userId is a foreign key.
+let adminUserId = '';
+let readerUserId = '';
+
 function ctxFor(
     tenantId: string,
-    userId = 'rmc-user',
+    userId = adminUserId,
     role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'READER' = 'ADMIN',
 ): RequestContext {
     const appPermissions = getPermissionsForRole(role);
@@ -70,6 +75,14 @@ describeFn('risk-matrix-config — usecase integration', () => {
         const aSlug = `${suffix}-a`;
         const bSlug = `${suffix}-b`;
         slugs.push(aSlug, bSlug);
+        for (const label of ['admin', 'reader']) {
+            const email = `${suffix}-${label}@inflect.test`;
+            const u = await testPrisma.user.create({
+                data: { email, emailHash: hashForLookup(email) },
+            });
+            if (label === 'admin') adminUserId = u.id;
+            else readerUserId = u.id;
+        }
         const a = await createTenantWithDek({ name: 'A', slug: aSlug });
         const b = await createTenantWithDek({ name: 'B', slug: bSlug });
         tenantA = a.id;
@@ -77,15 +90,17 @@ describeFn('risk-matrix-config — usecase integration', () => {
     });
 
     afterAll(async () => {
-        try {
+        const tenantIds = [tenantA, tenantB].filter(Boolean);
+        if (tenantIds.length > 0) {
             await testPrisma.riskMatrixConfig.deleteMany({
-                where: { tenantId: { in: [tenantA, tenantB] } },
+                where: { tenantId: { in: tenantIds } },
             });
-            await testPrisma.tenant.deleteMany({
-                where: { slug: { in: slugs } },
-            });
-        } catch {
-            /* best effort */
+            await deleteAuditRowsForTenants(testPrisma, tenantIds);
+        }
+        await testPrisma.tenant.deleteMany({ where: { slug: { in: slugs } } });
+        const userIds = [adminUserId, readerUserId].filter(Boolean);
+        if (userIds.length > 0) {
+            await testPrisma.user.deleteMany({ where: { id: { in: userIds } } });
         }
         await testPrisma.$disconnect();
     });
@@ -121,6 +136,19 @@ describeFn('risk-matrix-config — usecase integration', () => {
         expect(fresh.axisImpactLabel).toBe('Severity');
         // Untouched field still resolves from the merge default.
         expect(fresh.axisLikelihoodLabel).toBe('Likelihood');
+
+        // #5210: the change is on the audit trail, attributed to its author.
+        const audit = await testPrisma.auditLog.findMany({
+            where: { tenantId: tenantA, action: 'risk_matrix_config.updated' },
+            select: { userId: true, detailsJson: true },
+            take: 5,
+        });
+        expect(audit.length).toBeGreaterThanOrEqual(1);
+        expect(audit[0].userId).toBe(adminUserId);
+        expect(audit[0].detailsJson).toMatchObject({
+            category: 'custom',
+            event: 'risk_matrix_config_updated',
+        });
     });
 
     test('tenant scoping — tenant B reads its own default, not tenant A’s update', async () => {
@@ -131,7 +159,7 @@ describeFn('risk-matrix-config — usecase integration', () => {
     });
 
     test('READER cannot update', async () => {
-        const ctx = ctxFor(tenantA, 'rmc-reader', 'READER');
+        const ctx = ctxFor(tenantA, readerUserId, 'READER');
         await expect(
             updateRiskMatrixConfig(ctx, { axisImpactLabel: 'X' }),
         ).rejects.toThrow(/admin\.manage/);

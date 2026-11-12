@@ -51,7 +51,13 @@ export async function generateRiskSuggestions(
     // 3. Rate limit check (before any DB work)
     await checkRateLimit(ctx.tenantId, ctx.userId);
 
-    return runInTenantContext(ctx, async (db) => {
+    // A provider failure is RECORDED inside the transaction and RAISED after
+    // it commits (#5211). Throwing from inside rolled back the failed session,
+    // its DISMISSED status and the AI decision-log row the EU AI Act Art 12
+    // record exists for, leaving only an audit row that named a session that
+    // did not exist.
+    let providerFailure: unknown = undefined;
+    const result = await runInTenantContext(ctx, async (db) => {
         // 4. Fetch tenant profile
         const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
         if (!tenant) throw notFound('Tenant not found');
@@ -243,7 +249,8 @@ export async function generateRiskSuggestions(
                 sessionRef: session.id,
             });
 
-            throw err;
+            providerFailure = err ?? new Error('AI provider failed');
+            return null;
         }
 
         // AISVS C7.2.2 / C7.3.2 / C7.3.3 / C5.2.4 — output safety gate. Runs
@@ -407,6 +414,8 @@ export async function generateRiskSuggestions(
                 outputGuard.reviewRequired,
         };
     });
+    if (providerFailure !== undefined || result === null) throw providerFailure;
+    return result;
 }
 
 // ─── Get Session ───
