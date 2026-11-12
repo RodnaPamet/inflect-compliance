@@ -87,6 +87,10 @@ let keyRiskBlind = '';
 // audit-log rows only to a context holding `canAudit` (owner decision,
 // 2026-10-30), so the domain filter on those rows needs one that does.
 let keyRiskBlindAuditReader = '';
+// The same principal again, on a key that also carries the agent inventory's
+// own scope and the findings register's (#5384) — the positive control for the
+// agent-register and findings rows the key above must not read.
+let keyInventoryAuditReader = '';
 // A full-authority tenant-A key, and its tenant-B twin — block 3.
 let keyOwnerA = '';
 let keyOwnerB = '';
@@ -310,6 +314,10 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
         keyRiskBlindAuditReader = await mintKey(
             TENANT_A, blindId, [...WIDE_READ_SCOPES, 'admin:write'], agentA,
         );
+        keyInventoryAuditReader = await mintKey(
+            TENANT_A, blindId,
+            [...WIDE_READ_SCOPES, 'admin:write', 'admin:agent_registry_view', 'findings:read'], agentA,
+        );
         keyOwnerA = await mintKey(TENANT_A, ownerA, WIDE_READ_SCOPES, agentA);
         keyOwnerB = await mintKey(TENANT_B, ownerB, WIDE_READ_SCOPES, agentB);
         keyUngrantedTool = await mintKey(TENANT_A, ownerA, WIDE_READ_SCOPES, agentNoTools);
@@ -506,6 +514,45 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             expect(entities).not.toContain('Risk');
             expect(entities).not.toContain('RiskTreatmentPlan');
             expect(entities).not.toContain('RISK_TREATMENT_PLAN');
+        });
+
+        it('the feed drops agent-register and finding rows from a key that may read neither (#5384)', async () => {
+            // `WIDE_READ_SCOPES` carries `audits:read` but neither
+            // `findings:read` nor `admin:agent_registry_view` — and no wildcard
+            // carries the latter. So the key resolves to `audits.view` without
+            // `findings.view`, and to neither inventory key.
+            for (const [entity, action] of [
+                ['Audit', 'AUDIT_CREATED'],
+                ['RegisteredAgent', 'CREATE'],
+                ['PeerAgent', 'PEER_AGENT_REGISTERED'],
+                ['Finding', 'CREATE'],
+            ] as const) {
+                await appendAuditEntry({
+                    tenantId: TENANT_A,
+                    userId: `u-${TENANT_A}-owner`,
+                    entity,
+                    entityId: `${entity}-${SUITE}-5384`,
+                    action,
+                    detailsJson: { category: 'entity_lifecycle' },
+                });
+            }
+
+            const blind = resultOf((await callTool(keyRiskBlindAuditReader, 'get_tenant_context')).json) as {
+                recentActivity?: Array<{ entity: string }>;
+            };
+            const blindEntities = (blind.recentActivity ?? []).map((r) => r.entity);
+            // Anti-vacuity: an audit row, which `audits:read` covers, survives.
+            expect(blindEntities).toContain('Audit');
+            expect(blindEntities).not.toContain('RegisteredAgent');
+            expect(blindEntities).not.toContain('PeerAgent');
+            expect(blindEntities).not.toContain('Finding');
+
+            // The same principal on a key carrying both scopes reads them.
+            const seeing = resultOf((await callTool(keyInventoryAuditReader, 'get_tenant_context')).json) as {
+                recentActivity?: Array<{ entity: string }>;
+            };
+            const seen = (seeing.recentActivity ?? []).map((r) => r.entity);
+            expect(seen).toEqual(expect.arrayContaining(['Audit', 'RegisteredAgent', 'PeerAgent', 'Finding']));
         });
     });
 

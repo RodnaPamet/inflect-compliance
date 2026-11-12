@@ -331,6 +331,8 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
             // Names the model as a feature source in its docs; no call.
             'src/lib/agentic/behaviour-fingerprint.ts',
             'src/lib/agentic/circuit-breaker-store.ts',
+            // Lists the model as an activity-feed entity to redact; no call.
+            'src/lib/mcp/tools/dashboard-redaction.ts',
         ]);
         expect(ALL_SITES.length).toBe(8);
     });
