@@ -22,8 +22,15 @@
 import {
     ASSISTANT_SPEND_CEILING,
     ASSISTANT_SPEND_CEILING_INPUTS,
+    ASSISTANT_USER_INPUT_CEILING,
     CEILING_DAYS_PER_MONTH,
 } from '@/app-layer/ai/assistant/spend-ceiling';
+import {
+    ASSISTANT_HISTORY_MAX_CHARS,
+    ASSISTANT_HISTORY_MAX_TURNS,
+    ASSISTANT_QUESTION_MAX_CHARS,
+    MAX_UTF8_BYTES_PER_CODE_UNIT,
+} from '@/app-layer/ai/assistant/limits';
 import { DEFAULT_LOOP_BOUNDS } from '@/app-layer/ai/assistant/tool-loop';
 import { MAX_TOKENS } from '@/app-layer/ai/assistant/turn-provider';
 import { LIMITS } from '@/app-layer/ai/risk-assessment/rate-limiter';
@@ -92,5 +99,55 @@ describe("today's values, pinned so a constant change is a decision", () => {
         const month = ASSISTANT_SPEND_CEILING.perTenantMonthOutputTokens;
         expect(month).toBeGreaterThan(10_000_000);
         expect(month).toBeLessThan(1_000_000_000);
+    });
+});
+
+describe("the person's own text is bounded by the budget the loop already accepts (#5054)", () => {
+    /*
+        WHEN THIS FAILS, DO NOT JUST RE-SEAT IT.
+
+        The question limit and the history bounds were chosen against the loop's
+        tool-result allowance: a question is never larger than one tool result,
+        and the question plus history, re-sent on every round trip, is never
+        more over a turn than the tool results the turn may already read.
+        Raising either limit past that is a decision about input spend, to be
+        argued in the same diff, not a number to bump.
+    */
+    const Q = ASSISTANT_QUESTION_MAX_CHARS;
+    const H = ASSISTANT_HISTORY_MAX_CHARS;
+
+    it('a question is never larger, in bytes, than one tool result', () => {
+        expect(Q * MAX_UTF8_BYTES_PER_CODE_UNIT).toBeLessThanOrEqual(DEFAULT_LOOP_BOUNDS.resultBytes);
+    });
+
+    it("over a turn, the person's text never exceeds the turn's tool-result allowance", () => {
+        expect(ASSISTANT_USER_INPUT_CEILING.bytesPerTurn).toBeLessThanOrEqual(
+            ASSISTANT_USER_INPUT_CEILING.toolResultBytesPerTurn,
+        );
+    });
+
+    it('is the product of the live constants', () => {
+        expect(ASSISTANT_USER_INPUT_CEILING).toEqual({
+            charsPerRequest: Q + H,
+            bytesPerRequest: (Q + H) * MAX_UTF8_BYTES_PER_CODE_UNIT,
+            bytesPerTurn: (Q + H) * MAX_UTF8_BYTES_PER_CODE_UNIT * DEFAULT_LOOP_BOUNDS.iterations,
+            toolResultBytesPerTurn: DEFAULT_LOOP_BOUNDS.toolCalls * DEFAULT_LOOP_BOUNDS.resultBytes,
+            bytesPerTenantDay:
+                (Q + H) *
+                MAX_UTF8_BYTES_PER_CODE_UNIT *
+                DEFAULT_LOOP_BOUNDS.iterations *
+                LIMITS.TENANT_DAILY_QUOTA,
+        });
+    });
+
+    it("today's values", () => {
+        expect(Q).toBe(8_000);
+        expect(H).toBe(24_000);
+        expect(ASSISTANT_HISTORY_MAX_TURNS).toBe(6);
+        expect(ASSISTANT_USER_INPUT_CEILING.charsPerRequest).toBe(32_000);
+        expect(ASSISTANT_USER_INPUT_CEILING.bytesPerRequest).toBe(96_000);
+        expect(ASSISTANT_USER_INPUT_CEILING.bytesPerTurn).toBe(576_000);
+        expect(ASSISTANT_USER_INPUT_CEILING.toolResultBytesPerTurn).toBe(576_000);
+        expect(ASSISTANT_USER_INPUT_CEILING.bytesPerTenantDay).toBe(28_800_000);
     });
 });

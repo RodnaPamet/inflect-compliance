@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 // jsdom provides NEITHER `ReadableStream` NOR `fetch` — probed, not assumed:
 // `typeof ReadableStream` is "undefined" in this project's environment while
 // `TextEncoder`/`TextDecoder` are present. So the stream comes from Node's own
@@ -384,5 +384,444 @@ describe('the page context the turn carries', () => {
         expect(pc).not.toHaveProperty('filters');
         expect(pc).not.toHaveProperty('selectedIds');
         expect(pc).toHaveProperty('route');
+    });
+});
+
+// ─── #5054: a multi-line input, a stated limit, and a conversation ──────────
+
+/** One SSE turn per call, in order. */
+function stubStreams(...turns: AssistantStreamEvent[][]) {
+    const mock = jest.fn();
+    for (const events of turns) {
+        mock.mockImplementationOnce(async () =>
+            Promise.resolve({ ok: true, status: 200, body: sseBody(events) } as unknown as Response),
+        );
+    }
+    global.fetch = mock as unknown as typeof fetch;
+}
+
+/** A turn that says it is thinking and never finishes, until it is aborted. */
+function stubHangingStream() {
+    global.fetch = jest.fn(async (_url: string, init?: { signal?: AbortSignal }) => {
+        const encoder = new TextEncoder();
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'thinking' })}\n\n`));
+                init?.signal?.addEventListener('abort', () => controller.error(new Error('aborted')));
+            },
+        });
+        return { ok: true, status: 200, body } as unknown as Response;
+    }) as unknown as typeof fetch;
+}
+
+/** Every request body the conversation sent, in order. */
+function sentBodies(): Array<{ question: string; history?: Array<{ question: string; answer: string }> }> {
+    const mock = global.fetch as unknown as jest.Mock;
+    return mock.mock.calls.map((c) => JSON.parse((c[1] as { body: string }).body));
+}
+
+const input = () => screen.getByTestId('assistant-input') as HTMLTextAreaElement;
+
+function send(text: string) {
+    fireEvent.change(input(), { target: { value: text } });
+    fireEvent.submit(input().closest('form') as HTMLFormElement);
+}
+
+/** Wait until the last turn has finished and the input is usable again. */
+async function settled() {
+    await waitFor(() => expect(input()).not.toBeDisabled());
+}
+
+const ANSWER = (text: string): AssistantStreamEvent[] => [
+    { type: 'answer', text },
+    { type: 'done', truncatedAny: false },
+];
+
+describe('the input is multi-line, and keeps what was pasted (#5054)', () => {
+    it('sends a pasted multi-line question exactly, and shows it with its line breaks', async () => {
+        stubStreams(ANSWER('A map, then.'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        const pasted = 'Step 1: HR raises the request\nStep 2: IT creates the account\n\nStep 3: the manager confirms';
+        expect(input().tagName).toBe('TEXTAREA');
+
+        send(pasted);
+        await settled();
+
+        expect(sentBodies()[0].question).toBe(pasted);
+        const shown = screen.getByTestId('assistant-question').querySelector('p.whitespace-pre-wrap');
+        expect(shown?.textContent).toBe(pasted);
+    });
+
+    it('renders markup in a question as text, never as markup', async () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('<b>bold</b> <img src=x onerror=alert(1)>');
+        await settled();
+
+        const question = screen.getByTestId('assistant-question');
+        expect(question.querySelector('b')).toBeNull();
+        expect(question.querySelector('img')).toBeNull();
+        expect(question.textContent).toContain('<b>bold</b>');
+    });
+
+    it('sends on Enter', async () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: 'how many risks?' } });
+
+        fireEvent.keyDown(input(), { key: 'Enter' });
+
+        await settled();
+        expect(sentBodies()).toEqual([expect.objectContaining({ question: 'how many risks?' })]);
+    });
+
+    it('leaves Shift+Enter to the browser, which starts a new line, and sends nothing', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: 'line one' } });
+
+        // `true` means the default was NOT prevented, so the newline goes in.
+        expect(fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })).toBe(true);
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing on an Enter that closes an IME composition', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: '日本' } });
+
+        fireEvent.keyDown(input(), { key: 'Enter', isComposing: true });
+        fireEvent.keyDown(input(), { key: 'Enter', keyCode: 229 });
+
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+});
+
+describe('the stated limit, refused with a sentence and never cut (#5054)', () => {
+    it('over the limit, says so, refuses to send, and keeps every character', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        const long = 'x'.repeat(8_001);
+        fireEvent.change(input(), { target: { value: long } });
+
+        expect(screen.getByRole('alert').textContent).toBe('questionTooLong:8000');
+        // The running count is shown, outside the live region.
+        expect(screen.getByTestId('assistant-input-hint').textContent).toBe('questionCounter:8001,8000');
+        expect(screen.getByRole('button', { name: 'send' })).toBeDisabled();
+
+        fireEvent.keyDown(input(), { key: 'Enter' });
+        fireEvent.submit(input().closest('form') as HTMLFormElement);
+
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(input().value).toHaveLength(8_001);
+        expect(input()).not.toHaveAttribute('maxlength');
+    });
+
+    it('shows the counter near the limit, and the hint before it', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+
+        fireEvent.change(input(), { target: { value: 'short question' } });
+        expect(screen.getByText('questionHint')).toBeInTheDocument();
+        expect(input()).toHaveAttribute('aria-describedby', screen.getByTestId('assistant-input-hint').id);
+        expect(screen.queryByText(/^questionCounter/)).toBeNull();
+
+        fireEvent.change(input(), { target: { value: 'x'.repeat(7_000) } });
+        expect(screen.getByText('questionCounter:7000,8000')).toBeInTheDocument();
+        expect(screen.queryByText('questionHint')).toBeNull();
+        // Near is not over: it still sends.
+        expect(screen.getByRole('button', { name: 'send' })).not.toBeDisabled();
+    });
+});
+
+describe('a conversation: earlier turns go with the next question (#5054)', () => {
+    it('sends no history first, then the finished turn with the follow-up', async () => {
+        stubStreams(ANSWER('Two steps, owned by HR and IT.'), ANSWER('Here is the map.'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+
+        send('Step 1\nStep 2');
+        await settled();
+        send('now make it a map');
+        await settled();
+
+        const [first, second] = sentBodies();
+        expect(first).not.toHaveProperty('history');
+        expect(second.history).toEqual([{ question: 'Step 1\nStep 2', answer: 'Two steps, owned by HR and IT.' }]);
+        // Both turns stay on screen, in order.
+        const turns = screen.getAllByTestId('assistant-turn');
+        expect(turns).toHaveLength(2);
+        expect(turns[1].textContent).toContain('Here is the map.');
+    });
+
+    it('never sends a refused turn as history', async () => {
+        stubStreams(
+            [{ type: 'refusal', reason: 'withheld' }, { type: 'done', truncatedAny: false }],
+            ANSWER('ok'),
+        );
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('first');
+        await settled();
+        send('second');
+        await settled();
+
+        expect(sentBodies()[1]).not.toHaveProperty('history');
+    });
+
+    it('sends only the sentence of a proposal turn, never its id', async () => {
+        stubStreams(
+            [
+                {
+                    type: 'answer',
+                    text: "I've queued a finding as a proposal for review.",
+                    proposal: { id: 'prop-secret-1', kind: 'finding', status: 'PENDING' },
+                },
+                { type: 'done', truncatedAny: false },
+            ],
+            ANSWER('ok'),
+        );
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('raise a finding about MFA');
+        await settled();
+        send('thanks');
+        await settled();
+
+        const raw = (global.fetch as unknown as jest.Mock).mock.calls[1][1].body as string;
+        expect(raw).not.toContain('prop-secret-1');
+        expect(sentBodies()[1].history).toEqual([
+            { question: 'raise a finding about MFA', answer: "I've queued a finding as a proposal for review." },
+        ]);
+        // The earlier turn keeps its queued label as the conversation goes on.
+        expect(within(screen.getAllByTestId('assistant-turn')[0]).getByTestId('assistant-proposal-queued')).toBeInTheDocument();
+    });
+
+    it('starts a new conversation that carries nothing over', async () => {
+        stubStreams(ANSWER('first answer'), ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('first');
+        await settled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'newConversation' }));
+        expect(screen.queryAllByTestId('assistant-turn')).toHaveLength(0);
+        expect(screen.getByTestId('assistant-empty')).toBeInTheDocument();
+
+        send('second');
+        await settled();
+        expect(sentBodies()[1]).not.toHaveProperty('history');
+    });
+});
+
+describe('Stop ends the turn (#5054)', () => {
+    it('marks the turn stopped, gives the input back, and sends it as no history', async () => {
+        stubHangingStream();
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('a slow question');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'cancel' })).toBeInTheDocument());
+        expect(input()).toBeDisabled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+
+        await settled();
+        expect(screen.getByTestId('assistant-stopped')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'cancel' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'send' })).toBeInTheDocument();
+        expect(screen.queryByTestId('assistant-phase')).toBeNull();
+
+        stubStreams(ANSWER('ok'));
+        send('again');
+        await settled();
+        expect(sentBodies()[0]).not.toHaveProperty('history');
+    });
+});
+
+// ─── #5054 review: accessibility and touch ──────────────────────────────────
+
+describe('the over-limit alert is announced once, not on every keystroke', () => {
+    it('keeps the alert text constant while the question stays over the limit', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+
+        fireEvent.change(input(), { target: { value: 'x'.repeat(8_100) } });
+        const alert = screen.getByRole('alert');
+        const first = alert.textContent;
+        expect(alert).toHaveAttribute('aria-live', 'polite');
+
+        // One more character, then one fewer: still over, so nothing new to say.
+        fireEvent.change(input(), { target: { value: 'x'.repeat(8_101) } });
+        expect(screen.getByRole('alert').textContent).toBe(first);
+        fireEvent.change(input(), { target: { value: 'x'.repeat(8_050) } });
+        expect(screen.getByRole('alert').textContent).toBe(first);
+
+        // The count that does change is in the hint, which is not live.
+        const hint = screen.getByTestId('assistant-input-hint');
+        expect(hint.textContent).toBe('questionCounter:8050,8000');
+        expect(hint).not.toHaveAttribute('aria-live');
+        expect(hint).not.toHaveAttribute('role');
+    });
+
+    it('describes the box only by elements that exist', () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: 'x'.repeat(8_100) } });
+
+        const ids = (input().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+        expect(ids.length).toBeGreaterThan(0);
+        for (const id of ids) expect(document.getElementById(id)).not.toBeNull();
+    });
+});
+
+describe('focus', () => {
+    it('"New conversation" puts focus in the input, not on the page body', async () => {
+        stubStreams(ANSWER('first answer'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('first');
+        await settled();
+
+        const button = screen.getByRole('button', { name: 'newConversation' });
+        button.focus();
+        fireEvent.click(button);
+
+        expect(screen.queryByRole('button', { name: 'newConversation' })).toBeNull();
+        expect(document.activeElement).toBe(input());
+    });
+
+    it('when a turn ends, returns focus to the input only if focus was lost', async () => {
+        stubHangingStream();
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('a slow question');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'cancel' })).toBeInTheDocument());
+
+        // Somebody moves to something else in the sheet while it runs.
+        const elsewhere = document.createElement('a');
+        elsewhere.href = '#elsewhere';
+        elsewhere.textContent = 'a link in an earlier answer';
+        screen.getByTestId('assistant-turn').appendChild(elsewhere);
+        elsewhere.focus();
+        expect(document.activeElement).toBe(elsewhere);
+
+        fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+        await settled();
+        expect(document.activeElement).toBe(elsewhere);
+    });
+
+    it('when a turn ends with focus lost, puts it back in the input', async () => {
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('a question');
+        (document.activeElement as HTMLElement | null)?.blur();
+        await settled();
+        await waitFor(() => expect(document.activeElement).toBe(input()));
+    });
+});
+
+describe('the box fits its text when the sheet reopens', () => {
+    it('measures a fresh textarea holding a long draft', () => {
+        const scroll = jest.spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get').mockReturnValue(120);
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: 'line\n'.repeat(6) } });
+        const before = input();
+        expect(before.style.height).toBe('120px');
+
+        // Close and reopen: the drawer unmounts its content, so this is a NEW
+        // textarea holding the same draft, and nothing has been typed into it.
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        expect(input()).not.toBe(before);
+        expect(input().value).toBe('line\n'.repeat(6));
+        expect(input().style.height).toBe('120px');
+        scroll.mockRestore();
+    });
+});
+
+describe('on a touch keyboard, Enter starts a line and Ask sends', () => {
+    const realMatchMedia = window.matchMedia;
+    const pointer = (coarse: boolean) => {
+        window.matchMedia = ((query: string) => ({
+            matches: coarse && query === '(pointer: coarse)',
+            media: query,
+            onchange: null,
+            addListener: jest.fn(),
+            removeListener: jest.fn(),
+            addEventListener: jest.fn(),
+            removeEventListener: jest.fn(),
+            dispatchEvent: jest.fn(),
+        })) as unknown as typeof window.matchMedia;
+    };
+    afterEach(() => {
+        window.matchMedia = realMatchMedia;
+    });
+
+    it('does not send on Enter, says to tap Ask, and offers no Send key', () => {
+        pointer(true);
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        fireEvent.change(input(), { target: { value: 'line one' } });
+
+        expect(fireEvent.keyDown(input(), { key: 'Enter' })).toBe(true);
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(screen.getByTestId('assistant-input-hint').textContent).toBe('questionHintTouch');
+        expect(input()).toHaveAttribute('enterkeyhint', 'enter');
+    });
+
+    it('with a fine pointer, Enter sends and the soft key reads Send', async () => {
+        pointer(false);
+        stubStreams(ANSWER('ok'));
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        expect(input()).toHaveAttribute('enterkeyhint', 'send');
+        expect(screen.getByTestId('assistant-input-hint').textContent).toBe('questionHint');
+        fireEvent.change(input(), { target: { value: 'how many?' } });
+        fireEvent.keyDown(input(), { key: 'Enter' });
+        await settled();
+        expect(sentBodies()).toHaveLength(1);
+    });
+});
+
+describe('a dropped connection is said in the person\'s language', () => {
+    it('renders the catalogue sentence, not an English literal', async () => {
+        stubStreams([]);
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('anything');
+        await settled();
+        expect(screen.getByTestId('assistant-error').textContent).toContain('connectionClosed');
+        expect(screen.getByTestId('assistant-error').textContent).not.toContain('The connection closed');
+    });
+});
+
+describe('earlier answers go back with the seal the server gave them', () => {
+    it('sends the seal with its answer, and never shows it', async () => {
+        const seal = 'a'.repeat(64);
+        stubStreams(
+            [{ type: 'answer', text: 'Two steps.', seal }, { type: 'done', truncatedAny: false }],
+            ANSWER('ok'),
+        );
+        mount();
+        fireEvent.click(screen.getByTestId('assistant-launcher'));
+        send('first');
+        await settled();
+        expect(screen.getByRole('dialog').textContent).not.toContain(seal);
+        send('second');
+        await settled();
+        expect(sentBodies()[1].history).toEqual([{ question: 'first', answer: 'Two steps.', answerSeal: seal }]);
     });
 });

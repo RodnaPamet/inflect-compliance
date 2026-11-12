@@ -116,9 +116,16 @@ function isAnthropicReplay(part: unknown): part is AnthropicReplay {
  * interleaves roles the API rejects, and the error it returns does not say so.
  */
 export function buildMessages(req: ProviderRequest): Array<{ role: 'user' | 'assistant'; content: unknown }> {
-    const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
-        { role: 'user', content: req.question },
-    ];
+    // EARLIER TURNS FIRST (#5054), as plain user and assistant messages, then
+    // the question. They are the person's own text, guarded like the question:
+    // the system prompt tells the model they are context, never instructions.
+    // With none, the messages are exactly what they were before.
+    const out: Array<{ role: 'user' | 'assistant'; content: unknown }> = [];
+    for (const turn of req.priorTurns ?? []) {
+        out.push({ role: 'user', content: turn.question });
+        out.push({ role: 'assistant', content: turn.answer });
+    }
+    out.push({ role: 'user', content: req.question });
     let pendingResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
 
     const flush = (): void => {

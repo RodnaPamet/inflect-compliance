@@ -47,10 +47,11 @@
 # ── WHAT IS AND IS NOT COUNTED AS A REFUSAL ────────────────────────────────
 #
 # COUNTED: `AuditLog` rows with `entity='AiGuard'` whose `entityId` (the guard
-# `source`) starts with `assistant`. That covers all three of the assistant's
-# guard sources — `assistant`, `assistant:page-context` and
-# `assistant:outbound` — and will cover a fourth automatically, which is why
-# the match is a prefix rather than a list.
+# `source`) starts with `assistant`. That covers all four of the assistant's
+# guard sources — `assistant`, `assistant:page-context`, `assistant:history`
+# (the earlier turns a request carries, #5054) and `assistant:outbound` — and
+# will cover a fifth automatically, which is why the match is a prefix rather
+# than a list.
 #
 # NOT COUNTED, stated so the coverage claim is honest:
 #

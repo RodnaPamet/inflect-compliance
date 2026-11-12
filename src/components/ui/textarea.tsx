@@ -71,7 +71,9 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         const effectiveInvalid = invalid || hasError;
 
         const errorId = id && hasError ? `${id}-error` : undefined;
-        const descId = id && description ? `${id}-description` : undefined;
+        // Only while the description is RENDERED: it gives way to the error,
+        // and an aria-describedby naming an absent element describes nothing.
+        const descId = id && description && !hasError ? `${id}-description` : undefined;
         const describedBy =
             [ariaDescribedBy, descId, errorId].filter(Boolean).join(" ") ||
             undefined;
