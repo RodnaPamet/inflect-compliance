@@ -18,7 +18,7 @@ import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { getQueue } from '@/app-layer/jobs/queue';
+import { findTenantJob } from '@/app-layer/jobs/tenant-job-lookup';
 
 export const GET = withApiErrorHandling(
     async (
@@ -34,22 +34,11 @@ export const GET = withApiErrorHandling(
             );
         }
 
-        const queue = getQueue();
-        const job = await queue.getJob(params.jobId);
+        // Only this tenant's own evidence-import job is reported. Another
+        // tenant's job, or another kind of job on the shared queue, is the
+        // same 404 as an id that does not exist.
+        const job = await findTenantJob(params.jobId, ctx.tenantId, 'evidence-import');
         if (!job) {
-            return jsonResponse(
-                { error: 'Job not found' },
-                { status: 404 },
-            );
-        }
-
-        // Tenant pin — the job payload's tenantId must match the
-        // request context. Catches cross-tenant id probes.
-        const payloadTenantId =
-            (job.data as { tenantId?: string })?.tenantId ?? null;
-        if (payloadTenantId !== ctx.tenantId) {
-            // Indistinguishable-from-not-found by design — same 404
-            // shape so tenants can't enumerate sibling job ids.
             return jsonResponse(
                 { error: 'Job not found' },
                 { status: 404 },
