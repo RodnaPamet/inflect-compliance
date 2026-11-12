@@ -93,25 +93,29 @@ export async function hashPassword(plaintext: string): Promise<string> {
  * supplied the wrong password" by boolean alone. That shape is what
  * {@link credentials.ts} relies on for account-enumeration safety.
  *
- * bcrypt.compare itself is constant-time *relative to hashes of equal
- * length*, which is what we want — a different-length hash already
- * failed (malformed) and returns fast, but we don't care about timing
- * in that path because the account-not-found path equalises timing
- * upstream via `dummyVerify`.
+ * Every failure costs one bcrypt compare. An empty or over-long input, a
+ * missing or malformed hash all run `dummyVerify`, so a sign-in that names
+ * a registered account takes as long as one that names an unknown account
+ * (which the caller answers with `dummyVerify`), whatever the input.
  */
 export async function verifyPassword(
     plaintext: string,
     hash: string | null | undefined,
 ): Promise<boolean> {
-    if (!plaintext || !hash) return false;
-    if (plaintext.length > MAX_PASSWORD_LENGTH) return false;
+    // Every refusal pays the bcrypt cost, so how long the answer takes does
+    // not tell an empty or over-long input, or a missing or malformed hash,
+    // apart from a wrong password — nor a registered account from an unknown
+    // one, which the sign-in path answers with `dummyVerify`.
+    if (!plaintext || !hash || plaintext.length > MAX_PASSWORD_LENGTH) {
+        return dummyVerify((plaintext ?? '').slice(0, MAX_PASSWORD_LENGTH));
+    }
     try {
         const bcrypt = await bcryptModule;
         return await bcrypt.compare(plaintext, comparableHash(hash));
     } catch {
         // Malformed hash in the DB — treat as verification failure, don't
         // leak to callers that the record is corrupted.
-        return false;
+        return dummyVerify(plaintext);
     }
 }
 
