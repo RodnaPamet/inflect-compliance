@@ -87,8 +87,23 @@ describe('D-EV-6 budget', () => {
         expect(usd).toBeLessThanOrEqual(BUDGET.perEngineCapUsd);
     });
 
-    it('runs the model the budget is priced for', () => {
-        expect(WORKFLOW.jobs.inspect.env.AGENT_FLUE_MODEL).toBe(BUDGET.model);
+    // Every variable an agent engine reads its model from, derived from the
+    // server env module rather than listed: the Tool Runner's two tiers were
+    // missed once, and with them unset that engine ran Sonnet and Opus under a
+    // budget priced at Haiku. A new engine model variable joins this set and
+    // fails here until the workflow pins it.
+    const ENGINE_MODEL_VARS = [...new Set([...read('src/env.ts').matchAll(/^\s+(AGENT_[A-Z_]*MODEL[A-Z_]*):\s*z\./gm)].map((m) => m[1]))].sort();
+
+    it('pins every engine model variable to the model the budget is priced for', () => {
+        expect(ENGINE_MODEL_VARS).toEqual(expect.arrayContaining(['AGENT_FLUE_MODEL', 'AGENT_TOOL_RUNNER_MODEL_BALANCED', 'AGENT_TOOL_RUNNER_MODEL_DEEP']));
+        const env = WORKFLOW.jobs.inspect.env;
+        expect(Object.fromEntries(ENGINE_MODEL_VARS.map((v) => [v, env[v]]))).toEqual(Object.fromEntries(ENGINE_MODEL_VARS.map((v) => [v, BUDGET.model])));
+    });
+
+    it('records the budget’s model as the revision, never a literal', () => {
+        const run = WORKFLOW.jobs.inspect.steps.find((s) => s.id === 'evals')?.run ?? '';
+        const revisions = [...run.matchAll(/--model-revision (\S+ \S+ \S+)/g)].map((m) => m[1]);
+        expect(revisions).toEqual([`"$(node -p 'require("./evals/inspect/budget.json").model')"`]);
     });
 });
 

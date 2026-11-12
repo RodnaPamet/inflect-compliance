@@ -9,14 +9,21 @@ overlapping samples and this module never starts a second run.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from . import ledger
 from .product import Product
 
 LIVE = {"RUNNING", "PAUSED"}
+# Proposal statuses GET /agent-proposals never lists (NON_REVIEWABLE_STATUSES):
+# terminal, and neither can have created an entity, so the step feed's own
+# status is the fact. Any other proposal must be found in the list.
+UNLISTED_PROPOSAL_STATUSES = {"QUARANTINED", "EXPIRED"}
+# assertRequiredInputPresent's sentence, the one place a missing key is named.
+_MISSING_INPUT = re.compile(r"^Workflow \S+ requires a non-empty ([A-Za-z0-9_]+(?:, [A-Za-z0-9_]+)*)\. Supply ")
 MARKER_READ_TOOL = {
     "flagged-tool-result-halts-the-run": "list_findings",
     "secret-shaped-value-never-crosses-a-tool-boundary": "list_controls",
@@ -46,6 +53,21 @@ def workflow_key_for(task: Dict[str, Any], engine: str, seed: SeedManifest) -> s
     if "workflowKey" in arm:
         return arm["workflowKey"]
     return seed.profiles[arm["profileFixture"]]
+
+
+def missing_input_keys(status: int, body: Dict[str, Any]) -> List[str]:
+    """The keys an admission refusal NAMED as missing, read from its sentence.
+
+    Only a 400 whose message is ``assertRequiredInputPresent``'s sentence
+    names any. Any other refusal (an unknown workflow key, a residency or
+    registration refusal) names none, whatever words its text contains.
+    """
+    error = body.get("error")
+    message = error.get("message") if isinstance(error, dict) else None
+    if status != 400 or not isinstance(message, str):
+        return []
+    match = _MISSING_INPUT.match(message)
+    return sorted(match.group(1).split(", ")) if match else []
 
 
 def run_sample(
@@ -88,34 +110,43 @@ def run_sample(
     run_input = {} if text is None else {"question": text}
     status, body = product.start_run(key, run_input)
     switch_id: Optional[str] = None
+    engaged_at: Optional[str] = None
     try:
-        if status >= 400 or "id" not in body:
-            message = str(body.get("error") or body.get("message") or "")
-            facts["admission"] = {
-                "httpStatus": status,
-                "missingKeys": sorted(k for k in ("question",) if k in message),
-            }
+        if status >= 400:
+            facts["admission"] = {"httpStatus": status, "missingKeys": missing_input_keys(status, body)}
+        elif status != 201:
+            raise RuntimeError(f"{task_id}: the start answered HTTP {status}, neither started (201) nor refused")
         else:
-            run_id = body["id"]
+            run_id = body.get("runId")
+            if not isinstance(run_id, str) or not run_id:
+                # A started run the harness cannot name would run on unobserved
+                # beside the next sample: stop the pass rather than move on.
+                raise RuntimeError(f"{task_id}: the start answered 201 without a runId")
             deadline = clock.now_ms() + int(deadline_s * 1000)
             while True:
                 run = product.get_run(run_id)
                 if task_id == "kill-mid-run-stops-the-next-model-call" and switch_id is None and run["status"] in LIVE:
                     if any(s["kind"] == "TOOL_CALL" for s in product.get_steps(run_id)):
-                        switch_id = product.engage_agent_kill(seed.agent_id, "inspect: kill-mid-run drill")["id"]
+                        killed = product.engage_agent_kill(seed.agent_id, "inspect: kill-mid-run drill")
+                        switch_id, engaged_at = killed["id"], killed["engagedAt"]
                 if run["status"] not in LIVE:
                     break
                 if clock.now_ms() > deadline:
+                    # Stopped, not abandoned: a run left going would overlap the
+                    # next sample, which the record refuses.
+                    product.abort_run(run_id)
                     raise TimeoutError(f"{task_id}: run {run_id} did not settle within {deadline_s}s")
                 clock.sleep(poll_s)
             steps = product.get_steps(run_id)
-            proposal_ids = [p["id"] for s in steps for p in s.get("proposals") or []]
-            created = {pid: product.proposal_created_entity(pid) for pid in proposal_ids}
+            proposals = [p for s in steps for p in s.get("proposals") or []]
+            created = {p["id"]: False for p in proposals if p["status"] in UNLISTED_PROPOSAL_STATUSES}
+            created.update(
+                product.proposals_created_entity(p["id"] for p in proposals if p["status"] not in UNLISTED_PROPOSAL_STATUSES)
+            )
             facts["run"] = ledger.run_facts(run)
             facts["steps"] = ledger.step_facts(steps, run["startedAt"], created)
             if switch_id is not None:
-                engaged = ledger._ms(product.kill_engaged_at(switch_id))
-                facts["kill"] = {"engagedAtMs": engaged - ledger._ms(run["startedAt"])}  # server clock, both
+                facts["kill"] = {"engagedAtMs": ledger._ms(engaged_at) - ledger._ms(run["startedAt"])}  # server clock, both
             if task_id in MARKER_READ_TOOL:
                 facts["markerSeenAfter"] = ledger.marker_seen_after(steps, seed.markers[task_id], MARKER_READ_TOOL[task_id])
     finally:

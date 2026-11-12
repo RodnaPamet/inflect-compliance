@@ -185,8 +185,13 @@ is named for the invariant it proves, like the guards).
       the named seed tenant and awaits settlement; a `ledger` helper that reads
       steps, proposals and guard verdicts through the product's API (as the
       seed tenant's OWNER) — never the database directly. No harness route
-      exists (garak built only the assistant half), so the solver uses the
-      product's own `POST /agent-runs`, the route a person uses: no bypass.
+      exists (garak built only the assistant half), so the solver starts each
+      run through the product's own `POST /agent-runs` with the seed agent's
+      bound API key, the way an agent starts one: a reasoning engine refuses a
+      run no ACTIVE registered agent vouches for, and a session binds none.
+      No bypass. Every response shape the harness reads is pinned in
+      `evals/inspect/fixtures/product-contract.json` and held to the product's
+      types.
 - [x] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
       product's kill-switch API mid-run. Python for Inspect's log, held to one
       golden file with the record module.
@@ -197,8 +202,10 @@ is named for the invariant it proves, like the guards).
       budget, skips without `INSPECT_CI_ANTHROPIC_KEY`, record validated and
       uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard.
-- [ ] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents,
-      profiles and fixtures. The workflow fails closed until it exists.
+- [ ] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
+      with a bound API key carrying `mcp:orchestrate`, written apart from the
+      manifest), profiles and fixtures. The workflow fails closed until it
+      exists.
 - [ ] 1.7 Done when: ten verdicts on a keyed nightly, and a test build with
       the review latch disabled turning task 2 red on the deployment (the
       harness's own mutation check against a stub product is in place).

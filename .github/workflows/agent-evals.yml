@@ -8,9 +8,12 @@ name: Agent evals (Inspect, nightly)
 # (boot app + Postgres + Redis + worker, skip without the CI key, a dated
 # deferral a guard parses).
 #
-#   - NO BYPASS. Runs start through POST /api/t/<slug>/agent-runs as the seed
-#     tenant's OWNER, the route a person uses; the kill in task 3 goes through
-#     the kill-switch route. The harness never reads the database.
+#   - NO BYPASS. Runs start through POST /api/t/<slug>/agent-runs with the
+#     seed agent's BOUND API key, the way an agent starts one (a reasoning
+#     engine refuses a run no ACTIVE registered agent vouches for, and a
+#     session binds no agent). Every read, and the kill in task 3, goes through
+#     the routes the product's pages call, as the seed tenant's OWNER. The
+#     harness never reads the database.
 #   - BOTH ENGINES, one after the other, one sample in flight on the whole
 #     deployment (`--max-samples 1`): tasks 1 and 10 read tenant-wide counts
 #     and task 3's kill would abort a concurrent sample. The record refuses
@@ -20,7 +23,11 @@ name: Agent evals (Inspect, nightly)
 #     log before each engine starts; an engine that cannot fit is skipped and
 #     says so. The invoice-level stop is the spend limit on the dedicated key's
 #     workspace (an owner action).
-#   - MODEL: claude-haiku-4-5 for both engines, through the DEDICATED CI key in
+#   - MODEL: the budget's model (budget.json `model`, claude-haiku-4-5) for both
+#     engines, pinned below for EVERY variable an engine reads its model from:
+#     Flue's supervisor and worker, and the Tool Runner's two profile tiers,
+#     which otherwise default to Sonnet and Opus. The record's model revision
+#     is read from the same budget.json. Through the DEDICATED CI key in
 #     INSPECT_CI_ANTHROPIC_KEY. With the secret absent the job SKIPS cleanly
 #     (first step) and says so.
 #   - NON-BLOCKING until the date below, under a dated marker that
@@ -92,8 +99,13 @@ jobs:
       AGENT_DRIVER_FLUE: '1'
       AGENT_DRIVER_TOOL_RUNNER: '1'
       AGENT_PROFILES: '1'
-      # D-EV-6: the model both engines run on for this job.
+      # D-EV-6: the model both engines run on for this job, every variable an
+      # engine reads one from. The pinning guard holds each equal to the
+      # budget's model, so the spend breaker prices what actually ran.
       AGENT_FLUE_MODEL: claude-haiku-4-5
+      AGENT_FLUE_WORKER_MODEL: claude-haiku-4-5
+      AGENT_TOOL_RUNNER_MODEL_BALANCED: claude-haiku-4-5
+      AGENT_TOOL_RUNNER_MODEL_DEEP: claude-haiku-4-5
 
     steps:
       - name: Check for the Inspect CI key
@@ -132,7 +144,9 @@ jobs:
       # The four seed tenants of the Phase 0 note, kept apart from acme-corp:
       # the injection and secret fixtures and the kill switch must not reach
       # any other job. The seed writes a manifest with ids and synthetic
-      # markers only (no secrets). It fails closed while the seed is unbuilt.
+      # markers only (no secrets), and each tenant's agent-bound API key to a
+      # SEPARATE file under RUNNER_TEMP, which is never uploaded and is masked
+      # before use. It fails closed while the seed is unbuilt.
       - name: Apply migrations + seed the Inspect tenants
         if: steps.key.outputs.present == 'true'
         run: |
@@ -143,7 +157,7 @@ jobs:
             exit 1
           fi
           mkdir -p inspect-out
-          npx tsx scripts/inspect-seed.ts > inspect-out/seed-manifest.json
+          npx tsx scripts/inspect-seed.ts --agent-keys "$RUNNER_TEMP/inspect-agent-keys.json" > inspect-out/seed-manifest.json
 
       - name: Build app
         if: steps.key.outputs.present == 'true'
@@ -206,8 +220,12 @@ jobs:
             session="$(login "$email")"
             if [ -z "$session" ]; then echo "::error::login failed for ${slug}"; exit 1; fi
             echo "::add-mask::$session"
-            var="INSPECT_SESSION_$(echo "$slug" | tr 'a-z-' 'A-Z_')"
-            cookie_env+=(-e "${var}=next-auth.session-token=${session}")
+            var="$(echo "$slug" | tr 'a-z-' 'A-Z_')"
+            cookie_env+=(-e "INSPECT_SESSION_${var}=next-auth.session-token=${session}")
+            agent_key="$(node -e 'const k=require(process.argv[1])[process.argv[2]];process.stdout.write(typeof k==="string"?k:"")' "$RUNNER_TEMP/inspect-agent-keys.json" "$slug")"
+            case "$agent_key" in iflk_*) ;; *) echo "::error::no agent-bound API key for ${slug}"; exit 1 ;; esac
+            echo "::add-mask::$agent_key"
+            cookie_env+=(-e "INSPECT_AGENT_KEY_${var}=${agent_key}")
           done
           for engine in flue tool-runner; do
             spent="$(spent_usd)"
@@ -227,7 +245,7 @@ jobs:
             log="$(ls -t inspect-out/${engine}/*.json | head -n 1)"
             docker run --rm --network none -v "$PWD/inspect-out:/out" --entrypoint python inflect-inspect:ci \
               -m inflect_inspect.write_record --log "/out/${engine}/$(basename "$log")" --engine "$engine" \
-              --model-provider anthropic --model-revision claude-haiku-4-5 \
+              --model-provider anthropic --model-revision "$(node -p 'require("./evals/inspect/budget.json").model')" \
               --app-image-digest "git:${GITHUB_SHA}" --harness-image-digest "$(cat inspect-out/harness-image-id)" \
               --seed-fixture-hash "$(node -p "require('./inspect-out/seed-manifest.json').seedFixtureHash")" \
               --out "/out/record-${engine}.json" || { status=1; continue; }

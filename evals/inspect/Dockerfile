@@ -22,6 +22,9 @@ RUN useradd --create-home --uid 10001 inspect
 WORKDIR /harness
 COPY --chown=inspect:inspect task-set.json ./task-set.json
 COPY --chown=inspect:inspect inflect_inspect ./inflect_inspect
+# Inspect loads tasks.py by path, outside any package: the harness root must be
+# importable for its absolute `inflect_inspect.*` imports.
+ENV PYTHONPATH=/harness
 USER inspect
 
 ENTRYPOINT ["inspect"]

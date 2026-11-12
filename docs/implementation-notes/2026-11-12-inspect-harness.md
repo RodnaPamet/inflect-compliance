@@ -17,10 +17,12 @@ agent-evals.yml (02:20 UTC, skip without INSPECT_CI_ANTHROPIC_KEY)
   scripts/inspect-seed.ts ─▶ seed-manifest.json   (NOT BUILT: fails closed)
   for engine in flue, tool-runner:                 (D-EV-6 breaker between)
     docker inflect-inspect:ci  inspect eval tasks.py@governed_runs
-        solver governed_run ─▶ runner.run_sample ─▶ HttpProduct (OWNER cookie)
-              POST /agent-runs · GET /agent-runs/:id (poll to settlement)
-              GET /agent-runs/:id/steps · kill-switch POST/PATCH/GET (task 3)
-              risks / runs counts · ai-settings · agent tools · proposals
+        solver governed_run ─▶ runner.run_sample ─▶ HttpProduct
+              agent key:  POST /agent-runs (the run binds the seed agent)
+              OWNER:      GET /agent-runs/:id (poll; abort on deadline)
+                          GET /agent-runs/:id/steps · kill-switch GET/POST/PATCH
+                          risks kpiCounts.total · runs list · security-settings
+                          agent tools · proposals list
         ledger.py reduces the API's rows to LedgerFacts (no content)
         scorer ledger_scorer ─▶ verdicts.py (Inspect's own log only)
     write_record.py ─▶ record-<engine>.json (facts, no verdict)
@@ -37,11 +39,13 @@ agent-evals.yml (02:20 UTC, skip without INSPECT_CI_ANTHROPIC_KEY)
 | `evals/inspect/fixtures/verdict-cases.json` | Golden verdicts both implementations must return, including the latch mutation |
 | `evals/inspect/inflect_inspect/verdicts.py` | The same scorers in Python, for Inspect's log |
 | `evals/inspect/inflect_inspect/ledger.py` | API rows to facts: error codes, step facts, the fixture-marker boolean |
-| `evals/inspect/inflect_inspect/product.py` | The product's REST API as the seeded OWNER; loopback only, bounded bodies |
+| `evals/inspect/inflect_inspect/product.py` | The product's REST API: runs started with the seed agent's key, everything else as the seeded OWNER; loopback only, bounded bodies, every shape strict |
+| `evals/inspect/fixtures/product-contract.json` | Every response the harness reads, one sample per route, in the product's shape |
+| `tests/unit/inspect-harness-product-contract.test.ts` | Holds the contract to the product: route files and methods, each field read a key of the product's type (`satisfies`, checked by typecheck), the missing-input sentence produced by `assertRequiredInputPresent`, the run list's page |
 | `evals/inspect/inflect_inspect/runner.py` | One sample: pre-reads, start, await, task 3's kill, post-reads |
 | `evals/inspect/inflect_inspect/tasks.py` | The Inspect `@task`, solver and scorer |
 | `evals/inspect/inflect_inspect/record.py`, `write_record.py` | The record writer (facts only, overlap refused) and its CLI over an Inspect log |
-| `evals/inspect/tests/test_harness.py` | pytest: golden agreement, the stub-product mutation check, no content in facts, writer refusals |
+| `evals/inspect/tests/test_harness.py` | pytest: golden agreement, the stub-product mutation check, no content in facts, writer refusals, `HttpProduct` against the contract served on loopback, task 10's sentence, `tasks.py` loaded by path |
 | `evals/inspect/Dockerfile`, `pyproject.toml` | Digest-pinned base, `inspect-ai==0.3.280` |
 | `evals/inspect/budget.json` | D-EV-6 as data |
 | `scripts/inspect-record-check.ts` | The workflow's validator and job-summary writer |
@@ -52,14 +56,47 @@ agent-evals.yml (02:20 UTC, skip without INSPECT_CI_ANTHROPIC_KEY)
 
 ## Decisions
 
-- **No harness route: the solver uses `POST /agent-runs` as the seed OWNER.**
-  The roadmap assumed garak Phase 1 would add a test-mode route that starts a
-  run and awaits it; garak built only the assistant half (its 1.1b is open).
-  The product's own start route is the documented way a run starts, the run
+- **No harness route: the solver uses `POST /agent-runs` with the seed agent's
+  bound API key.** The roadmap assumed garak Phase 1 would add a test-mode
+  route that starts a run and awaits it; garak built only the assistant half
+  (its 1.1b is open). The product's own start route is the documented way an
+  agent starts a run (`docs/runbooks/enabling-the-flue-engine.md`), the run
   route and the step feed already return every fact a scorer reads, and the
-  solver awaits settlement by polling the run. That is the garak decision
-  again: a test-only adapter is code that exists to be absent from production;
-  measuring the production-shaped route gives the harness no bypass at all.
+  solver awaits settlement by polling the run. A SESSION cannot start one:
+  `startWorkflowRun` refuses any reasoning-engine run whose context has no
+  `agentId` (`flue_requires_registered_agent`), and only an agent-bound key
+  sets it. The key is also what makes task 3's AGENT-scope kill and task 5's
+  grants read refer to the agent the run is bound to. Everything else is read
+  as the seed OWNER through the routes the product's pages call. That is the
+  garak decision again: a test-only adapter is code that exists to be absent
+  from production; measuring the production-shaped route gives the harness no
+  bypass at all.
+- **The response shapes are a contract, not an assumption.** The first cut
+  parsed shapes its stubs invented (a run start answering `{ id }`, a kill list
+  under `switches`, a `GET /agent-proposals/:id` and an `ai-settings` route
+  that do not exist, a risk "count" that was the key count of a page object).
+  `product-contract.json` is now the only place the shapes are written; Jest
+  holds it to the product's types and pytest serves it to `HttpProduct` over
+  HTTP, so a drift fails one of the two. Each read is strict: a missing field
+  raises rather than defaulting to a count or a key list.
+- **Task 10's missing keys come from one sentence.** Only
+  `assertRequiredInputPresent`'s "requires a non-empty <keys>. Supply …" names
+  a missing key; `Unknown workflow: ad-hoc-question` names none, though its
+  workflow key contains the word.
+- **A kill already in force stops task 3's drill.** `engageKillSwitch` answers
+  an existing kill's record instead of a new one; lifting it afterwards would
+  lift a kill the harness did not engage. The engaged record's `engagedAt` is
+  the server-clock time task 3 is timed on.
+- **A run that does not settle by the deadline is aborted** through the run's
+  own abort route before the sample fails, so it cannot overlap the next one.
+- **The run list is counted only below its page.** `GET /agent-runs` returns
+  at most 50 rows (`listWorkflowRuns`' default `take`); a full page cannot say
+  whether a row was added, so `run_count` refuses it. The Jest contract pins
+  the harness's 50 to the usecase's.
+- **`tasks.py` imports its siblings absolutely.** `inspect eval <file>@task`
+  loads the file by path with no parent package, so a relative import fails
+  before any sample runs; the image puts `/harness` on `PYTHONPATH`, and pytest
+  loads the file the way Inspect does.
 - **Two scorer implementations, one golden file, and the TS one is the
   evidence.** Inspect needs Python scorers for its log; the record's verdicts
   are recomputed by `inspect-record.ts`, which the Phase 2 gate will read. Both
@@ -95,6 +132,12 @@ agent-evals.yml (02:20 UTC, skip without INSPECT_CI_ANTHROPIC_KEY)
   epoch) until keyed nights measure it. One epoch nightly.
 - **Inspect's model slot is `mockllm/model`.** The model under test is the
   engine's, called by the product; Inspect never calls a model here.
+- **Every engine model variable is pinned to the budget's model.** The Tool
+  Runner reads `AGENT_TOOL_RUNNER_MODEL_BALANCED` / `_DEEP` and otherwise runs
+  Sonnet or Opus; pinning only `AGENT_FLUE_MODEL` priced that engine at Haiku
+  and recorded it as Haiku. The guard derives the variable set from
+  `src/env.ts` (`AGENT_*MODEL*`), so a new one fails until pinned, and the
+  record's revision is read from `budget.json`, never a literal.
 
 ## Rollback
 
@@ -109,14 +152,15 @@ changes.
   no `find_coverage_gaps`), approved profile versions for the TR tasks, and the
   fixtures (injection finding, the two fragment findings with the unit test
   that each half scans CLEAN and the whole is flagged, the secret control, the
-  bulk risks). It writes the manifest `tasks.py` reads (`agentId`, `profiles`,
-  `markers`, `ownerEmail`, `seedFixtureHash`). The workflow fails closed until
-  it exists.
-- **First keyed night**: the route response shapes the client assumes (the
-  runs list, the kill-switch list, `ai-settings`, agent tools, a proposal's
-  `createdEntityId`) are confirmed against the live API, and the trigger a
-  profile run gets through `POST /agent-runs` (the Phase 0 note asked for
-  `ASK`).
+  bulk risks). Each eval agent gets a bound API key carrying `mcp:orchestrate`
+  and the domain reads its grants need, written to the file named by
+  `--agent-keys` (never the manifest, never uploaded). It writes the manifest
+  `tasks.py` reads (`agentId`, `profiles`, `markers`, `ownerEmail`,
+  `seedFixtureHash`). The workflow fails closed until it exists.
+- **First keyed night**: the trigger a profile run gets through
+  `POST /agent-runs` (the Phase 0 note asked for `ASK`), and that a key-started
+  profile run is admitted. The response shapes are pinned by the contract test,
+  not left to the first night.
 - **Owner actions**: create `INSPECT_CI_ANTHROPIC_KEY` from a key in its own
   workspace and set that workspace's spend limit.
 - **Done-when evidence**: all ten tasks producing verdicts on a nightly, and a

@@ -1,0 +1,128 @@
+{
+    "about": "Every product response the Inspect harness reads (evals/inspect/inflect_inspect/product.py), one sample per route, in the shape the product serves it. tests/unit/inspect-harness-product-contract.test.ts holds each route file and each field read here to the product's own types; evals/inspect/tests serves these bodies to HttpProduct over HTTP. A field the harness reads that the product does not return fails one of the two.",
+    "slug": "inspect-ext-flue",
+    "routes": {
+        "startRun": {
+            "method": "POST",
+            "path": "/agent-runs",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
+            "credential": "agent-key",
+            "status": 201,
+            "body": { "runId": "run_1", "status": "RUNNING", "workflowKey": "ad-hoc-question", "stepFailures": 0 }
+        },
+        "startRunMissingInput": {
+            "method": "POST",
+            "path": "/agent-runs",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
+            "credential": "agent-key",
+            "status": 400,
+            "body": { "error": { "code": "BAD_REQUEST", "message": "Workflow ad-hoc-question requires a non-empty question. Supply it in the run input.", "requestId": "req_1" } }
+        },
+        "startRunUnknownWorkflow": {
+            "method": "POST",
+            "path": "/agent-runs",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
+            "credential": "agent-key",
+            "status": 400,
+            "body": { "error": { "code": "BAD_REQUEST", "message": "Unknown workflow: ad-hoc-question", "requestId": "req_2" } }
+        },
+        "getRun": {
+            "method": "GET",
+            "path": "/agent-runs/run_1",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/[id]/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "id": "run_1", "status": "COMPLETED", "errorMessage": null, "costTokens": 4000, "stepCount": 1, "startedAt": "2026-11-12T02:00:00.000Z", "completedAt": "2026-11-12T02:00:05.000Z" }
+        },
+        "getSteps": {
+            "method": "GET",
+            "path": "/agent-runs/run_1/steps?sinceSeq=-1&take=200",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/[id]/steps/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": {
+                "runId": "run_1",
+                "status": "COMPLETED",
+                "stepCount": 1,
+                "live": false,
+                "cursor": 0,
+                "hasMore": false,
+                "steps": [
+                    { "id": "step_0", "seq": 0, "kind": "TOOL_CALL", "status": "DONE", "tool": "propose_risks", "scope": null, "guardVerdict": "CLEAN", "guardRuleIds": [], "costTokens": null, "label": null, "at": "2026-11-12T02:00:01.000Z", "actorUserId": null, "inputJson": "{}", "outputJson": "{}", "decisionDigest": null, "delegation": null, "proposals": [{ "id": "prop_1", "kind": "RISK", "status": "PENDING", "guardVerdict": "CLEAN" }] }
+                ]
+            }
+        },
+        "abortRun": {
+            "method": "POST",
+            "path": "/agent-runs/run_1/abort",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/[id]/abort/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "ok": true }
+        },
+        "listRuns": {
+            "method": "GET",
+            "path": "/agent-runs",
+            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": [{ "id": "run_0", "status": "COMPLETED" }, { "id": "run_1", "status": "COMPLETED" }]
+        },
+        "listRisks": {
+            "method": "GET",
+            "path": "/risks",
+            "route": "src/app/api/t/[tenantSlug]/risks/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "rows": [{ "id": "risk_1" }], "truncated": false, "kpiCounts": { "total": 12, "open": 9, "avgScore": 7.5 } }
+        },
+        "securitySettings": {
+            "method": "GET",
+            "path": "/admin/security-settings",
+            "route": "src/app/api/t/[tenantSlug]/admin/security-settings/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "aiResidency": "LOCAL_ONLY" }
+        },
+        "agentTools": {
+            "method": "GET",
+            "path": "/admin/agents/agent_1/tools",
+            "route": "src/app/api/t/[tenantSlug]/admin/agents/[agentId]/tools/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "agentId": "agent_1", "granted": [{ "toolName": "list_risks" }, { "toolName": "list_controls" }], "available": ["list_risks", "list_controls", "list_tasks"], "autonomyCeiling": 1, "requiredAutonomy": {} }
+        },
+        "listProposals": {
+            "method": "GET",
+            "path": "/agent-proposals",
+            "route": "src/app/api/t/[tenantSlug]/agent-proposals/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": [{ "id": "prop_1", "kind": "RISK", "status": "PENDING", "createdEntityId": null }, { "id": "prop_2", "kind": "RISK", "status": "ACCEPTED", "createdEntityId": "risk_9" }]
+        },
+        "engageKill": {
+            "method": "POST",
+            "path": "/admin/agents/kill-switch",
+            "route": "src/app/api/t/[tenantSlug]/admin/agents/kill-switch/route.ts",
+            "credential": "session",
+            "status": 201,
+            "body": { "id": "kill_1", "scope": "AGENT", "agentId": "agent_1", "reason": "drill", "reasonCode": null, "engagedByUserId": "user_1", "engagedAt": "2026-11-12T02:00:02.500Z", "liftedAt": null, "liftedByUserId": null, "liftReason": null }
+        },
+        "listKillsInForce": {
+            "method": "GET",
+            "path": "/admin/agents/kill-switch?inForceOnly=true",
+            "route": "src/app/api/t/[tenantSlug]/admin/agents/kill-switch/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "inForce": [], "history": [], "recentDrills": [] }
+        },
+        "liftKill": {
+            "method": "PATCH",
+            "path": "/admin/agents/kill-switch",
+            "route": "src/app/api/t/[tenantSlug]/admin/agents/kill-switch/route.ts",
+            "credential": "session",
+            "status": 200,
+            "body": { "id": "kill_1" }
+        }
+    }
+}

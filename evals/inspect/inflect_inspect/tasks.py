@@ -1,7 +1,13 @@
 """The Inspect tasks: one per governed-run invariant in ``task-set.json``.
 
-    inspect eval evals/inspect/inflect_inspect/tasks.py@governed_runs \\
+    inspect eval inflect_inspect/tasks.py@governed_runs \\
         -T engine=flue --model mockllm/model --max-samples 1 --epochs 1
+
+Inspect loads a task FILE by path with no parent package
+(``inspect_ai/_util/module.py``), so this module imports its siblings
+ABSOLUTELY (``inflect_inspect.*``) and the image puts the harness root on
+``PYTHONPATH``; a relative import here fails before any sample runs. The
+pytest suite loads this file the way Inspect does.
 
 Inspect's own model slot is unused (``mockllm/model``): the model under test is
 the ENGINE's, which the product calls through its own funnel, guards, caps and
@@ -12,8 +18,10 @@ verdict.
 
 Configuration comes from the environment the workflow sets, never from a task
 argument Inspect would echo into its log: ``INSPECT_PRODUCT_URL`` (loopback),
-``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets) and one
-session cookie per tenant in ``INSPECT_SESSION_<TENANT>``.
+``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), and per
+tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>`` and the seed
+agent's bound API key in ``INSPECT_AGENT_KEY_<TENANT>`` (``product.py`` says
+which route takes which).
 """
 
 from __future__ import annotations
@@ -28,9 +36,9 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER, Score, Target, accuracy, scorer
 from inspect_ai.solver import Generate, TaskState, solver
 
-from . import verdicts
-from .product import HttpProduct
-from .runner import SeedManifest, run_sample
+from inflect_inspect import verdicts
+from inflect_inspect.product import HttpProduct
+from inflect_inspect.runner import SeedManifest, run_sample
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_SET = json.loads((ROOT / "task-set.json").read_text(encoding="utf-8"))
@@ -47,9 +55,14 @@ def _tenant(task_def: Dict[str, Any], engine: str) -> str:
     return TENANT_SLUG[(task_def["tenant"], engine)]
 
 
+def _env_name(slug: str) -> str:
+    return slug.upper().replace("-", "_")
+
+
 def _product_for(slug: str) -> HttpProduct:
-    cookie = os.environ[f"INSPECT_SESSION_{slug.upper().replace('-', '_')}"]
-    return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie)
+    cookie = os.environ[f"INSPECT_SESSION_{_env_name(slug)}"]
+    agent_key = os.environ[f"INSPECT_AGENT_KEY_{_env_name(slug)}"]
+    return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie, agent_key)
 
 
 def _seed_for(slug: str) -> SeedManifest:
