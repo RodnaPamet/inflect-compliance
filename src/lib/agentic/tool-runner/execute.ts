@@ -37,7 +37,9 @@
  *
  * In the order the Flue engine settles, for the reasons it gives (#4230): a
  * kill, then a cap, then a guard verdict, then the named stop reasons, then the
- * iteration bound, then the empty catalogue, then COMPLETED. Model text is
+ * iteration bound, then the empty catalogue, then COMPLETED. Before the first
+ * call, a run whose offer would carry a business system's rows to Anthropic
+ * with no acknowledgement on record is refused outright (#5364). Model text is
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
  */
@@ -60,6 +62,7 @@ import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
+import { externalResidencyRefusal, type ExternalAiAcknowledgement } from '@/lib/agentic/external-residency-gate';
 import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
 import { openDeclaredRunInput, runMessage } from '@/lib/agentic/flue/run-message';
 import { SkillLoadError } from '@/lib/agentic/flue/skills';
@@ -135,6 +138,13 @@ export async function executeToolRunnerRun(
     fromSeq: number,
     runStartMs: number,
     client: Anthropic,
+    /**
+     * Where this run's model calls go, and the tenant's business-data transfer
+     * acknowledgement, both decided by the DRIVER before anything was read
+     * here (#5364). Required: the transfer gate below refuses on an absent
+     * acknowledgement, and a caller that forgot it should not compile.
+     */
+    route: { readonly providerId: string; readonly externalAiAcknowledgement: ExternalAiAcknowledgement },
 ): Promise<RunDriverOutcome> {
     // ── The kill switch, before anything is read or sent ────────────────────
     const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
@@ -320,6 +330,30 @@ export async function executeToolRunnerRun(
             errorMessage: EMPTY_TOOLSET_MESSAGE,
         });
         return { status: 'EMPTY_CATALOGUE', stepFailures: 1 };
+    }
+
+    // ── ROUTING AN ERP'S ROWS OUTSIDE THE DEPLOYMENT IS A TRANSFER (#3872) ──
+    //
+    // Asked here for the reasons Flue asks it where it does (#5364): AFTER the
+    // offer, because a tool withheld from it transfers nothing, and BEFORE the
+    // runner sends its first request, because after that the transfer the gate
+    // exists to refuse has happened. This engine always calls Anthropic, so a
+    // business-system tool in the offer with no acknowledgement on record
+    // refuses the whole run — never by dropping those tools and carrying on.
+    const transferRefusal = externalResidencyRefusal({
+        providerId: route.providerId,
+        offered: offered.externalConnections.map((c) => ({
+            name: c.connectionName,
+            connectionId: c.connectionId,
+            connectionName: c.connectionName,
+            reachesBusinessSystem: c.reachesBusinessSystem,
+        })),
+        acknowledgement: route.externalAiAcknowledgement,
+        enginePrefix: 'tool_runner',
+    });
+    if (transferRefusal) {
+        const status = await failRun(ctx, runId, transferRefusal.message);
+        return { status, stepFailures: 0 };
     }
 
     // The engine's own tool goes BESIDE the resolved set, after the empty check

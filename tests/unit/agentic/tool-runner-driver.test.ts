@@ -33,7 +33,9 @@ interface MockSettlement {
 }
 
 const mockState = {
-    tools: [] as Array<{ name: string; result: string }>,
+    tools: [] as ConformanceRun['tools'][number][],
+    /** Has the workspace acknowledged the external-AI business-data transfer (#3872)? */
+    externalAiAcknowledged: false,
     residency: 'EXTERNAL' as 'EXTERNAL' | 'LOCAL_ONLY',
     alreadyTokens: 0,
     toolCallLimit: null as number | null,
@@ -167,6 +169,17 @@ jest.mock('@/lib/mcp/tools/registry', () => ({
             inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
             resourceScope: { resource: t.name, action: 'read' },
             authorize: { basis: 'effective', mirrors: `GET /${t.name}` },
+            ...(t.externalConnection
+                ? {
+                      externalConnection: {
+                          connectionId: `conn-${t.externalConnection.name}`,
+                          connectionName: t.externalConnection.name,
+                          declaresWrite: false,
+                          connectionRefusesWrites: false,
+                          reachesBusinessSystem: t.externalConnection.reachesBusinessSystem,
+                      },
+                  }
+                : {}),
         })),
     ),
     runReadTool: jest.fn(async (_inv: unknown, name: string, args: unknown) => {
@@ -192,7 +205,13 @@ jest.mock('@/lib/mcp/tools/propose-tools', () => ({
 jest.mock('@/lib/db/rls-middleware', () => {
     const db = {
         tenantSecuritySettings: {
-            findUnique: async () => ({ aiResidency: mockState.residency, aiLocalBaseUrl: null, aiLocalModel: null }),
+            findUnique: async () => ({
+                aiResidency: mockState.residency,
+                aiLocalBaseUrl: null,
+                aiLocalModel: null,
+                externalAiBusinessDataAckAt: mockState.externalAiAcknowledged ? new Date('2026-11-01T00:00:00Z') : null,
+                externalAiBusinessDataAckByUserId: mockState.externalAiAcknowledged ? 'user-conformance' : null,
+            }),
         },
         registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-conformance' }) },
         aiDecisionLog: {
@@ -332,10 +351,14 @@ function pinsAdmissionRecords(skills: ConformanceRun['skills']): unknown[] {
 }
 
 function reset(
-    run: Pick<ConformanceRun, 'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'skills'>,
+    run: Pick<
+        ConformanceRun,
+        'tools' | 'residency' | 'alreadySpent' | 'toolCallLimit' | 'killAfterModelCalls' | 'skills' | 'externalAiAcknowledged'
+    >,
     turns: readonly FauxTurn[],
 ): void {
     mockState.skills = run.skills;
+    mockState.externalAiAcknowledged = run.externalAiAcknowledged === true;
     mockState.pinnedSkills = pinsAdmissionRecords(run.skills);
     mockState.tools = [...run.tools];
     mockState.residency = run.residency ?? 'EXTERNAL';
