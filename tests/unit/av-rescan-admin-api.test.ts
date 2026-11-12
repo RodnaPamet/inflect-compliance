@@ -373,6 +373,7 @@ describe('GET /api/t/:tenantSlug/admin/av-rescan', () => {
         getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER'));
         getQueueMock.mockReturnValueOnce({
             getJob: jest.fn(async () => ({
+                name: 'av-rescan',
                 data: { tenantId: 'tenant-A' },
                 getState: jest.fn(async () => 'completed'),
                 progress: 100,
@@ -413,6 +414,7 @@ describe('GET /api/t/:tenantSlug/admin/av-rescan', () => {
         getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER', { tenantId: 'tenant-A' }));
         getQueueMock.mockReturnValueOnce({
             getJob: jest.fn(async () => ({
+                name: 'av-rescan',
                 data: { tenantId: 'tenant-B' },
                 getState: jest.fn(),
             })),
@@ -426,6 +428,27 @@ describe('GET /api/t/:tenantSlug/admin/av-rescan', () => {
         );
 
         expect(res.status).toBe(404);
+    });
+
+    test.each([
+        ['another kind of job of the same tenant', { name: 'key-rotation', data: { tenantId: 'tenant-A' } }],
+        ['a platform-wide job with no tenant', { name: 'av-rescan', data: {} }],
+    ])('%s reads as absent', async (_label, job) => {
+        getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER', { tenantId: 'tenant-A' }));
+        const getState = jest.fn();
+        getQueueMock.mockReturnValueOnce({
+            getJob: jest.fn(async () => ({ ...job, getState })),
+        });
+
+        const res = await GET(
+            req('GET', {
+                url: 'http://localhost/api/t/acme/admin/av-rescan?jobId=7',
+            }),
+            ROUTE_ARGS,
+        );
+
+        expect(res.status).toBe(404);
+        expect(getState).not.toHaveBeenCalled();
     });
 
     test('unknown jobId → 404', async () => {
