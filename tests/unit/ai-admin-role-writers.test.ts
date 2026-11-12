@@ -281,6 +281,7 @@ describe('BEHAVIOUR — the two writers write it', () => {
     it('updateTenantMemberRole: an OWNER moves an existing member into AI_ADMIN, audited', async () => {
         const update = jest.fn().mockResolvedValue({ id: 'm-1', role: 'AI_ADMIN', user: { email: 'u@x' } });
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantMembership: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'm-1',
@@ -307,6 +308,7 @@ describe('BEHAVIOUR — the two writers write it', () => {
     ] as const)('syncEntraMembershipRole writes it through a mapping on %s', async (_label, ceiling) => {
         const update = jest.fn();
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantIdentityProvider: { findFirst: jest.fn().mockResolvedValue(null) },
             tenantEntraGroupMapping: {
                 findMany: jest.fn().mockResolvedValue([{ aadGroupId: 'g-ai', role: 'AI_ADMIN', priority: 0 }]),
@@ -393,6 +395,7 @@ describe('BEHAVIOUR — every other membership-role writer refuses it', () => {
 
     it('closing a review whose stored MODIFY targets it refuses the whole close before any row executes', async () => {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             accessReview: {
                 findFirst: jest.fn().mockResolvedValue({
                     id: 'ar-1',
@@ -439,6 +442,7 @@ describe('BEHAVIOUR — every other membership-role writer refuses it', () => {
             }),
         ).rejects.toThrow(/Invalid base role: AI_ADMIN/);
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantCustomRole: {
                 findFirst: jest.fn().mockResolvedValue({ id: 'cr-1', tenantId: 'tenant-1', baseRole: 'READER' }),
                 update: jest.fn(),

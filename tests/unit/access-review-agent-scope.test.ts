@@ -73,6 +73,7 @@ import * as path from 'node:path';
 const NOW = new Date('2026-10-18T09:00:00.000Z');
 
 const mockDb = {
+    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
     connectedIdentityAccount: { findMany: jest.fn() },
     identityAccountLink: { findMany: jest.fn() },
     accessReviewConnectedDecision: { createMany: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },

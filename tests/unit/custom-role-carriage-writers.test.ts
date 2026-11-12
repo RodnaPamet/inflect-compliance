@@ -211,8 +211,9 @@ describe('STRUCTURE — the unable writers, verified', () => {
 
     it('an ownership transfer writes OWNER and ADMIN and nothing else, and refuses a new owner carrying a custom role', () => {
         const transfer = functionBodyOf(code('src/app-layer/usecases/tenant-lifecycle.ts'), 'transferTenantOwnership');
-        const roles = allCallExpressionsOf(transfer, 'tenantMembership\\.update').map(
-            (c) => /role:\s*'(\w+)'/.exec(c)?.[1],
+        const roles = allCallExpressionsOf(transfer, 'tenantMembership\\.update(?:Many)?').map(
+            // The role WRITTEN — the demotion's `where` also names OWNER (#5388).
+            (c) => /data:\s*\{\s*role:\s*'(\w+)'/.exec(c)?.[1],
         );
         expect(roles.sort()).toEqual(['ADMIN', 'OWNER']);
         expect(codeOf(transfer)).toMatch(/newMembership\.customRoleId && !mayCarryCustomRole\('OWNER'\)/);
@@ -285,6 +286,7 @@ function membershipDb(membership: { role: string; customRoleId: string | null })
         ...membership,
     };
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(2),
@@ -382,6 +384,7 @@ describe('BEHAVIOUR — the members-page role change', () => {
 describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
     function saveDb(existing: string, carriers: Array<{ role: string; n: number }>) {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantCustomRole: customRoleTable(),
             tenantMembership: {
                 groupBy: jest.fn(async () => carriers.map((c) => ({ role: c.role, _count: { _all: c.n } }))),
@@ -470,6 +473,7 @@ describe('BEHAVIOUR — updateCustomRole, judged against every carrier', () => {
 describe('BEHAVIOUR — invites', () => {
     function inviteDb(existing: { status: string; role: string; customRoleId: string | null }) {
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             user: { findUnique: jest.fn().mockResolvedValue({ id: 'u-1' }) },
             tenantMembership: { findUnique: jest.fn().mockResolvedValue(existing) },
             tenantCustomRole: customRoleTable(),
@@ -554,6 +558,7 @@ describe('BEHAVIOUR — the Entra group sync (sign-in and SCIM Groups push)', ()
         const update = jest.fn();
         const cr = membership.customRoleId ? ROLES[membership.customRoleId] : null;
         const db = {
+            $executeRawUnsafe: jest.fn().mockResolvedValue(0),
             tenantIdentityProvider: { findFirst: jest.fn().mockResolvedValue(null) },
             tenantEntraGroupMapping: {
                 findMany: jest.fn().mockResolvedValue([{ aadGroupId: 'g-1', role: 'EDITOR', priority: 0 }]),

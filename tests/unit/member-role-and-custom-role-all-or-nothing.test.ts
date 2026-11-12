@@ -57,6 +57,7 @@ function membershipDb(customRole: Record<string, unknown> | null) {
         user: { id: 'u-1', name: 'U', email: 'u@example.com' },
     };
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(2),

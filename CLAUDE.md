@@ -861,6 +861,16 @@ leave a tenant with zero ACTIVE OWNERs, catching bypass attempts
 (raw `deleteMany`, code paths that forget the check). The two-step
 `transferTenantOwnership` flow uses this: promote the new OWNER
 first (count=2), then demote the old (count=1, trigger satisfied).
+**Both layers serialise per tenant before they count** (#5388): the
+trigger takes `pg_advisory_xact_lock(hashtext('tenant-owner:' || tenantId))`
+before its count, and the member usecases, the transfer and the
+access-review close take the same key FIRST in their transaction
+(`lockTenantOwners`, `usecases/tenant-owner-lock.ts`), before reading the
+membership or writing any row. Under READ COMMITTED two OWNERs demoting
+each other at once each counted the other as still an owner and both
+committed; now the loser waits and gets the usecase's own last-OWNER 403.
+Keep the trigger function VOLATILE: its count reads a fresh snapshot only
+because it runs after the lock.
 
 **Invitation flow.** Admin POSTs to `/api/t/:slug/admin/invites` →
 `createInviteToken` creates a 256-bit base64url token with 7-day
