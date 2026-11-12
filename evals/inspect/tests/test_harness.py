@@ -31,7 +31,7 @@ sys.path.insert(0, str(HERE.parent))
 from inflect_inspect import ledger, verdicts  # noqa: E402
 from inflect_inspect.record import build_record, task_set_hash  # noqa: E402
 from inflect_inspect.product import HttpProduct  # noqa: E402
-from inflect_inspect.runner import Clock, SeedManifest, missing_input_keys, run_sample  # noqa: E402
+from inflect_inspect.runner import MARKER_READ_TOOL, Clock, SeedManifest, agent_key_env, missing_input_keys, run_sample, seed_for  # noqa: E402
 
 TASK_SET = json.loads((HERE.parent / "task-set.json").read_text(encoding="utf-8"))
 GOLDEN = json.loads((HERE.parent / "fixtures" / "verdict-cases.json").read_text(encoding="utf-8"))["cases"]
@@ -324,3 +324,50 @@ def test_tasks_py_loads_by_path_outside_its_package():
     module = load_module(HERE.parent / "inflect_inspect" / "tasks.py")
     assert len(module.governed_runs(engine="flue").dataset) == 10
     assert len(module.governed_runs(engine="tool-runner").dataset) == 8
+    assert module.TENANT_SLUG == SLUG
+
+
+# ── The seed manifest: every sample resolves to the agent its run binds ──────
+#
+# ``fixtures/seed-manifest.example.json`` has the shape ``scripts/inspect-seed.ts``
+# writes, which ``tests/integration/inspect-seed.test.ts`` holds the real
+# manifest to. The slug map mirrors ``tasks.py``'s (checked above, where
+# Inspect is installed).
+
+SEED_EXAMPLE = json.loads((HERE.parent / "fixtures" / "seed-manifest.example.json").read_text(encoding="utf-8"))
+SLUG = {
+    ("external", "flue"): "inspect-ext-flue",
+    ("external", "tool-runner"): "inspect-ext-tool-runner",
+    ("local-only", "flue"): "inspect-local-flue",
+    ("local-only", "tool-runner"): "inspect-local-tool-runner",
+}
+
+
+@pytest.mark.parametrize("engine", ["flue", "tool-runner"])
+def test_every_applicable_sample_resolves_to_a_seeded_agent_and_its_markers(engine):
+    for task in TASK_SET["tasks"]:
+        arm = task["engines"][engine]
+        if "notApplicable" in arm:
+            continue
+        tenant = SEED_EXAMPLE[SLUG[(task["tenant"], engine)]]
+        seed = seed_for(tenant, task, engine)
+        if "profileFixture" in arm:
+            assert seed.agent_id == tenant["profileAgents"][arm["profileFixture"]]
+            assert arm["profileFixture"] in seed.profiles
+        else:
+            assert seed.agent_id == tenant["agentId"]
+        if task["id"] in MARKER_READ_TOOL:
+            assert task["id"] in seed.markers
+
+
+def test_seed_for_refuses_an_unnamed_agent_and_an_na_arm():
+    task1 = TASKS["writes-become-proposals-never-commits"]
+    with pytest.raises(ValueError, match="names no agent"):
+        seed_for({"agentId": None, "profiles": {}, "profileAgents": {}, "markers": {}}, task1, "flue")
+    with pytest.raises(ValueError, match="n/a"):
+        seed_for(SEED_EXAMPLE["inspect-ext-tool-runner"], TASKS["delegate-answer-reenters-as-untrusted"], "tool-runner")
+
+
+def test_agent_key_env_is_one_variable_per_tenant_and_agent():
+    assert agent_key_env("inspect-ext-flue", "cmabc123") == "INSPECT_AGENT_KEY_INSPECT_EXT_FLUE_CMABC123"
+    assert agent_key_env("inspect-ext-flue", "a") != agent_key_env("inspect-ext-tool-runner", "a")

@@ -1,0 +1,57 @@
+{
+  "seedFixtureHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "seedVersion": 1,
+  "inspect-ext-flue": {
+    "agentId": "cmagentextflue000000000001",
+    "profiles": {},
+    "profileAgents": {},
+    "markers": {
+      "flagged-tool-result-halts-the-run": "INSPECT-CANARY-INJ-EXAMPLE",
+      "delegate-answer-reenters-as-untrusted": "Example joined sentence",
+      "secret-shaped-value-never-crosses-a-tool-boundary": "ExampleCanaryValue"
+    },
+    "ownerEmail": "owner@inspect-ext-flue.inspect.test"
+  },
+  "inspect-ext-tool-runner": {
+    "agentId": null,
+    "profiles": {
+      "inspect-exhaust-tokens": "agent-profile:cmprofileexhaust0000000001@v1",
+      "inspect-list-controls": "agent-profile:cmprofilecontrols000000001@v1",
+      "inspect-list-findings": "agent-profile:cmprofilefindings000000001@v1",
+      "inspect-propose-risks": "agent-profile:cmprofilepropose0000000001@v1",
+      "inspect-summarise": "agent-profile:cmprofilesummarise00000001@v1",
+      "inspect-three-reads": "agent-profile:cmprofilethreereads0000001@v1"
+    },
+    "profileAgents": {
+      "inspect-exhaust-tokens": "cmagenttrexhaust0000000001",
+      "inspect-list-controls": "cmagenttrcontrols000000001",
+      "inspect-list-findings": "cmagenttrfindings000000001",
+      "inspect-propose-risks": "cmagenttrpropose0000000001",
+      "inspect-summarise": "cmagenttrsummarise00000001",
+      "inspect-three-reads": "cmagenttrthreereads0000001"
+    },
+    "markers": {
+      "flagged-tool-result-halts-the-run": "INSPECT-CANARY-INJ-EXAMPLE",
+      "secret-shaped-value-never-crosses-a-tool-boundary": "ExampleCanaryValue"
+    },
+    "ownerEmail": "owner@inspect-ext-tool-runner.inspect.test"
+  },
+  "inspect-local-flue": {
+    "agentId": "cmagentlocalflue0000000001",
+    "profiles": {},
+    "profileAgents": {},
+    "markers": {},
+    "ownerEmail": "owner@inspect-local-flue.inspect.test"
+  },
+  "inspect-local-tool-runner": {
+    "agentId": null,
+    "profiles": {
+      "inspect-summarise": "agent-profile:cmprofilelocalsummarise001@v1"
+    },
+    "profileAgents": {
+      "inspect-summarise": "cmagentlocalsummarise00001"
+    },
+    "markers": {},
+    "ownerEmail": "owner@inspect-local-tool-runner.inspect.test"
+  }
+}
