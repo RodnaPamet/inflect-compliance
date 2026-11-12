@@ -3037,6 +3037,33 @@ a run RECORDS — `WorkflowRun.driver` and the run metrics' `driver` label — i
 `'flue' ? 'FLUE' : 'STATIC'` ternary: with a third engine that ternary records
 every run it walks as STATIC (#4270).
 
+**Every hosted engine asks the external-AI transfer gate before its first model
+call** (#5364). `externalResidencyRefusal` (`src/lib/agentic/external-residency-gate.ts`)
+judges the OFFERED set against the tenant's business-data acknowledgement
+(#3872). A refusal fails the whole run with
+`<engine>_external_ai_business_data_unacknowledged`. The Tool Runner did not ask
+until #5364, so it sent an ERP's rows to Anthropic unacknowledged. Two rules
+that are easy to undo:
+
+  - **Inside is NAMED; every other route is outside.** The gate lets only
+    `FLUE_PROVIDER_IDS.local` through without an acknowledgement. It used to
+    let through anything that was not Flue's `inflect-external`, so the Tool
+    Runner's route passed whatever id it was given. The Tool Runner's own id is
+    `TOOL_RUNNER_PROVIDER_ID` (`tool-runner/client.ts`), returned by
+    `clientForRun`.
+  - **The driver reads the acknowledgement with the residency, in one read, and
+    hands it down** (`posturesFor` in both drivers). The engine never re-reads
+    it. The conformance suite holds every engine to it
+    (`business-data-transfer-*` in `tests/helpers/driver-conformance.ts`), so a
+    new engine fails its suite until it asks.
+
+**A reasoning run's specification is the definition's WHOLE step list**
+(#5372). `runMessage` takes no `fromSeq`: on a reasoning engine that number is
+a LEDGER position (committed model and tool calls), not a declared step, so
+slicing by it gave a resumed run a partial or empty specification. Do not add a
+resume offset back: nothing records which declared steps a reasoning run has
+covered.
+
 **The scanner finds Agent SDK agents customers run, and code only ever counts
 against them** (Step 3b, #4156). The `code` source recognises `query` /
 `ClaudeSDKClient` from the SDK, and its options become ladder verdicts through
