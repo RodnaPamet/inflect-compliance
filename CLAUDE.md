@@ -1417,7 +1417,17 @@ from here* rather than merely unanswered. OrangeHRM is self-hostable and writabl
 is what #2548 built it for and what #2587 demonstrated: running the finished connector
 against a live 5.9 disproved its field mapping in five places that fifty green tests had
 not noticed. So when new HRIS behaviour must be shown to WORK rather than to typecheck,
-point it at the OrangeHRM instance and record what came back. This is a rule about
+point it at a live OrangeHRM instance and record what came back. **The production VM is
+no longer where that instance lives:** the OrangeHRM lab (`orangehrm`, `orangehrm-db`,
+`orangehrm-mcp` and its two Caddy vhosts) was retired by owner decision on 2026-11-12
+(capacity budget C1, `docs/implementation-notes/2026-11-12-capacity-c1.md`) and removed
+from the repo-canonical deploy set. It leaves the running VM when the operator runs that
+note's runbook steps 1–2; until then its containers and vhosts keep serving, and the
+`VM check` workflow's `containers` check shows which is the case. Do not prove against it
+in that window: proving against OrangeHRM now needs a non-production instance — an open
+item, not a reason to keep the lab on the production VM. The rule stands; its evidence
+source is what is missing. `ORANGEHRM_HOSTS` still admits the retired lab's exact
+hostname until that instance is chosen. This is a rule about
 evidence, not about tests: BambooHR keeps every test it has, and the structural guards
 that enumerate providers must keep naming `bamboohr`. See the "New HRIS work is proven
 against OrangeHRM" section of `docs/jml-hris-write-back-design.md` for what this does and

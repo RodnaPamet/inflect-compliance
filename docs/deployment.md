@@ -352,6 +352,58 @@ sources, so the service passed every check short of actually starting it.
 Enabling pipelock means satisfying the preconditions listed in that file's
 header and adding a second `-f` flag.
 
+### The other overlays, and what is not an overlay any more
+
+Two more opt-in overlays add services to the same Compose project on the VM.
+Neither is in the canonical set: `apply.sh` does not push them and
+`check-drift.sh` does not check them.
+
+| overlay | services | how it reaches the VM |
+| --- | --- | --- |
+| `deploy/docker-compose.harness-scanner.yml` | `harness-scanner`, `harness-egress` | the `Scanner VM` workflow's `configure` action copies it; `start` runs it |
+| `deploy/docker-compose.legacy-mcp-proving.yml` | `legacy-mcp-proving` | copied by hand, then `up -d legacy-mcp-proving` with both `-f` files |
+
+The OrangeHRM lab overlay (`docker-compose.orangehrm-lab.yml`: `orangehrm`,
+`orangehrm-db`, `orangehrm-mcp`) was **retired by owner decision on
+2026-11-12** and removed from the repo-canonical set, with its two Caddy vhosts.
+Removing it from the running VM is the operator runbook's steps 1–2; until they
+run, the three containers and both vhosts keep serving there (the `VM check`
+workflow's `containers` check shows which). The repository no longer carries
+the overlay; the adapter's source stays in
+`deploy/orangehrm-mcp/` for a non-production instance. The operator runbook,
+including how to bring it back, is in
+[`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md).
+
+A Caddyfile push that stops serving a hostname is refused unless the hostname
+is named in `CADDY_RETIRE_HOSTS` (space-separated, exact names). A lost
+hostname the list does not name is still refused.
+
+### Every service declares a memory limit and a CPU cap
+
+Every service in the canonical file and in the two overlays above declares
+`mem_limit` and `cpus` — the service-level keys plain `docker compose` honours,
+not `deploy.resources`, which is for swarm. The memory limits together stay at
+or under 14.5 GB (host memory minus 1.5 GB), and the batch-shaped services
+(`clamav`, `worker`, `harness-scanner`) are capped at one CPU with half the CPU
+weight, so the request path keeps a core. `tests/guards/deploy-compose-canonical.test.ts`
+holds all of it. The figures, their basis and the risk of an out-of-memory kill
+are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
+the `app` and `worker` limits are provisional until a re-measurement that spans
+the nightly jobs. The `VM capacity` workflow (below) prints each container's
+configured limit, its peak memory and its out-of-memory kills.
+
+`app` and `worker` also state their V8 heap ceiling
+(`NODE_OPTIONS: "--max-old-space-size=1024"`), because a memory limit moves
+Node's default heap ceiling to about half the limit. A heap overrun is then a
+restart with exit code 134 and `Reached heap limit` in the log, which no
+out-of-memory counter records. The guard holds the heap between half and three
+quarters of `mem_limit`, so the two move together.
+
+A limit change is a structural change: it reaches the VM through
+`CONFIRM=1 deploy/apply.sh` for the canonical file, and through each overlay's
+own path for the overlays. A container keeps the limits it was created with
+until it is recreated.
+
 ### `deploy/.env.prod.example` describes a different deployment
 
 That template describes the Epic OI-1 AWS model — Secrets Manager, RDS,

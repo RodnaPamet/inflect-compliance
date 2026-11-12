@@ -111,6 +111,13 @@ services:
     image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:507a6af39f0824ff731b65add0dea8a3e0a2da39dac505dd6be70e8bdf6171e6
     restart: unless-stopped
     command: ["schedule", "--config", "/etc/agent-harness-scanner/config.json"]
+    # Capacity budget C1 (2026-11-12): peak 155 MiB; 1.5x rounded up, with
+    # room for a larger estate's code parse. Batch-shaped, so capped at one
+    # core with half the weight under contention: the request path keeps the
+    # other. docs/implementation-notes/2026-11-12-capacity-c1.md.
+    mem_limit: 512m
+    cpus: 1.0
+    cpu_shares: 512
     user: "1000:1000"
     read_only: true
     cap_drop:
@@ -148,6 +155,10 @@ services:
     restart: unless-stopped
     entrypoint: ["node", "--import", "tsx", "/app/packages/agent-harness-scanner/src/egress-proxy.ts"]
     command: []
+    # Capacity budget C1: peak 66 MiB; a Node process's floor. It forwards
+    # the scanner's tunnels and nothing else, so half a core is ample.
+    mem_limit: 256m
+    cpus: 0.5
     user: "1000:1000"
     read_only: true
     cap_drop:
