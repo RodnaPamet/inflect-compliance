@@ -2559,8 +2559,16 @@ its own calls from everything its agent is granted, propose tools included.
 sets it — `audit-narrative`, `discovered-agent-review`, `posture-review` and
 `access-posture` (#3775, owner decision) — and
 `tests/unit/agentic/flue-read-only-workflows.test.ts` fails, over the
-registry, for one that does not. External read tools stay on the read surface,
-so `access-posture` still reaches the directory.
+registry, for one that does not. External tools ride the READ surface, so
+`readOnly` also withholds every EXTERNAL write — a write-classified external
+tool and every A2A send (`externalConnection.declaresWrite`), also
+`READ_ONLY_WORKFLOW` (#5365) — from every engine, Test runs and Ask runs
+included; withholding only the propose list let a read-only run open a
+proposal, or at AUTOMATIC a journal row sent with no approval. External READ
+tools stay offered, so `access-posture` still reaches the directory. The
+backstop is `RequestContext.readOnlyRun`, set by `offerToolSet` on every
+closure it hands a read-only run: `dispatchWrite` and `dispatchA2aSend` refuse
+it at every rung, before the prior-state read and before any row.
 
 **The audit narrative (#3749)** is model prose about a regulatory record, so it
 is stored only through `usecases/audit-workpaper-narrative.ts`, after
