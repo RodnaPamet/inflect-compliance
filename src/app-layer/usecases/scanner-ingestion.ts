@@ -37,6 +37,7 @@ import { logEvent } from '../events/audit';
 import { logger } from '@/lib/observability';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createFinding } from './finding';
+import { assertCanCreateFinding, assertCanUpdateFinding } from '../policies/finding.policies';
 import {
     parseSarif,
     type ScannerSeverity,
@@ -175,6 +176,20 @@ export async function ingestScannerRun(
     // usecases, jobs, tests) must get `ingestedVia`/`materializeFindings`
     // defaults and enum validation just the same.
     const input = IngestScannerRunSchema.parse(rawInput);
+
+    // AN INGEST THAT RAISES FINDINGS NEEDS THE FINDING KEYS, ASKED FIRST (#5369).
+    // Phase 2 creates findings through `createFinding` (`findings.create`) and
+    // closes stale ones in the reconcile (`findings.edit`). Those floors would
+    // refuse a caller without them only AFTER phase 1 had committed the scan
+    // run and its evidence, leaving half an ingest behind. So the refusal comes
+    // here, before anything is written (owner decision, 2026-11-12). A key with
+    // a write scope was migrated to `findings:write` (#4535), so CI keys keep
+    // working; a caller that wants the scan without findings sends
+    // `materializeFindings: false`.
+    if (input.materializeFindings) {
+        assertCanCreateFinding(ctx);
+        assertCanUpdateFinding(ctx);
+    }
 
     // Parse OUTSIDE the tenant transaction — pure CPU, and a malformed
     // upload should 400 before we open a DB transaction.

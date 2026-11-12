@@ -11817,7 +11817,11 @@
         "findingNeedsCreate": "Approving this finding creates it as you, so it needs permission to create findings. Somebody who has it can approve this one.",
         "findingNeedsEdit": "Approving this change edits the finding as you, so it needs permission to edit findings. Somebody who has it can approve this one.",
         "riskNeedsCreate": "Approving this risk creates it as you, so it needs permission to create risks. Somebody who has it can approve this one.",
-        "riskNeedsEdit": "Approving this change edits the risk as you, so it needs permission to edit risks. Somebody who has it can approve this one."
+        "riskNeedsEdit": "Approving this change edits the risk as you, so it needs permission to edit risks. Somebody who has it can approve this one.",
+        "controlNeedsCreate": "Approving this control creates it as you, so it needs permission to create controls. Somebody who has it can approve this one.",
+        "controlNeedsEdit": "Approving this change edits the control as you, so it needs permission to edit controls. Somebody who has it can approve this one.",
+        "policyNeedsCreate": "Approving this policy creates it as you, so it needs permission to create policies. Somebody who has it can approve this one.",
+        "policyNeedsEdit": "Approving this change edits the policy as you, so it needs permission to edit policies. Somebody who has it can approve this one."
       }
     },
     "runs": {

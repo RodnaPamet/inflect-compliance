@@ -10,7 +10,7 @@
  * this the approver could create, through the queue, a map REST would refuse
  * them (owner decision, 2026-11-11).
  *
- * A finding or a risk (#5369) is created or edited through `findings.create` /
+ * A finding, a risk, a control or a policy (#5369) is created or edited through `findings.create` /
  * `findings.edit` and `risks.create` / `risks.edit`, the keys their routes
  * take and their usecases now floor on. Listing them here makes the queue
  * refuse BEFORE the signature and the claim: without it the usecase's own
@@ -38,6 +38,10 @@ export const PROPOSAL_KIND_APPROVE_PERMISSION: Readonly<
     PROCESS_MAP: { CREATE: 'processes.edit', UPDATE: 'processes.edit' },
     FINDING: { CREATE: 'findings.create', UPDATE: 'findings.edit' },
     RISK: { CREATE: 'risks.create', UPDATE: 'risks.edit' },
+    // A control's and a policy's usecases already floor on their keys; listed
+    // so the queue asks BEFORE the claim, for the reason the docstring gives.
+    CONTROL: { CREATE: 'controls.create', UPDATE: 'controls.edit' },
+    POLICY: { CREATE: 'policies.create', UPDATE: 'policies.edit' },
 };
 
 /** The extra key approving a `kind` proposal of `operation` needs, or null. */

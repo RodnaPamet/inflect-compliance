@@ -1,5 +1,5 @@
 /**
- * The approver of a FINDING or RISK proposal holds the key the record's own
+ * The approver of a FINDING, RISK, CONTROL or POLICY proposal holds the key the record's own
  * route takes (#5369).
  *
  * Approving runs the real `createFinding` / `updateFinding` / `createRisk` /
@@ -43,6 +43,26 @@ export const RECORD_APPROVER_REFUSALS = {
             message: 'Approving this change edits the risk as you, so it needs permission to edit risks.',
         },
     },
+    CONTROL: {
+        CREATE: {
+            reason: 'CONTROL_APPROVER_NEEDS_CONTROLS_CREATE',
+            message: 'Approving this control creates it as you, so it needs permission to create controls.',
+        },
+        UPDATE: {
+            reason: 'CONTROL_APPROVER_NEEDS_CONTROLS_EDIT',
+            message: 'Approving this change edits the control as you, so it needs permission to edit controls.',
+        },
+    },
+    POLICY: {
+        CREATE: {
+            reason: 'POLICY_APPROVER_NEEDS_POLICIES_CREATE',
+            message: 'Approving this policy creates it as you, so it needs permission to create policies.',
+        },
+        UPDATE: {
+            reason: 'POLICY_APPROVER_NEEDS_POLICIES_EDIT',
+            message: 'Approving this change edits the policy as you, so it needs permission to edit policies.',
+        },
+    },
 } as const;
 
 type RecordKind = keyof typeof RECORD_APPROVER_REFUSALS;
@@ -52,9 +72,10 @@ function isRecordKind(kind: string): kind is RecordKind {
 }
 
 /**
- * Refuse an approver of a FINDING or RISK proposal who lacks the key. Any other
- * kind returns: its usecase's own floor is the role-tier write the queue has
- * already asserted, or (a process map) it has its own assert.
+ * Refuse an approver of a FINDING, RISK, CONTROL or POLICY proposal who lacks
+ * the key. Any other kind returns: its usecase's own floor is the role-tier
+ * write the queue has already asserted, or (a process map) it has its own
+ * assert.
  */
 export async function assertMayApproveRecordProposal(
     ctx: RequestContext,

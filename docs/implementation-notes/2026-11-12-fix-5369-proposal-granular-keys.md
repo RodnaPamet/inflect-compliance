@@ -61,3 +61,18 @@ Two layers, the controls/policies pattern plus the #5053 queue table:
 - **System callers keep working.** `buildSystemContext` grants ADMIN's
   `PermissionSet`, so the vendor-monitoring job holds every key. A context with
   no granular layer at all keeps the coarse rule, as for controls.
+
+## Follow-up decisions (same PR)
+
+- **Scanner ingest refuses up front** (owner decision, 2026-11-12). `ingestScannerRun`
+  commits the scan run and its evidence (phase 1) before it creates and reconciles
+  findings (phase 2). With `createFinding` now flooring on `findings.create`, a caller
+  without it would have been refused half-way, leaving a run with no findings. So an
+  ingest with `materializeFindings` (the default) asks `findings.create` AND
+  `findings.edit` (the reconcile closes stale findings) before anything is written. A
+  key with a write scope was migrated to `findings:write` (#4535), so existing CI keys
+  keep working; `materializeFindings: false` ingests the scan alone.
+- **CONTROL and POLICY are in the approve-permission table too.** Their usecases
+  already floored on `controls.*` / `policies.*`, but the queue did not ask first, so
+  an approver without the key was refused after the claim and the proposal read
+  ACCEPTED with nothing created — the same burn this PR closes for findings and risks.

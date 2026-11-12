@@ -24,7 +24,11 @@ export type ProposalRefusalKey =
     | 'findingNeedsCreate'
     | 'findingNeedsEdit'
     | 'riskNeedsCreate'
-    | 'riskNeedsEdit';
+    | 'riskNeedsEdit'
+    | 'controlNeedsCreate'
+    | 'controlNeedsEdit'
+    | 'policyNeedsCreate'
+    | 'policyNeedsEdit';
 
 const REFUSAL_KEY: Readonly<Record<string, ProposalRefusalKey>> = {
     COMPOSER_MAY_NOT_APPROVE: 'composer',
@@ -43,6 +47,10 @@ const REFUSAL_KEY: Readonly<Record<string, ProposalRefusalKey>> = {
     FINDING_APPROVER_NEEDS_FINDINGS_EDIT: 'findingNeedsEdit',
     RISK_APPROVER_NEEDS_RISKS_CREATE: 'riskNeedsCreate',
     RISK_APPROVER_NEEDS_RISKS_EDIT: 'riskNeedsEdit',
+    CONTROL_APPROVER_NEEDS_CONTROLS_CREATE: 'controlNeedsCreate',
+    CONTROL_APPROVER_NEEDS_CONTROLS_EDIT: 'controlNeedsEdit',
+    POLICY_APPROVER_NEEDS_POLICIES_CREATE: 'policyNeedsCreate',
+    POLICY_APPROVER_NEEDS_POLICIES_EDIT: 'policyNeedsEdit',
 };
 
 /** The worded refusal for an error response body, or null when it is not one of ours. */

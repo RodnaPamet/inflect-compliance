@@ -159,6 +159,36 @@ describe('permission gates', () => {
         expect(mockRunInTenantContext).not.toHaveBeenCalled();
     });
 
+    // #5369 (owner decision 2026-11-12): an ingest that raises findings asks
+    // the finding keys BEFORE phase 1 commits the scan run, never after.
+    it.each(['create', 'edit'] as const)(
+        'refuses a write-capable caller without findings.%s before anything is written',
+        async (flag) => {
+            const editor = makeRequestContext('EDITOR');
+            const ctx = makeRequestContext('EDITOR', {
+                appPermissions: {
+                    ...editor.appPermissions!,
+                    findings: { ...editor.appPermissions!.findings, [flag]: false },
+                },
+            });
+            await expect(ingest({}, ctx)).rejects.toBeInstanceOf(ForbiddenError);
+            expect(mockParseSarif).not.toHaveBeenCalled();
+            expect(mockRunInTenantContext).not.toHaveBeenCalled();
+            expect(mockDb.scannerRun.create).not.toHaveBeenCalled();
+        },
+    );
+
+    it('admits the same caller when it asks for no findings (materializeFindings: false)', async () => {
+        const editor = makeRequestContext('EDITOR');
+        const ctx = makeRequestContext('EDITOR', {
+            appPermissions: { ...editor.appPermissions!, findings: { ...editor.appPermissions!.findings, create: false } },
+        });
+        mockParseSarif.mockReturnValue(parsed([finding('a', 'CRITICAL')]));
+        const out = await ingest({ materializeFindings: false }, ctx);
+        expect(out.scannerRunId).toBe('run-1');
+        expect(mockCreateFinding).not.toHaveBeenCalled();
+    });
+
     it('ingestScannerRun ADMITS an EDITOR (so the gate is canWrite, not canAdmin)', async () => {
         const out = await ingest({}, makeRequestContext('EDITOR'));
         expect(out.scannerRunId).toBe('run-1');
