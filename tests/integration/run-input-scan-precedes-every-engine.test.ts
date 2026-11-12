@@ -19,6 +19,13 @@
  *     that the guard let the clean input through to it. A scan moved below the
  *     driver choice, or gated on the static engine, turns the hostile cell into
  *     the register refusal, and this file goes red.
+ *   • and the run a reasoning engine actually ADMITS — one started as an
+ *     ACTIVE registered agent, which is every real Flue or Tool Runner run —
+ *     is scanned too: the hostile input is refused with no row and nothing
+ *     handed to the worker, while the clean input on the same agent creates a
+ *     row recorded on that engine and is enqueued for it. The unbound cells
+ *     above cannot see a scan skipped for agent-bound callers ("our own
+ *     agents"), because an unbound caller never reaches the engine anyway.
  *
  * And the arms (`GuardOutcome`, `resolveEnforcement`):
  *
@@ -32,6 +39,12 @@
  * accuracy: the payload is the generic positive control #3466 reports the
  * scanner does catch, so a red here means the wiring moved, not the scanner.
  */
+jest.mock('@/app-layer/jobs/queue', () => ({
+    ...jest.requireActual('@/app-layer/jobs/queue'),
+    // The worker hand-off: the run row is real, the queue is not.
+    enqueue: jest.fn(async () => undefined),
+}));
+
 const envOverride: Record<string, string | undefined> = {
     AGENT_DRIVER_FLUE: '1',
     AGENT_DRIVER_TOOL_RUNNER: '1',
@@ -57,6 +70,7 @@ import { startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
 import { makeRequestContext } from '../helpers/make-context';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
+import { enqueue } from '@/app-layer/jobs/queue';
 
 const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -76,6 +90,8 @@ const REGISTER_REFUSAL = /flue_requires_registered_agent/;
 interface Fixture {
     readonly tenantId: string;
     readonly workflowKey: string;
+    /** An ACTIVE registered agent in this tenant: what the register vouches for. */
+    readonly agentId?: string;
 }
 
 async function fixture(
@@ -97,6 +113,27 @@ async function fixture(
         create: { id: userId, email, emailHash: hashForLookup(email) },
     });
     await prisma.tenantSecuritySettings.create({ data: { tenantId, ...settings } });
+    let agentId: string | undefined;
+    if (driver) {
+        const system = await prisma.aiSystem.create({
+            data: { tenantId, name: `run input scan ${name}`, ownerUserId: userId },
+        });
+        agentId = (
+            await prisma.registeredAgent.create({
+                data: {
+                    tenantId,
+                    aiSystemId: system.id,
+                    name: `run input scan ${name}`,
+                    autonomyLevel: 3,
+                    dataAccessScope: 'READ_TENANT_DATA',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: userId,
+                    status: 'ACTIVE',
+                },
+            })
+        ).id;
+    }
     const workflowKey = `rin-wf-${name}-${SUITE}`;
     registerWorkflow({
         key: workflowKey,
@@ -105,11 +142,14 @@ async function fixture(
         ...(driver ? { driver } : {}),
         steps: [{ kind: 'SYNTHESIS', label: 'noop', synthesize: () => ({ text: 'ok' }) }],
     });
-    return { tenantId, workflowKey };
+    return { tenantId, workflowKey, agentId };
 }
 
 const ctxFor = (f: Fixture) =>
     makeRequestContext('ADMIN', { tenantId: f.tenantId, tenantSlug: f.tenantId, userId: `u-${f.tenantId}` });
+
+/** The context every real reasoning-engine run has: bound to an ACTIVE registered agent. */
+const agentCtxFor = (f: Fixture) => ({ ...ctxFor(f), agentId: f.agentId });
 
 const rowsIn = (f: Fixture) => prisma.workflowRun.count({ where: { tenantId: f.tenantId } });
 
@@ -131,7 +171,7 @@ describeFn('the run input is scanned before the run exists, whichever engine wou
         await prisma.$disconnect();
     });
 
-    describe.each(engines)('on the $driver engine', ({ driver }) => {
+    describe.each(engines)('on the $driver engine', ({ driver, mode }) => {
         it('refuses the hostile input at the AI Guard, and writes no run row', async () => {
             const f = fixtures.get(driver)!;
             await expect(startWorkflowRun(ctxFor(f), f.workflowKey, { note: HOSTILE })).rejects.toThrow(
@@ -148,6 +188,31 @@ describeFn('the run input is scanned before the run exists, whichever engine wou
                 REGISTER_REFUSAL,
             );
             expect(await rowsIn(f)).toBe(0);
+        }, 60_000);
+
+        it('refuses the hostile input from a registered agent the engine would admit, before any row or hand-off', async () => {
+            const f = fixtures.get(driver)!;
+            jest.mocked(enqueue).mockClear();
+            await expect(startWorkflowRun(agentCtxFor(f), f.workflowKey, { note: HOSTILE })).rejects.toThrow(
+                GUARD_REFUSAL,
+            );
+            expect(await rowsIn(f)).toBe(0);
+            expect(enqueue).not.toHaveBeenCalled();
+        }, 60_000);
+
+        it('admits the clean input from that agent onto the reasoning engine: the control for the cell above', async () => {
+            const f = fixtures.get(driver)!;
+            jest.mocked(enqueue).mockClear();
+            const res = await startWorkflowRun(agentCtxFor(f), f.workflowKey, { note: CLEAN });
+            expect(res.status).toBe('RUNNING');
+            const row = await prisma.workflowRun.findUniqueOrThrow({
+                where: { id: res.runId },
+                select: { driver: true, agentId: true },
+            });
+            expect(row).toEqual({ driver: mode, agentId: f.agentId });
+            expect(enqueue).toHaveBeenCalledWith('agent-run-execute', { tenantId: f.tenantId, runId: res.runId });
+            await prisma.workflowStep.deleteMany({ where: { runId: res.runId } });
+            await prisma.workflowRun.delete({ where: { id: res.runId } });
         }, 60_000);
     });
 });
