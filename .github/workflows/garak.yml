@@ -118,10 +118,18 @@ jobs:
       - name: Check for the garak CI key
         id: key
         env:
-          KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+          KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
+          ENABLED: ${{ vars.GARAK_ENABLED }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ -z "$KEY" ]; then
-            echo "::notice::GARAK_CI_ANTHROPIC_KEY is not set; the garak nightly is skipped (owner action in docs/ai-architecture/garak.md)."
+          # Owner decision 2026-11-12: the nightly is OFF unless the repo
+          # variable GARAK_ENABLED is 'true' (GitHub -> Settings -> Variables ->
+          # Actions). A manual dispatch always runs, so a person can run it once.
+          if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
+            echo "::notice::The garak nightly is switched off (repository variable GARAK_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEY" ]; then
+            echo "::notice::neither GARAK_CI_ANTHROPIC_KEY nor ANTHROPIC_API_KEY is set; the garak run is skipped (owner action in docs/ai-architecture/garak.md)."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -165,7 +173,7 @@ jobs:
         if: steps.key.outputs.present == 'true'
         env:
           NODE_ENV: production
-          ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           npm start > /tmp/app.log 2>&1 &
           echo $! > /tmp/app.pid

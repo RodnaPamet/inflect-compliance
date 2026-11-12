@@ -181,8 +181,16 @@ describe('garak workflow gating', () => {
 describe('garak skips cleanly without its CI key', () => {
     it('the first step reads GARAK_CI_ANTHROPIC_KEY and records whether it is present', () => {
         expect(steps[0]).toMatchObject({ id: 'key' });
-        expect(steps[0].env?.KEY).toBe('${{ secrets.GARAK_CI_ANTHROPIC_KEY }}');
+        expect(steps[0].env?.KEY).toBe('${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}');
         expect(steps[0].run).toMatch(/present=false/);
+    });
+
+    // Owner decision 2026-11-12: the nightly is off unless the repository
+    // variable says otherwise; a manual dispatch always runs.
+    it('a scheduled run is skipped unless GARAK_ENABLED is "true"', () => {
+        expect(steps[0].env?.ENABLED).toBe('${{ vars.GARAK_ENABLED }}');
+        expect(steps[0].env?.EVENT).toBe('${{ github.event_name }}');
+        expect(steps[0].run).toContain('if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then');
     });
 
     it('every later step is conditioned on the key being present', () => {
@@ -199,7 +207,7 @@ describe('garak skips cleanly without its CI key', () => {
         const carriers = steps.filter((s) => secretRef.test(JSON.stringify(s.env ?? {}))).map((s) => s.id ?? s.name);
         expect(carriers).toEqual(['key', 'Start app (background)']);
         const start = steps.find((s) => s.name === 'Start app (background)');
-        expect(start?.env?.ANTHROPIC_API_KEY).toBe('${{ secrets.GARAK_CI_ANTHROPIC_KEY }}');
+        expect(start?.env?.ANTHROPIC_API_KEY).toBe('${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}');
     });
 });
 

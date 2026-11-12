@@ -63,7 +63,12 @@ describe('skip without the CI key', () => {
 
     it('decides in the first step and conditions every later step on it', () => {
         expect(steps[0].id).toBe('key');
-        expect(steps[0].env?.KEY).toBe('${{ secrets.INSPECT_CI_ANTHROPIC_KEY }}');
+        expect(steps[0].env?.KEY).toBe('${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}');
+        // Owner decision 2026-11-12: a scheduled run is skipped unless the
+        // repository variable AGENT_EVALS_ENABLED is 'true'; a dispatch always runs.
+        expect(steps[0].env?.ENABLED).toBe('${{ vars.AGENT_EVALS_ENABLED }}');
+        expect(steps[0].env?.EVENT).toBe('${{ github.event_name }}');
+        expect(steps[0].run).toContain('if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then');
         for (const s of steps.slice(1)) expect([s.name, s.if ?? '']).toEqual([s.name, expect.stringContaining("steps.key.outputs.present == 'true'")]);
     });
 

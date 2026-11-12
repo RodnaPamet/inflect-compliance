@@ -20,7 +20,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
 | Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1) |
+| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while the repository variable `GARAK_ENABLED` is `true` (off by default). A manual dispatch always runs |
 | Complete at | Phase 3 |
 
 ## At a glance

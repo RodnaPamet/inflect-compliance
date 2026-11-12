@@ -111,10 +111,18 @@ jobs:
       - name: Check for the Inspect CI key
         id: key
         env:
-          KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY }}
+          KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
+          ENABLED: ${{ vars.AGENT_EVALS_ENABLED }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ -z "$KEY" ]; then
-            echo "::notice::INSPECT_CI_ANTHROPIC_KEY is not set; the agent-evals nightly is skipped (owner action in docs/ai-architecture/inspect.md)."
+          # Owner decision 2026-11-12: the nightly is OFF unless the repo
+          # variable AGENT_EVALS_ENABLED is 'true' (GitHub -> Settings -> Variables ->
+          # Actions). A manual dispatch always runs, so a person can run it once.
+          if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
+            echo "::notice::The agent-evals nightly is switched off (repository variable AGENT_EVALS_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEY" ]; then
+            echo "::notice::neither INSPECT_CI_ANTHROPIC_KEY nor ANTHROPIC_API_KEY is set; the agent-evals run is skipped (owner action in docs/ai-architecture/inspect.md)."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -170,7 +178,7 @@ jobs:
         if: steps.key.outputs.present == 'true'
         env:
           NODE_ENV: production
-          ANTHROPIC_API_KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           npm start > /tmp/app.log 2>&1 &
           npx tsx scripts/worker.ts > /tmp/worker.log 2>&1 &

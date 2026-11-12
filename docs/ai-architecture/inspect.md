@@ -199,7 +199,10 @@ is named for the invariant it proves, like the guards).
       hash, engine + model revision, per-sample raw ledger facts), strict.
       Verdicts are recomputed from the facts and never stored.
 - [x] 1.5 `.github/workflows/agent-evals.yml`: nightly, both engines, D-EV-6
-      budget, skips without `INSPECT_CI_ANTHROPIC_KEY`, record validated and
+      budget, skips without `INSPECT_CI_ANTHROPIC_KEY` (amended 2026-11-12,
+      owner: it falls back to the existing `ANTHROPIC_API_KEY` secret, and a
+      scheduled run is skipped unless the repository variable
+      `AGENT_EVALS_ENABLED` is `true`; a manual dispatch always runs), record validated and
       uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard.
 - [ ] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
