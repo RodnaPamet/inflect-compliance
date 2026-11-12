@@ -229,29 +229,52 @@ re-reads the current revision and says which one it implements.
 
 ## Owner decisions, 2026-11-11 (sub-phase 0.2)
 
-All three were adopted by the owner on 2026-11-11 at their roadmap defaults.
+**What the owner adopted, and where.** The owner's decision list of 2026-11-11,
+relayed to this workflow with its task, reads "D-L1-5/6/7 Web Bot Auth defaults
+adopted". That is the whole of the act: each decision as the master roadmap's
+decision table states it, at its "Default if undecided" value, and nothing more.
+Neither the master table's rows nor this note record any owner act beyond that
+line. The master table is the roadmap coordinator's to update, so this change
+does not touch it; until the coordinator initials the three rows there, the
+master shows the defaults, which are exactly what was adopted.
 
-- **D-L1-5 — adopted 2026-11-11.** The signing identity is the deployment: one
-  Ed25519 key (plus the previous one during rotation), env-held, never per
-  tenant. No tenant id, slug or name in the signature base, the headers, the
-  User-Agent or the directory. The A2A rule "no deployment key" stays where it
-  is, for the opposite reason.
-- **D-L1-6 — adopted 2026-11-11.** Outbound conduct: a User-Agent naming the
-  bot and linking its public page, robots.txt honoured for the bot's token, and
-  registration with Cloudflare Verified Bots by the operator after Phase 2.
-  Cloudflare's policy adds two things this decision now includes explicitly:
-  crawl directives (a crawl-delay) are honoured along with disallow, and the
-  bot page's stated purpose must match what the monitor actually fetches.
-- **D-L1-7 — adopted 2026-11-11.** Inbound verification is a label on the
-  public surfaces and never authorization, with an **open** directory fetch,
-  cached and capped, not an allowlist of operators. What the draft adds, and
-  Phase 3 therefore takes as its rules: the label is keyed on the (URL, key)
-  pair, never the key alone; only a `verified` outcome is labelled, and
-  `invalid` and `unverified` stay distinct and unlabelled; a directory fetch is
-  `safeFetch`, 200 only, no redirects, byte- and key-count-capped and
-  deadline-bound; a failed fetch never evicts a cached directory, and a
-  negative cache entry lives at most five minutes. Inbound accepts both the
-  Dictionary and the legacy String form, because both are on the wire.
+- **D-L1-5 — adopted 2026-11-11 (owner), at the default "adopt".** The signing
+  identity is one Ed25519 key per deployment, never per tenant, so no signature
+  discloses which customer monitors a vendor.
+- **D-L1-6 — adopted 2026-11-11 (owner), at the default "adopt; register after
+  Phase 2".** Outbound conduct: a User-Agent naming the bot, a public bot page,
+  robots.txt honoured, and registration with Cloudflare Verified Bots by the
+  operator after Phase 2.
+- **D-L1-7 — adopted 2026-11-11 (owner), at the default "label only; open
+  fetch, cached and capped".** Inbound verification is a label on public
+  surfaces, never authorization, with an open directory fetch under a cache and
+  caps rather than an allowlist of operators.
+
+**Proposed for the owner, NOT adopted.** Reading the draft and Cloudflare's
+policy turned up details the defaults do not state. They are this roadmap's
+proposals, carried to the phases that need them, and none of them carries the
+owner's authority until the owner adopts it by name:
+
+- *Under D-L1-5:* the previous key is published beside the current one during a
+  rotation, and the key is env-held. No tenant id, slug or name appears in the
+  signature base, the headers, the User-Agent or the directory (the reading of
+  "no signature discloses which customer" that the Phase 1 tenant-free test
+  checks). The A2A rule "no deployment key" stays where it is, for the opposite
+  reason.
+- *Under D-L1-6 (for Phase 2):* Cloudflare's Verified Bots policy asks that
+  crawl directives (a crawl-delay) are honoured along with disallow, and that
+  the bot page's stated purpose matches what the monitor actually fetches. The
+  registration is the operator's act, and the policy makes both conditions of
+  it, so Phase 2 should put both to the owner before registering.
+- *Under D-L1-7 (for Phase 3), what the draft asks of a verifier:* the label is
+  keyed on the (URL, key) pair, never the key alone; only a `verified` outcome
+  is labelled, and `invalid` and `unverified` stay distinct and unlabelled; a
+  directory fetch is `safeFetch`, 200 only, no redirects, byte- and
+  key-count-capped and deadline-bound; a failed fetch never evicts a cached
+  directory, and a negative cache entry lives at most five minutes. Inbound
+  accepts both the Dictionary and the legacy String form, because both are on
+  the wire. The five-minute ceiling and accepting both forms are choices, not
+  requirements of the draft, and Phase 3 should put them to the owner.
 
 ## Library decision, by risk review (sub-phase 0.3)
 

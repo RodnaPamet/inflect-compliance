@@ -238,12 +238,15 @@ makes a refusal visible either way.
       authority. The draft's four Ed25519 vectors (thumbprint, both request
       forms, the signed directory) reproduce byte for byte on `node:crypto`.
 - [x] 0.2 D-L1-5, D-L1-6 and D-L1-7 adopted by the owner on 2026-11-11 at
-      their defaults: the deployment's identity, never a tenant's; honest
-      conduct (named User-Agent, bot page, robots.txt and crawl directives,
-      the operator's registration after Phase 2); inbound a label only, with
-      an open directory fetch, cached and capped. The note records what the
-      draft adds to D-L1-7 for Phase 3 (lookup on the URL-and-key pair, three
-      distinct outcomes, a failed fetch never evicts a cached directory).
+      their defaults, and only those: one Ed25519 key per deployment, never
+      per tenant; named User-Agent, public bot page, robots.txt honoured,
+      Cloudflare registration by the operator after Phase 2; inbound a label
+      only, with an open directory fetch, cached and capped. The note lists
+      what the draft and Cloudflare's policy add (crawl directives, lookup on
+      the URL-and-key pair, three distinct outcomes, a failed fetch never
+      evicting a cached directory) as proposals for the owner, not as part of
+      what was adopted. The master decision table's rows are the coordinator's
+      edit and are not made here.
 - [x] 0.3 Library decision, by risk review (G5), 2026-11-11: **sign in-house
       on `node:crypto`**; `web-bot-auth@0.2.0` (Apache-2.0, 0.x, one npm
       maintainer, "not audited") is an exactly pinned devDependency used only
