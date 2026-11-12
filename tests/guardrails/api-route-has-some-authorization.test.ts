@@ -388,6 +388,8 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /verifyPlatformApiKey/ },
     { handler: 'api/admin/tenants/[slug]/transfer-ownership/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /verifyPlatformApiKey/ },
+    { handler: 'api/admin/tenants/[slug]/plan/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyPlatformApiKey/ },
     // The PLATFORM-wide agent kill switch. Not a missing gate and not a
     // deferral: `requirePermission` resolves a TENANT role, so there is no key
     // it could check for "stop every agent in the deployment" — and no tenant

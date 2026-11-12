@@ -449,6 +449,10 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: transfer-ownership — tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/tenants/[slug]/plan/route.ts',
+        reason: 'Platform-admin-key-gated: a tenant\'s billing plan is set by the platform operator, never by the tenant (owner decision 2026-11-12).',
+    },
+    {
         relPath: 'api/admin/diagnostics/route.ts',
         reason: 'Platform-admin-key-gated: process/runtime diagnostics — server-wide, with no tenant dimension, so tenant-scope does not apply.',
     },
