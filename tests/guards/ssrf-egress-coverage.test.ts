@@ -117,15 +117,18 @@ const SINKS: { file: string; reason: string; noBareFetchOf: string }[] = [
         noBareFetchOf: 'fetch(cardUrl',
     },
     {
-        file: 'src/app-layer/services/vendor-monitoring/tls-provider.ts',
+        // Web Bot Auth Phase 2: the bot seam. The vendor monitor's TLS grade
+        // requests a vendor domain anybody who can edit a vendor types, from
+        // inside the deployment, every night; since Phase 2 it does so only
+        // through `botFetch` (held by BOT_SEAM_CALLERS below), and `botFetch`
+        // is `safeFetch` plus a User-Agent and a signature.
+        file: 'src/lib/web-bot-auth/bot-fetch.ts',
         reason:
-            "The vendor monitor's TLS grade requests a vendor domain anybody who " +
-            'can edit a vendor types, from inside the deployment, every night. It ' +
-            'fetched it through fetchWithRetry, the plain global fetch, until the ' +
-            'Web Bot Auth roadmap found it (Phase 0.5).',
-        // The pre-fix call. Its replacement follows redirects one hop at a
-        // time, and each hop is a fresh safeFetch.
-        noBareFetchOf: 'fetchWithRetry(',
+            "The deployment's bot seam: every unattended request to a third-party " +
+            'website, the tenant-entered vendor domain first among them. The TLS ' +
+            'grade fetched that domain through fetchWithRetry, the plain global ' +
+            'fetch, until the Web Bot Auth roadmap found it (Phase 0.5).',
+        noBareFetchOf: 'fetch(url',
     },
     // The PII detector's Presidio provider was an entry here until the owner's
     // G6 amendment (2026-11-12): it is an IN-DEPLOYMENT service, and safeFetch
@@ -235,6 +238,35 @@ const clientsWithTheirOwnFetch = () => MCP_CLIENTS.filter((f) => ANY_FETCH_CALL.
 
 const clientsNotUsingTheTransport = () =>
     MCP_CLIENTS.filter((f) => !/from '@\/lib\/mcp\/wire-transport'/.test(read(f)));
+
+/**
+ * The bot seam's callers (Web Bot Auth Phase 2) reach the network ONLY through
+ * `botFetch`: no other fetch call of any name, and the seam imported and
+ * called. The TLS grade was a SINKS entry of its own until Phase 2 moved its
+ * requests onto the seam; this keeps a bare `safeFetch` (unsigned, without the
+ * honest User-Agent) or a plain `fetch` from coming back beside it.
+ */
+const BOT_SEAM_CALLERS: readonly string[] = ['src/app-layer/services/vendor-monitoring/tls-provider.ts'];
+
+const withoutBotFetchCalls = (code: string) => code.replace(/\bbotFetch\s*\(/g, 'BOT_SEAM(');
+
+const botCallersWithAnotherFetch = () =>
+    BOT_SEAM_CALLERS.filter((f) => ANY_FETCH_CALL.test(withoutBotFetchCalls(codeOf(f))));
+
+const botCallersNotUsingTheSeam = () =>
+    BOT_SEAM_CALLERS.filter(
+        (f) => !/from '@\/lib\/web-bot-auth\/bot-fetch'/.test(read(f)) || !/\bbotFetch\s*\(/.test(codeOf(f)),
+    );
+
+describe('SSRF — the bot seam callers reach the network only through botFetch', () => {
+    it('no caller contains a fetch call other than botFetch', () => {
+        expect(botCallersWithAnotherFetch()).toEqual([]);
+    });
+
+    it('every caller imports and calls botFetch', () => {
+        expect(botCallersNotUsingTheSeam()).toEqual([]);
+    });
+});
 
 describe('SSRF — the MCP clients reach the network only through the shared transport', () => {
     it('neither client contains a fetch call of its own', () => {

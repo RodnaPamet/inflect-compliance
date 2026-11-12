@@ -365,11 +365,19 @@ describe('measured spend breaker', () => {
         expect(run('usd', '1000000', '200000').stdout.trim()).toBe('2.0000');
     });
 
-    it('lets a role start only while spent plus a full planned role stays within the cap', () => {
+    it("lets a role start only while spent plus a full planned role stays within garak's share", () => {
+        // Share USD 2.50 (evals/cost-meter/shares.json); a planned role is 40 x USD 0.03 = 1.20.
+        expect(run('cap').stdout.trim()).toBe('2.50');
         expect(run('may-continue', '0', '0').status).toBe(0);
-        expect(run('may-continue', '3000000', '0').status).toBe(0);
-        expect(run('may-continue', '3600000', '0').status).toBe(1);
+        expect(run('may-continue', '1300000', '0').status).toBe(0);
+        expect(run('may-continue', '1300001', '0').status).toBe(1);
         // A withheld (egress-refused) turn is charged at the planned cost.
-        expect(run('may-continue', '3000000', '0', '20').status).toBe(1);
+        expect(run('may-continue', '400000', '0', '31').status).toBe(1);
+        expect(run('may-continue', '400000', '0', '30').status).toBe(0);
+    });
+
+    it('the editor role starts after an owner role that cost exactly what was planned', () => {
+        // 40 planned turns of 20,000 in / 2,000 out = USD 1.20 spent.
+        expect(run('may-continue', String(40 * 20000), String(40 * 2000)).status).toBe(0);
     });
 });

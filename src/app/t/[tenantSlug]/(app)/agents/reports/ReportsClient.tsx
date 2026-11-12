@@ -15,6 +15,7 @@ import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
+import type { BehaviourReportView } from './behaviour/BehaviourTab';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { ExportPackButton } from './ExportPackButton';
@@ -28,6 +29,11 @@ import { Metric, type DefinitionView, type MeasureView } from './Metric';
  * loosened the catch-all for every tenant page to make room for one tab.
  */
 const HarnessTab = dynamic(() => import('./harness/HarnessTab').then((m) => m.HarnessTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
+
+/** Loaded on demand for the same reason: the behaviour view is not the default tab either. */
+const BehaviourTab = dynamic(() => import('./behaviour/BehaviourTab').then((m) => m.BehaviourTab), {
     loading: () => <SkeletonCard lines={4} />,
 });
 
@@ -171,11 +177,14 @@ export type HarnessTabProps = ReportsCommonProps & {
     estateHealth: HarnessEstateHealthView;
 };
 
-export function ReportsClient(props: PackTabProps | HarnessTabProps) {
+/** The behaviour-fingerprint anomalies (Morpheus 1.3), read by `listAgentBehaviourAnomalies` under the register key. */
+export type BehaviourTabProps = ReportsCommonProps & { tab: 'behaviour'; behaviour: BehaviourReportView };
+
+export function ReportsClient(props: PackTabProps | HarnessTabProps | BehaviourTabProps) {
     const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport, canSetOrphanPass = false } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
-    const tab = props.tab === 'harness' ? 'harness' : 'pack';
+    const tab = props.tab === 'harness' ? 'harness' : props.tab === 'behaviour' ? 'behaviour' : 'pack';
 
     return (
         <DashboardLayout
@@ -230,10 +239,25 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps) {
                             href: tenantHref('/agents/reports?tab=harness'),
                             id: 'reports-tab-harness',
                         },
+                        // The register key's view (the fingerprint route's
+                        // key): not offered to a view-key reader, whom the
+                        // page would answer with the pack.
+                        ...(canInvestigate
+                            ? [
+                                  {
+                                      value: 'behaviour',
+                                      label: t('reports.tabBehaviour'),
+                                      href: tenantHref('/agents/reports?tab=behaviour'),
+                                      id: 'reports-tab-behaviour',
+                                  },
+                              ]
+                            : []),
                     ]}
                 />
             </div>
-            {props.tab === 'harness' ? (
+            {props.tab === 'behaviour' ? (
+                <BehaviourTab view={props.behaviour} />
+            ) : props.tab === 'harness' ? (
                 <HarnessTab
                     view={props.harness}
                     scannerKeys={props.scannerKeys}

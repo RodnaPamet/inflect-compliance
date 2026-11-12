@@ -20,13 +20,17 @@ name: garak (LLM red-team, nightly)
 #     the gate ADMITS fails the step (the role list would then be wrong).
 #   - MODEL (D-EV-1, owner, 2026-11-11): Haiku-class (AGENT_FLUE_MODEL below)
 #     through the DEDICATED CI key in the repository secret
-#     GARAK_CI_ANTHROPIC_KEY, capped at USD 5 per night, seed data only. With
-#     the secret absent the job SKIPS cleanly (first step) and says so.
+#     GARAK_CI_ANTHROPIC_KEY, seed data only. The USD 5 nightly cap is shared
+#     with Ragas (D-EV-2): garak meters against its SHARE from the shared cost
+#     meter, evals/cost-meter/ — USD 2.50, the split the owner decided
+#     under D-EV-11 (2026-11-12). With the secret
+#     absent the job SKIPS cleanly (first step) and says so.
 #   - SPEND, three layers, each in config: garak's own prompt cap
 #     (.garak/config.yaml), the proxy's per-role wire cap and the product's
 #     per-tenant daily AI quota (both = .garak/budget.json), and the measured
-#     breaker between roles. tests/guardrails/garak-workflow-pinning.test.ts
-#     holds every number to budget.json.
+#     breaker between roles against garak's share (priced and capped by
+#     evals/cost-meter/). tests/guardrails/garak-workflow-pinning.test.ts
+#     holds every number to budget.json and the meter.
 #   - NON-BLOCKING until the date below, under a dated marker that
 #     tests/guardrails/garak-workflow-pinning.test.ts PARSES and compares to
 #     today (the DAST lesson: a marker nobody parses never turns red).
@@ -102,7 +106,7 @@ jobs:
       # per day (src/app-layer/ai/risk-assessment/rate-limiter.ts) =
       # budget.json maxRequestsPerNight. The per-user burst limit is raised so
       # garak is not throttled into retries.
-      AI_RISK_DAILY_QUOTA: '100'
+      AI_RISK_DAILY_QUOTA: '80'
       AI_RISK_USER_RPM: '60'
       TENANT_SLUG: acme-corp
 
@@ -114,10 +118,18 @@ jobs:
       - name: Check for the garak CI key
         id: key
         env:
-          KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+          KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
+          ENABLED: ${{ vars.GARAK_ENABLED }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ -z "$KEY" ]; then
-            echo "::notice::GARAK_CI_ANTHROPIC_KEY is not set; the garak nightly is skipped (owner action in docs/ai-architecture/garak.md)."
+          # Owner decision 2026-11-12: the nightly is OFF unless the repo
+          # variable GARAK_ENABLED is 'true' (GitHub -> Settings -> Variables ->
+          # Actions). A manual dispatch always runs, so a person can run it once.
+          if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
+            echo "::notice::The garak nightly is switched off (repository variable GARAK_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEY" ]; then
+            echo "::notice::neither GARAK_CI_ANTHROPIC_KEY nor ANTHROPIC_API_KEY is set; the garak run is skipped (owner action in docs/ai-architecture/garak.md)."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -161,7 +173,7 @@ jobs:
         if: steps.key.outputs.present == 'true'
         env:
           NODE_ENV: production
-          ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           npm start > /tmp/app.log 2>&1 &
           echo $! > /tmp/app.pid
@@ -308,7 +320,7 @@ jobs:
           read -r tin tout < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' \
             -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
           usd="$(node .garak/spend.mjs usd "$tin" "$tout")"
-          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against a cap of \$$(node -p 'require("./.garak/budget.json").nightlyCapUsd')" >> "$GITHUB_STEP_SUMMARY"
+          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against garak's share of \$$(node .garak/spend.mjs cap) (evals/cost-meter/shares.json)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload garak reports + records
         if: always() && steps.key.outputs.present == 'true'

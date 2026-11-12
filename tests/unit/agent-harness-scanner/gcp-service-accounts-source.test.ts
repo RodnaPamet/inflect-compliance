@@ -14,12 +14,12 @@
  *      `iam.googleapis.com`, and the one token POST.
  *   4. FAIL CLOSED. Every way the read can stop is INCOMPLETE with the
  *      contract's reason, and what was read before it stopped is kept.
- *   5. END TO END, the signed report speaks `/3` and verifies with the ingest's
+ *   5. END TO END, the signed report speaks `/4` and verifies with the ingest's
  *      own verifier, and the key's private half is nowhere in it.
  */
 import { createVerify, generateKeyPairSync } from 'crypto';
 
-import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V4, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { credentialEnvNames, parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { createSourceWire, JWT_BEARER_GRANT, type FetchLike } from '../../../packages/agent-harness-scanner/src/http';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
@@ -322,7 +322,7 @@ describe('4. fail closed, never silently', () => {
     });
 });
 
-describe('5. end to end: configuration, and a signed /3 report the ingest verifies', () => {
+describe('5. end to end: configuration, and a signed /4 report the ingest verifies', () => {
     const config = (overrides: Record<string, unknown> = {}) =>
         parseScannerConfig({
             estate: 'acme-gcp',
@@ -339,7 +339,7 @@ describe('5. end to end: configuration, and a signed /3 report the ingest verifi
         expect(() => config({ keyEnv: PRIVATE_PEM })).toThrow(/credential value/);
     });
 
-    it('signs a /3 report the ingest verifies, with the key\'s private half nowhere in it', async () => {
+    it('signs a /4 report the ingest verifies, with the key\'s private half nowhere in it', async () => {
         const signing = generateKeyPairSync('ed25519');
         const fake = googleFake(fixture());
         const lines: string[] = [];
@@ -358,7 +358,7 @@ describe('5. end to end: configuration, and a signed /3 report the ingest verifi
         expect(verifyAndParseHarnessReport(raw, [rawPublicKeyHex(signing.publicKey)])).toMatchObject({
             ok: true,
             complete: true,
-            body: { contract: HARNESS_CONTRACT_V3 },
+            body: { contract: HARNESS_CONTRACT_V4 },
         });
         expect(body.population.sources).toEqual([{ kind: 'gcp-sa', status: 'COMPLETE', rows: 5 }]);
         expect(body.agents.map((a) => a.discoveredVia)).toEqual([['gcp-sa'], ['gcp-sa'], ['gcp-sa']]);

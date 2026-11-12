@@ -468,6 +468,23 @@ const config = [
         rules: { 'local/vector-store-single-seam': 'off' },
     },
     {
+        // ── One bot seam for requests to third-party websites (Web Bot Auth Phase 2) ──
+        //
+        // `src/lib/web-bot-auth/bot-fetch.ts` is `safeFetch` plus the bot's
+        // honest User-Agent plus the deployment's request signature. So no
+        // other file under `src/` may load the request signer, or carry the
+        // bot's product token in a literal: a signature made elsewhere could
+        // ride a request that skipped the SSRF checks.
+        // See eslint-rules/rules/web-bot-auth-single-seam.js.
+        files: ['src/**/*.ts', 'src/**/*.tsx'],
+        rules: { 'local/web-bot-auth-single-seam': 'error' },
+    },
+    {
+        // The seam and the signer it calls.
+        files: ['src/lib/web-bot-auth/bot-fetch.ts', 'src/lib/web-bot-auth/sign.ts'],
+        rules: { 'local/web-bot-auth-single-seam': 'off' },
+    },
+    {
         // ── The engine-neutral tool core imports no engine (Step 0a) ──
         //
         // `src/lib/agentic/engine-tools/` is what every engine Inflect runs
@@ -737,6 +754,8 @@ const config = [
             'src/app-layer/usecases/agent-canvas-projection.ts',
             'src/lib/processes/agent-view/**/*.{ts,tsx}',
             'src/components/processes/agent-view/**/*.{ts,tsx}',
+            'src/lib/processes/agent-flow/**/*.{ts,tsx}',
+            'src/components/processes/agent-flow/**/*.{ts,tsx}',
             'src/app/t/**/processes/agents/**/*.{ts,tsx}',
         ],
         rules: {

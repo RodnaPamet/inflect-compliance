@@ -191,12 +191,31 @@ export async function observeToolCall(
     }
 }
 
-/** Create the latch row if this agent has never been observed. */
-async function ensureLatchRow(tenantId: string, agentId: string): Promise<void> {
-    await prisma.$executeRaw`
+/**
+ * Create the latch row if this agent has never been observed — THE insert site
+ * of `AgentCircuitBreaker`. `createdAt` and `baselineEpoch` both take their
+ * column default from this one statement, so a row nobody has re-baselined has
+ * `baselineEpoch = createdAt` exactly (`personSetBaselineEpoch` relies on it).
+ *
+ * Takes the client so a caller already inside a tenant transaction (the
+ * fingerprint's "accept as new normal", which must move the epoch on a row it
+ * may have to create first) inserts in that transaction rather than beside it.
+ * `ON CONFLICT DO NOTHING`: idempotent, and never reopens or resets a row.
+ */
+export async function ensureBreakerRow(
+    db: Pick<PrismaTx, '$executeRaw'>,
+    tenantId: string,
+    agentId: string,
+): Promise<void> {
+    await db.$executeRaw`
         INSERT INTO "AgentCircuitBreaker" ("id", "tenantId", "agentId", "updatedAt")
         VALUES (gen_random_uuid()::text, ${tenantId}, ${agentId}, NOW())
         ON CONFLICT ("tenantId", "agentId") DO NOTHING`;
+}
+
+/** Create the latch row if this agent has never been observed. */
+async function ensureLatchRow(tenantId: string, agentId: string): Promise<void> {
+    await ensureBreakerRow(prisma, tenantId, agentId);
 }
 
 /**

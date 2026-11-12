@@ -81,6 +81,16 @@ flowchart LR
   holds every ground-truth passage to a verbatim substring of the text the
   seed publishes; `tests/unit/rag-evaluation-record.test.ts` holds the
   recompute. No record exists yet: nothing retrieves.
+- **The record matches the pgvector store, and the CI spend is metered from
+  one place** (sub-phase 0.6). The retriever revision is dense-only
+  (`dimensions`, `indexParams`, no `alpha`); a record states its `spendUsd`,
+  its `status` and the hash of the price table it was metered under, and the
+  retrieval floor figures are recomputed from per-case probes.
+  `evals/cost-meter/` holds the pinned price table, the per-job shares
+  (garak and Ragas, USD 2.50 each: the split the owner decided under D-EV-11
+  on 2026-11-12) and the meter garak's between-role breaker
+  already reads; `tests/guardrails/eval-cost-meter-shares.test.ts` refuses
+  shares above USD 5.00 and an unpriced model.
 - **Python runs nowhere in the app image** (G5). An eval harness in Python is
   a CI image, like the garak and ZAP containers.
 
@@ -154,16 +164,40 @@ shape so the mount gate can consume it.
       cases from it, and reconcile with the 200-pair set
       [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 0.4 authors —
       one seed set for both roadmaps, not two that drift.
-- [ ] 0.6 Align the record with the pgvector store and the shared spend cap
+- [x] 0.6 Align the record with the pgvector store and the shared spend cap
       (from the 2026-11-11 knowledge re-plan): the store is dense-only, so
       `alpha` leaves the retriever revision and `dimensions` and
-      `indexParams` join it; the judge revision gains a `priceTableHash`;
-      the record gains `spendUsd`, a `status` of `COMPLETE` or
-      `BUDGET_EXHAUSTED` (which never passes a floor) and the two retrieval
-      floor figures (recall@10 against exact search, p95 latency). Build
+      `indexParams` join it (`hnsw` with distance, `m`, `efConstruction`,
+      `efSearch`, `iterativeScan` and `maxScanTuples`, or `exact`); the judge
+      revision gains a `priceTableHash` (SHA-256 of the table file's exact
+      bytes); the record gains `spendUsd` (at most the decided USD 5), a
+      `status` of `COMPLETE` or `BUDGET_EXHAUSTED` — which may leave cases
+      unanswered, lists them, and never passes a floor (`floor.eligible` is
+      false whatever its figures) — and the two retrieval floor figures,
+      **recomputed rather than stored**: each case carries a raw
+      `retrievalProbe` (the ANN top-10, the exact top-10, the ANN latency),
+      and the check derives recall@10 against exact search (mean per-case
+      overlap, `null` over no exact list) and the nearest-rank p95 latency.
+      A stored `retrievalFloors` is an unknown key, as a stored pass rate is.
+      Given the meter's facts, the check refuses a record priced under another
+      table (`PRICE_TABLE_MISMATCH`), by an unpriced judge
+      (`MODEL_NOT_PRICED`) or over the job's share (`SPEND_OVER_SHARE`).
       `evals/cost-meter/`, shared with [`garak.md`](./garak.md): a pinned
-      price table, a pre-call check against the job's share, and a guard
-      refusing shares that sum above USD 5.00.
+      price table keyed by model id (`prices.json`), the shares
+      (`shares.json`, garak and Ragas USD 2.50 each, the split the owner
+      decided under D-EV-11 on 2026-11-12), and `meter.mjs`, which
+      reserves each call at counted input plus `max_tokens` before it is sent,
+      refuses the call that could pass the share, settles to reported usage
+      (keeping the worst case when none comes back or it cannot be read), and refuses shares that
+      sum above the cap, a cap above USD 5.00, or a model the table does not
+      price. garak's between-role breaker (`.garak/spend.mjs`) now prices and
+      caps from it; `.garak/budget.json` holds no price or cap of its own, and
+      garak's planned night is cut to fit its share (4 prompts per probe, 40
+      per role, 80 a night: USD 2.40 at the planned turn).
+      See `docs/implementation-notes/2026-11-12-ragas-cost-meter.md`, which
+      also lists what the meter does not yet cover (the per-request reservation
+      at garak's proxy, and the retriever revision key in
+      `src/lib/ai/embeddings/revision.ts`, which still carries `alpha`).
 
 **Prompt.**
 ```text

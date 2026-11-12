@@ -69,6 +69,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 // The shell's tabs and other actions fetch on mount; none is under test here.
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/OverviewTab', () => ({ OverviewTab: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ServicePrincipalLinkCard', () => ({ ServicePrincipalLinkCard: () => null }));
+jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/BehaviourFingerprintCard', () => ({ BehaviourFingerprintCard: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/OwnershipTransferCard', () => ({ OwnershipTransferCard: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentKillSwitchAction', () => ({
     AgentKillSwitchAction: () => null,

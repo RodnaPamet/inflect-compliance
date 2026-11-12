@@ -1674,6 +1674,26 @@ export function recordAgentFingerprintPass(attrs: {
     }
 }
 
+let _fingerprintBaselineAccepted: Counter | null = null;
+
+/**
+ * A person accepted an agent's changed behaviour as its new normal from the
+ * fingerprint panel (Morpheus 1.3) — `agentic.agent_fingerprint.baseline_accepted`.
+ * Read beside `agentic.agent_fingerprint.days{verdict="anomalous"}`: a
+ * deployment that accepts nearly every anomaly has thresholds tuned to fire on
+ * ordinary work, which is how this control would die, and it is measured
+ * rather than assumed (the breaker's close counter makes the same argument).
+ */
+export function recordAgentFingerprintBaselineAccepted(): void {
+    if (!_fingerprintBaselineAccepted) {
+        _fingerprintBaselineAccepted = getMeter().createCounter('agentic.agent_fingerprint.baseline_accepted', {
+            description: 'Agent behaviour-fingerprint anomalies a person accepted as the new normal',
+            unit: '1',
+        });
+    }
+    _fingerprintBaselineAccepted.add(1);
+}
+
 // ── Internal audit's sampling of the auditor's workpapers (#3677) ──────────
 
 let _workpaperReviewSweep: Counter | null = null;
@@ -1916,6 +1936,15 @@ let _vendorTlsFetch: Counter | null = null;
 export function recordVendorTlsFetch(attrs: {
     provider: string;
     outcome: 'GRADED' | 'REFUSED' | 'UNREACHABLE' | 'BLOCKED';
+    /**
+     * Web Bot Auth Phase 2. `ROBOTS` when the site's robots.txt disallowed the
+     * monitor (its stated policy, not its door), else `NONE`; and whether the
+     * requests were signed. Phase 2.5 measures the REFUSED share with
+     * `reason=NONE`, signed against the unsigned baseline. Still two small
+     * closed sets: no vendor or tenant label.
+     */
+    reason?: 'ROBOTS' | 'NONE';
+    signed?: boolean;
 }): void {
     if (!_vendorTlsFetch) {
         _vendorTlsFetch = getMeter().createCounter('vendor_monitor.tls_fetch', {
@@ -1923,5 +1952,10 @@ export function recordVendorTlsFetch(attrs: {
             unit: '1',
         });
     }
-    _vendorTlsFetch.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+    _vendorTlsFetch.add(1, {
+        provider: attrs.provider,
+        outcome: attrs.outcome,
+        reason: attrs.reason ?? 'NONE',
+        signed: attrs.signed ? 'true' : 'false',
+    });
 }

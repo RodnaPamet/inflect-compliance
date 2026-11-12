@@ -31,7 +31,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 flowchart LR
   P0{{"Phase 0 · read and decide<br/>D-L1-5, D-L1-6, D-L1-7<br/>monitor on safeFetch: landed<br/>refused vs unreachable"}}:::gate
   P1["Phase 1 · key and directory<br/>one deployment Ed25519 key<br/>signed JWKS at .well-known<br/>absent key builds nothing"]:::todo
-  P2["Phase 2 · sign the monitor<br/>one bot seam, honest UA<br/>bot page, robots.txt"]:::todo
+  P2["Phase 2 · sign the monitor<br/>one bot seam, honest UA<br/>bot page, robots.txt: landed<br/>registration open"]:::todo
   REG["Operator registers<br/>Cloudflare Verified Bots<br/>method: Request Signature"]:::gate
   P3["Phase 3 · verify at the door<br/>trust center labels signed agents<br/>never authorization"]:::todo
   REC["Conformance record<br/>reference verifier + vectors"]:::eval
@@ -408,27 +408,61 @@ test against our own parser), D-L1-5 (the tenant-free test).
 
 ### Phase 2 — Sign the vendor monitor, and say who it is
 
-**Sub-phases.**
-- [ ] 2.1 One seam, `botFetch(url, init)`: `safeFetch`, then `signRequest`,
-      then the User-Agent from D-L1-6, which names the bot and links its
-      page. The TLS and breach providers use it. An ESLint rule in
-      `eslint-rules/` refuses a call to `signRequest`, or a bot User-Agent
-      literal, outside the seam.
-- [ ] 2.2 A public page describing the bot at a stable URL on the operator's
-      origin: what it fetches (one homepage request per monitored vendor per
-      day; the HIBP catalogue), when, from where, the directory URL, and how
-      a site owner contacts the operator or opts out.
-- [ ] 2.3 `robots.txt`, per D-L1-6: fetched once per domain per sweep through
-      the same seam and honoured for the monitor's token. A disallowed site
-      records `REFUSED` with reason `ROBOTS`, never a grade.
+**Sub-phases.** The first slice landed on 2026-11-12
+(`docs/implementation-notes/2026-11-12-web-bot-auth-sign-monitor.md`); what
+it left open is named on each line.
+- [x] 2.1 One seam, `botFetch(url, init)` (`src/lib/web-bot-auth/bot-fetch.ts`):
+      `safeFetch`, then `signRequest` (`sign.ts`, closing 1.2's open item:
+      `@method`, `@authority`, `@path`, `signature-agent` in the legacy String
+      form naming the directory URL, `expires = created + 60`, a fresh 64-byte
+      nonce, `tag="web-bot-auth"`, GET and HEAD only, every hop and retry
+      signed on its own), then the User-Agent
+      `InflectCompliance-VendorMonitor/1.1 (+<APP_URL>/bots/vendor-monitor)`.
+      No key, or a refused one, sends unsigned as before; the previous key
+      never signs. The TLS grade's requests all go through it, and
+      `tests/guards/ssrf-egress-coverage.test.ts` holds that its file calls no
+      other fetch. `local/web-bot-auth-single-seam` refuses a load of
+      `sign.ts`, or a literal carrying the bot's token, anywhere under `src/`
+      but the seam. **Open:** the breach provider sends the bot's User-Agent
+      (imported from the seam) but stays unsigned on `fetchWithRetry` to the
+      fixed HIBP host.
+- [x] 2.2 The public page `/bots/vendor-monitor` (exact path in
+      `PUBLIC_PATH_EXACT`, en and bg): what the monitor fetches (robots.txt,
+      one homepage GET, the HIBP query), its schedule (the daily sweep, plus
+      on-demand checks, once per monitoring organisation), the User-Agent, the key
+      directory and current `keyid` when the deployment signs, and the
+      robots.txt opt-out. Every fact is read from the seam. It names no
+      tenant and reads no row. **Open:** a contact address of the operator's
+      own; the page points to the site's published contact details.
+- [x] 2.3 `robots.txt` per D-L1-6, RFC 9309 (`robots.ts`): read through the
+      seam before the homepage, once per origin per grade (a redirect to
+      another origin reads that origin's too), and every URL requested — each
+      redirect hop, same-origin ones included — is judged by its own path; groups by the product token,
+      falling back to `*`; longest match wins, allow wins a tie; 500 KiB read.
+      A disallow is `REFUSED` with `refusalReason: 'ROBOTS'` and no homepage
+      request; a 4xx restricts nothing; a 5xx or network failure requests
+      nothing (complete disallow) and is `UNREACHABLE`. The reason reaches
+      `vendor_monitor.tls_fetch{reason,signed}` and the sweep's audit row.
+      `crawl-delay` is not honoured: the decisions note proposed it to the
+      owner and it has not been adopted. **Open:** a column for the reason,
+      so the vendor page can say the site opted out.
 - [ ] 2.4 Operator act: register the directory with Cloudflare Verified Bots
       (verification method "Request Signature", the directory URL) and with
-      any other verifier that asks. A runbook section in
-      `docs/vendor-monitoring.md`; the registration is not code and not
-      automated.
-- [ ] 2.5 Measure: the `REFUSED` share for 14 days after registration against
-      Phase 0's baseline, recorded in the phase's implementation note,
-      whatever the result.
+      any other verifier that asks. **Landed:** the runbook section
+      "Registering with Cloudflare Verified Bots" in
+      `docs/vendor-monitoring.md`. **Open:** the registration itself, and
+      before it the directory's response signature must also cover
+      `content-digest`, which Cloudflare's validator requires and the Phase 1
+      directory does not yet carry.
+- [ ] 2.5 Measure: the `REFUSED` share (`reason="NONE"`) for 14 days after
+      registration against Phase 0's baseline, recorded in the phase's
+      implementation note, whatever the result.
+- [x] The request half of the conformance record (G11, gates signed
+      crawling): `evals/web-bot-auth/records/2026-11-12-request-signing.json`,
+      recomputed by `tests/unit/web-bot-auth/request-signing-conformance.test.ts`.
+      The pinned devDependency `web-bot-auth@0.2.0` verifies our request and
+      refuses it at another path, authority or method, with another
+      `Signature-Agent`, after its window and under another key.
 
 **Prompt.**
 ```text

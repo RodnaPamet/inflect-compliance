@@ -8,7 +8,9 @@
  * check, NOT the paid HIBP domain-search API. It rides the shared
  * `fetchWithRetry` seam.
  */
+import { env } from '@/env';
 import { fetchWithRetry } from '@/lib/http/fetch-with-retry';
+import { vendorMonitorUserAgent } from '@/lib/web-bot-auth/bot-fetch';
 import type { BreachProvider, BreachSignal, BreachRecord } from './types';
 
 /**
@@ -54,7 +56,11 @@ export class HibpDomainBreachProvider implements BreachProvider {
         try {
             const res = await fetchWithRetry(
                 `${this.endpoint}?domain=${encodeURIComponent(target)}`,
-                { headers: { 'User-Agent': 'InflectCompliance-VendorMonitor/1.0' } },
+                // The bot's honest User-Agent, from the seam that owns it. Not
+                // signed: this is a fixed API host on `fetchWithRetry`, not a
+                // website the monitor crawls (Web Bot Auth Phase 2 signs the
+                // TLS grade's requests; moving this one onto `botFetch` is open).
+                { headers: { 'User-Agent': vendorMonitorUserAgent(env.APP_URL) } },
                 { timeout: 8000, maxRetries: 3, retryDelay: 1000 },
             );
             const raw = (await res.json()) as Array<{ Name?: string; Title?: string; Domain?: string; BreachDate?: string }>;

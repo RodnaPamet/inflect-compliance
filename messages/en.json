@@ -6499,7 +6499,53 @@
         }
       },
       "autonomyLevel": "Level {level}",
-      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have."
+      "viewOnlyTabs": "You can read this agent's Overview and Runs. The other tabs need the agent register permission, which Owners, Admins and AI admins have.",
+      "fingerprint": {
+        "heading": "Behaviour fingerprint",
+        "intro": "A nightly detector compares each day of this agent’s activity — counts only, never content — with its own previous days. A feature at z {finding} or above raises a finding; at z {latch} the circuit breaker can be latched. Judgement starts after {days} active days.",
+        "offDeployment": "The behaviour detector is not turned on for this deployment, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "offTenant": "The behaviour detector is on for this deployment but not for this workspace, so nothing is being compared. No anomalies here means nobody looked, not that the agent is steady.",
+        "unscored": "The detector is on, but this agent has not been scored yet: it has had no activity on a day the detector has scored.",
+        "lastScored": "Last scored day: {day} (UTC).",
+        "lastLearning": "Last scored day: {day} (UTC). Still learning — {have} of {need} baseline days.",
+        "epoch": "A person accepted a new baseline on {at}; days before it are not compared.",
+        "anomalyOn": "Anomaly on {day} · score {score}",
+        "latched": "Breaker latched",
+        "whyHeading": "Why",
+        "whyAria": "The features that drove the anomaly",
+        "whyLine": "{observed} against a baseline mean of {mean} (σ {sd}, z {z})",
+        "whyUnreadable": "The features that drove this anomaly could not be read.",
+        "moreAnomalies": "{count, plural, one {# earlier anomaly is} other {# earlier anomalies are}} listed on Agent reports → Behaviour anomalies.",
+        "noAnomalies": "No anomalies yet",
+        "breakerOpen": "The agent’s circuit breaker is open. Close it on the Circuit breaker tab, choosing whether the change was intended — that choice also decides this detector’s baseline.",
+        "acceptAction": "Accept as new normal",
+        "acceptTitle": "Accept this behaviour as the agent’s new normal?",
+        "acceptBody": "Both behaviour detectors — this nightly fingerprint and the hourly circuit breaker — discard the agent’s earlier baseline and re-learn from today. Until they have learned again, neither judges the agent. Use this only when the change was intended. The finding stays open until you close it.",
+        "acceptConfirm": "Accept new baseline",
+        "cancel": "Cancel",
+        "accepted": "New baseline accepted. Both detectors re-learn from today.",
+        "acceptFailed": "The new baseline could not be accepted.",
+        "loadError": "The behaviour fingerprint could not be loaded.",
+        "verdict": {
+          "LEARNING": "Learning",
+          "STEADY": "Steady",
+          "ANOMALOUS": "Anomalous"
+        },
+        "tier": {
+          "FINDING": "Finding",
+          "LATCH": "Latch threshold"
+        },
+        "feature": {
+          "readCalls": "Read calls",
+          "proposeCalls": "Propose calls",
+          "orchestrateCalls": "Orchestrate calls",
+          "activeHours": "Active hours",
+          "proposals": "Proposals",
+          "guardFlags": "Guard flags",
+          "modelCalls": "Model calls",
+          "tokens": "Tokens"
+        }
+      }
     },
     "mcp": {
       "title": "Agent credentials",
@@ -11439,7 +11485,13 @@
       "tabPack": "Assessor pack",
       "tabHarness": "Harness matrix",
       "workpaperReviewHeading": "Internal audit’s re-performance of the auditor",
-      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement."
+      "workpaperReviewScope": "Internal audit re-performs {percent}% of the auditor agent’s workpapers. The agreement and disagreement rates count concluded reviews only: an unreviewed, indeterminate or unassigned workpaper is shown beside them and never counted as agreement.",
+      "tabBehaviour": "Behaviour anomalies",
+      "behaviourHeading": "Behaviour anomalies",
+      "behaviourScope": "Every agent-day the nightly fingerprint judged unlike the agent’s own baseline in the last {days} days (since {since}, UTC). Finding at z {finding}; latch threshold at z {latch}. Counts only, never content.",
+      "behaviourUnscored": "The detector is on, but it has not scored any agent in this workspace yet.",
+      "behaviourTruncated": "Only the newest {count} anomalies are shown; there are more in the window.",
+      "behaviourNone": "No anomalies in the window. The detector last scored a day on {day} (UTC)."
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
@@ -16502,6 +16554,28 @@
         "FROZEN": "Frozen",
         "EXPORTED": "Exported"
       }
+    },
+    "botPage": {
+      "metaTitle": "Inflect vendor monitor",
+      "title": "The Inflect vendor monitor",
+      "intro": "This automated client checks the public security posture of vendors that the organisations using this deployment have chosen to monitor. It reads; it never logs in, submits forms or writes anything.",
+      "identityHeading": "How to recognise it",
+      "userAgentLabel": "Every request carries this User-Agent:",
+      "robotsToken": "Its robots.txt product token is {token}.",
+      "fetchesHeading": "What it fetches",
+      "fetchesRobots": "https://<your domain>/robots.txt, read first. If it disallows the monitor, nothing else on that origin is requested.",
+      "fetchesHomepage": "One GET of your homepage, following at most five redirects, to read its response headers (HSTS, CSP and similar). The page body is never read or stored.",
+      "fetchesBreach": "One query to the public Have I Been Pwned breach catalogue about your domain. Your own site is not contacted for this.",
+      "schedule": "It runs once a day, at about 02:00 UTC, and also whenever an organisation that monitors your domain asks for a fresh check. Each organisation's check is separate, so a domain monitored by several organisations is checked once for each. A check reads robots.txt and then the homepage, retrying a failed request once.",
+      "origin": "Requests come from the servers of the deployment that operates this page. Which organisation monitors a vendor is never disclosed in a request.",
+      "signaturesHeading": "Signed requests",
+      "signaturesOn": "Requests to your site are signed with HTTP Message Signatures under the Web Bot Auth protocol, with an Ed25519 key that belongs to this deployment. The public keys are published at:",
+      "signaturesOff": "This deployment does not sign its requests at present. Recognise the monitor by its User-Agent.",
+      "directoryLabel": "Key directory:",
+      "keyidLabel": "Current key id:",
+      "optOutHeading": "Opting out",
+      "optOutBody": "Add this to your robots.txt. It is read again at the start of every check, so the monitor stops at its next check:",
+      "contact": "To reach the operator of this deployment about the monitor, use the contact details published on this site."
     }
   },
   "billing": {
@@ -16678,6 +16752,97 @@
       "VERSION_NOT_RUNNABLE": "Not offered: no run of this version is admitted. Only the approved version in force runs, and a version submitted for review only as a Test run.",
       "TEST_RUN_READ_ONLY": "Not offered: this version can run only as a Test run, which gets no propose tools.",
       "EXTERNAL_NOT_PROBED": "Not checked: a run offers an external server’s tool only after a live check of that server’s catalogue, which this view does not make."
+    },
+    "editFlow": "Edit the flow"
+  },
+  "agentFlow": {
+    "forbiddenTitle": "You cannot edit this agent’s flow",
+    "forbiddenMessage": "Editing an agent’s flow needs the agent register permission.",
+    "crumb": "Flow",
+    "title": "{name}: flow",
+    "noVersionBody": "This agent has no profile version yet. Write the first version on its Behaviour tab; a flow is then drawn on top of it.",
+    "openBehaviour": "Open the agent",
+    "openedVersion": "Version {version} · {status}",
+    "showDiff": "Compare with version {version} in force",
+    "backToEdit": "Back to editing",
+    "save": "Save as a new draft version",
+    "submit": "Submit for approval",
+    "unsaved": "The flow has changes. Saving writes a new draft version, which a second person approves before it runs.",
+    "noChangesBody": "No changes to the flow. Moving a step changes only the layout and writes no version.",
+    "saveFailed": "The flow could not be saved.",
+    "submitFailed": "The version could not be submitted.",
+    "palette": "Add a step",
+    "diffSame": "The flow is the same as the version in force.",
+    "change": {
+      "added": "Step added",
+      "removed": "Step removed",
+      "changed": "Step changed",
+      "edgeAdded": "Connection added",
+      "edgeRemoved": "Connection removed"
+    },
+    "selectStep": "Select a step to edit it.",
+    "advisoryOrder": "Connections are dashed: the engine reads the order as guidance and may deviate. The tools, propose steps and subagents a step names are enforced.",
+    "removeStep": "Remove step",
+    "kind": {
+      "read": "Read",
+      "propose": "Propose",
+      "synthesis": "Answer",
+      "subagent": "Subagent"
+    },
+    "detail": {
+      "noTool": "No tool chosen",
+      "noProfile": "No profile chosen",
+      "synthesis": "Writes the answer"
+    },
+    "field": {
+      "label": "What this step does",
+      "tool": "Tool",
+      "toolHint": "Only tools the agent is granted, of this step’s kind.",
+      "toolPlaceholder": "Choose a tool",
+      "noToolsHint": "The agent is granted no tool of this kind.",
+      "profile": "Profile",
+      "profilePlaceholder": "Choose an approved profile",
+      "noProfilesHint": "No other agent has an approved profile.",
+      "next": "Next steps",
+      "nextPlaceholder": "Choose the steps that follow"
+    },
+    "profileOption": "{name} (version {version})",
+    "diagnostic": {
+      "FLOW_EMPTY": "Add at least one step.",
+      "FLOW_INVALID": "The flow is not one this version of the product can read.",
+      "FLOW_CHECKPOINT_UNENFORCED": "A checkpoint step cannot be drawn yet: no engine stops a run at one.",
+      "FLOW_TOO_MANY_NODES": "A flow has too many steps for one run.",
+      "FLOW_DUPLICATE_KEY": "Two steps share a key.",
+      "FLOW_UNKNOWN_EDGE_END": "A connection names a step the flow does not have.",
+      "FLOW_SELF_EDGE": "A step cannot follow itself.",
+      "FLOW_DUPLICATE_EDGE": "Two connections join the same steps.",
+      "FLOW_CYCLE": "The flow loops back on itself, so it has no order to follow.",
+      "FLOW_TOOL_KIND_MISMATCH": "This tool is not of the step’s kind.",
+      "FLOW_NAMES_NO_TOOL": "A flow uses at least one tool.",
+      "FLOW_LABEL_EMPTY": "Say what this step does.",
+      "FLOW_STEP_NEEDS_TOOL": "Choose the tool this step uses.",
+      "FLOW_STEP_NEEDS_PROFILE": "Choose the profile this step hands work to.",
+      "TOOL_NOT_GRANTED": "The agent is not granted this tool.",
+      "FLOW_SUBAGENT_SELF": "A profile cannot hand work to itself.",
+      "FLOW_SUBAGENT_NOT_APPROVED": "This profile has no approved version in force.",
+      "FLOW_OUTPUT_KIND_CONFLICT": "This version answers only, so a propose step would never run."
+    },
+    "compiled": {
+      "title": "Compiled: what the engine receives",
+      "stale": "This is the saved version. Save the flow to see what its changes would send.",
+      "NOT_FOUND": "There is no saved version to compile.",
+      "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
+      "refused": {
+        "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
+        "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
+      },
+      "runAs": {
+        "RUN": "Version {version} is in force; a run receives this message.",
+        "TEST_RUN": "Version {version} is under review; a Test run receives this message.",
+        "NONE": "Version {version} has no run until it is submitted or approved; this is the message it would send."
+      },
+      "readOnly": "The run is offered read tools only.",
+      "offered": "offered"
     }
   }
 }

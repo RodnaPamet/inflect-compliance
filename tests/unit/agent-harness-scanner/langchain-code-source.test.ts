@@ -9,7 +9,7 @@
  *   3. Credentials appear by reference only, over the whole signed report.
  *   4. An unreadable location or an unresolvable definition is INCOMPLETE with
  *      a named reason; nothing is left out.
- *   5. Its reports verify under `inflect-agent-harness/3`, beside the other
+ *   5. Its reports verify under `inflect-agent-harness/4`, beside the other
  *      sources, with no change to the contract.
  */
 import { execFileSync } from 'child_process';
@@ -31,7 +31,7 @@ import {
     literalCredentials,
     writeCodeEstate,
 } from '../../helpers/agent-harness-code-fixtures';
-import { HARNESS_CONTRACT_V3, looksLikeSecret, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V4, looksLikeSecret, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
 import { parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
 import { rawPublicKeyHex } from '../../../packages/agent-harness-scanner/src/report';
@@ -363,7 +363,7 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
     });
 });
 
-describe('5. its reports verify under inflect-agent-harness/3, with no change to the contract', () => {
+describe('5. its reports verify under inflect-agent-harness/4', () => {
     it('every fixture estate in one signed report: `code` source, tools, references', async () => {
         const dir = estate(LANGCHAIN_PYTHON, LANGCHAIN_JS, LANGGRAPH);
         const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -382,7 +382,7 @@ describe('5. its reports verify under inflect-agent-harness/3, with no change to
             },
         });
         const verdict = verifyAndParseHarnessReport(raw, [rawPublicKeyHex(publicKey)]);
-        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V3 } });
+        expect(verdict).toMatchObject({ ok: true, complete: true, body: { contract: HARNESS_CONTRACT_V4 } });
         expect(body.population.sources).toEqual([{ kind: 'code', status: 'COMPLETE', rows: 4 }]);
         expect(body.agents.map((a) => a.discoveredId)).toEqual([
             'code:acme/ops/graph.py#oncall_agent',

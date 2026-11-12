@@ -193,6 +193,12 @@ const ADMIN_ONLY_ROUTES = [
     // agent may act. A narrower key would let somebody who cannot activate an
     // agent un-stop one that stopped itself.
     'admin/agents/[agentId]/circuit-breaker/route.ts',
+    // The behaviour fingerprint (Morpheus 1.3) — the nightly detector's findings
+    // for one agent, and the audited act of accepting a changed behaviour as its
+    // new normal. Same `admin.agent_registry` key as the circuit breaker, because
+    // the acceptance moves the breaker's own `baselineEpoch`: re-baselining is
+    // the authority to decide what the agent's normal is.
+    'admin/agents/[agentId]/behaviour-fingerprint/route.ts',
     // Tool-manifest pinning (OWASP ASI04) — the tenant's record of which tool
     // DEFINITION it has accepted, and the audited act of re-approving one that
     // changed. Same `admin.agent_registry` key as the register, and for the same

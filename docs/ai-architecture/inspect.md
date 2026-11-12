@@ -79,7 +79,10 @@ flowchart LR
 - **No Inspect, no `inspect_evals`.** The task set is defined (Phase 0):
   [`2026-11-11-inspect-first-tasks.md`](../implementation-notes/2026-11-11-inspect-first-tasks.md)
   holds the ten tasks, their H-criteria, the four case kinds, the deployment
-  and the record shape. No harness runs them.
+  and the record shape. The harness is built (Phase 1): `evals/inspect/`, the
+  record module `src/lib/ai/evals/inspect-record.ts` and the nightly
+  `agent-evals.yml`, which skips without its CI key. No record exists yet: the
+  seed tenants are unbuilt and the key is an owner action.
 
 ## Fit, and what is deliberately not adopted
 
@@ -173,22 +176,42 @@ is named for the invariant it proves, like the guards).
 
 ### Phase 1 — The harness
 
-**Sub-phases.**
-- [ ] 1.1 `evals/inspect/` Python project (pinned Inspect), CI image, digest.
-- [ ] 1.2 A custom Inspect *solver* that calls the product's harness route to
-      start a run with the task input on the named seed tenant and awaits
-      settlement; a `ledger` helper that reads steps, decision-log rows,
-      proposals and guard verdicts through the product's API (as the operator
-      role) — never the database directly.
-- [ ] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
-      product's kill-switch API mid-run.
-- [ ] 1.4 `src/lib/ai/evals/inspect-record.ts`: the record shape (task set
+**Sub-phases.** Built 2026-11-12 except the seed and the done-when evidence, in
+[`2026-11-12-inspect-harness.md`](../implementation-notes/2026-11-12-inspect-harness.md).
+
+- [x] 1.1 `evals/inspect/` Python project (`inspect-ai==0.3.280`), CI image
+      on a digest-pinned base, never in the app image.
+- [x] 1.2 A custom Inspect *solver* that starts a run with the task input on
+      the named seed tenant and awaits settlement; a `ledger` helper that reads
+      steps, proposals and guard verdicts through the product's API (as the
+      seed tenant's OWNER) — never the database directly. No harness route
+      exists (garak built only the assistant half), so the solver starts each
+      run through the product's own `POST /agent-runs` with the seed agent's
+      bound API key, the way an agent starts one: a reasoning engine refuses a
+      run no ACTIVE registered agent vouches for, and a session binds none.
+      No bypass. Every response shape the harness reads is pinned in
+      `evals/inspect/fixtures/product-contract.json` and held to the product's
+      types.
+- [x] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
+      product's kill-switch API mid-run. Python for Inspect's log, held to one
+      golden file with the record module.
+- [x] 1.4 `src/lib/ai/evals/inspect-record.ts`: the record shape (task set
       hash, engine + model revision, per-sample raw ledger facts), strict.
-      Verdicts are recomputed from the facts and never stored. The shape and
-      its rules are in the Phase 0 note.
-- [ ] 1.5 `.github/workflows/agent-evals.yml`: nightly, test deployment,
-      record validated and proposed as a PR, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
+      Verdicts are recomputed from the facts and never stored.
+- [x] 1.5 `.github/workflows/agent-evals.yml`: nightly, both engines, D-EV-6
+      budget, skips without `INSPECT_CI_ANTHROPIC_KEY` (amended 2026-11-12,
+      owner: it falls back to the existing `ANTHROPIC_API_KEY` secret, and a
+      scheduled run is skipped unless the repository variable
+      `AGENT_EVALS_ENABLED` is `true`; a manual dispatch always runs), record validated and
+      uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard.
+- [ ] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
+      with a bound API key carrying `mcp:orchestrate`, written apart from the
+      manifest), profiles and fixtures. The workflow fails closed until it
+      exists.
+- [ ] 1.7 Done when: ten verdicts on a keyed nightly, and a test build with
+      the review latch disabled turning task 2 red on the deployment (the
+      harness's own mutation check against a stub product is in place).
 
 **Prompt.**
 ```text

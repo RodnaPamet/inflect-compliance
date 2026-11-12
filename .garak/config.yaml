@@ -59,8 +59,13 @@ run:
   # the night's spend by five for a variance estimate we do not need yet.
   generations: 1
   # Prompts per probe. Every class listed below prunes to it (held by the
-  # pinning guard); the proxy's wire cap backs it regardless.
-  soft_probe_prompt_cap: 5
+  # pinning guard); the proxy's wire cap backs it regardless. 4, not garak's
+  # default 5, so the planned night (2 roles x 9 classes x 4 = 72 turns, wire
+  # cap 40 per role, 80 a night at the planned USD 0.03 = USD 2.40) fits
+  # garak's SHARE of the shared CI cap (evals/cost-meter/shares.json). At 5
+  # the planned night was USD 3.00 against a USD 2.50 share, and the measured
+  # breaker would have dropped the editor role on any heavy night.
+  soft_probe_prompt_cap: 4
 
 plugins:
   target_type: rest

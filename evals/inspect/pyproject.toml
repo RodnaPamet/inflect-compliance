@@ -1,0 +1,15 @@
+# The Inspect harness (docs/ai-architecture/inspect.md, Phase 1). Python lives
+# here and in its CI image, never in the app image (G5).
+[project]
+name = "inflect-inspect"
+version = "1.0.0"
+requires-python = ">=3.11"
+# inspect-ai 0.3.280 (PyPI, 2026-10-14). Wheel sha256:
+# 5e93d62d6df813ed2794afdaed2b062590d310ed77538ed5f7d12d686e94bd5e
+dependencies = ["inspect-ai==0.3.280"]
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+
+[tool.setuptools]
+packages = ["inflect_inspect"]

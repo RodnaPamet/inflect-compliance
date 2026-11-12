@@ -36,6 +36,16 @@
  *                 mapped them (`agentSdkOptionVerdicts`, #4156): code can
  *                 show a control is missing, never that one works
  *
+ *   paymentCapabilities
+ *                 `/4`'s member: each place the agent's FILE calls a
+ *                 recognised payment client (`code/payment.ts`, Agent Pay
+ *                 Phase 2.1), by protocol, library and `code://` locator —
+ *                 `[]` when the file shows none. `[]` is what this reader saw,
+ *                 not that the agent cannot pay (a helper module is not
+ *                 followed), so the planner never closes
+ *                 SPENDING_AGENT_UNDECLARED on it. Never an amount, a wallet or
+ *                 a key
+ *
  *   models        the model endpoints it calls (`/2`'s optional `models[]`):
  *                 an https URL, an `env://` reference to where the URL is
  *                 configured, or the `code://` locator of the model's
@@ -57,6 +67,7 @@ import { sourceResult, type HarnessSource, type IncompleteReason, type Observati
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
 import { readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
+import { recognizePaymentCalls, type DetectedPaymentCall } from './code/payment';
 import { PythonReadError, readPython } from './code/python';
 import { agentSdkOptionVerdicts } from '@/lib/agentic/harness-findings';
 
@@ -77,9 +88,14 @@ const NODE_FS: CodeFs = {
     readFile: (p) => readFile(p),
 };
 
+/** A detected agent, and the payment client calls its file makes. */
+export interface CodeAgent extends DetectedAgent {
+    readonly paymentCalls: readonly DetectedPaymentCall[];
+}
+
 export interface CodeScan {
     readonly rows: number;
-    readonly agents: readonly DetectedAgent[];
+    readonly agents: readonly CodeAgent[];
     readonly problems: readonly FileProblem[];
 }
 
@@ -89,14 +105,15 @@ export async function scanLangChainCode(
     fs: CodeFs,
     opts: { readonly deadline: number; readonly now: () => number },
 ): Promise<CodeScan> {
-    const agents: DetectedAgent[] = [];
+    const agents: CodeAgent[] = [];
     const parseProblems: FileProblem[] = [];
     const { rows, problems } = await readCodeFiles(roots, fs, opts, (file) => {
         try {
             const facts = /\.py$/i.test(file.path) ? readPython(file.text) : readJavaScript(file.path, file.text);
             const found = recognizeAgents(facts, file);
-            agents.push(...found.agents);
-            for (const at of found.unresolved) parseProblems.push({ reason: 'UNPARSEABLE', at });
+            const payments = recognizePaymentCalls(facts, file, { definesAgent: found.agents.length > 0 });
+            agents.push(...found.agents.map((a) => ({ ...a, paymentCalls: payments.calls })));
+            for (const at of [...found.unresolved, ...payments.unresolved]) parseProblems.push({ reason: 'UNPARSEABLE', at });
         } catch (err) {
             if (!(err instanceof PythonReadError) && !(err instanceof JavaScriptReadError)) throw err;
             parseProblems.push({ reason: 'UNPARSEABLE', at: { label: file.label, path: file.path, line: err.line } });
@@ -106,7 +123,7 @@ export async function scanLangChainCode(
 }
 
 /** One detected agent as the report's observation of it. */
-export function observationOf(agent: DetectedAgent): Observation {
+export function observationOf(agent: CodeAgent): Observation {
     return {
         discoveredId: agent.discoveredId,
         owner: null,
@@ -120,6 +137,8 @@ export function observationOf(agent: DetectedAgent): Observation {
         // A definition binds tools; it counts no calls, so none is given.
         tools: agent.tools.map((t) => ({ tool: { server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null } })),
         models: agent.models.map((m) => ({ endpoint: m.endpoint ?? codeLocator(m.at), model: m.model })),
+        // Always stated, `[]` included: a code read is the one source that can say "none".
+        paymentCapabilities: agent.paymentCalls.map((p) => ({ protocol: p.protocol, library: p.library, at: codeLocator(p.at) })),
         // An Agent SDK agent's options, mapped by the planner; the other frameworks' code evidences nothing.
         verdicts: agent.sdkOptions === null ? [] : agentSdkOptionVerdicts(agent.sdkOptions),
     };

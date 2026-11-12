@@ -1,9 +1,6 @@
 {
-    "decision": "D-EV-1 (owner, 2026-11-11): a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only.",
-    "nightlyCapUsd": 5,
+    "decision": "D-EV-1 (owner, 2026-11-11): a Haiku-class external model through a dedicated CI key, seed data only. The USD 5 nightly cap is SHARED with Ragas (D-EV-2): garak's share and the model's price live in evals/cost-meter/ (shares.json, prices.json), never here.",
     "model": "claude-haiku-4-5",
-    "usdPerMillionInputTokens": 1,
-    "usdPerMillionOutputTokens": 5,
     "plannedTurn": {
         "inputTokens": 20000,
         "outputTokens": 2000,
@@ -11,6 +8,6 @@
     },
     "roles": ["owner", "editor"],
     "rolesBasis": "The roles that can reach the assistant. A READER (and an AUDITOR) is refused by the AI feature gate (feature-gate.ts predicate 3: canWrite) before any guard or model call, so garak has nothing to probe there; the workflow checks that refusal with one request instead.",
-    "maxRequestsPerRole": 50,
-    "maxRequestsPerNight": 100
+    "maxRequestsPerRole": 40,
+    "maxRequestsPerNight": 80
 }

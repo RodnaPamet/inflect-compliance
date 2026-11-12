@@ -41,6 +41,11 @@ const MIGRATED_PAGES = [
     // StatusBadge, InlineNotice, Accordion, semantic tokens only.
     'processes/agents/[agentId]/page.tsx',
     'processes/agents/[agentId]/AgentCanvasClient.tsx',
+    // The same agent's flow editor (Phases 3 and 4). Native from birth:
+    // EntityDetailLayout, InlineNotice, semantic tokens only; the editor it
+    // mounts uses Heading / Button / Combobox / FormField / StatusBadge.
+    'processes/agents/[agentId]/flow/page.tsx',
+    'processes/agents/[agentId]/flow/AgentFlowClient.tsx',
     'admin/modules/ModulesClient.tsx',
     // Identity write journal (#2877 f52) — the surface for what a disable
     // replaced and which writes never settled. Design-system-native from

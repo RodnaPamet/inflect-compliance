@@ -40,8 +40,42 @@ export const HARNESS_CONTRACT_V2 = 'inflect-agent-harness/2';
  */
 export const HARNESS_CONTRACT_V3 = 'inflect-agent-harness/3';
 
+/**
+ * `/3` plus one optional per-agent member, `paymentCapabilities[]`, and nothing
+ * else (Phase 2 of `docs/ai-architecture/mastercard-agent-pay.md`): where an
+ * agent's code calls a recognised payment client library, so the agent can
+ * initiate a payment. A new id rather than a widened `/3`, because a `/3`
+ * verifier refuses the unknown member and a `/3` report naming it is still
+ * refused here. What the reference scanner speaks.
+ */
+export const HARNESS_CONTRACT_V4 = 'inflect-agent-harness/4';
+
 /** Every id the verifier accepts. `/1` is retired and is not among them. */
-export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3] as const;
+export const HARNESS_CONTRACT_IDS = [HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3, HARNESS_CONTRACT_V4] as const;
+
+/**
+ * The payment protocols a `/4` capability can name. A closed list on the wire,
+ * so a report cannot put prose, or a value, where a protocol belongs.
+ *
+ * `x402` is the HTTP 402 payment protocol that Mastercard's Agent Pay for
+ * Machines (AP4M) is built on. No Mastercard Agent Pay client package was
+ * confirmed in Phase 0.1 (its API is OpenAPI-generated per client), so no
+ * `agent-pay-token` value exists yet: one is added with a new id once a
+ * package is confirmed, never guessed into this one.
+ */
+export const PAYMENT_PROTOCOLS = ['x402'] as const;
+export type PaymentProtocol = (typeof PAYMENT_PROTOCOLS)[number];
+
+/**
+ * The payment CLIENT libraries a `/4` capability can name, each the payer side
+ * of its protocol (the seller-side middleware, `x402-express` and its
+ * siblings, accepts payments and initiates none). Package names confirmed from
+ * their registries on 2026-11-12: npm `x402-fetch`, `x402-axios`,
+ * `@x402/fetch`, `@x402/axios`; PyPI `x402` (its HTTP client wrappers and
+ * `x402Client`).
+ */
+export const PAYMENT_CLIENT_LIBRARIES = ['x402-fetch', 'x402-axios', '@x402/fetch', '@x402/axios', 'x402'] as const;
+export type PaymentClientLibrary = (typeof PAYMENT_CLIENT_LIBRARIES)[number];
 export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**

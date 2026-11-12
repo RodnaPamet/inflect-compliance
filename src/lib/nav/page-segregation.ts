@@ -321,6 +321,8 @@ export const SUBPAGES: readonly string[] = [
     // One agent, read-only, on the process canvas (Phase 2 of
     // docs/ai-architecture/langflow.md). Reached from the agent's own page.
     '/processes/agents/[agentId]',
+    // The same agent's flow editor (Phases 3 and 4). Reached from the canvas view.
+    '/processes/agents/[agentId]/flow',
 
     // Reports
     '/reports/soa',

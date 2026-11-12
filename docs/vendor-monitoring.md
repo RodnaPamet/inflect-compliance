@@ -28,10 +28,17 @@ the `VendorMonitor` row:
    SSL-Labs-style but keyless. Records a `TLS_GRADE` timeline event on change +
    updates rolling state. Informational — does not raise a finding.
    The vendor domain is tenant-entered, so the homepage is requested only
-   through `safeFetch`: the domain must be a bare host name, the address
-   must be public and is pinned, and a redirect is followed only by checking
-   its target the same way (https, public, at most five hops). A refused,
-   unreachable or invalid domain is left ungraded and logged.
+   through the bot seam `botFetch` (`src/lib/web-bot-auth/bot-fetch.ts`),
+   which is `safeFetch` underneath: the domain must be a bare host name, the
+   address must be public and is pinned, and a redirect is followed only by
+   checking its target the same way (https, public, at most five hops). The
+   origin's `robots.txt` is read first, and again for any other origin a
+   redirect leads to, and every URL requested (each redirect hop included) is
+   judged against its origin's rules by its own path; a site that disallows
+   the monitor is recorded `REFUSED` with reason `ROBOTS` and the disallowed
+   URL is not requested. A
+   refused, unreachable or invalid domain is left ungraded and its outcome
+   recorded.
 
 Every posture change lands one **`VendorPostureEvent`** — the append-only
 continuous-assurance timeline, idempotent via `@@unique([tenantId,
@@ -87,6 +94,54 @@ The sweep runs with `attempts: 1` — it is idempotent and re-runs daily, so a
 transient feed failure self-heals on the next cycle rather than retry-storming
 the public feeds.
 
+**How the monitor identifies itself (Web Bot Auth).** Every TLS-grade request
+carries the User-Agent `InflectCompliance-VendorMonitor/1.1 (+<APP_URL>/bots/vendor-monitor)`
+and, when `WEB_BOT_AUTH_SIGNING_KEY` is set and `APP_URL` is a bare https
+origin, an HTTP Message Signature naming the deployment's key directory
+(`<APP_URL>/.well-known/http-message-signatures-directory`). Without a key the
+requests go out unsigned, exactly as before. The public page at
+`/bots/vendor-monitor` states what the monitor fetches, when (the daily sweep
+and on-demand checks, once per monitoring organisation), its key
+directory and how a site opts out; its User-Agent links there. The breach
+check sends the same User-Agent to HIBP, unsigned. The identity is the
+deployment's: nothing in a request names a tenant.
+
+### Registering with Cloudflare Verified Bots (operator act)
+
+Registration is the operator's act, done once in Cloudflare's dashboard. It is
+not code and nothing automates it. Do it only after all of these hold:
+
+1. `WEB_BOT_AUTH_SIGNING_KEY` is set in production, `APP_URL` is the public
+   https origin, and `GET <APP_URL>/.well-known/http-message-signatures-directory`
+   answers 200 with the `application/http-message-signatures-directory+json`
+   media type and a `Signature` header, with no bot protection in front of it
+   (verifiers fetch it unsigned).
+2. Cloudflare's validator accepts the directory:
+   `http-signature-directory <APP_URL>/.well-known/http-message-signatures-directory`
+   (crate 0.8.0). It requires the response signature to cover
+   `content-digest`; the directory served today covers `"@authority";req`
+   only, so this step fails until that is added (open in the Phase 2
+   implementation note).
+3. A signed request answers 200, not 401 or 400, at Cloudflare's format
+   checker `https://crawltest.com/cdn-cgi/web-bot-auth` once the key is
+   registered (401 before registration is the expected answer for an unknown
+   key; 400 means the format is wrong).
+4. `<APP_URL>/bots/vendor-monitor` loads without signing in and states what
+   the monitor actually fetches.
+
+Then, in the dashboard: **Manage Account → Configurations → Bot Submission
+Form**; verification method **Request Signature**; the directory URL above as
+the validation instructions; User-Agent pattern `InflectCompliance-VendorMonitor`;
+bot kind **Direct**, behaviour **Monitoring & Operations**. Ask at submission
+whether Cloudflare re-reads the registered directory on its own or needs to be
+told about a rotated key, and write the answer here. Track the status under
+**BotBase → Submission history**.
+
+After registration, record the `REFUSED` share of
+`vendor_monitor.tls_fetch{reason="NONE"}` for 14 days, signed against the
+unsigned baseline, in the Phase 2 implementation note (Web Bot Auth sub-phase 2.5),
+whatever the result.
+
 ## Adding a new signal source
 
 Mirror the existing provider shape (do NOT fork a second ingestion path):
@@ -94,9 +149,12 @@ Mirror the existing provider shape (do NOT fork a second ingestion path):
 1. Add a provider interface + a deterministic `TestMode…` stub + a real
    provider under `src/app-layer/services/vendor-monitoring/`. A provider
    that calls a fixed host named in code uses `fetchWithRetry`; one that
-   requests any host a tenant enters (the vendor domain is one) uses
-   `safeFetch` from `@/app-layer/automation/webhook-safety` and joins the
-   `SINKS` of `tests/guards/ssrf-egress-coverage.test.ts`.
+   requests a third-party website, or any host a tenant enters (the vendor
+   domain is one), uses `botFetch` from `@/lib/web-bot-auth/bot-fetch`
+   (`safeFetch` plus the bot's User-Agent and signature; the
+   `local/web-bot-auth-single-seam` rule refuses a signature or a bot
+   User-Agent made anywhere else) and joins the `BOT_SEAM_CALLERS` of
+   `tests/guards/ssrf-egress-coverage.test.ts`.
 2. Add a pure evaluator (freshness / threshold) in `evaluate.ts`.
 3. Plan a `PlannedEvent` in `runVendorMonitor` (fingerprint for idempotency;
    optional `finding` spec gated on `materializeFindings`).

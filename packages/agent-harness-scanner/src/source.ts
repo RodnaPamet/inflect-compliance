@@ -26,6 +26,7 @@
  */
 import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
 import type {
+    HarnessPaymentCapability,
     HarnessReportAgent,
     INCOMPLETE_REASONS_V2,
     SOURCE_KINDS_V3,
@@ -33,7 +34,7 @@ import type {
 
 import type { McpListingWire, OpenShellReadWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
 
-/** The scanner speaks `inflect-agent-harness/3`: its kinds are `/3`'s, and its reasons `/2`'s, which `/3` keeps. */
+/** The scanner speaks `inflect-agent-harness/4`: its kinds are `/3`'s, which `/4` keeps, and its reasons `/2`'s. */
 export type SourceKind = (typeof SOURCE_KINDS_V3)[number];
 export type IncompleteReason = (typeof INCOMPLETE_REASONS_V2)[number];
 
@@ -41,6 +42,7 @@ export type ObservedCredential = HarnessReportAgent['credentials'][number];
 export type ObservedOwner = NonNullable<HarnessReportAgent['owner']>;
 export type ObservedTool = HarnessReportAgent['tools'][number];
 export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
+export type ObservedPaymentCapability = HarnessPaymentCapability;
 
 /**
  * One tool a source saw a principal use, and — for a source that counts calls —
@@ -72,6 +74,12 @@ export interface Observation {
     readonly tools?: readonly ObservedToolUse[];
     /** Model endpoints the principal calls, by reference. Only the `code` source reports any today. */
     readonly models?: readonly ObservedModel[];
+    /**
+     * `/4`: where the principal's code calls a payment client. Only the `code`
+     * source states it, and it always does, `[]` included; absent from every
+     * other kind, which cannot see code.
+     */
+    readonly paymentCapabilities?: readonly ObservedPaymentCapability[];
     /**
      * The register row this principal is, from the `inflect-register` source
      * ONLY: the report builder ignores it from any other kind, because a label in

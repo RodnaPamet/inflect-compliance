@@ -1,4 +1,9 @@
 {
+    "agent-evals.yml:inspect": {
+        "kind": "never",
+        "reason": "Nightly Inspect evaluation of Inflect's own agent engines (schedule + dispatch only). It boots the full app and worker, spends a capped budget on the dedicated CI model key (D-EV-6, USD 10/night for both engines) and needs that repository secret, which a pull request from a fork never has; running it per PR would multiply the spend by the PR count.",
+        "coveredBy": "PARTIAL: tests/unit/inspect-evaluation-record.test.ts and the shared golden file hold every task's scorer, the record's refusals and the mutation check (a disabled review latch turns its task red) on every PR, and tests/guardrails/agent-evals-workflow-pinning.test.ts holds this workflow's deferral date, budget, image pin and skip-without-key shape in Ratchets. The governed runs themselves are accepted as post-merge, reported nightly."
+    },
     "bundle-analyze.yml:analyze": {
         "kind": "conditional",
         "reason": "Runs on push to main, and on PRs only when labelled `perf-watch`. A dependency bump that breaks the analyzer build therefore lands green \u2014 which is how next 16.3.1's build-time memory regression reached main.",

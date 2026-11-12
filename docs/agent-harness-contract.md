@@ -5,10 +5,12 @@ runs inside the client's perimeter, enumerates agent-shaped principals and the
 harness each one runs under, and returns one signed report. This document is
 normative: `MUST`, `MUST NOT`, `SHOULD` and `MAY` carry their RFC 2119 meanings.
 
-Two contract ids are in force:
+Three contract ids are in force:
 - `inflect-agent-harness/2` (#3754): the first id, `inflect-agent-harness/1`
   (#3660), plus five additions.
 - `inflect-agent-harness/3` (#3785): `/2` plus one source kind, `gcp-sa`.
+- `inflect-agent-harness/4` (Agent Pay Phase 2): `/3` plus one optional
+  per-agent member, `paymentCapabilities[]`.
 
 `/1` is retired (#3686): the ingest refuses a report that names it.
 [The ids](#the-ids) says what each id added and how `/1` was retired.
@@ -19,7 +21,7 @@ the suite validates against the schemas, so it is the one to copy. The schemas
 and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
 scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
 `packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
-`/3`, builds its report against those schemas and refuses to sign one they
+`/4`, builds its report against those schemas and refuses to sign one they
 would refuse.
 Putting a client estate under it, and the labels it reads owners and principals
 from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
@@ -38,6 +40,27 @@ from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onbo
   the receiving side decides whether it is an `ORPHAN_CREDENTIAL`.
 
 ## The ids
+
+**`/4` is `/3` with exactly one addition** (Agent Pay Phase 2,
+`docs/ai-architecture/mastercard-agent-pay.md`): the optional per-agent member
+`paymentCapabilities[]`, each entry `protocol` (`x402`), `library` (one of
+`PAYMENT_CLIENT_LIBRARIES`: `x402-fetch`, `x402-axios`, `@x402/fetch`,
+`@x402/axios`, `x402`) and `at`, the `code://` locator where the agent's code
+calls that payment client. It says the agent CAN pay, never what or with what:
+no amount, wallet, key or token, and a secret-shaped `at` is refused like any
+reference. It has three states, as `models[]` has: absent is not reported, `[]`
+is a `code` read that saw no payment client called in the agent's own file,
+entries are what it saw. `[]` is what that reader saw, not evidence that the
+agent cannot pay: a static reader of one file does not see a client wrapped in a
+helper module, so the receiving side closes nothing on it.
+Only an agent discovered via `code` MAY carry it, and each (library, `at`)
+appears once. A `/3` report carrying the member is refused as `SCHEMA`. The
+receiving side derives `SPENDING_AGENT_UNDECLARED` from it for a REGISTERED
+agent whose register row holds no spending authority, and closes it only when a
+reviewed spending authority is in force.
+
+- A scanner SHOULD emit `/4`; the reference scanner does. `/2` and `/3` reports
+  stay accepted.
 
 **`/3` is `/2` with exactly one addition** (#3785, owner decision 2026-10-19):
 the source kind `gcp-sa`, a Google Cloud project's service accounts. It is
@@ -71,15 +94,15 @@ output, no prompt — a model entry or a tool with any other member is refused.
 the release of the scanner container (#3686), the reference scanner's first
 deployment, which emits `/2`. No other scanner ever spoke `/1`.
 
-- A scanner MUST emit `/2` or `/3`. A `/2` report MUST carry
+- A scanner MUST emit `/2`, `/3` or `/4`. A `/2` report MUST carry
   `unboundCredentials`, empty when it saw none.
 - A report naming `/1` is checked like any other — size, JSON, signature by a
   trusted key — and then refused as `SCHEMA` with the issue
   `contract: inflect-agent-harness/1 is retired; the scanner must speak
-  inflect-agent-harness/3`. The ingest writes nothing. An id that was never in
+  inflect-agent-harness/4`. The ingest writes nothing. An id that was never in
   force is refused as `SCHEMA` without the refusal repeating it.
 - The ids the verifier accepts are `HARNESS_CONTRACT_IDS` in
-  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2` and `/3`.
+  `src/lib/agentic/harness-contract-rules.ts`, which holds `/2`, `/3` and `/4`.
 - Scans already stored from `/1` and `/2` reports stay readable: a stored scan
   is read against `/3`'s source kinds and `/2`'s reasons, which contain every
   earlier id's. The agents of a scan stored from a `/1` report read their model
@@ -113,7 +136,7 @@ refusal.
 
 | Member | Meaning |
 |---|---|
-| `contract` | Exactly `inflect-agent-harness/2` or `inflect-agent-harness/3`. The retired `inflect-agent-harness/1` is refused. |
+| `contract` | Exactly `inflect-agent-harness/2`, `inflect-agent-harness/3` or `inflect-agent-harness/4`. The retired `inflect-agent-harness/1` is refused. |
 | `scan.id` | The scanner's id for this run, unique per tenant. |
 | `scan.asOf` | ISO 8601 time the scan describes. |
 | `scan.scanner` | The scanner's own `agentId` in the register, its `version`, and the `sha256:` manifest hash of its own tool surface. |
@@ -172,6 +195,7 @@ is left out. How it fills the members every source shares:
 | `credentials[]` | `ref` (a `scheme://locator` reference), `ageDays`, `expires`, `boundToAgent`, and `grant`: `delegated`, `app-only` or `unknown`. |
 | `tools[]` | `server` (URL), `name`, `manifestHash` (`sha256:` or `null`), `pinned`, and `readOnlyHint` as the server declares it. An undeclared hint counts as a write. In `/2` a tool MAY carry `calls`, the number of times the agent called it, with `windowDays`, the days it was counted over (1 to 366): both or neither. |
 | `models[]` | From `/2` on, optional. One entry per model endpoint the agent calls: `endpoint`, a `scheme://locator` (`https://api.openai.com/v1`, `env://AZURE_OPENAI_ENDPOINT`, `code://…`) or a bare host, and `model`, the model's id there or `null`. An endpoint MUST NOT carry userinfo or a secret's shape. |
+| `paymentCapabilities[]` | `/4` only, optional, and only on an agent discovered via `code`: `protocol`, `library` and `at` (a `code://` locator) for each place its code calls a payment client. `[]` is a code read that saw none. |
 | `skills[]` | `name`, `license` (or `null`), `declared`. |
 | `verdicts[]` | `criterion` (an id from the harness ladder), `met`, and `evidence`: a pointer to where the scanner saw it, or `null`. |
 

@@ -415,3 +415,21 @@ route, which needs no import at all.
 
 **What it cannot see.** A computed module specifier, and a table name assembled
 from pieces at run time. Comments are not literals, so prose may name the table.
+
+### `web-bot-auth-single-seam`
+
+Under `src/`, no file but `src/lib/web-bot-auth/bot-fetch.ts` and the signer
+itself loads `src/lib/web-bot-auth/sign.ts` — by the `@/` alias or a relative
+path, type-only imports included — and no string or template literal outside
+them carries the bot's product token, `InflectCompliance-VendorMonitor`.
+
+**Why.** `botFetch` is the one seam for an unattended request to a third-party
+website (Web Bot Auth Phase 2): `safeFetch` underneath, then the bot's honest
+User-Agent, then the deployment's request signature. A signature made anywhere
+else could ride a request that skipped the SSRF checks, and a hand-written bot
+User-Agent would claim the bot's identity for a request its public page does
+not describe. Policing the token as well as the import closes the second
+route, which needs no import at all.
+
+**What it cannot see.** A computed module specifier, and a token assembled from
+pieces at run time. Comments are not literals, so prose may name the token.

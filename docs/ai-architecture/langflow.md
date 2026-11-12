@@ -527,14 +527,38 @@ tenant without the process-canvas module sees no link and gets notFound() on the
 **Goal.** Drawing a flow on the product's canvas, saved through the Phase 1
 usecase, with layout and logic kept apart.
 
+**Status: partly built** (branch `wf/flow-canvas-3-4`; implementation note
+`docs/implementation-notes/2026-11-12-agent-flow-canvas-editor.md`). What is
+true now:
+- The editor is `/t/:slug/processes/agents/:agentId/flow`, inside the
+  processes segment, reached from the Phase 2 view's "Edit the flow" link
+  (shown only where the profile layer is). It opens the agent's newest version.
+- The canvas (`components/processes/agent-flow/AgentFlowCanvas.tsx`, tldraw)
+  owns geometry only: a box can be moved and selected, never deleted from the
+  canvas, and no toolbar is shown. Every logic change is the inspector's.
+- Save calls the EXISTING version route with the version being edited, whole,
+  its flow replaced (`flowVersionBody`, which takes no layout). Moving a box
+  writes nothing: Save reads `draftChangesFlow`, which compares the stored
+  flow text. No new route, no new permission.
+- The layout is computed from the flow by `computeAutoLayout` and the
+  session's moves are kept for the session. **No layout record is stored
+  yet**, so moves are lost on reload; the record (a table, so a migration) is
+  open.
+- Not reused yet: the process canvas's history sidebar and its
+  `CanvasDiffOverlay`. The approver's diff is drawn by the agent-flow canvas
+  itself (Phase 4.3 below).
+
 **Sub-phases.**
-- [ ] 3.1 A canvas document kind `agent-flow` on **tldraw**, reusing the
+- [~] 3.1 A canvas document kind `agent-flow` on **tldraw**, reusing the
       process canvas's tldraw pieces: shape and binding utils, node taxonomy
       (`node-taxonomy.ts`), selection, inspector, history sidebar and diff
       overlay. It opens from the agent's Behaviour tab, and its
       palette holds the agent-flow kinds only. It is the same surface as the
       Phase 2 view, so an agent's view and its editor are one canvas.
-- [ ] 3.2 **Layout and logic kept apart**, as VR-3 does for rules. The
+      Landed without the history sidebar, and opened from the Phase 2 view
+      rather than the Behaviour tab (the Behaviour tab's canvas link is 2.3's
+      open item). The palette is `AGENT_FLOW_PALETTE`, the schema's four kinds.
+- [~] 3.2 **Layout and logic kept apart**, as VR-3 does for rules. The
       agent-flow serializer meets the canvas serializer's round-trip contract
       (#2963): loading a version and saving it with no edit produces the same
       `flowJson` and the same layout, byte for byte, so no spurious DRAFT
@@ -544,19 +568,28 @@ usecase, with layout and logic kept apart.
       - Logic lives in `flowJson`; changing it saves a DRAFT version.
       - A guard asserts that neither write carries the other's fields, the same
         shape as `vr3-sync-invariant`.
-- [ ] 3.3 **No second write path.** The canvas saves logic only by calling the
+      - Landed for logic: the round trip is byte-identical and an unedited
+        draft offers no save; tests assert the save body carries no position
+        and the layout no logic. The layout record is not stored yet.
+- [x] 3.3 **No second write path.** The canvas saves logic only by calling the
       Phase 1 usecase, which requires `admin.agent_registry`.
       - This is the 2026-07-29 escalation, closed in advance: the canvas must
         never become the lower-privilege door to a governed write.
       - Every claimed id (tool, `profileRef`) is verified in-tenant on the
         server.
       - The audit row names the profile and version.
-- [ ] 3.4 Inspector per node kind.
+      - Landed as stated: the Phase 1 usecase re-checks every tool against the
+        grants and every `profileRef` in-tenant, and writes the audit row.
+- [x] 3.4 Inspector per node kind.
       - The tool picker lists the agent's **grants**, not the catalogue.
       - The subagent picker lists approved profiles.
       - Diagnostics (an ungranted tool, a cycle, too many nodes) show inline
         before save, from the same schema the server enforces.
-- [ ] 3.5 en + bg message parity; rendered tests testid-first; `AGENT_PROFILES`
+      - Landed: the tool picker lists grants of the step's kind; the subagent
+        picker is `listFlowSubagentOptions` (approved, in force, this tenant,
+        never the agent's own); `diagnoseFlowDraft` asks `checkAgentFlow` and
+        names the server's codes.
+- [x] 3.5 en + bg message parity; rendered tests testid-first; `AGENT_PROFILES`
       and `AGENT_PROFILES_TENANTS` gate the editor, 404 before the permission
       check.
 
@@ -609,20 +642,42 @@ admin approves it; moving a node creates no version; the guard and tests are gre
 **Goal.** Before anyone approves a flow, they can see exactly what an engine
 would be given, and which parts of the drawing are enforced.
 
+**Status: partly built** with Phase 3 (same branch and note). The preview is
+of the SAVED version the editor opened: a draft that differs from it says so
+and shows nothing computed in the browser, because `run-message.ts` is a
+server module (it reads the sealed-context code) and the panel must not
+re-derive it.
+
 **Sub-phases.**
-- [ ] 4.1 A "Compiled" panel showing the exact run message, produced by the
+- [x] 4.1 A "Compiled" panel showing the exact run message, produced by the
       same `run-message.ts` function the engine calls (G3: one function, no
       re-derivation), with the offered tool set computed by `offerToolSet` and
       its omissions listed by reason (`PROFILE_TOOL_NOT_GRANTED`,
       `READ_ONLY_WORKFLOW`, …).
-- [ ] 4.2 Enforced or advisory, per element: enforced elements drawn solid,
+      Landed as `previewProfileRunMessage` (`usecases/agent-profile-runs.ts`):
+      the resolver's `compileProfileDefinition` and the engines' `runMessage`,
+      after the content hash is recomputed; an integration test holds it equal,
+      byte for byte, to `runMessage` over `resolveRunDefinition`'s definition.
+      It asks admission's own `assertEngineRunsProfiles` for every engine, so a
+      flow version (refused `PROFILE_FLOW_NOT_RUNNABLE` until Phase 5) is shown
+      as refused, never as "a run receives this message".
+      Tool states are the Phase 2 projection's (`offerToolSet`), with the
+      reasons worded once for both surfaces.
+- [~] 4.2 Enforced or advisory, per element: enforced elements drawn solid,
       advisory edges drawn dashed with a tooltip naming why (the table in
       § The decision).
-- [ ] 4.3 Submit from the canvas through the existing submit route. The
+      Steps are solid and every connection dashed, and the inspector says why.
+      No per-edge Tooltip yet: an arrow is tldraw's own shape.
+- [~] 4.3 Submit from the canvas through the existing submit route. The
       approver sees the flow diff between this version and the one in force,
       computed by `canvas-changes-tldraw.ts` and drawn by `CanvasDiffOverlay`;
       approval stays a different person,
       unchanged.
+      Submit landed (an unedited DRAFT only). The diff is `diffFlows`, drawn by
+      the agent-flow canvas read-only (each step and connection marked added,
+      removed or changed) and listed in words; it does not use
+      `canvas-changes-tldraw.ts` or `CanvasDiffOverlay`, which diff process-map
+      rows. The Behaviour tab's text diff stays where approval happens.
 
 **Prompt.**
 ```text

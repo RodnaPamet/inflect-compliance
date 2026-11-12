@@ -706,7 +706,8 @@ that measures it.
 
 | Line | Containers | Added by | Memory ceiling | CPU cap | Basis |
 | --- | --- | --- | --- | --- | --- |
-| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **not measured** | none | C0 measures each peak |
+| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **9,472 MiB of limits** (C1, applied 2026-11-12): clamav 3,072, postgres 2,048, app 1,536, worker 1,536, redis 768, caddy 256, pgbouncer 128, watchtower 128. Measured peaks (C0, 2026-11-12) total about 3.6 GB, clamav 2.1 GB of it | app and postgres 1.5; clamav, worker, redis, caddy, pgbouncer 1.0 (clamav and worker at half CPU weight); watchtower 0.25 | C0 (`VM capacity` run 43209382354) and C1 (#5324, re-measured in run 43253038007). `app` and `worker` are provisional until C1b re-measures them across the nightly jobs (#5327) |
+| Overlays | `harness-scanner`, `harness-egress`, `legacy-mcp-proving` | on `main` | **1,024 MiB of limits** (C1): 512, 256 and 256; peaks 134, 85 and 67 MiB | 1.0 (half weight), 0.5, 0.5 | the same two runs. The OrangeHRM lab left the VM on 2026-11-12 |
 | Embeddings | `tei-embed` | Retriever 1 | 1 to 3 GB with a small open model; 5 GB with Nemotron, if an engine serves it on CPU (estimates) | 1.0 | TEI on CPU runs fp32 only. The small candidates are about 0.47 to 2.3 GB of fp32 weights; the current Nemotron embedder, Nemotron 3 Embed 1B, is about 1.14B parameters, about 4.6 GB at fp32. No current Nemotron retriever model runs on TEI's CPU backend (it refuses Llama- and Mistral-family models). D-L4-3 (2026-11-11) keeps the smaller model unless its recall falls past the margin |
 | Reranking | `tei-rerank` | Retriever 2 | 1.5 to 3 GB with a small open model; 5 GB with Nemotron (estimates) | 1.0 | small rerankers are about 1.2 to 2.3 GB at fp32; Llama Nemotron Rerank 1B v2 is still the only 1B Nemotron reranker, in the same size class as the embedder |
 | Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | +0.5 GB on `postgres`'s limit (estimate), measured with `postgres` in C0 | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector replaces all of them in one pull request, a SIGNIFICANT change, with its patch cadence open (D-L4-8). Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
@@ -725,9 +726,9 @@ instead of a vector container, a small open retriever model unless recall says
 otherwise, a parsing-only service, traces OTel-only) bring the estimate to
 about 8.5 GB with the smallest open models, up to about 12 GB with the largest
 small candidates, or about 16 GB if Retriever 0 keeps the Nemotron pair.
-Whether 8.5 GB fits beside today's stack is C0's question: it does only if
-today's eight services measure under about 6 GB. Where it does not fit,
-something has to give, and that is D-CAP-1:
+C0 and C1 answered the fit on 2026-11-12: today's stack is limited to
+10,496 MiB, leaving about 4 GB of the 14.5 GB line unallocated, so even 8.5 GB
+does not fit beside it. Something has to give, and that is D-CAP-1:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
@@ -739,15 +740,16 @@ something has to give, and that is D-CAP-1:
   weights; the parsing-only service (D-L4-4) and traces OTel-only (D-L4-5) are
   already taken.
 
-The default, until the owner decides, is in that order of preference: measure
+**D-CAP-1, decided 2026-11-12 (owner):** in that order of preference, measure
 first (C0 and Retriever 0), take the smaller pieces the records allow, and
-resize when the measured sum still crosses the line. Self-hosted Langfuse never
-goes on the production VM.
+resize to `e2-highmem-4` when the measured sum still crosses the line. A second
+VM only if memory alone cannot fit. Self-hosted Langfuse never goes on the
+production VM.
 
 **The budget's own phases** (a status-board row; complete at C1, and C2 if
 needed):
 
-- [ ] **C0 — measure.** On the VM: each container's peak memory and CPU over a
+- [x] **C0 — measure** (done 2026-11-12, `VM capacity` run 43209382354; the figures are in the table above). On the VM: each container's peak memory and CPU over a
       working day, including the nightly jobs (vendor monitor 02:00, identity
       chain 03:00–05:00), with free memory and disk. Record the figures in
       this table, replacing "not measured". The `VM capacity` workflow
@@ -757,13 +759,13 @@ needed):
       and page-cache memory, average CPU and OOM kills, and optional samples.
       A session cannot do it itself: this environment's proxy carries HTTPS
       only, so no SSH or IAP tunnel reaches the VM from a session.
-- [ ] **C1 — limit today's stack.** A memory limit and CPU cap on each of the
+- [x] **C1 — limit today's stack** (done 2026-11-12: #5324, applied the same day, every container limited; C1b re-measures `app` and `worker`, #5327). A memory limit and CPU cap on each of the
       eight services, at 1.5× its measured peak, in
       `deploy/docker-compose.prod.yml`, applied with `deploy/apply.sh`. A
       structural Compose change, so it carries a rollback plan: revert the
       file and apply.
-- [ ] **C2 — D-CAP-1's answer, before the first addition that crosses the
-      line.** The resize, the second VM or the smaller pieces, in the pull
+- [ ] **C2 — D-CAP-1's answer (decided 2026-11-12: measure, smaller pieces,
+      then resize), applied by the first addition that crosses the line.** The resize, the second VM or the smaller pieces, in the pull
       request that would otherwise cross it.
 
 ### Status board
@@ -793,9 +795,9 @@ completion.
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
 | Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
-| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | no container has a limit; nothing measured. The 2026-11-11 wave added no container | — | C1, and C2 before the first addition that crosses the line | D-CAP-1 |
-| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built, non-blocking until 2027-02-28, skipped until the owner creates its CI key; 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | D-EV-11 |
-| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.5 (one seed set with the retriever's) and 0.6 open | 0 | 3 | D-EV-11 |
+| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited (10,496 MiB of the 14.5 GB line); D-CAP-1 decided | C0, C1 | C1b (#5327), and C2, the resize, with the first addition that crosses the line | — |
+| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built, non-blocking until 2027-02-28, skipped until the owner creates its CI key; 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
+| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's USD 2.50 each); 0.5 (one seed set with the retriever's) open | 0 | 3 | — |
 | ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | Phase 0: D-EV-3 decided; labelling not yet done | — | 3, or 2's recorded failure to calibrate | — |
 | Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | Phase 0 done: the ten governed-run tasks defined ([note](./implementation-notes/2026-11-11-inspect-first-tasks.md)), D-EV-4 decided; Phase 1 next, under D-EV-6's budget | 0 | 3 | D-EV-7, D-EV-8, D-EV-9, D-EV-10 |
 | SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | **declined** — no capability to measure (D-EV-5, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decision (met) | — |
@@ -817,7 +819,7 @@ a recorded decision completed them: Langfuse (OTel-only), cuOpt and SWE-bench
 timeline
   title Delivery waves (ordering, not dates)
   section Decide
-    Wave 0 : Owner initials the D-* table, all initialled but D-CAP-1, done
+    Wave 0 : Owner initials the D-* table, all initialled, done
            : Close F5 and fix F12, done 2026-11-11
            : Record F3 as a decision
            : Langfuse 0, OTel-only, done
@@ -980,11 +982,10 @@ blocking — the DAST path, every time.
 ### Decisions for the owner
 
 Each child roadmap's Phase 0 ends with one or more of these. Initial here;
-the child records the reasoning. As of 2026-11-12 every row through D-L1-10,
-D-L4-6 and D-EV-5 is decided or deferred except D-CAP-1. The rows after those
-were raised by the 2026-11-11 wave: four of them are decided (D-L1-15,
-D-L1-16, D-L4-7 and D-EV-6), and each open one carries a proposed default,
-which applies only when the owner adopts it.
+the child records the reasoning. As of 2026-11-12 every row is decided or deferred.
+The rows after D-L1-10, D-L4-6 and D-EV-5 were raised by the 2026-11-11 wave;
+the owner adopted each one's proposed default on 2026-11-12, and decided
+D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 
 | Id | Decision | Child | Default if undecided |
 | --- | --- | --- | --- |
@@ -998,10 +999,10 @@ which applies only when the owner adopts it.
 | D-L1-8 | Inflect never holds a payment credential (no PAN, token value or wallet key) and its own agents never pay; it stays outside PCI DSS cardholder-data scope | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
 | D-L1-9 | Spending authority is a declared envelope on the register, reviewed by a second person, required before activation, and reached by recertification and the kill switch | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt |
 | D-L1-10 | Reading and suspending at Mastercard only through a customer-owned connection on the external write ladder, once written API access and a sandbox exist | mastercard-agent-pay | **decided 2026-11-11** (owner): adopt; Phases 1-3 need no access |
-| D-L1-11 | Presidio redaction action per type, and the record floors that mount the detector | presidio | **open.** Proposed: a numbered typed placeholder (`<PERSON_1>`) for all five types, recorded as a Phase 0 default and not part of D-L1-1; a type and locale counts towards the mount only with at least `PII_MIN_SUPPORT` = 20 cases, against floors of recall 0.95 and precision 0.80 |
-| D-L1-12 | NemoClaw Phase 1: take the two collector-policy tightenings Phase 0 found | nemoclaw | **open.** Proposed: take both, each from a real run's measurements — binaries named on every network rule, and an L7 rule on the Vertex AI residual that admits the measured configuration reads and refuses the inference verbs |
-| D-L1-13 | Additions under D-L1-6 from Cloudflare's Verified Bots policy: honour crawl directives (a crawl-delay as well as disallow), and a stated purpose on the bot page that matches what the monitor fetches | web-bot-auth | **open**, needed before Phase 2's registration. Proposed: adopt both by name |
-| D-L1-14 | Additions under D-L1-7 from the draft: the inbound label is keyed on the (URL, key) pair, never the key alone; only `verified` is labelled, `invalid` and `unverified` stay distinct; a failed directory fetch never evicts a cached directory | web-bot-auth | **open**, needed before Phase 3's verifier. Proposed: adopt by name |
+| D-L1-11 | Presidio redaction action per type, and the record floors that mount the detector | presidio | **decided 2026-11-12** (owner: the proposed default, adopted). a numbered typed placeholder (`<PERSON_1>`) for all five types, recorded as a Phase 0 default and not part of D-L1-1; a type and locale counts towards the mount only with at least `PII_MIN_SUPPORT` = 20 cases, against floors of recall 0.95 and precision 0.80 |
+| D-L1-12 | NemoClaw Phase 1: take the two collector-policy tightenings Phase 0 found | nemoclaw | **decided 2026-11-12** (owner: the proposed default, adopted). take both, each from a real run's measurements — binaries named on every network rule, and an L7 rule on the Vertex AI residual that admits the measured configuration reads and refuses the inference verbs |
+| D-L1-13 | Additions under D-L1-6 from Cloudflare's Verified Bots policy: honour crawl directives (a crawl-delay as well as disallow), and a stated purpose on the bot page that matches what the monitor fetches | web-bot-auth | **decided 2026-11-12** (owner: the proposed default, adopted). Both are adopted by name. The monitor does not yet honour a crawl-delay, so that is now owed before Phase 2's registration |
+| D-L1-14 | Additions under D-L1-7 from the draft: the inbound label is keyed on the (URL, key) pair, never the key alone; only `verified` is labelled, `invalid` and `unverified` stay distinct; a failed directory fetch never evicts a cached directory | web-bot-auth | **decided 2026-11-12** (owner: the proposed default, adopted). Adopted by name, before Phase 3's verifier |
 | D-L1-15 | The vendor monitor's TLS-fetch outcome taxonomy | web-bot-auth | **decided 2026-11-12** (owner): a DNS failure is `UNREACHABLE`, not `BLOCKED`; every 4xx is `REFUSED`, not only 403, 429 and a challenge |
 | D-L1-16 | A `flag` verdict on run input at admission: refuse the run, or park it for review | nemo-guardrails | **decided 2026-11-12** (owner): keep refusing; no parked run |
 | D-L2-1 | Langflow's box: the visual canvas is the product's own, editing the agent profile; Langflow not adopted | langflow | **decided 2026-10-29** (owner) |
@@ -1017,24 +1018,24 @@ which applies only when the owner adopts it.
 | D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | **decided 2026-11-11** (owner): **OTel-only for now**; no new service and no sub-processor |
 | D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | **decided 2026-11-11** (owner): adopt |
 | D-L4-7 | The lexical search arm under vectors-only and field encryption: none, a keyed blind-token index, or a plaintext `tsvector` | weaviate | **decided 2026-11-12** (owner): a **keyed blind-token index** — an HMAC of each normalised token under a per-tenant key, matching exact terms without storing them; never a plaintext `tsvector`, and not none |
-| D-L4-8 | Patch cadence of the self-built pgvector Postgres image | weaviate | **open.** Proposed: keep the owner's 2026-10-10 tag rule, with the image rebuilt on a weekly schedule and whenever the upstream `16-alpine` digest changes, republishing a moving line tag plus an immutable per-build tag. The alternative, digest pins with a scheduled bump pull request, reverses the 2026-10-10 decision |
-| D-L4-9 | The floors that trigger Weaviate (the vector store's Phase 4) | weaviate | **open.** Proposed: recall@10 at least 0.95 of an exact scan of the same tenant, and p95 `search` latency at most 300 ms on the VM, at `k = 10`; a miss on two consecutive nightly records after tuning is the trigger, one miss is a tuning task |
-| D-L4-10 | D-L4-3's recall margin and the retriever latency budgets | nemotron-retriever | **open.** Proposed: 0.05 absolute recall@10, the value the benchmark carries (`D_L4_3_RECALL_MARGIN`, about two standard errors on its 200 cases); the child's Phase 0 text still proposes 0.03 overall and 0.05 on the Bulgarian slice and follows whichever the owner agrees. Also open: the latency budgets, and growing the Bulgarian slice to about 200 queries so its margin is closer to enforceable |
+| D-L4-8 | Patch cadence of the self-built pgvector Postgres image | weaviate | **decided 2026-11-12** (owner: the proposed default, adopted). keep the owner's 2026-10-10 tag rule, with the image rebuilt on a weekly schedule and whenever the upstream `16-alpine` digest changes, republishing a moving line tag plus an immutable per-build tag. The alternative, digest pins with a scheduled bump pull request, reverses the 2026-10-10 decision |
+| D-L4-9 | The floors that trigger Weaviate (the vector store's Phase 4) | weaviate | **decided 2026-11-12** (owner: the proposed default, adopted). recall@10 at least 0.95 of an exact scan of the same tenant, and p95 `search` latency at most 300 ms on the VM, at `k = 10`; a miss on two consecutive nightly records after tuning is the trigger, one miss is a tuning task |
+| D-L4-10 | D-L4-3's recall margin and the retriever latency budgets | nemotron-retriever | **decided 2026-11-12** (owner: the proposed default, adopted): 0.05 absolute recall@10, the value the benchmark carries (`D_L4_3_RECALL_MARGIN`, about two standard errors on its 200 cases); the child's Phase 0 text still proposes 0.03 overall and 0.05 on the Bulgarian slice and now follows 0.05. Still open, because no default was proposed: the latency budgets, and growing the Bulgarian slice to about 200 queries so its margin is closer to enforceable |
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
-| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **open**, the one original row not initialled. Default: measure first; smaller pieces the records allow; then resize to `e2-highmem-4`; never self-host Langfuse on the production VM |
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
 | D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |
 | D-EV-4 | The product scores its own agents on its own ladder | inspect | **decided 2026-11-11** (owner): adopt |
 | D-EV-5 | SWE-bench: declined or placeholder | swe-bench | **decided 2026-11-11** (owner): declined |
 | D-EV-6 | The Inspect nightly budget and model | inspect | **decided 2026-11-12** (owner): **USD 10 a night**, covering both engines, each run on its own model (a record about another model evidences another system); non-blocking at first. Separate from D-EV-1's USD 5 |
-| D-EV-7 | A missing-input arm for the Tool Runner: profile runs take no caller input, so its record covers three case kinds, not four | inspect | **open.** Proposed: accept three kinds for the Tool Runner with the reason recorded; a declared input on profile runs is a product change in the Claude engines plan |
-| D-EV-8 | A JSON read of a run's decision rows (`AiDecisionLog`), which no REST route serves | inspect | **open.** Proposed: a read under the steps feed's gate (`admin.view` or `admin.agent_registry_view`); until then tasks 4, 7 and 8 score on step facts only |
-| D-EV-9 | Persisting a run's offered tool set, which is logged (`toolsOffered`, `toolsOmitted`) and not stored | inspect | **open.** Proposed: store the offered names on the run (a product change), so task 5 can prove a tool was never offered, not only never reached |
-| D-EV-10 | A guard verdict on the delegation step: the `task` step carries no `guardVerdict`, so a flagged answer that is not refused leaves no trace on it | inspect | **open.** Proposed: write the verdict onto the step (a product change in the Claude engines plan); task 6 then requires it and task 8 drops the `task` exclusion |
-| D-EV-11 | Whether D-EV-1's USD 5 a night is shared between garak and Ragas or is per job | garak, ragas | **open.** The children disagree today. `ragas.md` (D-EV-2, 0.6) reads the cap as shared and plans a cost meter that refuses shares summing above USD 5.00. `garak.md` (0.3) and the built nightly read it as garak's alone: `.garak/budget.json` has `nightlyCapUsd: 5`, pinned by `garak-workflow-pinning`. The USD 2.50 split appears only in the 2026-11-11 knowledge re-plan note. Proposed: shared, USD 2.50 each by default, and garak's `nightlyCapUsd` and breaker drop to its share in the same pull request that builds Ragas' cost meter; a Ragas share that lands while garak keeps USD 5 lets a night reach USD 7.50. Garak's worst case is not reserved: its measured breaker checks the night's spend between roles, not within one, so one role can overrun its share (garak 1.4). The invoice-level stop is the spend limit on the dedicated key's workspace, an owner action |
+| D-EV-7 | A missing-input arm for the Tool Runner: profile runs take no caller input, so its record covers three case kinds, not four | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). accept three kinds for the Tool Runner with the reason recorded; a declared input on profile runs is a product change in the Claude engines plan |
+| D-EV-8 | A JSON read of a run's decision rows (`AiDecisionLog`), which no REST route serves | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). a read under the steps feed's gate (`admin.view` or `admin.agent_registry_view`); until then tasks 4, 7 and 8 score on step facts only |
+| D-EV-9 | Persisting a run's offered tool set, which is logged (`toolsOffered`, `toolsOmitted`) and not stored | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). store the offered names on the run (a product change), so task 5 can prove a tool was never offered, not only never reached |
+| D-EV-10 | A guard verdict on the delegation step: the `task` step carries no `guardVerdict`, so a flagged answer that is not refused leaves no trace on it | inspect | **decided 2026-11-12** (owner: the proposed default, adopted). write the verdict onto the step (a product change in the Claude engines plan); task 6 then requires it and task 8 drops the `task` exclusion |
+| D-EV-11 | Whether D-EV-1's USD 5 a night is shared between garak and Ragas or is per job | garak, ragas | **decided 2026-11-12** (owner): **shared, USD 2.50 each.** `evals/cost-meter/shares.json` states the split and the shared meter enforces it; garak meters against its USD 2.50 share (40 requests per role, 80 a night at the planned USD 0.03 turn, USD 2.40), and Ragas takes its share when its harness lands. Garak's worst case is not reserved: its measured breaker checks the night's spend between roles, not within one, so one role can overrun its share (garak 1.4). The invoice-level stop is the spend limit on the dedicated key's workspace, an owner action |
 
 ### How this document is updated
 

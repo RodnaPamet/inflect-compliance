@@ -26,11 +26,13 @@ import {
     HARNESS_CONTRACT_V1,
     HARNESS_CONTRACT_V2,
     HARNESS_CONTRACT_V3,
+    HARNESS_CONTRACT_V4,
     MAX_REPORT_BYTES,
     harnessSignedMessage,
     type HarnessRefusal,
     type HarnessReportBodyV2,
     type HarnessReportBodyV3,
+    type HarnessReportBodyV4,
 } from '@/lib/agentic/harness-contract';
 
 export interface FakeScanner {
@@ -364,6 +366,43 @@ export function validV3ReportBodyWithSdkAgent(): HarnessReportBodyV3 {
     } as HarnessReportBodyV3;
 }
 
+/** The discovered id of the `/4` fixture's payment-capable agent. */
+export const PAYING_AGENT_ID = 'code:acme/shop-bot/agent.ts#agent';
+
+/** Where the `/4` fixture's paying agent calls its payment client. */
+export const PAYING_AGENT_PAYMENT_AT = 'code://acme/shop-bot/agent.ts#L12';
+
+/**
+ * A valid `inflect-agent-harness/4` body (Agent Pay Phase 2.2): the `/3`
+ * body with the Agent SDK agent stating `paymentCapabilities: []` (its code
+ * was read, and calls no payment client) and a second code-discovered agent
+ * whose file calls x402's `wrapFetchWithPayment`, reported by protocol, library
+ * and locator — never an amount, a wallet or a key.
+ */
+export function validV4ReportBody(): HarnessReportBodyV4 {
+    const v3 = validV3ReportBodyWithSdkAgent();
+    const sdk = v3.agents[v3.agents.length - 1];
+    return {
+        ...v3,
+        contract: HARNESS_CONTRACT_V4,
+        agents: [
+            ...v3.agents.slice(0, -1),
+            { ...sdk, paymentCapabilities: [] },
+            {
+                discoveredId: PAYING_AGENT_ID,
+                discoveredVia: ['code'],
+                registeredAgentId: null,
+                owner: null,
+                credentials: [{ ref: 'env://WALLET_PRIVATE_KEY', ageDays: null, expires: null, boundToAgent: false, grant: 'unknown' }],
+                tools: [],
+                skills: [],
+                verdicts: [],
+                paymentCapabilities: [{ protocol: 'x402', library: 'x402-fetch', at: PAYING_AGENT_PAYMENT_AT }],
+            },
+        ],
+    } as HarnessReportBodyV4;
+}
+
 /** A credential-shaped string, built at runtime. Never a real credential. */
 function fakeSecret(): string {
     return ['gh', 'p_', 'Q'.repeat(36)].join('');
@@ -398,6 +437,16 @@ export const MALFORMATIONS = {
     'duplicate-agent': 'SCHEMA',
     'duplicate-source': 'SCHEMA',
     'wrong-contract': 'SCHEMA',
+    // `/4` adds one member, and each id is held to its own schema: a `/3`
+    // report carrying it is refused, as is a capability outside the closed
+    // lists, one located anywhere but code, one on an agent no code read
+    // reported, and a value where a locator belongs.
+    'v3-carries-payment-capabilities': 'SCHEMA',
+    'v4-unknown-payment-library': 'SCHEMA',
+    'v4-payment-not-located-in-code': 'SCHEMA',
+    'v4-payment-on-agent-not-read-from-code': 'SCHEMA',
+    'v4-payment-at-carries-a-card-number': 'SCHEMA',
+    'v4-payment-reported-twice': 'SCHEMA',
     'unknown-criterion': 'SCHEMA',
     // A report as a `/1` scanner sent it, signed by a trusted key and valid
     // under the schema `/1` had: refused, because `/1` is retired (#3686).
@@ -487,7 +536,28 @@ export function malformedReport(
         case 'duplicate-source':
             return { raw: signedWith([['population', 'sources', 1, 'kind'], 'entra-sp']), trusted, expected };
         case 'wrong-contract':
-            return { raw: signedWith([['contract'], 'inflect-agent-harness/4']), trusted, expected };
+            return { raw: signedWith([['contract'], 'inflect-agent-harness/9']), trusted, expected };
+        case 'v3-carries-payment-capabilities':
+        case 'v4-unknown-payment-library':
+        case 'v4-payment-not-located-in-code':
+        case 'v4-payment-on-agent-not-read-from-code':
+        case 'v4-payment-at-carries-a-card-number':
+        case 'v4-payment-reported-twice': {
+            const body = validV4ReportBody() as unknown as {
+                contract: string;
+                agents: { discoveredVia: string[]; paymentCapabilities?: Record<string, string>[] }[];
+            };
+            const paying = body.agents[body.agents.length - 1];
+            const cap = paying.paymentCapabilities![0];
+            if (kind === 'v3-carries-payment-capabilities') body.contract = HARNESS_CONTRACT_V3;
+            if (kind === 'v4-unknown-payment-library') cap.library = 'stripe';
+            if (kind === 'v4-payment-not-located-in-code') cap.at = 'https://shop.example/pay';
+            if (kind === 'v4-payment-on-agent-not-read-from-code') paying.discoveredVia = ['runtime'];
+            // A Luhn-valid test card number, assembled at runtime.
+            if (kind === 'v4-payment-at-carries-a-card-number') cap.at = `code://acme/${['5555', '5555', '5555', '4444'].join('')}#L1`;
+            if (kind === 'v4-payment-reported-twice') paying.paymentCapabilities = [cap, { ...cap }];
+            return { raw: scanner.serialise(body), trusted, expected };
+        }
         case 'unknown-criterion':
             return { raw: signedWith([['agents', 0, 'verdicts', 0, 'criterion'], 'H9.made_up']), trusted, expected };
         case 'retired-v1':

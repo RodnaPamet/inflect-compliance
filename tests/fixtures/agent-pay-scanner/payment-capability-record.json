@@ -1,0 +1,294 @@
+{
+    "record": "agent-pay-payment-capability",
+    "description": "Agent Pay Phase 2.5 (docs/ai-architecture/mastercard-agent-pay.md): synthetic agent repositories, one file each, and the payment-capability fact the reference scanner's code source must report for each. The sources are data: written to a temporary directory and read statically, never imported or run.",
+    "version": 2,
+    "recordedAt": "2026-11-12",
+    "cases": [
+        {
+            "case": "x402-fetch",
+            "why": "x402's fetch wrapper, the 1.x package",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { wrapFetchWithPayment } from \"x402-fetch\";\nconst account = process.env.WALLET_ACCOUNT;\nexport const payingFetch = wrapFetchWithPayment(fetch, account); // PAY\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402-fetch",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-axios",
+            "why": "x402's axios interceptor, the 1.x package",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport axios from \"axios\";\nimport { withPaymentInterceptor } from \"x402-axios\";\nexport const client = withPaymentInterceptor(axios.create(), process.env.WALLET_ACCOUNT); // PAY\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402-axios",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-v2-fetch-namespace",
+            "why": "the 2.x scoped package, reached through a namespace import",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport * as x402 from \"@x402/fetch\";\nexport const payingFetch = x402.wrapFetchWithPaymentFromConfig(fetch, { schemes: [] }); // PAY\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "@x402/fetch",
+                        "line": 4
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-v2-axios-require",
+            "why": "the 2.x scoped axios package, through require()",
+            "files": {
+                "shop/agent.js": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nconst { wrapAxiosWithPayment } = require(\"@x402/axios\");\nexport const client = wrapAxiosWithPayment(require(\"axios\").create(), {}); // PAY\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "@x402/axios",
+                        "line": 4
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-python-httpx",
+            "why": "the Python SDK's httpx client, as a context manager",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nfrom x402.http.clients.httpx import x402HttpxClient\n\nasync def buy(url):\n    async with x402HttpxClient(account=None, base_url=url) as client:  # PAY\n        return await client.get(\"/resource\")\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402",
+                        "line": 6
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-python-requests-1x-path",
+            "why": "the Python SDK's requests session, under the 1.x module path",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nfrom x402.clients.requests import x402_requests\n\nsession = x402_requests(None)  # PAY\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "x402-python-client-attribute",
+            "why": "the Python payer client, reached as an attribute of the module",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nimport x402\n\npayer = x402.x402Client()  # PAY\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "alias",
+            "why": "an alias is a capability where it is made",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { wrapFetchWithPayment } from \"x402-fetch\";\nconst pay = wrapFetchWithPayment; // PAY\nexport const payingFetch = pay(fetch, process.env.WALLET_ACCOUNT);\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402-fetch",
+                        "line": 4
+                    }
+                ]
+            }
+        },
+        {
+            "case": "imports-never-calls",
+            "why": "an import that is never called or bound is no payment path",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { wrapFetchWithPayment } from \"x402-fetch\";\nexport const unused = typeof fetch;\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "hidden-import-ts",
+            "why": "a dynamic import behind a variable in a payment-naming file stops the read vouching for the file",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\n\nconst moduleName = \"x402-fetch\";\nexport async function load() {\n    const mod = await import(moduleName);\n    return mod;\n}\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "hidden-import-python",
+            "why": "importlib in a payment-naming file, with a computed module name",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nimport importlib\n\npayments = importlib.import_module(\"x402\" + \".http.clients\")\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "literal-dynamic-import-of-a-payment-module",
+            "why": "a literal dynamic import of a payment module still hides which member is called",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\n\nexport async function load() {\n    return await import(\"x402-fetch\");\n}\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "local-lookalike",
+            "why": "a local function with the client's name is not x402's",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\n\nfunction wrapFetchWithPayment(f: typeof fetch) { return f; }\nexport const notPaying = wrapFetchWithPayment(fetch); // x402 lookalike\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "seller-middleware",
+            "why": "the seller side accepts payments and initiates none",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { paymentMiddleware } from \"x402-express\";\nexport const accept = paymentMiddleware(\"0xpayee\", {});\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "literal-dynamic-import-of-another-module",
+            "why": "a literal dynamic import of a non-payment module is ordinary code",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\n\nexport async function load() {\n    return await import(\"./prompts.js\");\n}\n// settles in x402 elsewhere\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "import-module-imported-by-name",
+            "why": "`from importlib import import_module` makes the call a bare name; a literal payment module behind it is out of sight",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nfrom importlib import import_module\n\nm = import_module(\"x402.clients\")\nclient = m.x402HttpxClient()\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "getattr-literal",
+            "why": "`getattr(x402, \"x402Client\")` reaches the entry point by a literal name, so it is a capability",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nimport x402\n\nfn = getattr(x402, \"x402Client\")\nclient = fn()\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "getattr-computed",
+            "why": "`getattr` on a payment module with a computed name is out of sight",
+            "files": {
+                "shop/agent.py": "from langgraph.prebuilt import create_react_agent\nfrom langchain_openai import ChatOpenAI\nimport os\nimport x402\n\nfn = getattr(x402, os.environ[\"PAY_CLIENT\"])\n\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o-mini\"), [])\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        },
+        {
+            "case": "entry-point-in-an-object",
+            "why": "an entry point held as an object's value is a capability where it is held",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { wrapFetchWithPayment } from \"x402-fetch\";\nconst o = { pay: wrapFetchWithPayment };\nexport const payingFetch = o.pay(fetch, undefined as never);\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402-fetch",
+                        "line": 4
+                    }
+                ]
+            }
+        },
+        {
+            "case": "entry-point-passed-as-an-argument",
+            "why": "an entry point passed to another function is a capability at the call",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nimport { wrapFetchWithPayment } from \"x402-fetch\";\nconst compose = <T,>(f: T) => f;\nexport const pay = compose(wrapFetchWithPayment);\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "COMPLETE",
+                "capabilities": [
+                    {
+                        "library": "x402-fetch",
+                        "line": 5
+                    }
+                ]
+            }
+        },
+        {
+            "case": "non-literal-dynamic-import-in-an-agent-file",
+            "why": "an agent file that loads a module named at run time is out of sight, whether or not it spells a payment library",
+            "files": {
+                "shop/agent.ts": "import { createReactAgent } from \"@langchain/langgraph/prebuilt\";\nimport { ChatOpenAI } from \"@langchain/openai\";\nexport async function load() {\n  const m = await import(process.env.PAY_LIB!);\n  return m.wrapFetchWithPayment(fetch);\n}\nexport const agent = createReactAgent({ llm: new ChatOpenAI({ model: \"gpt-4o-mini\" }), tools: [] });\n"
+            },
+            "expect": {
+                "status": "INCOMPLETE",
+                "capabilities": []
+            }
+        }
+    ]
+}

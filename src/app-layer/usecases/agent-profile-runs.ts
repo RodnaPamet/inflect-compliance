@@ -52,10 +52,11 @@ import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ValidationError, badRequest } from '@/lib/errors/types';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import type { ProfileRunSpec, WorkflowDefinition } from '@/lib/agentic/workflow-types';
-import { isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
+import { AGENT_DRIVERS, isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
 import {
     isProfileRunKey,
     parseProfileRunKey,
+    profileRunKey,
     PROFILE_EFFORTS,
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
@@ -66,7 +67,8 @@ import {
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
-import { agentProfilesOn, profileContentHash } from './agent-profiles';
+import { runMessage } from '@/lib/agentic/flue/run-message';
+import { agentProfilesOn, assertMayManageProfiles, profileContentHash } from './agent-profiles';
 
 export type ProfileRunRefusal =
     | 'PROFILES_DISABLED'
@@ -371,4 +373,93 @@ export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRu
                 'without a flow to run this profile.',
         );
     }
+}
+
+// ─── The preview (Phase 4 of `docs/ai-architecture/langflow.md`) ────
+
+/** What an engine would be handed for one stored version, as the approver reads it. */
+export type ProfileRunPreview =
+    | {
+          readonly state: 'SHOWN';
+          readonly version: number;
+          /** The run this version can have: itself in force, a Test run under review, or none. */
+          readonly runAs: 'RUN' | 'TEST_RUN' | null;
+          /**
+           * Set when admission would refuse this version on EVERY engine, so no
+           * run — whatever `runAs` says it would be — receives the message.
+           * `PROFILE_FLOW_NOT_RUNNABLE` for any flow version until Phase 5.
+           */
+          readonly runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null;
+          /** The run message, from `runMessage`, the function the engines call. */
+          readonly message: string;
+          /** The run is offered the read surface only. */
+          readonly readOnly: boolean;
+      }
+    /** No such version on this agent's profile. */
+    | { readonly state: 'NOT_FOUND' }
+    /** The stored content no longer verifies, or carries a setting this build cannot read: no run has a message. */
+    | { readonly state: 'UNRUNNABLE' };
+
+/**
+ * THE EXACT RUN MESSAGE a stored version would give an engine (Phase 4.1).
+ *
+ * Built by the run path's own two functions and nothing else:
+ * `compileProfileDefinition`, which the resolver and the worker call, and
+ * `runMessage`, which the Tool Runner and Flue call, at the first step with no
+ * declared input (a profile declares none). So the panel cannot show a message
+ * the engine would not send. The content hash is recomputed first, as the
+ * resolver does: a version whose content no longer verifies has no message.
+ *
+ * Read under the profile surface's own gate (`admin.agent_registry`, 404 when
+ * profiles are off). Writes nothing.
+ */
+export async function previewProfileRunMessage(
+    ctx: RequestContext,
+    agentId: string,
+    version: number,
+): Promise<ProfileRunPreview> {
+    await assertMayManageProfiles(ctx);
+    const row = await runInTenantContext(ctx, (db) =>
+        db.agentProfileVersion.findFirst({
+            where: { tenantId: ctx.tenantId, version, profile: { agentId } },
+            select: VERSION_SELECT,
+        }),
+    );
+    if (!row || row.profile.agentId !== agentId) return { state: 'NOT_FOUND' };
+    if (profileContentHash(row.instructions, row.flowJson) !== row.instructionsHash) return { state: 'UNRUNNABLE' };
+    const inForce = row.status === 'APPROVED' && row.profile.currentApprovedVersion === row.version;
+    const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
+    const testRun = runAs === 'TEST_RUN';
+    const def = compileProfileDefinition(profileRunKey(row.profile.id, row.version, { testRun }), row, { testRun });
+    if (!def || !def.profile) return { state: 'UNRUNNABLE' };
+    return {
+        state: 'SHOWN',
+        version: row.version,
+        runAs,
+        runRefused: refusedOnEveryEngine(def.profile),
+        message: runMessage(def),
+        readOnly: def.readOnly === true,
+    };
+}
+
+/**
+ * Would admission refuse this version on every engine there is? Asked through
+ * `assertEngineRunsProfiles` itself, once per driver, so the panel cannot say
+ * "a run receives this message" for a version admission refuses — which,
+ * before Phase 5, is every version carrying a flow.
+ */
+function refusedOnEveryEngine(
+    profile: ProfileRunSpec,
+): 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null {
+    const someEngineRuns = AGENT_DRIVERS.some((driver) => {
+        try {
+            assertEngineRunsProfiles(driver, profile);
+            return true;
+        } catch (err) {
+            if (err instanceof AppError) return false;
+            throw err;
+        }
+    });
+    if (someEngineRuns) return null;
+    return profile.flow ? 'PROFILE_FLOW_NOT_RUNNABLE' : 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }

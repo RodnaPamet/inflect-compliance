@@ -159,7 +159,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `scanner-vm` and `vm-capacity`, so it is a mid-file insert, +5/-0.
         // Merged 2026-11-12: the digest is over the file holding the
         // 2026-11-11 entries and `vm-apply.yml:vm-apply` together.
-        keyOrderSha: '7305be5b379e60d79c21d937a39d785b9c6884629172eeb906aa878e23707555',
+        // Updated 2026-11-12 for `agent-evals.yml:inspect`, the nightly Inspect
+        // evaluation of the product's own engines (docs/ai-architecture/inspect.md
+        // Phase 1). Inserted in alphabetical position first, before
+        // `bundle-analyze.yml:analyze` ('ag' < 'bu'), +5/-0.
+        // Merged 2026-11-12 with #5360: the digest is over the file holding the
+        // final batch's entries and `vm-apply.yml:vm-apply` together.
+        keyOrderSha: 'a73f31ea3d38e43ae28f436338f325e0f70b162189d47c0d1b913986bfba22f2',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

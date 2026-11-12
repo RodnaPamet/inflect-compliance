@@ -473,6 +473,7 @@ describe('5. an empty window is EMPTY_SCAN, not a clean bill', () => {
             acceptedShortfalls: new Set(),
             intakeClaims: new Map(),
             openOrphanCredentials: new Set(),
+            spendingAuthority: new Map(),
         });
         expect(plan.assert.map((f) => f.code)).toEqual(['EMPTY_SCAN']);
         expect(plan.resolve).not.toContain('EMPTY_SCAN:agt_scanner');

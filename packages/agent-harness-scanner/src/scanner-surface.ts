@@ -17,7 +17,7 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
-import { HARNESS_CONTRACT_V3 } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V4 } from '@/lib/agentic/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
@@ -42,9 +42,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * 0.11.0: the register read exchanges the ingest key for a token naming the
  * register tool alone, and the register source reports the gate's enforcement
  * as H2 and H3 verdicts (#5004). 0.12.0: the egress proof, and the proxy it
- * runs behind (#5004 part C).
+ * runs behind (#5004 part C). 0.13.0: reports under `inflect-agent-harness/4`,
+ * the `code` source's payment-capability fact (Agent Pay Phase 2).
  */
-export const SCANNER_VERSION = '0.12.0';
+export const SCANNER_VERSION = '0.13.0';
 
 /** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -52,7 +53,7 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
-    contract: HARNESS_CONTRACT_V3,
+    contract: HARNESS_CONTRACT_V4,
     reads: [
         { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },

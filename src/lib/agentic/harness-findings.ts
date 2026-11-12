@@ -68,6 +68,11 @@
  *   ORPHAN_CREDENTIAL:<scannerAgentId>:<kind>:<ref>
  *                                            `/2` only: a credential that source
  *                                            saw bound to no discovered agent
+ *   SPENDING_AGENT_UNDECLARED:<registeredAgentId>
+ *                                            `/4` only: a registered agent whose
+ *                                            code can pay, with no spending
+ *                                            authority declared (Agent Pay
+ *                                            Phase 2, below)
  *
  * A scan closes a finding only on POSITIVE evidence: an agent now in the
  * register, a level now at the bar, a source now read in full, a population now
@@ -127,6 +132,34 @@
  * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
  * report does not mention.
  *
+ * ── SPENDING_AGENT_UNDECLARED, FROM `/4`'s `paymentCapabilities[]` ─────────
+ *
+ * Agent Pay Phase 2.3 (`docs/ai-architecture/mastercard-agent-pay.md`). The
+ * register decides, never the report: the finding is keyed by the REGISTER
+ * ROW the planner linked, so an agent the register does not know raises
+ * SHADOW_AGENT and nothing here (registering it is the first act), and a
+ * report cannot raise it against a row the register does not hold.
+ *
+ *   • IT OPENS when a linked agent's code calls a payment client and the
+ *     register row holds no spending authority that is not WITHDRAWN.
+ *   • IT CLOSES on positive evidence only, and the scan holds none: an
+ *     envelope a second person REVIEWED (`spendingAuthority` reads
+ *     `REVIEWED`) is the one close the planner makes. A code read reporting
+ *     `paymentCapabilities: []` closes NOTHING, complete or not: `[]` is "the
+ *     reader saw no payment client called in the agent's own file", and the
+ *     reader cannot see a client wrapped in a helper module, reached through a
+ *     name it cannot resolve, or loaded by a dynamic import elsewhere. Absence
+ *     a static, one-file reader cannot vouch for is not evidence. A team that
+ *     removed the client closes the finding itself, on the finding; the next
+ *     scan reopens it only if it sees the client again.
+ *   • AN UNREVIEWED ENVELOPE HOLDS IT: neither opened nor closed. The
+ *     declaration exists, and its review is the register's own rule —
+ *     activation refuses `SPENDING_AUTHORITY_UNREVIEWED` until it lands.
+ *
+ * Two discovered agents linked to one register row share the key, so the
+ * finding is raised once per row; one row's code read saying none does not
+ * close it while another linked agent in the same scan still shows a payment.
+ *
  * ── THE BAR IS REPORT-ONLY ──────────────────────────────────────────────────
  *
  * A shortfall is a finding, never a refusal. Nothing here is consulted by the
@@ -146,6 +179,7 @@ import {
 } from './harness-ladder';
 import type {
     HarnessModelEndpoint,
+    HarnessPaymentCapability,
     HarnessReportAgent,
     HarnessReportBody,
     HarnessUnboundCredential,
@@ -298,6 +332,7 @@ export const HARNESS_FINDING_CODES = [
     'EMPTY_SCAN',
     'INCOMPLETE_SOURCE',
     'ORPHAN_CREDENTIAL',
+    'SPENDING_AGENT_UNDECLARED',
 ] as const;
 export type HarnessFindingCode = (typeof HARNESS_FINDING_CODES)[number];
 
@@ -345,6 +380,41 @@ export interface PlannedAgent {
      * ingest stores as NULL, apart from `[]`, reported empty.
      */
     readonly models: readonly HarnessModelEndpoint[] | null;
+    /**
+     * `/4`'s payment capabilities, as reported. `null` is NOT REPORTED (a `/2`
+     * or `/3` report, or an agent no code read reported), apart from `[]`, a
+     * code read that saw no payment client called.
+     */
+    readonly paymentCapabilities: readonly HarnessPaymentCapability[] | null;
+}
+
+/**
+ * What the register holds for one row's spending authority (Agent Pay
+ * Phase 1), as the harness planner needs it: `REVIEWED` when an envelope a
+ * second person reviewed is in force (REVIEWED, or SUSPENDED_REQUESTED after
+ * a review); `UNREVIEWED` when the only live envelopes await review. A row
+ * absent from the map holds no envelope that is not WITHDRAWN.
+ */
+export type SpendingAuthorityStanding = 'REVIEWED' | 'UNREVIEWED';
+
+/**
+ * One register row's standing from its stored envelopes. WITHDRAWN rows are
+ * ignored; any reviewed live envelope makes the row REVIEWED.
+ */
+export function spendingAuthorityStandingOf(
+    envelopes: readonly { readonly status: string; readonly reviewedAt: Date | null }[],
+): SpendingAuthorityStanding | null {
+    const live = envelopes.filter((e) => e.status !== 'WITHDRAWN');
+    if (live.length === 0) return null;
+    const reviewed = live.some(
+        (e) => e.reviewedAt !== null && (e.status === 'REVIEWED' || e.status === 'SUSPENDED_REQUESTED'),
+    );
+    return reviewed ? 'REVIEWED' : 'UNREVIEWED';
+}
+
+/** The `sourceRef` of a register row's SPENDING_AGENT_UNDECLARED finding. */
+export function spendingUndeclaredRefOf(registeredAgentId: string): string {
+    return `SPENDING_AGENT_UNDECLARED:${registeredAgentId}`;
 }
 
 /**
@@ -412,6 +482,11 @@ export interface PriorHarnessState {
      * ignored, whoever passed it.
      */
     readonly openOrphanCredentials: ReadonlySet<string>;
+    /**
+     * Each register row's spending-authority standing (Agent Pay Phase 2.3),
+     * keyed by register id. A row absent from the map holds no live envelope.
+     */
+    readonly spendingAuthority: ReadonlyMap<string, SpendingAuthorityStanding>;
 }
 
 /**
@@ -615,6 +690,31 @@ function orphanCredentialFinding(scanRef: string, scanner: string, u: HarnessUnb
     };
 }
 
+/** How many payment call sites a finding names before it stops listing. */
+const MAX_PAYMENT_SITES_NAMED = 10;
+
+function spendingUndeclaredFinding(where: string, registeredAgentId: string, paying: readonly PlannedAgent[]): PlannedFinding {
+    const sites = paying.flatMap((p) => (p.paymentCapabilities ?? []).map((c) => `${c.library} at ${c.at}`));
+    const named = sites.slice(0, MAX_PAYMENT_SITES_NAMED);
+    const more = sites.length > MAX_PAYMENT_SITES_NAMED ? ` and ${sites.length - MAX_PAYMENT_SITES_NAMED} more` : '';
+    return {
+        code: 'SPENDING_AGENT_UNDECLARED',
+        sourceRef: spendingUndeclaredRefOf(registeredAgentId),
+        severity: 'HIGH',
+        type: 'NONCONFORMITY',
+        title: `Registered agent ${registeredAgentId} can pay, with no spending authority declared`,
+        description:
+            `A harness scan (${where}) read the code of ${paying.map((p) => p.discoveredId).join(', ')}, linked to `
+            + `registered agent ${registeredAgentId}, and found it calling a payment client: ${named.join('; ')}${more}. `
+            + 'The register holds no spending authority for the agent, so nobody has declared, or a second person '
+            + 'reviewed, how much it may spend, where, or until when. Declare the envelope on the register for '
+            + 'review, or remove the payment client from the agent. This finding closes when a reviewed envelope '
+            + 'is in force. A scan that no longer sees the payment client does not close it, because a static read '
+            + 'cannot show an agent has no other way to pay: if the client was removed, close the finding yourself; '
+            + 'a later scan reopens it only if it sees the client again.',
+    };
+}
+
 /** Plan what one verified report means for the tenant. */
 export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessState): HarnessPlan {
     const scanRef = body.scan.id;
@@ -729,8 +829,30 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             verdicts: a.verdicts,
             tools: a.tools,
             models: 'models' in a ? (a.models ?? null) : null,
+            paymentCapabilities: 'paymentCapabilities' in a ? (a.paymentCapabilities ?? null) : null,
         };
     });
+
+    // SPENDING AUTHORITY THE REGISTER DOES NOT KNOW (`/4`). Per register row:
+    // any linked agent paying opens. Only a reviewed envelope closes; a read
+    // reporting `[]` is not evidence the agent cannot pay, so it closes nothing.
+    const payingByRow = new Map<string, PlannedAgent[]>();
+    for (const p of agents) {
+        if (p.registeredAgentId === null) continue;
+        const caps = p.paymentCapabilities;
+        const row = payingByRow.get(p.registeredAgentId) ?? [];
+        if (caps !== null && caps.length > 0) row.push(p);
+        payingByRow.set(p.registeredAgentId, row);
+    }
+    for (const [rowId, paying] of payingByRow) {
+        const ref = spendingUndeclaredRefOf(rowId);
+        const standing = prior.spendingAuthority.get(rowId);
+        if (standing === 'REVIEWED') {
+            resolve.push(ref);
+            continue;
+        }
+        if (paying.length > 0 && standing === undefined) assert.push(spendingUndeclaredFinding(where, rowId, paying));
+    }
 
     // ZERO IS NEVER CLEAN. A scan that found nothing evidences nothing.
     const emptyRef = `EMPTY_SCAN:${scanner}`;

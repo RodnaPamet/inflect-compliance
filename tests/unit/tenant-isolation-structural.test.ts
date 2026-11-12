@@ -106,6 +106,12 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // the curated TrustCenter projection — never tenant data (import
             // isolation enforced by trust-center-coverage.test.ts).
             'trust',
+            // Web Bot Auth Phase 2 — INTENTIONALLY public, unauthenticated
+            // page describing the vendor monitor's crawler (/bots/vendor-monitor),
+            // linked from the bot's User-Agent so a site operator can see who
+            // is fetching. Exact path in PUBLIC_PATH_EXACT. It reads no
+            // database row and names no tenant: only deployment config.
+            'bots',
         ]);
 
         // Get immediate children of app/ that are page directories

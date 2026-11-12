@@ -20,7 +20,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
 | Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1) |
+| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while the repository variable `GARAK_ENABLED` is `true` (off by default). A manual dispatch always runs |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -268,20 +268,25 @@ ZAP one bit once).
       never refuses an agent run), so the product's own pre-flight cap for it
       is the per-tenant daily AI quota, set to the night's request cap. Four
       layers, cheapest first:
-      1. garak's own count: 9 classes x 5 prompts x 1 generation = 45 per role,
+      1. garak's own count: 9 classes x 4 prompts x 1 generation = 36 per role,
          true because every configured class prunes to the cap (the pinning
          guard holds the list);
-      2. the proxy's wire cap, 50 per role, whatever garak asks for;
-      3. `AI_RISK_DAILY_QUOTA` = 100 = 2 roles x 50, the product's pre-flight;
+      2. the proxy's wire cap, 40 per role, whatever garak asks for;
+      3. `AI_RISK_DAILY_QUOTA` = 80 = 2 roles x 40, the product's pre-flight;
       4. the measured breaker (`.garak/spend.mjs`): before each role, the
          night's spend read from `AiDecisionLog` (plus the turns the egress
          guard withheld, which write no row, at the planned cost) must leave
          room for a whole role, or the role does not start.
       At the planned heavy turn (20,000 tokens in, 2,000 out: USD 0.03 at
-      Haiku rates) 100 requests are USD 3.00. **What config cannot prove:** the
-      product's worst case for one turn is 6 iterations x 8,192 output tokens
-      (`spend-ceiling.ts`), about USD 0.25 of output alone, so 100 turns that
-      all hit it would exceed USD 5. Layer 4 catches that between roles, not
+      Haiku rates) 80 requests are USD 2.40, inside garak's USD 2.50 share of
+      the USD 5 cap it shares with Ragas (`evals/cost-meter/`; the split is
+      D-EV-11, decided 2026-11-12). The prompt cap was 5 (45, 50 and 100,
+      USD 3.00) until the shared meter (Ragas 0.6, 2026-11-12): the planned
+      night must fit the share the breaker enforces, or the editor role is
+      skipped on a night that costs what was planned. **What config cannot
+      prove:** the product's worst case for one turn is 6 iterations x 8,192
+      output tokens (`spend-ceiling.ts`), about USD 0.25 of output alone, so 80
+      turns that all hit it would exceed the share and the whole USD 5. Layer 4 catches that between roles, not
       within one; the invoice-level hard stop is the spend limit on the
       dedicated key's workspace, an owner action.
 - [ ] 1.5 Done-when evidence: a green scheduled run with the key, and a

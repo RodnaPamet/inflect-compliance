@@ -17,9 +17,15 @@ jest.mock('node:dns', () => ({
 }));
 
 const mockTransport = jest.fn<Promise<Response>, [string, Record<string, unknown> | undefined]>();
+// Since Web Bot Auth Phase 2 each origin's robots.txt is read before its
+// homepage. It answers 404 here ("unavailable": restricts nothing), so this
+// suite counts homepage requests only; robots.txt has its own suite
+// (vendor-tls-robots.test.ts).
+const mockRobots = jest.fn(async (_url: string) => new Response(null, { status: 404 }));
 jest.mock('undici', () => ({
     ...jest.requireActual('undici'),
-    fetch: (url: string, init?: Record<string, unknown>) => mockTransport(url, init),
+    fetch: (url: string, init?: Record<string, unknown>) =>
+        new URL(url).pathname === '/robots.txt' ? mockRobots(url) : mockTransport(url, init),
 }));
 
 import {
