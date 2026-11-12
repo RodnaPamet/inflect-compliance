@@ -74,11 +74,15 @@ flowchart LR
   `startWorkflowRun`, stream via `/agent-runs/[id]/stream`), inbound A2A tasks,
   MCP tool results from customer-run servers (`legacy-mcp`), questionnaire
   text, evidence documents.
-- **Spend is capped** per assistant turn (`assistant/spend-ceiling.ts`) and per
-  tenant per month (`monthly-budget-policy.ts`), both in tokens. Nothing
-  converts tokens to US dollars or stops on a nightly amount; the cost meter
-  that does is planned in [`ragas.md`](./ragas.md) Phase 0 and shared with
-  this job.
+- **Spend is bounded, in tokens, by separate mechanisms.** An assistant turn
+  by `DEFAULT_LOOP_BOUNDS` and `MAX_TOKENS`, a tenant's turns by
+  `checkRateLimit`'s daily quota; `assistant/spend-ceiling.ts` states the
+  resulting worst case and is "Not a limiter" in its own words. Agent runs
+  are bounded per tenant per month (`monthly-budget-policy.ts`), and
+  assistant turns are deliberately not counted against that budget (#3833).
+  Nothing converts tokens to US dollars or stops on a nightly amount; the
+  cost meter that does is planned in [`ragas.md`](./ragas.md) Phase 0 and
+  shared with this job.
 - **The product already runs on a Haiku-class model by default**
   (`ANTHROPIC_MODEL` defaults to `claude-haiku-4-5` in `src/env.ts`); the
   current Haiku, `claude-haiku-5-5`, lists at a tenth of its token price
@@ -103,10 +107,15 @@ scored per probe, published and gated exactly like DAST.
   **dedicated CI key** used by nothing else, **hard-capped at USD 5 a night**,
   with **seed and fixture data only**. Any garak detector that needs a model
   judge uses the same key and the same cap. The cap is enforced the way
-  [`ragas.md`](./ragas.md) § Fit describes: a meter refuses a call before it
-  could pass the job's share, the CI tenant's monthly token budget stops the
-  product before a run starts, and the key's workspace spend limit, where the
-  account offers one, is a monthly backstop only. Until the owner says
+  [`ragas.md`](./ragas.md) § Fit describes. Almost all of this job's spend
+  is the product answering probes, through the app's own client, which the
+  harness cannot pre-check; so the meter RESERVES each harness-route call's
+  worst case before making it and settles to the usage the route reports
+  (keeping the worst case when none comes back), a detector's judge call is
+  pre-checked exactly, the CI deployment's AI daily quota and the CI
+  tenant's agent budget are the in-process backstops, and the key's
+  workspace spend limit, where the account offers one, is a monthly backstop
+  only. Until the owner says
   otherwise the USD 5 is the night's total across this job and Ragas
   (default USD 2.50 each). A run the meter stops ends `BUDGET_EXHAUSTED`,
   naming how many probes ran of how many planned, and is never read as a
@@ -177,7 +186,11 @@ ZAP one bit once).
       conventions): a non-streaming adapter over the assistant's tool loop and
       over `startWorkflowRun` + wait, registered only when `AUTH_TEST_MODE` is
       on; a build guard asserts the route is absent from the production route
-      manifest.
+      manifest. Every answer carries the call's actual token usage, and the
+      route publishes its per-call worst case (derived from
+      `DEFAULT_LOOP_BOUNDS`, `MAX_TOKENS` and the result-size cap for a turn,
+      the run's token cap for a workflow), which is what the cost meter
+      reserves before each call.
 - [ ] 1.2 `.github/workflows/garak.yml` copied from `dast.yml`'s job shape:
       services, seed, login as roles, run garak in its container (digest
       pinned), upload the JSONL + HTML report, open/update an auto-issue on
@@ -186,10 +199,12 @@ ZAP one bit once).
 - [ ] 1.3 `tests/guardrails/garak-workflow-pinning.test.ts`: parses the marker
       and fails once the date passes; pins the action/image digests.
 - [ ] 1.4 Budget: the harness route runs under a dedicated CI tenant with
-      `agentMonthlyTokenBudget` set, so a probe storm halts at the product's
-      own pre-flight check rather than at the invoice; and every call the
-      night makes passes the shared cost meter, which stops the run at this
-      job's share of the USD 5 cap.
+      `agentMonthlyTokenBudget` set (agent runs) and the CI deployment's
+      `AI_RISK_DAILY_QUOTA` sized so quota × per-turn worst case stays under
+      the cap (assistant turns, which the monthly budget does not count); and
+      every harness-route call is reserved in the shared cost meter at its
+      worst case before it is made, which stops the run at this job's share of
+      the USD 5 cap.
 
 **Prompt.**
 ```text
@@ -202,15 +217,18 @@ gates test-only surfaces; the tenant monthly token budget is enforced pre-flight
 Task: a nightly garak job, non-blocking at first. (1) A non-streaming harness route under
 AUTH_TEST_MODE that (a) runs one assistant turn and returns the final text, (b) starts a
 named workflow with the probe as input, awaits settlement, and returns the run's final
-synthesis — both for the seed tenant, both logging nothing row-by-row. A build-time
+synthesis — both for the seed tenant, both logging nothing row-by-row, both returning the
+call's actual token usage, and the route stating its per-call worst case. A build-time
 guard asserts the route is not in the production route manifest. (2) .github/workflows/
 garak.yml modelled on dast.yml: services, seed, run garak (digest-pinned image) against
 the harness route for each role, upload reports, auto-issue on new hits, continue-on-
 error only alongside GARAK-NON-BLOCKING-UNTIL: <date>. (3) tests/guardrails/garak-
 workflow-pinning.test.ts parsing the marker against today. (4) The CI tenant carries a
-monthly token budget so a storm halts pre-flight, and every call passes the shared cost
-meter (evals/cost-meter/), which ends the run BUDGET_EXHAUSTED at this job's share of the
-D-EV-1 cap (USD 5 a night across garak and Ragas).
+monthly token budget (agent runs) and the CI deployment an AI daily quota sized against the
+cap (assistant turns, which the monthly budget does not count); before each harness-route call
+garak's wrapper reserves the route's stated worst case in the shared cost meter
+(evals/cost-meter/) and settles to the reported usage, ending the run BUDGET_EXHAUSTED at this
+job's share of the D-EV-1 cap (USD 5 a night across garak and Ragas).
 
 Constraints: the harness route exists only under AUTH_TEST_MODE; the job is NOT added to
 the coverage partition (it runs no Jest) — say so in the workflow comment. Seed data only.
@@ -220,9 +238,10 @@ is green, and a deliberately re-enabled probe shows in the report.
 ```
 
 **Hardening.** G10 (dated marker + parsing guard — the exact DAST lesson),
-G9 (test-only route cannot exist in production), spend bounded by the
-product's own budget (an eval harness that can bankrupt the operator is a
-vulnerability of its own).
+G9 (test-only route cannot exist in production), spend bounded before each
+call by a reservation at the route's worst case, because the product's own
+budgets do not cover assistant turns (an eval harness that can bankrupt the
+operator is a vulnerability of its own).
 
 ### Phase 2 — Thresholds, then blocking
 
