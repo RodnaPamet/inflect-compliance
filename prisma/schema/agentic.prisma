@@ -849,6 +849,10 @@ model RegisteredAgent {
   /// most one, holding many versions. Never what it may REACH: its tools are a
   /// subset of `tools` above, checked at save and again at run.
   profile     AgentProfile?
+  /// What the agent can SPEND, as declared and reviewed (Agent Pay Phase 1).
+  /// A declaration to review, never a grant Inflect enforces at payment time:
+  /// the issuer enforces the token's limits.
+  spendingAuthorities AgentSpendingAuthority[]
   /// The agent's own behavioural history, and the latch it can throw. The
   /// breaker is optional for the same reason the card is: an agent registered
   /// before it existed has none, and an absent breaker refuses nothing.
@@ -3729,4 +3733,87 @@ model OpenShellSandboxLease {
   /// The kill switch's read: every live sandbox of one tenant.
   @@index([tenantId, openedAt])
   @@unique([sandboxId])
+}
+
+/// ONE AGENT'S DECLARED SPENDING AUTHORITY ON ONE PAYMENT RAIL
+/// (docs/ai-architecture/mastercard-agent-pay.md Phase 1; D-L1-8, D-L1-9).
+///
+/// The envelope the cardholder consented to: per-transaction limit, period
+/// budget, merchant scope, expiry, the consenting member and the token requestor
+/// (agent platform) with ITS reference for the token. It is a DECLARATION to
+/// review, never a grant Inflect enforces at payment time: Mastercard and the
+/// issuer enforce the token's limits; Inflect knows them, checks them and stops
+/// them.
+///
+/// ## No payment credential, ever (D-L1-8)
+///
+/// No column holds a PAN, a token value, a wallet key or any credential. The
+/// two text identifiers are pinned to short shapes by CHECKs that refuse a run
+/// of 13 or more digits, so a card number cannot be typed into either.
+///
+/// ## Four eyes
+///
+/// Declaring or widening the envelope puts the row at DECLARED, stamped with
+/// who declared it and who owned the agent then. Only a second person reviews
+/// it: never the declarer and never that owner (CHECK; the usecase also refuses
+/// the CURRENT owner). A trigger refuses any change to a REVIEWED envelope that
+/// is not a narrowing, so the move back to DECLARED is the only way to widen.
+///
+/// One writer: `src/app-layer/usecases/agent-spending-authority.ts`
+/// (`tests/guards/agent-harness-single-write-seam.test.ts`).
+model AgentSpendingAuthority {
+  id       String            @id @default(cuid())
+  tenantId String
+  agentId  String
+  rail     AgentSpendingRail
+
+  /// Minor units of `currency` (cents for EUR). `perTransactionLimitMinor` is
+  /// never above `periodBudgetMinor` (CHECK).
+  perTransactionLimitMinor BigInt
+  periodBudgetMinor        BigInt
+  budgetPeriod             AgentSpendingBudgetPeriod
+  /// ISO 4217, three upper-case letters (CHECK).
+  currency                 String
+  /// Lower-case host names. With `merchantCategoryCodes`, a merchant is in
+  /// scope when it matches either list; both empty is UNRESTRICTED, the widest
+  /// scope there is, which the review sees spelled out.
+  merchantDomains          String[]
+  /// Four-digit merchant category codes (CHECK).
+  merchantCategoryCodes    String[]
+  /// The envelope lapses here; an envelope with no end is never asked again.
+  expiresAt                DateTime
+  /// The member of the tenant who consented, as the cardholder or for them.
+  consentedByUserId        String
+  /// The agent platform holding the token, by name (CHECK: short, no digit run).
+  tokenRequestor           String
+  /// The token requestor's OWN reference for the token, never the token
+  /// (CHECK: short identifier shape, no run of 13 or more digits).
+  tokenReference           String
+
+  status AgentSpendingAuthorityStatus @default(DECLARED)
+
+  /// Who declared the envelope now on the row, and who owned the agent then.
+  declaredByUserId         String
+  declaredAt               DateTime
+  ownerUserIdAtDeclaration String
+  /// The second person. Never the declarer or that owner (CHECK).
+  reviewedByUserId         String?
+  reviewedAt               DateTime?
+  /// The kill or containment that asked for suspension.
+  suspensionRequestedAt    DateTime?
+  suspensionKillSwitchId   String?
+  withdrawnAt              DateTime?
+  withdrawnByUserId        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Composite FK, so an envelope can never describe another tenant's agent.
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  /// One envelope per agent per rail.
+  @@unique([tenantId, agentId, rail])
+  @@index([tenantId, status])
 }

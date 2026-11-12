@@ -271,17 +271,17 @@ customer's own connection, the way directory integrations are).
 ### Phase 1 — Spending authority on the register
 
 **Sub-phases.**
-- [ ] 1.1 `AgentSpendingAuthority`, tenant-scoped with RLS and a two-tenant
+- [x] 1.1 `AgentSpendingAuthority`, tenant-scoped with RLS and a two-tenant
       test (G7): one row per agent per rail, the envelope from 0.3, `status`
       (`DECLARED`, `REVIEWED`, `SUSPENDED_REQUESTED`, `WITHDRAWN`), and who
       declared and who reviewed it. One writer usecase,
       `usecases/agent-spending-authority.ts`, under `admin.agent_registry`,
       held by a single-write-seam guard.
-- [ ] 1.2 Four eyes: declaring an envelope or widening any field of it needs a
+- [x] 1.2 Four eyes: declaring an envelope or widening any field of it needs a
       second person to review it, never the declarer and never the agent's
       owner (the profile-approval and recertification precedents). A CHECK
       backs the usecase. Narrowing needs one person.
-- [ ] 1.3 Activation: `assertActivatable` refuses `SPENDING_AUTHORITY_UNREVIEWED`
+- [x] 1.3 Activation: `assertActivatable` refuses `SPENDING_AUTHORITY_UNREVIEWED`
       for an agent with a declared envelope nobody has reviewed. A later
       widening on an ACTIVE agent raises a HIGH finding rather than
       suspending it (the auditor-independence precedent: a later break is a
@@ -291,13 +291,22 @@ customer's own connection, the way directory integrations are).
       envelope. Accepting it writes the declaration and opens a task for the
       owner to apply the change at the token requestor, because Inflect
       cannot apply it until Phase 4.
-- [ ] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
+- [x] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
       containing an orphaned agent, on an agent with spending authority
       moves the row to `SUSPENDED_REQUESTED` and opens a task naming the
       token requestor and the token reference. Lifting the kill does not
       reverse it; a person does.
 - [ ] 1.6 Retention classification in `docs/data-retention.md` (the ratchet
       requires it) and an inventory row in the governance pack.
+
+**Where Phase 1 stands (2026-11-12).** 1.1, 1.2, 1.3 and 1.5 are built:
+`AgentSpendingAuthority` (migration `20261111230000_agent_spending_authority`),
+its one writer `src/app-layer/usecases/agent-spending-authority.ts` and the pure
+comparison in `src/lib/agentic/spending-authority.ts`. The retention row of 1.6
+is written; the governance-pack inventory row is not. 1.4 (the recertification
+pack section and the narrowing that proposes a reduction) is not built, and
+neither are the API routes and the register page section that would call the writer. See
+`docs/implementation-notes/2026-11-11-agent-spending-authority.md`.
 
 **Prompt.**
 ```text

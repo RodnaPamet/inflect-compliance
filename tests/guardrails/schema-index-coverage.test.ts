@@ -768,6 +768,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // Agent profiles (#4143) — one profile per agent, a handful of versions each.
     AgentProfileVersion:
         'getAgentProfile reads one profile\'s versions by (tenantId, profileId) ordered by version desc — exactly @@unique([tenantId, profileId, version]); every other read is by (tenantId, profileId, version) or (tenantId, profileId, status), covered by the same unique and the partial uniques on status; bounded take ≤50.',
+    // Spending authority (Agent Pay Phase 1) — at most one row per agent per rail.
+    AgentSpendingAuthority:
+        'every read is one agent\'s rows by (tenantId, agentId[, status]) ordered by rail — the leading columns of @@unique([tenantId, agentId, rail]); bounded take ≤ the three rails.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); the runs page\'s discovered-agent picker (#4472) filters by tenantId alone and orders by lastSeenAt desc, id — the same @@index([tenantId, lastSeenAt]); bounded take ≤201.',
     // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.

@@ -73,6 +73,7 @@ import {
     reconcileAuditorIndependenceInTx,
 } from './auditor-independence';
 import { assertHoldsOnlyAuditorRemitInTx } from './auditor-remit';
+import { readUnreviewedSpendingAuthority } from './agent-spending-authority';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
     CreateRegisteredAgentSchema,
@@ -1397,7 +1398,11 @@ export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
  * The named reasons an agent is refused activation, carried as
  * `details.reason` beside a sentence written for the operator.
  */
-export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED' | 'AUDITOR_NOT_INDEPENDENT';
+export type AgentActivationRefusal =
+    | 'AI_SYSTEM_UNCLASSIFIED'
+    | 'UNSCORED'
+    | 'SPENDING_AUTHORITY_UNREVIEWED'
+    | 'AUDITOR_NOT_INDEPENDENT';
 
 /**
  * What an agent must have before it goes into service, in the order it is
@@ -1415,6 +1420,12 @@ export type AgentActivationRefusal = 'AI_SYSTEM_UNCLASSIFIED' | 'UNSCORED' | 'AU
  *      an INSERT of a new entry, `aiSystemId` is not amendable, and the one move
  *      an existing entry makes is OUT of the value.
  *   2. A SCORED operational tier — see `activateRegisteredAgent`.
+ *   2a. No UNREVIEWED spending authority (Agent Pay Phase 1, D-L1-9): an agent
+ *      holding a DECLARED envelope that no second person has reviewed is
+ *      refused `SPENDING_AUTHORITY_UNREVIEWED`, naming the rails. Asked after
+ *      the score because it, too, is a fact about the agent; the trigger
+ *      `registered_agent_spending_authority_reviewed` refuses the same move for
+ *      any writer. An agent with no envelope is unaffected.
  *   3. For an AUDITOR agent (#3675), an INDEPENDENT owner: an ACTIVE
  *      SECOND-line member who owns none of the agents it audits. Asked LAST,
  *      because the first two are facts about the agent and this one is a fact
@@ -1452,6 +1463,19 @@ async function assertActivatable(db: PrismaTx, ctx: RequestContext, id: string) 
                 'every tool at the boundary anyway, so activating it would put a ' +
                 'row in the register that cannot act.',
             { reason: 'UNSCORED' satisfies AgentActivationRefusal },
+        );
+    }
+
+    const unreviewedRails = await readUnreviewedSpendingAuthority(db, ctx, id);
+    if (unreviewedRails.length > 0) {
+        throw new ConflictError(
+            'This agent has a declared spending authority that nobody else has reviewed. ' +
+                "A second person, neither its declarer nor the agent's owner, reviews the " +
+                'envelope on the register before the agent goes into service; or withdraw it.',
+            {
+                reason: 'SPENDING_AUTHORITY_UNREVIEWED' satisfies AgentActivationRefusal,
+                rails: unreviewedRails,
+            },
         );
     }
 
