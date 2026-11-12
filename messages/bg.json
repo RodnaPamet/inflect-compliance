@@ -9811,7 +9811,9 @@
       "RELATED": "Свързан",
       "USES": "Използва",
       "MITIGATES": "Смекчава",
-      "STORES_DATA_FOR": "Съхранява данни"
+      "STORES_DATA_FOR": "Съхранява данни",
+      "PROVIDES_SERVICE_TO": "Предоставя услуга на",
+      "ASSESSMENT_SOURCED": "От оценка"
     },
     "criticalityLabel": {
       "LOW": "Нисък",
@@ -16497,7 +16499,8 @@
         "FILE": "Файл",
         "ISSUE": "Проблем",
         "READINESS_REPORT": "Доклад за готовност",
-        "FRAMEWORK_COVERAGE": "Покритие на рамка"
+        "FRAMEWORK_COVERAGE": "Покритие на рамка",
+        "TEST_RUN": "Изпълнение на тест"
       },
       "returnChannel": {
         "title": "Изпратете обратна връзка към екипа",

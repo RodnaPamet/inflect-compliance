@@ -54,6 +54,15 @@ describe('getAiGovAssessmentState', () => {
         expect(state.coverage.aisvs.percent).toBe(100); // only aig-4-01 (YES) counts
     });
 
+    it('returns each answer\'s stored note, so the wizard can seed it (#5128)', async () => {
+        mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([
+            { questionId: 'aig-4-01', answer: 'PARTIALLY', note: 'Pilot only in EU region.' },
+        ]);
+        const state = await getAiGovAssessmentState(ctx, { architecture: 'NONE' });
+        expect(state.questions.find((q) => q.id === 'aig-4-01')!.note).toBe('Pilot only in EU region.');
+        expect(state.questions.find((q) => q.id === 'aig-1-05')!.note).toBeNull();
+    });
+
     it('includes a RAG question when the architecture is RAG', async () => {
         mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([]);
         const state = await getAiGovAssessmentState(ctx, { architecture: 'RAG' });
@@ -73,6 +82,19 @@ describe('saveAiGovAnswer', () => {
         mockTx.aiGovSelfAssessmentAnswer.upsert.mockResolvedValue({ id: 'ans1' });
         await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES', note: 'ok' });
         expect(mockTx.aiGovSelfAssessmentAnswer.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('an answer-only change leaves the stored note; null clears it (#5128)', async () => {
+        mockTx.aiGovQuestion.findUnique.mockResolvedValue(QUESTIONS[0]);
+        mockTx.aiGovSelfAssessmentAnswer.upsert.mockResolvedValue({ id: 'ans1' });
+
+        await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES' });
+        const answerOnly = mockTx.aiGovSelfAssessmentAnswer.upsert.mock.calls[0][0];
+        expect(answerOnly.update).not.toHaveProperty('note');
+        expect(answerOnly.update.answer).toBe('YES');
+
+        await saveAiGovAnswer(ctx, { questionId: 'aig-4-01', answer: 'YES', note: null });
+        expect(mockTx.aiGovSelfAssessmentAnswer.upsert.mock.calls[1][0].update.note).toBeNull();
     });
 });
 
