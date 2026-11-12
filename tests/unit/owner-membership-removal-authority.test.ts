@@ -51,6 +51,7 @@ function membershipDb(membership: { role: string; status?: string }, owners = 2)
         ...membership,
     };
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(owners),

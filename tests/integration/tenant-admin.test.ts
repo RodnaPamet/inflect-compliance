@@ -66,6 +66,8 @@ beforeEach(() => {
     jest.clearAllMocks();
     // Reset mockTx
     Object.keys(mockTx).forEach(k => delete mockTx[k]);
+    // The tenant's owner lock every member change takes first (#5388).
+    mockTx.$executeRawUnsafe = jest.fn(async () => 0);
 });
 
 // ─── Authorization Tests ───

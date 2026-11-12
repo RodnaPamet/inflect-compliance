@@ -52,6 +52,7 @@ import { AccessReviewRepository } from '../repositories/AccessReviewRepository';
 import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { lockTenantOwners } from './tenant-owner-lock';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { AppError, badRequest, forbidden, notFound, ConflictError } from '@/lib/errors/types';
 import { ZodError } from 'zod';
@@ -802,6 +803,11 @@ export async function closeAccessReview(
     // Phase 1 — execute decisions + flip status. All inside one
     // tenant context so RLS is in effect for every statement.
     const phase1 = await runInTenantContext(ctx, async (db) => {
+        // The tenant's owner lock, first (#5388): the live-OWNER count below
+        // must read the committed result of any concurrent owner change, and
+        // taking it before any row keeps the lock order the trigger and the
+        // member usecases use, so a close never deadlocks with them.
+        await lockTenantOwners(db, ctx.tenantId);
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId },
             include: {

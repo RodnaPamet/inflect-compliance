@@ -186,6 +186,7 @@ const REACHED_OWNER_COUNT = new Error('every #3727 check passed: the close reach
  */
 function campaignDb(decisions: unknown[], liveOwners?: Array<{ id: string; userId: string }>) {
     const db = {
+        $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         accessReview: {
             findFirst: jest.fn().mockResolvedValue({
                 id: 'ar-1',

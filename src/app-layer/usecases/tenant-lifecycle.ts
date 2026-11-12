@@ -29,6 +29,7 @@ import { recordTenantCreated } from '@/lib/observability/business-metrics';
 import { assertProvisionedRegion } from '@/lib/regions';
 import { BUILT_IN_SCOPE_REFUSAL, builtInScopeRoleMessage, mayCarryCustomRole } from '@/lib/roles';
 import type { PrismaClient, TenantRegion } from '@prisma/client';
+import { lockTenantOwners } from './tenant-owner-lock';
 import type { Plan } from '@/lib/billing/entitlements';
 import { changeTenantPlan, type ChangeTenantPlanResult } from '@/app-layer/usecases/billing';
 import { buildTenantSystemJobContext } from '@/app-layer/context-system';
@@ -315,15 +316,34 @@ export async function transferTenantOwnership(
     }
 
     // 4. Promote new OWNER first (satisfies the trigger), then demote old.
+    //    Under the tenant's owner lock, taken before either row (#5388): the
+    //    trigger takes the same key on the demotion, so taking it first keeps
+    //    the lock order every member usecase uses (advisory lock, then row) and
+    //    the two never deadlock. The reads above were unlocked, so both rows
+    //    are re-checked here by the write itself — a member deactivated, or an
+    //    owner demoted, since then refuses with the same error as above
+    //    rather than the trigger's raw P0001.
     await (prisma as PrismaClient).$transaction(async (tx) => {
-        await tx.tenantMembership.update({
-            where: { id: newMembership.id },
+        await lockTenantOwners(tx, tenantId);
+        const promoted = await tx.tenantMembership.updateMany({
+            where: { id: newMembership.id, tenantId, status: 'ACTIVE' },
             data: { role: 'OWNER' },
         });
-        await tx.tenantMembership.update({
-            where: { id: currentMembership.id },
+        if (promoted.count !== 1) {
+            throw new ValidationError(
+                'New owner must already be an active tenant member. ' +
+                'Use the invite flow to add them first, then transfer ownership.',
+            );
+        }
+        const demoted = await tx.tenantMembership.updateMany({
+            where: { id: currentMembership.id, tenantId, role: 'OWNER', status: 'ACTIVE' },
             data: { role: 'ADMIN' },
         });
+        if (demoted.count !== 1) {
+            throw new NotFoundError(
+                'Current owner has no ACTIVE OWNER membership in this tenant.',
+            );
+        }
     });
 
     // 5. Audit both sides.
