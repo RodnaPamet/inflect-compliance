@@ -58,6 +58,7 @@ import {
     type ScimAssignableRole,
 } from '@/lib/scim/roles';
 import { SCIM_SCHEMAS, type ScimUser } from '@/lib/scim/types';
+import { normaliseScimPatchOperations, readScimBoolean } from '@/lib/scim/patch';
 import { notifyOwnersOfScimAiAdminDeprovision } from '../notifications/scim-deprovision';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
 
@@ -439,18 +440,30 @@ export async function scimCreateUser(
 
 // ─── Patch User ──────────────────────────────────────────────────────
 
+/**
+ * One PatchOp operation AS RECEIVED. `op` is a string, not the three-verb
+ * union: it is IdP input, and Entra sends `"Replace"` (#5370).
+ * `normaliseScimPatchOperations` validates and lower-cases it.
+ */
 export interface ScimPatchOperation {
-    op: 'add' | 'remove' | 'replace';
+    op: string;
     path?: string;
     value?: unknown;
 }
 
+/**
+ * PATCH — `op` is matched case-insensitively, `active` is read as a SCIM
+ * boolean (`"True"`/`"False"` included, anything else a 400), and an
+ * unrecognised `op` is a 400 — all before anything is written. See
+ * `@/lib/scim/patch` for why each of those was a silent wrong answer (#5370).
+ */
 export async function scimPatchUser(
     ctx: ScimContext,
     userId: string,
-    operations: ScimPatchOperation[],
+    rawOperations: readonly ScimPatchOperation[],
     baseUrl: string
 ): Promise<ScimUser | null> {
+    const operations = normaliseScimPatchOperations(rawOperations);
     const membership = await prisma.tenantMembership.findFirst({
         where: { tenantId: ctx.tenantId, userId },
         include: { user: true },
@@ -469,7 +482,7 @@ export async function scimPatchUser(
             const path = op.path?.toLowerCase();
 
             if (path === 'active') {
-                statusUpdate = op.value === true || op.value === 'true' ? 'ACTIVE' : 'DEACTIVATED';
+                statusUpdate = readScimBoolean(op.value, 'active') ? 'ACTIVE' : 'DEACTIVATED';
                 changes.push(`active=${statusUpdate}`);
             } else if (path === 'displayname' || path === 'name.formatted') {
                 userUpdates.name = String(op.value);
@@ -504,11 +517,13 @@ export async function scimPatchUser(
                     }
                 }
             } else if (!path) {
-                // Root-level replace
-                const val = op.value as Record<string, unknown> | undefined;
+                // Root-level replace. Entra's form: `{ op: "Replace", value: { active: false } }`.
+                const val = op.value && typeof op.value === 'object' && !Array.isArray(op.value)
+                    ? op.value as Record<string, unknown>
+                    : undefined;
                 if (val) {
                     if ('active' in val) {
-                        statusUpdate = val.active === true || val.active === 'true' ? 'ACTIVE' : 'DEACTIVATED';
+                        statusUpdate = readScimBoolean(val.active, 'active') ? 'ACTIVE' : 'DEACTIVATED';
                         changes.push(`active=${statusUpdate}`);
                     }
                     if ('displayName' in val) {

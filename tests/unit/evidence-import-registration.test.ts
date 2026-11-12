@@ -81,9 +81,10 @@ describe('Epic 43.3 — evidence-import job registration', () => {
         expect(route).toMatch(/100 \* 1024 \* 1024/);
     });
 
-    it('GET status route filters by tenantId on the job payload', () => {
-        // Cross-tenant id probing protection.
-        expect(statusRoute).toContain('payloadTenantId');
-        expect(statusRoute).toContain('ctx.tenantId');
+    it('GET status route reports only this tenant\'s own evidence-import job', () => {
+        // Cross-tenant and cross-kind id probing protection: the shared
+        // lookup checks both the job name and the payload tenant.
+        expect(statusRoute).toContain("findTenantJob(params.jobId, ctx.tenantId, 'evidence-import')");
+        expect(statusRoute).not.toContain('getJob(');
     });
 });

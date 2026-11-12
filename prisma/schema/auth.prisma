@@ -1314,6 +1314,10 @@ model UserSession {
   /// "user:self"). Not displayed to end users; surfaced in the audit
   /// log entry.
   revokedReason String?
+  /// Workspaces whose MFA challenge THIS session passed. An MFA pass is bound
+  /// to the session that answered it: the jwt callback clears a pending
+  /// workspace only when this session's own row lists it.
+  mfaPassedTenantIds String[] @default([])
 
   user User @relation("UserSessionOwner", fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1972,6 +1976,9 @@ model UserMfaEnrollment {
   isVerified          Boolean   @default(false)
   verifiedAt          DateTime?
   lastChallengeAt     DateTime?
+  /// The TOTP time step of the last code accepted for this enrolment. A code is
+  /// accepted only for a later step, so the same code cannot be used twice.
+  lastAcceptedTotpStep Int?
   backupCodesHashJson String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

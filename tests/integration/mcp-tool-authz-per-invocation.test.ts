@@ -467,8 +467,14 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             // writer, rather than a raw INSERT: a hand-made row with an invented
             // `entryHash` would leave this tenant's chain permanently broken and
             // any later chain assertion meaningless.
+            // `RiskTreatmentPlan` is the risk domain too: the Prisma audit
+            // extension writes the MODEL name as `entity`, so a child model's
+            // row is as much the risk domain as the root's (#5371). The
+            // upper-snake form is what a `logEvent` caller writes for it.
             for (const [entity, action] of [
                 ['Risk', 'RISK_CREATED'],
+                ['RiskTreatmentPlan', 'CREATE'],
+                ['RISK_TREATMENT_PLAN', 'TREATMENT_PLAN_UPDATED'],
                 ['Control', 'CONTROL_CREATED'],
             ] as const) {
                 await appendAuditEntry({
@@ -498,6 +504,8 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             // Anti-vacuity: the feed is not simply empty.
             expect(entities).toContain('Control');
             expect(entities).not.toContain('Risk');
+            expect(entities).not.toContain('RiskTreatmentPlan');
+            expect(entities).not.toContain('RISK_TREATMENT_PLAN');
         });
     });
 

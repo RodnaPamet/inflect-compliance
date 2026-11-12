@@ -864,16 +864,6 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'self-service (ctx-scoped in the usecase).',
     },
 
-    // ── Admin plan change (business-KPI plan-change boundary) ───────
-    {
-        path: new RegExp(`^${T}\\/admin\\/billing\\/plan(\\/.*)?$`),
-        permission: 'admin.tenant_lifecycle',
-        note:
-            'Mutates BillingAccount.plan — direct billing + entitlement ' +
-            'consequences. No Stripe webhook in this deployment, so this ' +
-            'is the only first-party plan-change path; OWNER-only.',
-    },
-
     // ── Which ENGINE executes this tenant's agentic runs ────────────
     // Method-scoped (owner decision 2026-10-25, #4139): READING the gate is
     // admin.view, so an ADMIN sees on the AI features page why the tenant runs

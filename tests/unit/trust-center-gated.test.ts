@@ -67,7 +67,7 @@ describe('requestTrustCenterAccess', () => {
 
 describe('consumeDownloadToken', () => {
     it('serves once then is single-use', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1' } });
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
         m.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 1 });
         const r = await consumeDownloadToken('ictc_abc', NOW);
         // accessRequestId is carried out so the distribution ledger can name WHO
@@ -79,18 +79,25 @@ describe('consumeDownloadToken', () => {
     });
 
     it('rejects an already-downloaded token', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: null, downloadedAt: NOW, document: { fileRecordId: 'file-1' } });
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: null, downloadedAt: NOW, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
         expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 
     it('rejects an expired token', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2020-01-01'), downloadedAt: null, document: { fileRecordId: 'file-1' } });
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2020-01-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
         expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+    });
+
+    it('serves nothing once the trust center is unpublished, and does not spend the token', async () => {
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: false } } });
+        expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+        expect(m.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
+        expect(m.trustCenterAccessRequest.findUnique.mock.calls[0][0].select.document.select.trustCenter).toEqual({ select: { enabled: true } });
     });
 
     it('rejects a non-approved or wrong-format token', async () => {
         expect(await consumeDownloadToken('bad', NOW)).toBeNull();
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'REQUESTED', expiresAt: null, downloadedAt: null, document: { fileRecordId: 'file-1' } });
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'REQUESTED', expiresAt: null, downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
         expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 });
