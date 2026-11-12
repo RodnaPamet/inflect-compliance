@@ -1,27 +1,28 @@
 /**
  * Unit tests for src/app-layer/usecases/mfa-challenge.ts
  *
- * Closes a critical zero-coverage gap from GAP-02. The MFA challenge
- * usecase is the second-factor verifier on every login that hits the
- * MFA gate. A bug here is a silent MFA bypass — the highest-impact
- * regression class in the auth path.
+ * The MFA challenge usecase is the second-factor verifier on every login that
+ * hits the MFA gate. A bug here is a silent MFA bypass.
  *
  * Behaviours protected:
  *   1. Missing enrollment / unverified enrollment ⇒ badRequest
- *      (NOT silent success — would defeat MFA entirely)
  *   2. Wrong TOTP code ⇒ failure result + MFA_CHALLENGE_FAILED audit
- *   3. Right TOTP code ⇒ success result + lastChallengeAt updated
- *      + MFA_CHALLENGE_PASSED audit
- *   4. Audit emission errors are swallowed (best-effort), never
- *      flipping a verified user back to unverified
- *   5. AUTH_SECRET absent ⇒ internal error (not silent accept)
- *
- * Each assertion calls out the regression it protects.
+ *   3. Right TOTP code ⇒ the step is claimed on the enrolment, the pass is
+ *      recorded on THIS session's row, MFA_CHALLENGE_PASSED audit
+ *   4. A code is accepted once: a step not later than the last accepted one
+ *      fails, and the claim is a conditional update
+ *   5. A request that names no live session of this user's cannot pass:
+ *      nothing would bind the pass to it
+ *   6. Audit emission errors are swallowed (best-effort)
  */
 
 jest.mock('@/lib/prisma', () => ({
     prisma: {
         userMfaEnrollment: {
+            findUnique: jest.fn(),
+            updateMany: jest.fn(),
+        },
+        userSession: {
             findUnique: jest.fn(),
             update: jest.fn(),
         },
@@ -30,7 +31,7 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/lib/security/totp-crypto', () => ({
     decryptTotpSecret: jest.fn(),
-    verifyTotpCode: jest.fn(),
+    matchTotpStep: jest.fn(),
 }));
 
 jest.mock('../../../src/app-layer/events/audit', () => ({
@@ -43,20 +44,15 @@ jest.mock('@/env', () => ({
 
 import { verifyMfaChallenge } from '@/app-layer/usecases/mfa-challenge';
 import { prisma } from '@/lib/prisma';
-import {
-    decryptTotpSecret,
-    verifyTotpCode,
-} from '@/lib/security/totp-crypto';
+import { decryptTotpSecret, matchTotpStep } from '@/lib/security/totp-crypto';
 import { logEvent } from '@/app-layer/events/audit';
 
-const mockFindUnique = prisma.userMfaEnrollment.findUnique as jest.MockedFunction<
-    typeof prisma.userMfaEnrollment.findUnique
->;
-const mockUpdate = prisma.userMfaEnrollment.update as jest.MockedFunction<
-    typeof prisma.userMfaEnrollment.update
->;
+const mockFindUnique = prisma.userMfaEnrollment.findUnique as jest.Mock;
+const mockClaim = prisma.userMfaEnrollment.updateMany as jest.Mock;
+const mockSessionFind = prisma.userSession.findUnique as jest.Mock;
+const mockSessionUpdate = prisma.userSession.update as jest.Mock;
 const mockDecrypt = decryptTotpSecret as jest.MockedFunction<typeof decryptTotpSecret>;
-const mockVerify = verifyTotpCode as jest.MockedFunction<typeof verifyTotpCode>;
+const mockStep = matchTotpStep as jest.MockedFunction<typeof matchTotpStep>;
 const mockLogEvent = logEvent as jest.MockedFunction<typeof logEvent>;
 
 const enrollmentRow = {
@@ -66,53 +62,46 @@ const enrollmentRow = {
     type: 'TOTP' as const,
     secretEncrypted: 'enc-blob',
     isVerified: true,
-    verifiedAt: new Date('2026-04-24T00:00:00Z'),
-    lastChallengeAt: null,
-    backupCodesHashJson: null,
-    createdAt: new Date('2026-04-24T00:00:00Z'),
-    updatedAt: new Date('2026-04-24T00:00:00Z'),
+    lastAcceptedTotpStep: 100,
+};
+const liveSession = {
+    userId: 'user-1',
+    revokedAt: null,
+    expiresAt: new Date(Date.now() + 3_600_000),
 };
 
 beforeEach(() => {
     jest.clearAllMocks();
-    mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP'); // canonical TOTP secret
-    mockUpdate.mockResolvedValue(enrollmentRow);
+    mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
+    mockFindUnique.mockResolvedValue(enrollmentRow);
+    mockSessionFind.mockResolvedValue(liveSession);
+    mockSessionUpdate.mockResolvedValue({});
+    mockClaim.mockResolvedValue({ count: 1 });
     mockLogEvent.mockResolvedValue(undefined as never);
 });
 
+const verify = (code = '654321', sessionId: string | null = 'sess-1') =>
+    verifyMfaChallenge('user-1', 'tenant-1', code, 5, sessionId);
+
 describe('verifyMfaChallenge', () => {
-    // ── Regression: missing enrollment must NOT silently succeed ──
-    it('throws badRequest when no enrollment exists for (userId, tenantId, TOTP)', async () => {
+    it('throws badRequest when no enrollment exists', async () => {
         mockFindUnique.mockResolvedValue(null);
-        await expect(
-            verifyMfaChallenge('user-1', 'tenant-1', '000000', 3),
-        ).rejects.toThrow(/MFA not configured/);
-        expect(mockVerify).not.toHaveBeenCalled();
-        expect(mockLogEvent).not.toHaveBeenCalled();
+        await expect(verify()).rejects.toThrow(/MFA not configured/);
+        expect(mockStep).not.toHaveBeenCalled();
     });
 
-    // ── Regression: unverified enrollment must reject — only enrolment
-    //     finalisation should accept codes against an unverified row.
-    //     Login challenge MUST require a verified row. ──
-    it('throws badRequest when enrollment exists but isVerified=false', async () => {
+    it('throws badRequest when the enrollment is not verified', async () => {
         mockFindUnique.mockResolvedValue({ ...enrollmentRow, isVerified: false });
-        await expect(
-            verifyMfaChallenge('user-1', 'tenant-1', '123456', 3),
-        ).rejects.toThrow(/MFA not configured/);
-        expect(mockVerify).not.toHaveBeenCalled();
+        await expect(verify()).rejects.toThrow(/MFA not configured/);
+        expect(mockStep).not.toHaveBeenCalled();
     });
 
-    // ── Regression: wrong code must produce a failure result with the
-    //     remaining counter the caller passed in. Audit row must fire. ──
-    it('returns success:false + MFA_CHALLENGE_FAILED audit when code is invalid', async () => {
-        mockFindUnique.mockResolvedValue(enrollmentRow);
-        mockVerify.mockReturnValue(false);
-
-        const result = await verifyMfaChallenge('user-1', 'tenant-1', '123456', 2);
-
-        expect(result.success).toBe(false);
-        expect(result.remaining).toBe(2);
-        expect(mockUpdate).not.toHaveBeenCalled(); // lastChallengeAt NOT touched
+    it('fails a wrong code, claims nothing, binds nothing, and records the failure', async () => {
+        mockStep.mockReturnValue(null);
+        const result = await verifyMfaChallenge('user-1', 'tenant-1', '123456', 2, 'sess-1');
+        expect(result).toMatchObject({ success: false, remaining: 2 });
+        expect(mockClaim).not.toHaveBeenCalled();
+        expect(mockSessionUpdate).not.toHaveBeenCalled();
         expect(mockLogEvent).toHaveBeenCalledWith(
             expect.anything(),
             expect.objectContaining({ tenantId: 'tenant-1', userId: 'user-1' }),
@@ -120,21 +109,21 @@ describe('verifyMfaChallenge', () => {
         );
     });
 
-    // ── Regression: right code must update lastChallengeAt (signal the
-    //     JWT callback uses to clear mfaPending) AND emit success audit. ──
-    it('returns success:true + updates lastChallengeAt + MFA_CHALLENGE_PASSED audit', async () => {
-        mockFindUnique.mockResolvedValue(enrollmentRow);
-        mockVerify.mockReturnValue(true);
-
-        const result = await verifyMfaChallenge('user-1', 'tenant-1', '654321', 5);
-
+    it('passes a right code: claims a LATER step only, then binds the pass to this session', async () => {
+        mockStep.mockReturnValue(101);
+        const result = await verify();
         expect(result.success).toBe(true);
-        expect(mockUpdate).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { id: 'enrollment-1' },
-                data: expect.objectContaining({ lastChallengeAt: expect.any(Date) }),
-            }),
-        );
+        expect(mockClaim).toHaveBeenCalledWith({
+            where: {
+                id: 'enrollment-1',
+                OR: [{ lastAcceptedTotpStep: null }, { lastAcceptedTotpStep: { lt: 101 } }],
+            },
+            data: { lastAcceptedTotpStep: 101, lastChallengeAt: expect.any(Date) },
+        });
+        expect(mockSessionUpdate).toHaveBeenCalledWith({
+            where: { sessionId: 'sess-1' },
+            data: { mfaPassedTenantIds: { push: 'tenant-1' } },
+        });
         expect(mockLogEvent).toHaveBeenCalledWith(
             expect.anything(),
             expect.anything(),
@@ -142,53 +131,43 @@ describe('verifyMfaChallenge', () => {
         );
     });
 
-    // ── Regression: audit emission MUST be best-effort — a failing
-    //     audit writer cannot prevent a legitimate user from completing
-    //     MFA. The caller still sees the verified result. ──
-    it('still returns success when the audit emit throws (best-effort semantic)', async () => {
-        mockFindUnique.mockResolvedValue(enrollmentRow);
-        mockVerify.mockReturnValue(true);
-        mockLogEvent.mockRejectedValue(new Error('audit chain unreachable'));
-
-        const result = await verifyMfaChallenge('user-1', 'tenant-1', '654321', 5);
-
-        expect(result.success).toBe(true);
-        // lastChallengeAt was still updated — the audit failure didn't
-        // unwind the legitimate state transition.
-        expect(mockUpdate).toHaveBeenCalled();
-    });
-
-    // ── Regression: same best-effort guarantee on the failure-audit
-    //     path. A flaky audit must not turn "wrong code" into a 500. ──
-    it('still returns failure when the failure-audit emit throws', async () => {
-        mockFindUnique.mockResolvedValue(enrollmentRow);
-        mockVerify.mockReturnValue(false);
-        mockLogEvent.mockRejectedValue(new Error('audit chain unreachable'));
-
-        const result = await verifyMfaChallenge('user-1', 'tenant-1', '000000', 1);
-
+    it('refuses a code whose step was already used: the claim updates nothing', async () => {
+        mockStep.mockReturnValue(100);
+        mockClaim.mockResolvedValue({ count: 0 });
+        const result = await verify();
         expect(result.success).toBe(false);
-        expect(result.remaining).toBe(1);
+        expect(result.message).toMatch(/already-used/);
+        expect(mockSessionUpdate).not.toHaveBeenCalled();
     });
 
-    // ── Regression: lookup must be scoped to (userId, tenantId, TOTP).
-    //     A bug that drops tenantId from the WHERE would let user X
-    //     in tenant A pass MFA using user X's enrollment in tenant B. ──
+    it.each([
+        ['no session id', null, liveSession],
+        ['an unknown session', 'sess-1', null],
+        ['another person’s session', 'sess-1', { ...liveSession, userId: 'someone-else' }],
+        ['a revoked session', 'sess-1', { ...liveSession, revokedAt: new Date() }],
+        ['an expired session', 'sess-1', { ...liveSession, expiresAt: new Date(Date.now() - 1000) }],
+    ])('refuses with %s, before checking the code', async (_l, sessionId, row) => {
+        mockSessionFind.mockResolvedValue(row);
+        const result = await verify('654321', sessionId);
+        expect(result.success).toBe(false);
+        expect(mockStep).not.toHaveBeenCalled();
+        expect(mockClaim).not.toHaveBeenCalled();
+        expect(mockSessionUpdate).not.toHaveBeenCalled();
+    });
+
+    it('still returns success when the audit emit throws', async () => {
+        mockStep.mockReturnValue(101);
+        mockLogEvent.mockRejectedValue(new Error('audit chain unreachable'));
+        await expect(verify()).resolves.toMatchObject({ success: true });
+        expect(mockSessionUpdate).toHaveBeenCalled();
+    });
+
     it('looks up the enrollment scoped to (userId, tenantId, TOTP)', async () => {
-        mockFindUnique.mockResolvedValue(enrollmentRow);
-        mockVerify.mockReturnValue(true);
-
-        await verifyMfaChallenge('user-1', 'tenant-1', '111111', 1);
-
+        mockStep.mockReturnValue(101);
+        await verify();
         expect(mockFindUnique).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: {
-                    userId_tenantId_type: {
-                        userId: 'user-1',
-                        tenantId: 'tenant-1',
-                        type: 'TOTP',
-                    },
-                },
+                where: { userId_tenantId_type: { userId: 'user-1', tenantId: 'tenant-1', type: 'TOTP' } },
             }),
         );
     });

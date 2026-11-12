@@ -20,7 +20,7 @@ import {
     generateTotpUri,
     encryptTotpSecret,
     decryptTotpSecret,
-    verifyTotpCode,
+    matchTotpStep,
 } from '@/lib/security/totp-crypto';
 import { badRequest, forbidden, internal } from '@/lib/errors/types';
 import { sendEmail } from '@/lib/mailer';
@@ -146,18 +146,20 @@ export async function verifyMfaEnrollment(
 
     // Decrypt secret and verify code
     const secret = decryptTotpSecret(enrollment.secretEncrypted, authSecret);
-    const isValid = verifyTotpCode(secret, input.code);
+    const step = matchTotpStep(secret, input.code);
 
-    if (!isValid) {
+    if (step === null) {
         return { success: false, enrollmentId: enrollment.id };
     }
 
-    // Mark as verified
+    // Mark as verified, and record the step: the code that proved the
+    // enrolment is spent and cannot also pass the sign-in challenge.
     await prisma.userMfaEnrollment.update({
         where: { id: enrollment.id },
         data: {
             isVerified: true,
             verifiedAt: new Date(),
+            lastAcceptedTotpStep: step,
         },
     });
 

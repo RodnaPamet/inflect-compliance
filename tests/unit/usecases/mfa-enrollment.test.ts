@@ -36,7 +36,7 @@ jest.mock('@/lib/security/totp-crypto', () => ({
     generateTotpUri: jest.fn(),
     encryptTotpSecret: jest.fn(),
     decryptTotpSecret: jest.fn(),
-    verifyTotpCode: jest.fn(),
+    matchTotpStep: jest.fn(),
 }));
 
 const mockSendEmail = jest.fn();
@@ -69,7 +69,7 @@ import {
     generateTotpUri,
     encryptTotpSecret,
     decryptTotpSecret,
-    verifyTotpCode,
+    matchTotpStep,
 } from '@/lib/security/totp-crypto';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -92,7 +92,7 @@ const mockGenSecret = generateTotpSecret as jest.MockedFunction<typeof generateT
 const mockGenUri = generateTotpUri as jest.MockedFunction<typeof generateTotpUri>;
 const mockEncrypt = encryptTotpSecret as jest.MockedFunction<typeof encryptTotpSecret>;
 const mockDecrypt = decryptTotpSecret as jest.MockedFunction<typeof decryptTotpSecret>;
-const mockVerify = verifyTotpCode as jest.MockedFunction<typeof verifyTotpCode>;
+const mockVerify = matchTotpStep as jest.MockedFunction<typeof matchTotpStep>;
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -190,7 +190,7 @@ describe('verifyMfaEnrollment', () => {
     it('returns success:false WITHOUT marking verified when the code is wrong', async () => {
         mockEnrollFind.mockResolvedValue(enrolled as never);
         mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
-        mockVerify.mockReturnValue(false);
+        mockVerify.mockReturnValue(null);
 
         const r = await verifyMfaEnrollment(userCtx, { code: '000000' });
 
@@ -203,7 +203,7 @@ describe('verifyMfaEnrollment', () => {
     it('marks isVerified=true + stamps verifiedAt on a correct code', async () => {
         mockEnrollFind.mockResolvedValue(enrolled as never);
         mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
-        mockVerify.mockReturnValue(true);
+        mockVerify.mockReturnValue(1000);
 
         const r = await verifyMfaEnrollment(userCtx, { code: '654321' });
 
@@ -420,11 +420,11 @@ describe('MFA enrolment changes are in the audit trail (#4646)', () => {
         mockEnrollFind.mockResolvedValue({ id: 'enr-1', isVerified: false, secretEncrypted: 'blob' } as never);
         mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
 
-        mockVerify.mockReturnValueOnce(false);
+        mockVerify.mockReturnValueOnce(null);
         await verifyMfaEnrollment(userCtx, { code: '000000' });
         expect(rows()).toEqual([]);
 
-        mockVerify.mockReturnValueOnce(true);
+        mockVerify.mockReturnValueOnce(1000);
         await verifyMfaEnrollment(userCtx, { code: '123456' });
         expect(rows()).toEqual([
             expect.objectContaining({

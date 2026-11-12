@@ -137,3 +137,30 @@ describe('TOTP Crypto', () => {
         });
     });
 });
+
+describe('matchTotpStep: the step a code belongs to', () => {
+    // RFC 6238 Appendix B: SHA-1 secret "12345678901234567890", T = 59 s,
+    // 8-digit code 94287082, so the 6-digit code is 287082, at step 1.
+    const RFC_SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'; // pragma: allowlist secret — the published RFC 6238 test-vector secret
+
+    beforeEach(() => jest.useFakeTimers().setSystemTime(59_000));
+    afterEach(() => jest.useRealTimers());
+
+    it('returns the RFC 6238 step of a valid code', () => {
+        const { matchTotpStep } = jest.requireActual('@/lib/security/totp-crypto');
+        expect(matchTotpStep(RFC_SECRET, '287082')).toBe(1);
+    });
+
+    it('returns null for a wrong or malformed code', () => {
+        const { matchTotpStep } = jest.requireActual('@/lib/security/totp-crypto');
+        expect(matchTotpStep(RFC_SECRET, '287083')).toBeNull();
+        expect(matchTotpStep(RFC_SECRET, '28708')).toBeNull();
+        expect(matchTotpStep(RFC_SECRET, 'abcdef')).toBeNull();
+    });
+
+    it('agrees with verifyTotpCode', () => {
+        const { verifyTotpCode } = jest.requireActual('@/lib/security/totp-crypto');
+        expect(verifyTotpCode(RFC_SECRET, '287082')).toBe(true);
+        expect(verifyTotpCode(RFC_SECRET, '287083')).toBe(false);
+    });
+});
