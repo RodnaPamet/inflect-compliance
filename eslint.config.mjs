@@ -556,7 +556,7 @@ const config = [
                     message: 'An audit procedure writes no Finding; it raises a propose_finding proposal.',
                 },
                 {
-                    selector: "Literal[value=/^(propose_risks|propose_controls|draft_policy)$/]",
+                    selector: "Literal[value=/^(propose_risks|propose_controls|draft_policy|propose_process_map)$/]",
                     message: 'The auditor proposes findings and nothing else.',
                 },
             ],

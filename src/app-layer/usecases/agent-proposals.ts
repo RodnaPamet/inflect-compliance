@@ -66,7 +66,26 @@ import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
 import { ExternalWriteProposalPayloadSchema } from '@/lib/agentic/external-write-proposal';
 import { openApprovedExternalWrite } from '@/app-layer/usecases/external-write-approval';
 import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
+import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
+import {
+    ProposedProcessMapSchema,
+    canonicaliseProposedProcessMap,
+} from '@/lib/agentic/process-map-proposal';
+import {
+    prepareProcessMapApproval,
+    type PreparedProcessMap,
+} from '@/lib/processes/proposed-map-read';
+import {
+    applyApprovedProcessMap,
+    assertMayApproveProcessMap,
+} from '@/app-layer/usecases/process-map-proposal';
 import type { RequestContext } from '@/app-layer/types';
+
+/**
+ * The reason both PROCESS_MAP refusals carry in `details.reason` (#5053), so the
+ * review queue words the refusal rather than showing the server's sentence.
+ */
+export const PROCESS_MAP_PROPOSALS_NOT_AVAILABLE = 'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE';
 
 /**
  * Mirrors the `AgentProposalKind` Prisma enum.
@@ -82,8 +101,22 @@ import type { RequestContext } from '@/app-layer/types';
  * first — stops type-checking until the new member is handled, which is the
  * mechanism the identity ladder's "a rung inherits nothing by falling through"
  * rule asks for, enforced rather than remembered.
+ *
+ * `PROCESS_MAP` (#5053) is CREATE-only and names no target: approving one
+ * creates a new DRAFT map in Document mode. Its payload is validated against
+ * `ProposedProcessMapSchema` and stored in canonical form, and approval
+ * re-reads it through `prepareProcessMapApproval`. The kind reached the
+ * database in two deploys; while `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false,
+ * `createAgentProposal` and `approveAgentProposal` both refuse it, with
+ * `details.reason` = `PROCESS_MAP_PROPOSALS_NOT_AVAILABLE`.
  */
-export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING' | 'EXTERNAL_WRITE';
+export type AgentProposalKind =
+    | 'RISK'
+    | 'CONTROL'
+    | 'POLICY'
+    | 'FINDING'
+    | 'EXTERNAL_WRITE'
+    | 'PROCESS_MAP';
 
 /**
  * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
@@ -656,6 +689,27 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
+    // ═══ PROCESS_MAP: THE BRAKE, THEN CREATE-ONLY (#5053) ═══
+    //
+    // At the VERY TOP, before the operation is resolved: an UPDATE-shaped
+    // PROCESS_MAP would otherwise be refused by `requireStorableUpdateTarget`
+    // with a different sentence. While `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is
+    // false every shape gets the brake's refusal; this usecase is the only
+    // `agentProposal.create` site, so the brake is what makes a release write
+    // nothing of the kind.
+    if (input.kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but does not accept them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
+    }
+    if (input.kind === 'PROCESS_MAP' && (input.operation ?? 'CREATE') !== 'CREATE') {
+        // A proposed map is always a NEW draft map. An edit to an existing map
+        // is a canvas change somebody makes, with its version and snapshots.
+        throw badRequest(
+            'A PROCESS_MAP proposal is CREATE-shaped: it proposes a new draft map and names no existing one.',
+        );
+    }
     const operation: AgentProposalOperation = input.operation ?? 'CREATE';
     if (input.kind === 'EXTERNAL_WRITE' && operation !== 'CREATE') {
         // MEASURED, not stylistic. `buildProposalDiff` resolves an UPDATE's
@@ -695,12 +749,17 @@ export async function createAgentProposal(
     // guards, the policy-card pin, the approval tiering, the expiry window and
     // the audit — which is the whole reason this kind reuses this usecase
     // instead of growing a second one beside it.
+    //
+    // PROCESS_MAP validates against its own strict shape, for the same reason:
+    // a whole map is not one of our create bodies (#5053).
     const schema =
         input.kind === 'EXTERNAL_WRITE'
             ? ExternalWriteProposalPayloadSchema
-            : operation === 'UPDATE'
-              ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
-              : SCHEMA_BY_KIND[input.kind];
+            : input.kind === 'PROCESS_MAP'
+              ? ProposedProcessMapSchema
+              : operation === 'UPDATE'
+                ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
+                : SCHEMA_BY_KIND[input.kind];
     if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
 
     const parsed = schema.safeParse(input.payload);
@@ -709,7 +768,17 @@ export async function createAgentProposal(
     }
 
     // 2. Sanitise ALL proposed free text at the boundary (Epic D).
-    const sanitized = sanitizeDeep(parsed.data);
+    let sanitized = sanitizeDeep(parsed.data);
+    if (input.kind === 'PROCESS_MAP') {
+        // Re-parsed AFTER sanitising, because sanitising can empty a label
+        // (`<b></b>`), and then stored in CANONICAL form: step keys re-minted
+        // `n1..nN`, so no key the agent chose is ever stored (#5053).
+        const reparsed = ProposedProcessMapSchema.safeParse(sanitized);
+        if (!reparsed.success) {
+            throw badRequest(`Proposed PROCESS_MAP is invalid: ${reparsed.error.message}`);
+        }
+        sanitized = canonicaliseProposedProcessMap(reparsed.data);
+    }
     const rationale = input.rationale ? sanitizePlainText(input.rationale) : null;
 
     // 2b. AI Guard — external-agent output is the highest-risk untrusted
@@ -1480,6 +1549,34 @@ export async function approveAgentProposal(
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
+    // ═══ A PROCESS_MAP IS NOT APPROVED WHILE THE BRAKE IS ON (#5053) ═══
+    //
+    // A row written by a newer container mid-rollout reaches here. Refused
+    // before the edits check, the diff, both guard re-scans, the signature
+    // insert and the claim, so the row stays PENDING with no signature. It is
+    // never burned ACCEPTED with no created record, which is what the dispatch
+    // switch's unknown-kind throw would do once the claim had been taken.
+    if (proposal.kind === 'PROCESS_MAP' && !PROCESS_MAP_PROPOSALS_IMPLEMENTED) {
+        throw badRequest(
+            'PROCESS_MAP_PROPOSALS_NOT_AVAILABLE: this release reads process-map proposals but cannot approve them',
+            { reason: PROCESS_MAP_PROPOSALS_NOT_AVAILABLE },
+        );
+    }
+    // ═══ A PROCESS_MAP IS APPROVED EXACTLY AS IT WAS REVIEWED (#5053) ═══
+    //
+    // Pure, so it sits early: edits are refused (the shallow merge below could
+    // swap the steps without the arrows), and the stored map is re-read
+    // through the SAME reader and layout the review diff used. A map the review
+    // surfaces could not render is never approved, and the map is created at
+    // the boxes the reviewer was shown. Before the guard re-scans, the
+    // signature insert and the claim, so a refusal leaves the row PENDING.
+    let preparedMap: PreparedProcessMap | null = null;
+    if (proposal.kind === 'PROCESS_MAP') {
+        preparedMap = prepareProcessMapApproval({
+            payloadJson: proposal.payloadJson,
+            hasEdits: parsedEdits !== undefined,
+        });
+    }
 
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
     //
@@ -1620,6 +1717,18 @@ export async function approveAgentProposal(
             metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId },
         }).catch(() => undefined);
         throw forbidden('agent_proposal_human_review_required');
+    }
+
+    // ═══ A PROCESS MAP'S APPROVER MAY EDIT PROCESS MAPS (#5053) ═══
+    //
+    // Approval creates the map as the approver, so the approver needs the key
+    // both human process-map routes take (owner decision, 2026-11-11). After
+    // the API-key refusal, so a credential is refused as one; before the
+    // signature and the claim, so the row stays PENDING. One audited
+    // `AUTHZ_DENIED` row. The review surfaces read the same table
+    // (`viewerMayApproveProposal`) and do not offer Approve to this viewer.
+    if (preparedMap) {
+        await assertMayApproveProcessMap(ctx, proposal.id);
     }
 
     // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
@@ -1811,6 +1920,12 @@ export async function approveAgentProposal(
                 case 'FINDING': {
                     const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
                     createdEntityId = finding.id;
+                    break;
+                }
+                case 'PROCESS_MAP': {
+                    // Prepared before the claim; `null` only for another kind.
+                    if (!preparedMap) throw badRequest('This proposal carries no process map');
+                    createdEntityId = await applyApprovedProcessMap(ctx, preparedMap, proposal.id);
                     break;
                 }
                 default:

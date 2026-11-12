@@ -174,3 +174,46 @@ describe('the single-proposal convenience returns the same answer', () => {
         ]);
     });
 });
+
+describe('a PROCESS_MAP proposal is reviewed as a map (#5053)', () => {
+    const MAP = {
+        name: 'Access review',
+        description: 'Quarterly',
+        nodes: [
+            { nodeKey: 'n1', nodeType: 'processStep', label: 'Request' },
+            { nodeKey: 'n2', nodeType: 'decision', label: 'Approved?' },
+        ],
+        edges: [{ sourceKey: 'n1', targetKey: 'n2', labelOverride: 'Submit' }],
+    };
+    const map = (over: Partial<{ operation: string; payloadJson: string }> = {}) =>
+        proposal({ id: 'pm', kind: 'PROCESS_MAP', operation: 'CREATE', targetEntityId: null, payloadJson: JSON.stringify(MAP), ...over });
+
+    it('is CREATE, with only the name and description as fields and the graph as its preview', async () => {
+        const diff = await buildProposalDiff(ctx, map());
+        expect(diff.status).toBe('CREATE');
+        expect(diff.fields.map((f) => [f.field, f.after])).toStrictEqual([
+            ['name', 'Access review'],
+            ['description', 'Quarterly'],
+        ]);
+        expect(diff.baseDigest).toBeNull();
+        expect(diff.processMap?.steps.map((s) => [s.index, s.label, s.box.w, s.box.h])).toStrictEqual([
+            [1, 'Request', 220, 88],
+            [2, 'Approved?', 220, 88],
+        ]);
+        expect(diff.processMap?.arrows.map((a) => [a.fromIndex, a.toIndex, a.label])).toStrictEqual([[1, 2, 'Submit']]);
+        // No base to read: a map names no record of ours.
+        expect(runInTenantContext).not.toHaveBeenCalled();
+    });
+
+    it('a stored map that no longer reads is PAYLOAD_UNREADABLE, with no preview', async () => {
+        const dangling = { ...MAP, edges: [{ sourceKey: 'n1', targetKey: 'n9' }] };
+        const diff = await buildProposalDiff(ctx, map({ payloadJson: JSON.stringify(dangling) }));
+        expect(diff.status).toBe('PAYLOAD_UNREADABLE');
+        expect(diff.processMap).toBeUndefined();
+    });
+
+    it('an UPDATE-shaped row, which createAgentProposal never writes, is not reviewable', async () => {
+        const diff = await buildProposalDiff(ctx, map({ operation: 'UPDATE' }));
+        expect(diff.status).toBe('PAYLOAD_UNREADABLE');
+    });
+});

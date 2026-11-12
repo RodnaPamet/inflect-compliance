@@ -71,9 +71,14 @@ jest.mock('@/app-layer/ai/assistant/tools', () => {
     return { ...actual, assistantTools: jest.fn() };
 });
 
-import { askAssistant } from '@/app-layer/usecases/assistant';
+import { askAssistant, proposeCapabilityRule } from '@/app-layer/usecases/assistant';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
-import { assistantTools, parseProposalOutcome } from '@/app-layer/ai/assistant/tools';
+import {
+    assistantTools,
+    offeredProposeKinds,
+    parseProposalOutcome,
+    titlesOf,
+} from '@/app-layer/ai/assistant/tools';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'u1' });
@@ -103,15 +108,8 @@ function toolSetReturning(result: string) {
                 description: 'propose findings',
                 jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
                 run: async (args: unknown) => {
-                    outcomes.push(
-                        parseProposalOutcome(
-                            'propose_findings',
-                            result,
-                            ((args as { items?: Array<{ title?: string }> })?.items ?? [])
-                                .map((i) => i.title)
-                                .filter((t): t is string => typeof t === 'string'),
-                        ),
-                    );
+                    // The REAL title reader, so `title ?? name` is what is tested.
+                    outcomes.push(parseProposalOutcome('propose_findings', result, titlesOf(args)));
                     return result;
                 },
             },
@@ -129,7 +127,7 @@ function toolSetReturning(result: string) {
  * If the sentence were relayed, the user would be told to wait for an approval
  * that cannot arrive.
  */
-function providerThatProposesThenLies(items: Array<{ title: string }>) {
+function providerThatProposesThenLies(items: Array<{ title: string } | { name: string }>) {
     const turns = [
         {
             text: null,
@@ -250,5 +248,108 @@ describe('the sentence is composed from the outcome, never relayed', () => {
         expect(res.kind).toBe('proposal');
         expect(res.proposalId).toBe('p-9');
         expect(res.message).toContain("I've queued");
+    });
+});
+
+describe('the noun and the title come from the proposal, not its stored code (#5053)', () => {
+    it('a queued PROCESS_MAP reads "a process map" and its name, never "process_map" or "Untitled"', async () => {
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('PROCESS_MAP', ['p-map'], [])),
+        );
+        providerThatProposesThenLies([{ name: 'Access review' }]);
+
+        const res = await askAssistant(ctx, { question: 'map our access review process' });
+
+        expect(res.message).toContain('I\'ve queued a process map "Access review"');
+        expect(res.message).not.toMatch(/process_map|Untitled/i);
+        expect(res.proposalKind).toBe('PROCESS_MAP');
+    });
+
+    it('a queued CONTROL, which is named rather than titled, no longer reads "Untitled"', async () => {
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('CONTROL', ['p-ctl'], [])),
+        );
+        providerThatProposesThenLies([{ name: 'Quarterly access review' }]);
+
+        const res = await askAssistant(ctx, { question: 'propose a control' });
+
+        expect(res.message).toContain('I\'ve queued a control "Quarterly access review"');
+        expect(res.message).not.toContain('Untitled');
+    });
+
+    it('titlesOf prefers title, falls back to name, and drops an item with neither', () => {
+        expect(titlesOf({ items: [{ title: 'T', name: 'N' }, { name: 'N2' }, { other: 1 }] })).toEqual(['T', 'N2']);
+    });
+});
+
+
+/**
+ * The system prompt's proposing rule names only what THIS turn can queue
+ * (#5053). A fixed sentence naming every kind told the model to call tools a
+ * READER, a custom role without `processes.edit`, or a release with the brake
+ * set back was never offered.
+ */
+describe('the system prompt offers only the propose tools the turn was given (#5053)', () => {
+    /** The system prompt the provider received, with `toolNames` offered. */
+    async function systemPromptFor(toolNames: string[]): Promise<string> {
+        let system = '';
+        (assistantTools as jest.Mock).mockReturnValue({
+            tools: toolNames.map((name) => ({
+                name,
+                description: name,
+                jsonSchema: { type: 'object', properties: {}, additionalProperties: false },
+                run: async () => 'ok',
+            })),
+            reviewRequired: () => false,
+            omitted: [],
+            proposals: () => [],
+        });
+        (assistantProviderFor as jest.Mock).mockReturnValue({
+            complete: async (req: { system: string }) => {
+                system = req.system;
+                return { text: 'an answer', toolCalls: [], stopReason: 'end' as const };
+            },
+        });
+        await askAssistant(ctx, { question: 'what can you do?' });
+        return system;
+    }
+
+    it('every propose tool offered: every kind is named, process maps with their blind spot', async () => {
+        const system = await systemPromptFor([
+            'list_risks',
+            'propose_risks',
+            'propose_controls',
+            'draft_policy',
+            'propose_finding',
+            'propose_process_map',
+        ]);
+        expect(system).toContain('You can PROPOSE risks, controls, policies, findings and process maps');
+        expect(system).toContain('Nothing is created until a reviewer approves the proposal.');
+        expect(system).toContain('You cannot see existing process maps');
+    });
+
+    it('no propose_process_map offered (no processes.edit, or the brake set back): maps are never named', async () => {
+        const system = await systemPromptFor(['list_risks', 'propose_risks', 'propose_finding']);
+        expect(system).toContain('You can PROPOSE risks and findings with the propose tools');
+        expect(system).not.toMatch(/process map/i);
+    });
+
+    it('no propose tool offered (a READER): the prompt says it cannot propose, and never that it can', async () => {
+        const system = await systemPromptFor(['list_risks', 'list_findings']);
+        expect(system).toContain('You cannot propose or create records for this person');
+        expect(system).not.toContain('You can PROPOSE');
+        expect(system).not.toMatch(/process map/i);
+    });
+
+    it('offeredProposeKinds reads kinds off the offered names, in catalogue order, ignoring read tools', () => {
+        expect(offeredProposeKinds([{ name: 'propose_process_map' }, { name: 'list_risks' }, { name: 'propose_risks' }]))
+            .toEqual(['RISK', 'PROCESS_MAP']);
+        expect(offeredProposeKinds([{ name: 'list_risks' }])).toEqual([]);
+    });
+
+    it('proposeCapabilityRule names a single kind without a list', () => {
+        expect(proposeCapabilityRule(['PROCESS_MAP'])[0]).toBe(
+            '- You can PROPOSE process maps with the propose tools, and nothing else.',
+        );
     });
 });

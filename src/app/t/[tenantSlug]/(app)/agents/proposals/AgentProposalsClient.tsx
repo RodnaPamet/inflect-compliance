@@ -43,6 +43,7 @@ import type { BulkRejectSkipReason } from '@/app-layer/usecases/agent-proposals'
 // that guard exists to force someone to make.
 import { ProposalDiffPanel } from '@/components/agentic/ProposalDiffPanel';
 import { proposalKindLabelKey } from '@/lib/agentic/proposal-labels';
+import { proposalRefusalKey } from '@/lib/agentic/proposal-refusal-keys';
 
 export interface ProposalRow {
     id: string;
@@ -136,6 +137,14 @@ export interface ProposalRow {
      * refused, so it is not offered; Reject, which withdraws it, still is.
      */
     composedByViewer?: boolean;
+    /**
+     * The approve usecase would take THIS viewer's approval of this row's
+     * kind, as far as authority goes (#5053): the role-tier write, plus the
+     * kind's extra key (`processes.edit` for a process map). Computed on the
+     * server by `viewerMayApproveProposal`, the table the usecase asserts, so
+     * Approve is offered only where the server would take it.
+     */
+    viewerMayApprove: boolean;
 }
 
 /**
@@ -191,25 +200,6 @@ function decisionBadgeFor(
         return { variant: 'info', key: 'proposals.awaitingSecond', testid: 'proposal-awaiting-second-badge' };
     }
     return null;
-}
-
-/**
- * The refusals of a single approve or reject this page words itself, keyed by
- * `error.details.reason` (#4970). Anything else, the four-eyes refusals
- * included, is shown as the server wrote it: those keep WHICH rule refused out
- * of the response by design, so the server's sentence is the only one that
- * says it.
- */
-const REFUSAL_KEY: Readonly<Record<string, 'composer' | 'ownDissent' | 'unknownDissent' | 'expired'>> = {
-    COMPOSER_MAY_NOT_APPROVE: 'composer',
-    DISSENT_AUTHOR_MAY_NOT_DECIDE: 'ownDissent',
-    DISSENT_AUTHOR_UNKNOWN: 'unknownDissent',
-    agent_proposal_expired: 'expired',
-};
-
-function refusalKey(body: unknown): 'composer' | 'ownDissent' | 'unknownDissent' | 'expired' | null {
-    const reason = (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details?.reason;
-    return typeof reason === 'string' ? (REFUSAL_KEY[reason] ?? null) : null;
 }
 
 /** The sentence each bulk-reject skip reason is reported with. */
@@ -436,7 +426,7 @@ export function AgentProposalsClient({
                 // (#4970); any other keeps the server's sentence, then the
                 // action's own fallback.
                 const body = await res.json().catch(() => null);
-                const known = refusalKey(body);
+                const known = proposalRefusalKey(body);
                 throw new Error(known ? t(`proposals.refused.${known}`) : apiErrorMessage(body, fallback));
             }
 
@@ -861,6 +851,18 @@ export function AgentProposalsClient({
                                             className="text-xs text-content-subtle"
                                         >
                                             {t('proposals.signedByYou')}
+                                        </span>
+                                    ) : canOperate && !p.viewerMayApprove ? (
+                                        // The approve usecase would refuse this
+                                        // viewer for this KIND (#5053: a process
+                                        // map also needs permission to edit
+                                        // process maps), so it is not offered.
+                                        // Reject, which only withdraws, still is.
+                                        <span
+                                            data-testid={`proposal-approve-unavailable-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.approveNeedsKindPermission')}
                                         </span>
                                     ) : (
                                         <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>

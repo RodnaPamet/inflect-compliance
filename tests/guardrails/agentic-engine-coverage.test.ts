@@ -69,7 +69,7 @@ describe('Agentic engine — propose-not-commit across steps', () => {
 
     it('NO workflow step imports an entity create/update/delete usecase (no direct commit)', () => {
         // Writes go ONLY through runProposeTool → createAgentProposal (the queue).
-        const entityMutators = /\b(createRisk|createControl|createPolicy|createFinding|updateRisk|deleteRisk|applySession|approveAgentProposal)\b/;
+        const entityMutators = /\b(createRisk|createControl|createPolicy|createFinding|updateRisk|deleteRisk|applySession|approveAgentProposal|createProcessMap|saveProcessMap|createProcessMapWithGraph|applyApprovedProcessMap)\b/;
         // BOTH halves. The invariant is "the engine never writes a business
         // entity directly", and checking only the usecase after the execution
         // walk moved out would have left the half that actually runs tools

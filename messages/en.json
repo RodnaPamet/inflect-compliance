@@ -11660,6 +11660,7 @@
         }
       },
       "approve": "Approve",
+      "approveNeedsKindPermission": "Your permissions do not cover approving this kind of proposal, so Approve is not offered. Somebody who has them can approve it, and you can still reject it.",
       "rationale": "Rationale: ",
       "diff": {
         "createHeading": "Full proposed content",
@@ -11678,7 +11679,30 @@
         "uncomputableTitle": "The changes could not be worked out",
         "reasonTargetMissing": "The record this proposal would change no longer exists, so there is nothing to compare against. Approval is unavailable — reject this proposal.",
         "reasonPayloadUnreadable": "The stored proposal content could not be read as a set of fields, so no change list can be shown. Approval is unavailable — reject this proposal and check the agent that produced it.",
-        "approveBlocked": "Approval is unavailable while the changes cannot be shown."
+        "approveBlocked": "Approval is unavailable while the changes cannot be shown.",
+        "kindNotApprovableHeading": "Not approvable in this version",
+        "kindNotApprovableBadge": "Awaiting an update",
+        "kindNotApprovableTitle": "This kind of proposal cannot be approved yet",
+        "reasonKindNotApprovable": "This version of Inflect can show this kind of proposal but cannot approve it yet. Nothing is wrong with the proposal: you can reject it, or leave it pending until the update is complete.",
+        "approveBlockedKind": "Approval is unavailable in this version."
+      },
+      "processMap": {
+        "heading": "Proposed process map",
+        "counts": "{steps, plural, one {# step} other {# steps}} · {arrows, plural, one {# arrow} other {# arrows}}",
+        "stepsHeading": "Steps",
+        "stepType": {
+          "processStep": "Step",
+          "decision": "Decision"
+        },
+        "arrowsHeading": "Arrows",
+        "arrowTo": "leads to",
+        "arrowLabel": "Label",
+        "noArrows": "No arrows",
+        "noteIsolated": "Step {step} has no arrows.",
+        "noteDecisionExits": "Decision {step} has fewer than two ways out.",
+        "canvasLabel": "Picture of the proposed map, with the steps where approval places them. The numbered list is the full proposal.",
+        "canvasUnavailable": "The picture of this map could not be shown. The numbered list above is the full proposal.",
+        "createsDraft": "Approving creates a new draft map on the Processes page, in Process map mode rather than Automation, with the steps placed as shown. Nothing is created before approval."
       },
       "signatureRecorded": "{recorded} of {required} approvals recorded — a second reviewer must sign",
       "awaitingSecond": "Awaiting a second approver",
@@ -11693,7 +11717,8 @@
         "CONTROL": "Control",
         "POLICY": "Policy",
         "FINDING": "Finding",
-        "EXTERNAL_WRITE": "External write"
+        "EXTERNAL_WRITE": "External write",
+        "PROCESS_MAP": "Process map"
       },
       "field": {
         "title": "Title",
@@ -11753,7 +11778,9 @@
         "toolName": "Tool",
         "advertisedToolName": "Tool name as advertised",
         "arguments": "Arguments",
-        "priorState": "State before the change"
+        "priorState": "State before the change",
+        "nodes": "Steps",
+        "edges": "Arrows"
       },
       "guard": {
         "flaggedBadge": "Guard flagged",
@@ -11774,7 +11801,11 @@
         "composer": "You composed this request, so somebody else approves it.",
         "ownDissent": "You raised this finding proposal by dissenting from a sampled workpaper. Somebody else decides it.",
         "unknownDissent": "This proposal names a workpaper review this workspace does not hold, so nobody can decide it.",
-        "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time."
+        "expired": "This proposal's review window has closed, so it can no longer be approved or rejected. It is kept as the record that nobody decided it in time.",
+        "processMapNotAvailable": "Process-map proposals cannot be approved yet. You can still reject this one.",
+        "processMapNotEditable": "A process map is approved exactly as proposed. To change it, reject it and propose the corrected map.",
+        "processMapNeedsProcessesEdit": "Approving a process map creates it as you, so it needs permission to edit process maps. Somebody who has it can approve this one.",
+        "processMapUnreadable": "This process map can no longer be read, so it cannot be approved. Reject it."
       }
     },
     "runs": {

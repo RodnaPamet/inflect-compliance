@@ -36,6 +36,11 @@ jest.mock('@/app-layer/repositories/ProcessMapRepository', () => ({
     },
 }));
 
+jest.mock('@/app-layer/services/canvas-rule-sync', () => ({
+    ...jest.requireActual('@/app-layer/services/canvas-rule-sync'),
+    syncCanvasToRules: jest.fn(),
+}));
+
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: jest.fn(),
 }));
@@ -54,7 +59,10 @@ import {
     deleteProcessMap,
     listMapsUsingRisk,
     listMapsUsingAsset,
+    createProcessMapWithGraph,
 } from '@/app-layer/usecases/process-map';
+import { runInTenantContext } from '@/lib/db-context';
+import { syncCanvasToRules } from '@/app-layer/services/canvas-rule-sync';
 
 function makeCtx(role: 'OWNER' | 'ADMIN' | 'EDITOR' | 'READER'): RequestContext {
     return {
@@ -427,5 +435,73 @@ describe('node-link reverse lookups (PR-D)', () => {
         );
         await expect(listMapsUsingRisk(readerCtx, 'r')).resolves.toEqual([]);
         await expect(listMapsUsingAsset(readerCtx, 'a')).resolves.toEqual([]);
+    });
+});
+
+describe('createProcessMapWithGraph (#5053 — an approved process-map proposal)', () => {
+    const graph = {
+        nodes: [
+            { nodeKey: 'n1', nodeType: 'processStep', label: 'A', subtitle: null, posX: 32, posY: 32, parentNodeKey: null, dataJson: null },
+            { nodeKey: 'n2', nodeType: 'decision', label: 'B?', subtitle: null, posX: 380, posY: 32, parentNodeKey: null, dataJson: null },
+        ],
+        edges: [
+            { edgeKey: 'e1', sourceKey: 'n1', targetKey: 'n2', edgeKind: 'flow', labelOverride: null, controls: [] },
+        ],
+    };
+
+    it('creates a DRAFT DOCUMENT map and its graph in ONE transaction, the CREATE row naming the proposal', async () => {
+        (ProcessMapRepository.create as jest.Mock).mockResolvedValue({ ...SAMPLE_MAP, version: 1 });
+        (ProcessMapRepository.replaceGraph as jest.Mock).mockResolvedValue({
+            ...SAMPLE_MAP,
+            version: 2,
+            nodes: graph.nodes,
+            edges: graph.edges,
+        });
+
+        const id = await createProcessMapWithGraph(writerCtx, {
+            name: 'Order-to-cash',
+            description: 'From a proposal',
+            ...graph,
+            sourceProposalId: 'prop-1',
+        });
+
+        expect(id).toBe('pm-1');
+        expect(runInTenantContext).toHaveBeenCalledTimes(1);
+        expect(ProcessMapRepository.create).toHaveBeenCalledWith(mockDb, writerCtx, {
+            name: 'Order-to-cash',
+            description: 'From a proposal',
+            status: 'DRAFT',
+            canvasMode: 'DOCUMENT',
+            createdByUserId: writerCtx.userId,
+        });
+        // The graph is saved at the version the create returned, in the same tx.
+        expect((ProcessMapRepository.replaceGraph as jest.Mock).mock.calls[0][0]).toBe(mockDb);
+        expect((ProcessMapRepository.replaceGraph as jest.Mock).mock.calls[0][2]).toBe('pm-1');
+        expect((ProcessMapRepository.replaceGraph as jest.Mock).mock.calls[0][3]).toEqual(
+            expect.objectContaining({ edges: graph.edges, expectedVersion: 1 }),
+        );
+        // A DOCUMENT map owns no rules.
+        expect(syncCanvasToRules).not.toHaveBeenCalled();
+        const actions = (logEvent as jest.Mock).mock.calls.map((c) => c[2].action);
+        expect(actions).toEqual(['CREATE', 'UPDATE']);
+        expect((logEvent as jest.Mock).mock.calls[0][2].detailsJson).toEqual(
+            expect.objectContaining({
+                operation: 'created',
+                after: { name: 'Order-to-cash', status: 'DRAFT', sourceProposalId: 'prop-1' },
+            }),
+        );
+    });
+
+    it('refuses a reader before opening any transaction', async () => {
+        await expect(
+            createProcessMapWithGraph(readerCtx, { name: 'X', description: null, ...graph, sourceProposalId: 'p' }),
+        ).rejects.toThrow(/permission/i);
+        expect(runInTenantContext).not.toHaveBeenCalled();
+    });
+
+    it('the plain createProcessMap CREATE row carries no sourceProposalId', async () => {
+        (ProcessMapRepository.create as jest.Mock).mockResolvedValue(SAMPLE_MAP);
+        await createProcessMap(writerCtx, { name: 'Order-to-cash' });
+        expect((logEvent as jest.Mock).mock.calls[0][2].detailsJson.after).not.toHaveProperty('sourceProposalId');
     });
 });

@@ -953,12 +953,22 @@ enum AgentContentProvenance {
 /// It reuses this queue for what the queue already carries — the four-eyes
 /// database trigger, the output guard, the expiry window, the sample audits —
 /// rather than growing a second approval mechanism beside it.
+///
+/// PROCESS_MAP (#5053) is CREATE-only: its `targetEntityId` is always NULL, it
+/// has no UPDATE path and no diff target. On approval it becomes one new DRAFT,
+/// DOCUMENT-mode `ProcessMap`, created through the process-map usecases. It
+/// ships in two deploys, because a generated client fails the whole read on a
+/// stored value it was not generated with: this release stores and reads the
+/// value and writes none (`createAgentProposal` refuses the kind by name, and
+/// `approveAgentProposal` refuses it while `PROCESS_MAP_PROPOSALS_IMPLEMENTED`
+/// in `src/lib/agentic/proposal-kind-rollout.ts` is false).
 enum AgentProposalKind {
   RISK
   CONTROL
   POLICY
   FINDING
   EXTERNAL_WRITE
+  PROCESS_MAP
 }
 
 /// WHAT a proposal would do to the record it names — the discriminator the

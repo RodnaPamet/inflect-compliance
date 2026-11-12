@@ -2241,6 +2241,36 @@ carries tasks both ways with one pinned peer. Ten rules in it are easy to undo:
   `a2a-messages.ts`, `a2a-peer-kill.ts`, `a2a-peer-credentials.ts`,
   `a2a-signing-key.ts`.
 
+**A process-map proposal** (`propose_process_map`, #5053, two deploys) asks
+for one new map; approval creates it DRAFT, in Document mode, in one
+transaction (`createProcessMapWithGraph`), in the approver's name. Rules that
+are each one careless edit from being undone:
+
+- **One reader and one layout for review and approval.** `readProposedProcessMap`
+  is the only reader of a stored payload and `proposed-map-layout.ts` the only
+  placer, so a map the review surfaces cannot render cannot be approved, and
+  the boxes shown are the boxes created. The layout copies the canvas's
+  constants and is pinned to them by a test reading both files; leave
+  `canvas-auto-layout.ts` a client module.
+- **The agent names no key and no position**: steps are re-minted `n1..nN`,
+  arrows are `e<i+1>` by position, and positions, parents, `dataJson`, edge
+  controls and kinds, mode, status and freeform are refused. Approve-with-edits
+  is refused for the kind (`PROCESS_MAP_PROPOSAL_NOT_EDITABLE`).
+- **The approver also needs `processes.edit`**, asserted after the API-key
+  refusal and before the signature and the claim. Both review surfaces offer
+  Approve only on the server's `viewerMayApprove` (`viewerMayApproveProposal`,
+  the table the usecase asserts); never compute it in a page.
+- **The list is the record; the canvas is a picture.** `ProcessMapProposalPreview`
+  renders every step and arrow as plain text. The read-only canvas under it
+  lives in `components/processes/` (the editor's module boundary) and is
+  loaded with `next/dynamic`, `ssr: false`, behind an error boundary; never
+  import it statically, and never let its failure hide the list. It mounts
+  `TldrawProcessCanvas` with `embedded`, which must not auto-focus: a focused
+  second editor takes the page's keyboard.
+- **The brake `PROCESS_MAP_PROPOSALS_IMPLEMENTED` also withdraws the tool**
+  (`loadableProposeTools`), so setting it back to false stops new rows and
+  approvals while the readers keep reading.
+
 **The inventory view key** (`admin.agent_registry_view`, #3710) is read-only:
 the register list and row, scans and the matrix, `get_discovered_agent`, the
 governance pack, and — beside `admin.view` — runs and proposals. OWNER, ADMIN,

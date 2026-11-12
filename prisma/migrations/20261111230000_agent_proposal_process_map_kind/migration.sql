@@ -1,0 +1,29 @@
+-- The proposal kind an agent's process map is queued as (#5053), deploy 1 of 2.
+--
+-- An agent may PROPOSE a process map. On approval the proposal becomes one new
+-- DRAFT, DOCUMENT-mode `ProcessMap`, created through the process-map usecases.
+-- It is CREATE-only: its `targetEntityId` is always NULL, so it has no UPDATE
+-- path and no diff target.
+--
+-- ─── Rolling-deploy safety ──────────────────────────────────────────
+--
+-- `ALTER TYPE ... ADD VALUE` is the additive, safe half of the enum hazard: a
+-- RENAME makes still-running old containers fail with SQLSTATE 42704, whereas an
+-- added value only affects readers that ENCOUNTER it. A Prisma client meeting a
+-- stored value it was not generated with fails the WHOLE read, which on the
+-- proposal queue is every proposal the tenant has. So this release stores and
+-- reads the value and NOTHING WRITES IT: `createAgentProposal` refuses the kind
+-- by name, and `approveAgentProposal` refuses it while
+-- `PROCESS_MAP_PROPOSALS_IMPLEMENTED` is false. The writer ships in deploy 2,
+-- once every running container can read the value. It is safe mid-rolling-deploy
+-- for the same reason 20260929120000_agent_proposal_external_write_kind was.
+--
+-- The value is deliberately NOT used anywhere in this transaction; PostgreSQL
+-- forbids that, not the ADD itself. `IF NOT EXISTS` makes it idempotent.
+--
+-- ─── Rollback ───────────────────────────────────────────────────────
+--
+-- PostgreSQL cannot drop an enum value without recreating the type, so the value
+-- outlives a rollback of the application. That is harmless: an older container
+-- never meets it, because nothing in this release writes it.
+ALTER TYPE "AgentProposalKind" ADD VALUE IF NOT EXISTS 'PROCESS_MAP';

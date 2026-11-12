@@ -43,7 +43,7 @@ describe('MCP propose — the propose-not-commit lock', () => {
     it('propose tools NEVER import an entity create/update/delete usecase', () => {
         // The one thing this PR cannot ship: a propose tool that creates a real
         // record. It may only call `createAgentProposal` (the queue).
-        const entityMutators = /\b(createRisk|createControl|createPolicy|createFinding|updateRisk|deleteRisk|applySession)\b/;
+        const entityMutators = /\b(createRisk|createControl|createPolicy|createFinding|updateRisk|deleteRisk|applySession|createProcessMap|saveProcessMap|createProcessMapWithGraph|applyApprovedProcessMap)\b/;
         expect(proposeTools).not.toMatch(entityMutators);
         // It DOES go through the proposal queue.
         expect(proposeTools).toMatch(/createAgentProposal/);
@@ -54,6 +54,10 @@ describe('MCP propose — the propose-not-commit lock', () => {
         for (const fn of ['createRisk', 'createControl', 'createPolicy', 'createFinding']) {
             expect(usecase).toMatch(new RegExp(`\\b${fn}\\b`));
         }
+        // A process map (#5053) is created through its own applier, which runs
+        // `createProcessMapWithGraph` as the approver. Bound to the approval's
+        // body: the import alone would satisfy a whole-file needle.
+        expect(functionBodyOf(usecase, 'approveAgentProposal')).toMatch(/\bapplyApprovedProcessMap\(/);
         // Approval is a privileged human action.
         expect(usecase).toMatch(/assertCanWrite/);
     });

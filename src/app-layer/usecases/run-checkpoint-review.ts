@@ -42,6 +42,7 @@ import { assertCanRead } from '@/app-layer/policies/common';
 import { notFound } from '@/lib/errors/types';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff';
+import { viewerMayApproveProposal } from '@/lib/agentic/proposal-approve-permission';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -85,6 +86,13 @@ export interface CheckpointProposal {
     /** The reviewer's own deadline. Past it, `approveAgentProposal` refuses. */
     expiresAt: string | null;
     createdAt: string;
+    /**
+     * The approve usecase would take THIS viewer's approval of this kind, as
+     * far as authority goes (#5053): the role-tier write plus the kind's extra
+     * key (`processes.edit` for a process map), from
+     * `viewerMayApproveProposal`. The panel offers Approve only where it is true.
+     */
+    viewerMayApprove: boolean;
     /**
      * Computed SERVER-SIDE against the target's state right now — never in the
      * browser from a payload, and never from a snapshot taken when the
@@ -215,6 +223,11 @@ export async function getRunCheckpointReview(
             // `.toISOString()` on one. The projection owns the wire shape.
             expiresAt: p.expiresAt?.toISOString() ?? null,
             createdAt: p.createdAt.toISOString(),
+            // Whether the approve usecase would take THIS viewer's approval of
+            // this kind (#5053): a process map's approver also needs
+            // `processes.edit`. Computed here, from the table the usecase
+            // asserts, so the panel offers Approve only where it is taken.
+            viewerMayApprove: viewerMayApproveProposal(ctx, p.kind),
             // Non-null by `buildProposalDiffs`' contract (an entry per input);
             // the fallback exists so a contract change cannot render a card
             // with no diff and an approve control beside it. PAYLOAD_UNREADABLE
