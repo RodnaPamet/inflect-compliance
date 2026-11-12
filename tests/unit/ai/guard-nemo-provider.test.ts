@@ -1,11 +1,11 @@
 /**
  * The `nemo` guard provider — an HTTP client for a NeMo Guardrails server.
  *
- * The invariant this file exists for: **a NeMo outage degrades to flag on
- * input and to block on egress, never to allow.** Every way the server can
+ * The invariant this file exists for: **a NeMo outage degrades to flag, in
+ * both directions, never to allow** (roadmap 1.1). Every way the server can
  * fail to give a usable verdict is enumerated below and each one is asserted
- * to reach the caller as review-required (input) or blocked (egress) under
- * the default mode. Also: the server is asked for a verdict and nothing else,
+ * to reach the caller as review-required — and not blocked — under the
+ * default mode. Also: the server is asked for a verdict and nothing else,
  * the content never reaches a log line, and a stopped rail is a block.
  */
 const appendAuditEntry = jest.fn(async (_entry: Record<string, unknown>) => undefined);
@@ -66,7 +66,7 @@ beforeEach(() => {
     warn.mockClear();
 });
 
-describe('nemo outage degrades to flag on input and block on egress, never allow', () => {
+describe('nemo outage degrades to flag, never allow', () => {
     // Every row carries all three columns: `it.each` reads a callback whose
     // arity exceeds the row's length as a `done`-style test.
     const OUTAGES: readonly [string, () => FetchImpl, number | undefined][] = [
@@ -96,9 +96,11 @@ describe('nemo outage degrades to flag on input and block on egress, never allow
         expect(input.ruleIds).toContain(UNAVAILABLE);
         expect(input.decidedBy).toEqual(['nemo']);
 
-        expect(egress.action).toBe('block');
-        expect(egress.blocked).toBe(true);
+        expect(egress.action).toBe('flag');
+        expect(egress.reviewRequired).toBe(true);
+        expect(egress.blocked).toBe(false);
         expect(egress.ruleIds).toContain(UNAVAILABLE);
+        expect(egress.decidedBy).toEqual(['nemo']);
     });
 
     it('a base URL that is not https is refused before any request, and fails closed', async () => {
@@ -106,7 +108,7 @@ describe('nemo outage degrades to flag on input and block on egress, never allow
         const { input, egress } = await both(nemoWith(fetchImpl, { baseUrl: 'http://nemo-guardrails:8000' }));
         expect(fetchImpl).not.toHaveBeenCalled();
         expect(input.action).toBe('flag');
-        expect(egress.action).toBe('block');
+        expect(egress.action).toBe('flag');
         expect(warn.mock.calls.map((c) => (c[1] as { reason: string }).reason)).toEqual(['SCHEME_REFUSED', 'SCHEME_REFUSED']);
     });
 
@@ -114,7 +116,7 @@ describe('nemo outage degrades to flag on input and block on egress, never allow
         const provider = createNemoGuardProvider({ baseUrl: 'https://10.0.0.5:8000' });
         const { input, egress } = await both(provider);
         expect(input.action).toBe('flag');
-        expect(egress.action).toBe('block');
+        expect(egress.action).toBe('flag');
         expect(warn.mock.calls.map((c) => (c[1] as { reason: string }).reason)).toEqual(['EGRESS_REFUSED', 'EGRESS_REFUSED']);
     });
 
@@ -136,7 +138,8 @@ describe('nemo outage degrades to flag on input and block on egress, never allow
         const big = { n: BigInt(1) };
         const egress = await guardEgress(ctx, big, { source: 'nemo-test', providers: [patternsProvider, nemoWith(fetchImpl)] });
         expect(fetchImpl).not.toHaveBeenCalled();
-        expect(egress.blocked).toBe(true);
+        expect(egress.action).toBe('flag');
+        expect(egress.ruleIds).toContain(UNAVAILABLE);
     });
 
     it('logs the reason and never the content or the URL', async () => {

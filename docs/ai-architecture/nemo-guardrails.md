@@ -87,8 +87,9 @@ flowchart LR
   1.5; 2026-11-11). `src/app-layer/ai/guard/providers/`: `patterns-provider.ts`
   is the scanners above, unchanged; `compose.ts` composes worst-of, and a
   provider that throws, returns a malformed result, or an empty provider list
-  is unavailable (`guard.provider_unavailable.<id>`: `suspicious` on input,
-  `malicious` on egress), never `clean`; `nemo-provider.ts` is an HTTP client
+  is unavailable (`guard.provider_unavailable.<id>`: `suspicious`, so `flag`,
+  in both directions — a secret the patterns provider sees still blocks
+  egress), never `clean`; `nemo-provider.ts` is an HTTP client
   for a NeMo Guardrails server (`safeFetch`, https only, 3 s deadline over
   request and body, 64 KiB response cap that aborts the read, 1 MiB request
   cap) that reads only whether an activated rail of the matching type stopped,
@@ -98,13 +99,21 @@ flowchart LR
   byte-identical to the pre-seam guard. Set, `GuardOutcome.decidedBy` and the
   audit row's `decidedBy` name the deciding provider, and a nemo rule id is
   namespaced `nemo.rail.<name>`, which is how the decision log's
-  `guardRuleIds` already names the provider.
+  `guardRuleIds` already names the provider. A provider declares `remote`,
+  and a guard call made inside an open tenant transaction (`opts.db`) does
+  not consult a remote one: a network wait inside the 5 s transaction budget
+  would surface as a "transaction closed" error rather than a verdict. That
+  call is scanned by the patterns provider alone and its outcome and audit row
+  name the withheld provider in `notConsulted`. Three callers scan inside a
+  transaction today — the A2A reply delivery (once per reply, up to 20),
+  questionnaire autofill and risk suggestions — so the nemo slice does not
+  reach them until their scans move out of the transaction.
 - **No NeMo Guardrails server runs, and no rail config exists.** Phase 1.3 is
   held by the capacity rule (master § Capacity budget, C1). `safeFetch`
   refuses `http:` and private addresses, so a server on the Compose network
   is reachable only over https and, on a self-hosted deployment, through the
   egress allowlist; with the URL set to anything else the guard flags every
-  input and blocks every egress, which is the outage rule working. Nothing
+  input and every egress, which is the outage rule working. Nothing
   asks a model "is this a jailbreak".
 
 ## Fit, and what is deliberately not adopted

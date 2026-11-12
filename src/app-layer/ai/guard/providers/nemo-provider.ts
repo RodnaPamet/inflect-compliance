@@ -14,7 +14,7 @@
  *
  * Rules, each held by `tests/unit/ai/guard-nemo-provider.test.ts`:
  *
- *   - **Outage degrades to flag on input and block on egress, never to allow.**
+ *   - **Outage degrades to flag, in both directions, never to allow.**
  *     Every failure — refused egress, timeout, non-2xx, oversized or unparsable
  *     body, a response shape this client does not recognise, content it could
  *     not serialise — returns `providerUnavailable('nemo', kind)` and logs the
@@ -253,6 +253,7 @@ async function ask(opts: NemoProviderOptions, kind: GuardScanKind, content: unkn
 export function createNemoGuardProvider(opts: NemoProviderOptions): GuardProvider {
     return {
         id: NEMO_PROVIDER_ID,
+        remote: true,
         async scan(kind, content, ctx: GuardProviderContext) {
             let outcome: Outcome;
             try {

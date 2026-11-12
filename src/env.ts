@@ -355,8 +355,9 @@ export const env = createEnv({
         // Guardrails roadmap, Phase 1.4). Operator config only, never a tenant
         // setting. Unset or blank = the deterministic `patterns` provider alone,
         // and nothing else is constructed. Set = patterns + nemo, composed
-        // worst-of; an unreachable or unusable server flags input and blocks
-        // egress (never allows). Read only by src/app-layer/ai/guard/providers/registry.ts.
+        // worst-of; an unreachable or unusable server flags (never allows).
+        // A server WE operate — pointing it at a third party's host is a
+        // sub-processor change. Read only by src/app-layer/ai/guard/providers/registry.ts.
         AI_GUARD_NEMO_BASE_URL: z.string().optional(),
         AI_RISK_DAILY_QUOTA: z.string().optional(),
         AI_RISK_USER_RPM: z.string().optional(),

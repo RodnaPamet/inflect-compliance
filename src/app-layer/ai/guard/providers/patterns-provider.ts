@@ -21,6 +21,7 @@ export const PATTERNS_PROVIDER_ID = 'patterns';
 
 export const patternsProvider: GuardProvider = {
     id: PATTERNS_PROVIDER_ID,
+    remote: false,
     async scan(kind, content) {
         if (kind === 'input') {
             return scanInjection(typeof content === 'string' ? content : null);

@@ -34,6 +34,20 @@ export interface GuardProvider {
     /** Stable, lower-case id. Recorded in `GuardOutcome.decidedBy` and used to namespace rule ids. */
     readonly id: string;
     /**
+     * True when a scan waits on the network. Required, so a new provider has to
+     * say which it is rather than inherit an answer.
+     *
+     * A remote provider is NOT consulted by a guard call made inside an open
+     * tenant transaction (`GuardOptions.db`): such a transaction has a 5 s
+     * budget (`TENANT_TX_TIMEOUT_MS`), and a scan that waits up to its own
+     * deadline — once per item in a loop, as the A2A reply delivery does —
+     * would surface as a Prisma "transaction closed" error instead of a
+     * verdict. That call is scanned by the in-process providers alone (the
+     * guard as it was before the seam) and its outcome names the withheld
+     * provider in `notConsulted`; see `../index.ts`.
+     */
+    readonly remote: boolean;
+    /**
      * Scan the content. `input` content is tenant text on its way into a
      * model; `egress` content is an arbitrary JSON-ish payload on its way out.
      *

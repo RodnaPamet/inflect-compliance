@@ -218,6 +218,13 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage prefix the configured embedding model expects — a config string, not an endpoint',
     AI_RERANK_LOCAL_BASE_URL: 'base URL of the deployment\'s OWN rerank service (TEI inside the perimeter) — not an external sub-processor',
     AI_RERANK_LOCAL_MODEL: 'rerank model name served by the in-deployment service — a config string, not an endpoint',
+    // The AI guard's second provider (NeMo Guardrails roadmap, Phase 1.4).
+    // Every guarded text — LOCAL_ONLY tenants' included, and every egress
+    // payload — is POSTed here, so the triage is a decision, not bookkeeping:
+    // it is a host WE operate, never a vendor's. Pointing it at a third party's
+    // endpoint would make that party a sub-processor of every tenant's AI
+    // content and is the sub-processor change process, not a config change.
+    AI_GUARD_NEMO_BASE_URL: 'base URL of a NeMo Guardrails server (open source, Apache-2.0) WE operate, running LLM-free rails; no data leaves our infrastructure, so not a sub-processor — operator deployment config, unreachable from any tenant setting; a third-party host here would be a sub-processor change',
     // Internal secrets (env-provided; stored in AWS Secrets Manager, itself listed).
     AUTH_SECRET: 'internal JWT/session signing secret',
     JWT_SECRET: 'internal JWT signing secret',

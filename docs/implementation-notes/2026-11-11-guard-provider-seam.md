@@ -37,6 +37,7 @@ beats allow.
 | `src/app-layer/ai/guard/providers/registry.ts` | The only reader of `AI_GUARD_NEMO_BASE_URL` |
 | `src/app-layer/ai/guard/index.ts` | Calls the composed provider; `decidedBy` on the outcome and audit row |
 | `src/env.ts` | `AI_GUARD_NEMO_BASE_URL` (optional, operator only) |
+| `tests/guardrails/sub-processor-coverage.test.ts` | `AI_GUARD_NEMO_BASE_URL` triaged: a server we operate, not a sub-processor |
 | `tests/guards/ssrf-egress-coverage.test.ts` | The nemo client joins the safeFetch sink population |
 
 ## Decisions
@@ -49,9 +50,15 @@ beats allow.
   `toStrictEqual` against the pre-seam construction on a fixture set that
   reaches clean and malicious in both directions, including the 64-deep
   unscanned refusal.
-- **Unavailable is a verdict, per direction.** Input: `suspicious`, which the
-  policy makes `flag` under strict and balanced. Egress: `malicious`, which it
-  makes `block`. The rule id `guard.provider_unavailable.<id>` says the guard
+- **Unavailable is `suspicious` in both directions**, which the policy makes
+  `flag` under strict and balanced — the roadmap's "degrade to `flag` on
+  outage, never to `allow`". A first draft made egress `malicious` (`block`)
+  on the grounds that content which might carry a secret must not leave on a
+  check that never ran; but the patterns provider always runs, so a secret it
+  recognises still blocks, and blocking for the missing second slice would
+  have taken the assistant's answers, every MCP tool call's arguments and
+  every Tool Runner model output down whenever the guard server was
+  unreachable. The rule id `guard.provider_unavailable.<id>` says the guard
   declined rather than found something — the precedent is
   `egr.unscanned.depth_exceeded`. Audit mode still records rather than
   enforces, as it does for every verdict; the verdict is never `clean`.
@@ -72,6 +79,17 @@ beats allow.
   shape it does not recognise fails closed. The shape is NeMo's documented
   server API; it is verified against a live server when 1.3 deploys one, and
   until then a mismatch can only flag or block, never allow.
+- **A remote provider is not waited on inside a transaction.** `GuardProvider`
+  declares `remote` (required, so a new provider must say which it is). A call
+  that passes `opts.db` is inside a tenant transaction with a 5 s budget
+  (`TENANT_TX_TIMEOUT_MS`), and the A2A reply delivery scans up to 20 replies
+  in one; a 3 s nemo deadline per reply would end the transaction and fail the
+  claim on every retry, so a slow server would show up as P2028 rather than as
+  a flag. Such a call is scanned in-process only, and `notConsulted` on the
+  outcome and audit row names the withheld provider. This is the pre-seam
+  guard for those calls, not an `allow`; moving the A2A, questionnaire and
+  risk-suggestion scans out of their transactions is what lets nemo reach
+  them, and is left for a later slice.
 - **A set but unusable URL is not patterns-only.** `registry.ts` builds the
   provider whenever the value is non-blank; a non-https, credentialed or
   malformed URL makes every scan unavailable. Falling back to patterns alone
@@ -79,7 +97,7 @@ beats allow.
 - **`safeFetch` constrains where the server can live.** It refuses `http:` and
   private addresses (except through the self-hosted egress allowlist), so
   `http://nemo-guardrails:8000` on the Compose network is refused and the
-  guard flags or blocks everything. That is the outage rule working, and it is
+  guard flags everything. That is the outage rule working, and it is
   the question 1.3 must answer when it adds the service: TLS on the internal
   hop plus an allowlist entry, or a deliberately named operator-internal
   fetch. This slice does not widen `safeFetch`.

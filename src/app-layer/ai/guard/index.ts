@@ -84,12 +84,26 @@ export interface GuardOutcome {
      * provider's ids are namespaced by its id (`nemo.rail.…`).
      */
     decidedBy?: readonly string[];
+    /**
+     * Remote providers the deployment has that this call did NOT consult,
+     * because it was made inside an open tenant transaction (`opts.db`).
+     * Present only then. Such a call is scanned by the in-process providers
+     * alone — the guard as it was before the seam, never `allow` by default —
+     * because a network wait inside a 5 s transaction turns a slow guard
+     * server into a "transaction closed" error rather than a verdict. Hoisting
+     * a caller's scan out of its transaction is how the remote slice reaches it.
+     */
+    notConsulted?: readonly string[];
 }
 
 export interface GuardOptions {
     /** Where the content came from (e.g. 'risk-assessment', 'vendor-doc'). */
     source: string;
-    /** An open tenant tx to reuse for the settings read (avoids nesting). */
+    /**
+     * An open tenant tx to reuse for the settings read (avoids nesting).
+     * Passing it also says the call is INSIDE a transaction, so remote
+     * providers are not consulted (see `GuardOutcome.notConsulted`).
+     */
     db?: PrismaTx;
     /**
      * The providers to consult, in place of the deployment's
@@ -153,6 +167,7 @@ async function emitGuardAudit(
             // Only when more than one provider was asked, so a patterns-only
             // guard writes the same row it wrote before the provider seam.
             ...(outcome.decidedBy ? { decidedBy: [...outcome.decidedBy] } : {}),
+            ...(outcome.notConsulted ? { notConsulted: [...outcome.notConsulted] } : {}),
         },
         metadataJson: {
             ruleCount: outcome.ruleIds.length,
@@ -168,6 +183,27 @@ async function emitGuardAudit(
     });
 }
 
+/**
+ * Which providers a call consults. Inside an open tenant transaction
+ * (`opts.db`) only the in-process ones: a remote scan waits up to its own
+ * deadline, and callers scan inside transactions with a 5 s budget — the A2A
+ * reply delivery once per reply, up to 20 in one transaction — so a slow guard
+ * server would surface as a Prisma "transaction closed" error, failing the
+ * whole claim on every retry, instead of as the flag the outage rule promises.
+ * The withheld providers are named in the outcome rather than dropped quietly.
+ */
+function providersForCall(opts: GuardOptions): {
+    consult: readonly GuardProvider[];
+    notConsulted: string[];
+} {
+    const all = opts.providers ?? activeGuardProviders();
+    if (!opts.db) return { consult: all, notConsulted: [] };
+    return {
+        consult: all.filter((p) => !p.remote),
+        notConsulted: all.filter((p) => p.remote).map((p) => p.id),
+    };
+}
+
 async function compose(
     ctx: RequestContext,
     content: unknown,
@@ -175,8 +211,9 @@ async function compose(
     opts: GuardOptions,
 ): Promise<GuardOutcome> {
     const mode = await resolveModeForTenant(ctx, opts.db);
+    const { consult, notConsulted } = providersForCall(opts);
     const composed: ComposedScan = await scanWithProviders(
-        opts.providers ?? activeGuardProviders(),
+        consult,
         direction,
         content,
         { requestId: ctx.requestId, tenantId: ctx.tenantId },
@@ -193,6 +230,7 @@ async function compose(
         source: opts.source,
         direction,
         ...(composed.providerCount > 1 ? { decidedBy: composed.decidedBy } : {}),
+        ...(notConsulted.length > 0 ? { notConsulted } : {}),
     };
     if (scan.verdict !== 'clean') {
         await emitGuardAudit(ctx, outcome);

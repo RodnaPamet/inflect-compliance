@@ -17,9 +17,10 @@
  *     is byte-identical to the guard before the seam.
  *   - **A provider that fails is unavailable, never clean.** A throw, a
  *     rejection or a result whose verdict is not in the vocabulary becomes
- *     `providerUnavailable(...)`: `suspicious` on input (the policy turns that
- *     into `flag`) and `malicious` on egress (`block`). Unscanned is not clean
- *     (G9) — the same rule `egr.unscanned.depth_exceeded` holds one layer down.
+ *     `providerUnavailable(...)`: `suspicious` in BOTH directions, which the
+ *     policy turns into `flag` — review, never `allow` and never `block`.
+ *     Unscanned is not clean (G9) — the same rule `egr.unscanned.depth_exceeded`
+ *     holds one layer down.
  *   - **No providers is no scan.** An empty provider list composes to the
  *     unavailable verdict, not to `clean`: a guard that consulted nobody has
  *     vouched for nothing (zero is never complete).
@@ -43,21 +44,32 @@ const VERDICT_RANK: Record<GuardVerdict, number> = { clean: 0, suspicious: 1, ma
 const SEVERITY_RANK: Record<GuardSeverity, number> = { low: 0, medium: 1, high: 2 };
 
 /**
- * The verdict for a provider that could not scan.
+ * The verdict for a provider that could not scan: `suspicious`, in BOTH
+ * directions, which the policy resolves to `flag` under strict and balanced.
  *
- * Input: `suspicious` — the policy resolves it to `flag` under strict and
- * balanced, so the content forces human review and is never auto-committed.
- * Egress: `malicious` — resolves to `block` under strict and balanced, because
- * content that might carry a secret must not leave on the strength of a check
- * that never ran. Audit mode still records rather than enforces, as it does
- * for every verdict: that mode is the tenant's deliberate opt-in, and the
- * verdict itself is never `clean`.
+ * The roadmap's rule is "degrade to `flag` on outage — never to `allow`"
+ * (Phase 1.1), and it is deliberately not "block on egress". The `patterns`
+ * provider is always in the list and always runs, so a secret it recognises
+ * still makes the composed egress verdict `malicious` and still blocks; what
+ * an outage loses is only the SECOND slice. Blocking every egress for that
+ * would take every AI surface down whenever the guard server is unreachable —
+ * the assistant's outbound answer, every MCP tool call's arguments, every Tool
+ * Runner model output — which is an availability failure the roadmap did not
+ * choose. `flag` keeps the content out of any auto-commit and names the
+ * provider in the rule id; it is never `clean`.
+ *
+ * Audit mode still records rather than enforces, as it does for every
+ * verdict: that mode is the tenant's deliberate opt-in.
+ *
+ * `kind` is kept in the signature so a later decision to treat the two
+ * directions differently is one line here, not a change at every caller.
  */
-export function providerUnavailable(providerId: string, kind: GuardScanKind): ScanResult {
-    const ruleIds = [`${GUARD_PROVIDER_UNAVAILABLE_RULE}.${providerId}`];
-    return kind === 'egress'
-        ? { verdict: 'malicious', ruleIds, maxSeverity: 'high' }
-        : { verdict: 'suspicious', ruleIds, maxSeverity: 'medium' };
+export function providerUnavailable(providerId: string, _kind: GuardScanKind): ScanResult {
+    return {
+        verdict: 'suspicious',
+        ruleIds: [`${GUARD_PROVIDER_UNAVAILABLE_RULE}.${providerId}`],
+        maxSeverity: 'medium',
+    };
 }
 
 export interface ComposedScan {
