@@ -20,7 +20,7 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 | Wave | 2 (its tasks need only what exists today; model selection compares models available by API key) |
 | Depends on | the harness route from [`garak.md`](./garak.md) Phase 1 (or a sibling) |
 | Unblocks | a record behind every engine that is on — Flue, and the Tool Runner, which Claude engines Step 2c turned on (#4512) before any record existed; worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
-| Owner decisions | **D-EV-4** — decided 2026-11-11 (owner): adopt. The product scores its own agents on its own ladder, and the Inspect records are the evidence. Open from Phase 0: D-EV-6 (budget), D-EV-7 (Tool Runner missing-input arm), D-EV-8 (a JSON read of a run's decision rows), D-EV-9 (persisting the offered tool set) |
+| Owner decisions | **D-EV-4** — decided 2026-11-11 (owner): adopt. The product scores its own agents on its own ladder, and the Inspect records are the evidence. Source: the owner's decision batch of 2026-11-11 (with D-L4-1..4, D-EV-1/2, D-L3-1, D-L1-1/2/5/6/7), as relayed to this work. It is not in force until the owner initials its row in the master roadmap's D-* table. Open from Phase 0: D-EV-6 (budget), D-EV-7 (Tool Runner missing-input arm), D-EV-8 (a JSON read of a run's decision rows), D-EV-9 (persisting the offered tool set), D-EV-10 (a guard verdict on the delegation step) |
 | Complete at | Phase 3, comparing worker candidates available by API key |
 
 ## At a glance
@@ -120,7 +120,10 @@ Local candidates join only if Layer 5 is taken up.
 
 - [x] 0.1 D-EV-4: the owner confirms the principle — Inflect's own agents are
       scored on Inflect's ladder, and the Inspect records are the evidence.
-      **Decided 2026-11-11 (owner): adopt.**
+      **Decided 2026-11-11 (owner): adopt**, in the owner's decision batch of
+      that day. The record of the act is the owner's initial on the D-EV-4 row
+      of the master roadmap's D-* table, which this pull request must carry.
+      If that row is not initialled, this item is open, and Phase 0 is too.
 - [x] 0.2 Write the ten tasks as a table (input, workflow, expected ledger
       facts, scorer), one per invariant the guards already name plus the three
       the guards cannot: injected tool result → step halted; kill mid-run →
@@ -134,11 +137,12 @@ Local candidates join only if Layer 5 is taken up.
       once per engine) kept apart from `acme-corp`, because the injection and
       secret fixtures and the kill switch must not reach other jobs.
 
-Phase 0 leaves four questions for the owner, listed in the note: D-EV-6 (the
+Phase 0 leaves five questions for the owner, listed in the note: D-EV-6 (the
 nightly budget, since Inspect runs each engine's own model), D-EV-7 (the Tool
 Runner covers three case kinds, because profile runs take no caller input),
-D-EV-8 (no REST route returns a run's decision rows) and D-EV-9 (the offered
-tool set is logged, not stored).
+D-EV-8 (no REST route returns a run's decision rows), D-EV-9 (the offered
+tool set is logged, not stored) and D-EV-10 (the delegation step records no
+guard verdict). They belong in the master roadmap's D-* table beside D-EV-4.
 
 **Prompt.**
 ```text
@@ -203,8 +207,11 @@ AGENT-EVAL-NON-BLOCKING-UNTIL: <date> and a pinning guard; records proposed by P
 evals/inspect/records/.
 
 Constraints: the harness reads through APIs, never Prisma; seed tenants only; no judge.
-The LOCAL_ONLY task must assert on the absence of an external socket via the product's
-own metric/log (e.g. the provider outcome counter), not by network sniffing in CI.
+The LOCAL_ONLY task must assert on the absence of an external socket via the run's own
+ledger rows (no MODEL_CALL step, no decision digest; the decision rows once D-EV-8 lands),
+not by network sniffing in CI. No scorer reads a metric: the provider and cap counters
+carry no run or tenant label. Samples run one at a time on the deployment (the Phase 0
+note says why), and the record refuses overlapping samples.
 
 Done when: all ten tasks produce verdicts on the nightly, the record validates, and a
 deliberately broken invariant (e.g. a test build with the review latch disabled) turns
