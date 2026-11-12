@@ -193,7 +193,10 @@ test.describe('the Tool Runner engine: chosen, then a profile test-run', () => {
                 });
                 await expect(rp.getByText(BEHAVIOUR.testRun.started)).toBeVisible({ timeout: 15_000 });
                 const list = main.locator('[data-testid="agent-runs-list"]');
-                await expect(list.getByRole('link', { name: /:test-run$/ })).toHaveCount(1, { timeout: 30_000 });
+                // Named "Behaviour v1 — Test run" since #5374, never by its raw
+                // `agent-profile:<id>@v1:test-run` key.
+                const testRunName = en.agents.runs.profileRun.testRun.replace('{version}', '1');
+                await expect(list.getByRole('link', { name: testRunName })).toHaveCount(1, { timeout: 30_000 });
             } finally {
                 await ctx.close();
             }
