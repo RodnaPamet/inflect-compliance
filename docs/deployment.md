@@ -698,9 +698,22 @@ this way:
   and refuses any run not from `main`.
 
 The same holds for `VM check`, `VM capacity` and `Scanner VM`, which take the
-same environment and identity. These settings could not be read from a session
-(the API path is refused through its proxy), so they are an **operator action
-to confirm**, not a fact recorded here. A second layer is also open: adding
+same environment and identity.
+
+**As confirmed by the owner on 2026-11-12** (a screenshot of the settings page;
+a session cannot read them, because the API path is refused through its proxy),
+`production` has **Deployment branches and tags: Protected branches only**, which
+applies to one branch, `main`. Two things follow from that setting rather than
+from a literal `main`:
+
+- A branch that later gets a branch protection rule becomes deployable to
+  `production` too. Keep `main` the only protected branch, or switch the setting
+  to *Selected branches and tags* with `main`.
+- **Allow administrators to bypass configured protection rules** is on, so an
+  administrator can bypass the environment's protection rules. That is the
+  owner's own lever, not a path for anyone else.
+
+A second layer is also open: adding
 `&& assertion.ref == 'refs/heads/main'` to the provider's attribute condition
 would refuse the identity to a branch run even after an approval, and would
 limit all four workflows to `main`. It changes a live GCP setting and is the
