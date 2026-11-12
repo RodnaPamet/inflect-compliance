@@ -10,6 +10,11 @@
 #
 #     docker build -f guards/presidio/Dockerfile --target test .
 #
+# The root `.dockerignore` excludes `tests/`, so this image has its own context,
+# `Dockerfile.dockerignore` beside this file: an allowlist of exactly the COPY
+# sources below (tests/unit/presidio-image-context.test.ts holds the two lists
+# to each other).
+#
 # The base image is pinned by digest; the Python dependencies by version and
 # the two spaCy model wheels by sha256 (requirements.txt).
 

@@ -29,10 +29,13 @@
  *              "Ivan" in the text, so partial cover is a miss — however close
  *              the boundaries look.
  *   precision  a predicted span is correct iff it overlaps a ground-truth span
- *              of the same type and is at most `OVERREACH_CHARS` longer than
- *              it. Over-redaction harms the answer, not the person, so a little
- *              slack is allowed (a title, a trailing bracket); a span that
- *              swallows a sentence to catch a name is still wrong.
+ *              of the same type and at most `OVERREACH_CHARS` of its
+ *              characters lie outside that span (before it plus after it —
+ *              not its length, which a shifted span passes). Over-redaction
+ *              harms the answer, not the person, so a little slack is
+ *              allowed (a title, a trailing bracket); a span that swallows a
+ *              sentence to catch a name, or sits beside the name it touches,
+ *              is still wrong.
  *
  * Out-of-scope types a detector reports (LOCATION, ORG, DATE_TIME …) are
  * ignored, never counted against it: D-L1-1 decided they are not redacted, so
@@ -263,6 +266,16 @@ export function isRecalled(text: string, gold: Span, predicted: readonly Span[])
     return true;
 }
 
+/**
+ * How many characters of `prediction` lie OUTSIDE `gold`: before its start plus
+ * after its end. This, not the prediction's length, is the over-reach. A span
+ * no longer than the gold one can still sit almost wholly beside it, and a
+ * length bound would count that shifted span correct.
+ */
+export function overreachChars(prediction: Span, gold: Span): number {
+    return Math.max(0, gold.start - prediction.start) + Math.max(0, prediction.end - gold.end);
+}
+
 /** Overlaps a ground-truth span of its type and over-reaches it by at most `OVERREACH_CHARS`. */
 export function isCorrectPrediction(prediction: Span, gold: readonly Span[]): boolean {
     return gold.some(
@@ -270,7 +283,7 @@ export function isCorrectPrediction(prediction: Span, gold: readonly Span[]): bo
             g.type === prediction.type &&
             prediction.start < g.end &&
             g.start < prediction.end &&
-            prediction.end - prediction.start <= g.end - g.start + OVERREACH_CHARS,
+            overreachChars(prediction, g) <= OVERREACH_CHARS,
     );
 }
 

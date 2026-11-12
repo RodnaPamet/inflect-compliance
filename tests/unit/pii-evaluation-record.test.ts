@@ -104,6 +104,36 @@ describe('PII evaluation record — what counts', () => {
         expect(over.correct).toBe(over.predicted - 1);
     });
 
+    it('counts over-reach on both sides together, so a span widened on each side cannot pass at twice the slack', () => {
+        const half = Math.floor(OVERREACH_CHARS / 2);
+        const widenBoth = (left: number, right: number) => (c: PiiFixtureCorpus['cases'][number]) =>
+            c.id === firstPersonCase.id
+                ? gold(c).map((s) => (s.type === 'PERSON' ? { ...s, start: s.start - left, end: s.end + right } : s))
+                : gold(c);
+        expect(firstPersonCase.text.length - personSpan.end).toBeGreaterThan(OVERREACH_CHARS);
+        expect(scored(recordWith(widenBoth(half, OVERREACH_CHARS - half))).perType.PERSON.precision).toBe(1);
+        const over = scored(recordWith(widenBoth(half, OVERREACH_CHARS - half + 1))).perType.PERSON;
+        expect(over.correct).toBe(over.predicted - 1);
+    });
+
+    it('counts a shifted prediction no longer than its name as wrong when it lies almost wholly beside the name', () => {
+        const length = personSpan.end - personSpan.start;
+        // One character of the name, the rest after it: not longer than the
+        // name, so a length bound would pass it.
+        const shifted = { type: 'PERSON', start: personSpan.end - 1, end: personSpan.end - 1 + length, score: 0.9 };
+        expect(shifted.end).toBeLessThanOrEqual(firstPersonCase.text.length);
+        expect(shifted.end - personSpan.end).toBeGreaterThan(OVERREACH_CHARS);
+        const r = scored(recordWith((c) => (c.id === firstPersonCase.id ? [...gold(c), shifted] : gold(c)))).perType.PERSON;
+        expect(r.correct).toBe(r.predicted - 1);
+    });
+
+    it('counts a short prediction that touches no labelled span of its type as wrong, even beside one', () => {
+        // Ends exactly where the name starts: within the slack, overlapping nothing.
+        const beside = { type: 'PERSON', start: personSpan.start - 3, end: personSpan.start, score: 0.9 };
+        const r = scored(recordWith((c) => (c.id === firstPersonCase.id ? [...gold(c), beside] : gold(c)))).perType.PERSON;
+        expect(r.correct).toBe(r.predicted - 1);
+    });
+
     it('ignores types D-L1-1 put out of scope instead of counting them against the detector', () => {
         const withLocations = scored(
             recordWith((c) => [...gold(c), ...(c.text.length > 3 ? [{ type: 'LOCATION', start: 0, end: 3, score: 0.5 }] : [])]),
@@ -242,6 +272,33 @@ describe('committed PII evaluation records', () => {
             .map((f) => [f, scorePiiRecord(JSON.parse(fs.readFileSync(path.join(recordsDir, f), 'utf8')), corpusText)] as const)
             .filter(([, r]) => !r.ok);
         expect(refused).toEqual([]);
+    });
+
+    it('keep the figures the first record was published with, so a change to what counts cannot move them unseen', () => {
+        const result = scorePiiRecord(JSON.parse(fs.readFileSync(path.join(recordsDir, 'e6ff3ad0d4d33dba.json'), 'utf8')), corpusText);
+        if (!result.ok) throw new Error(`refused: ${result.refusal}`);
+        const counts = (locale: 'en' | 'bg') =>
+            Object.fromEntries(
+                PII_ENTITY_TYPES.map((t) => {
+                    const { support, recalled, predicted, correct } = result.perTypeByLocale[locale][t];
+                    return [t, [support, recalled, predicted, correct]];
+                }),
+            );
+        // [support, recalled, predicted, correct]: EN PERSON precision 22/31, BG 25/26.
+        expect(counts('en')).toEqual({
+            PERSON: [22, 22, 31, 22],
+            EMAIL_ADDRESS: [9, 9, 9, 9],
+            PHONE_NUMBER: [8, 8, 8, 8],
+            IBAN_CODE: [6, 6, 6, 6],
+            BG_EGN: [7, 7, 7, 7],
+        });
+        expect(counts('bg')).toEqual({
+            PERSON: [24, 24, 26, 25],
+            EMAIL_ADDRESS: [8, 8, 8, 8],
+            PHONE_NUMBER: [10, 10, 10, 10],
+            IBAN_CODE: [5, 5, 5, 5],
+            BG_EGN: [7, 7, 7, 7],
+        });
     });
 
     it('include one for the detector configuration as it stands, so a recogniser cannot change without a new record', () => {

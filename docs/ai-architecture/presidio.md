@@ -4,9 +4,9 @@ inflect · ai architecture · presidio · roadmap v1 · 2026-10-29
 
 > **Status: living design** — the integration roadmap for Microsoft Presidio,
 > named by the target architecture for Layer 1 as "PII redaction". The
-> **Current state** section is true today (main 3.338.0, `a1c2f05c`). The
-> **Roadmap** section is the plan. This is a child of
-> [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
+> **Current state** section is true today (main 3.338.0, `a1c2f05c`, plus
+> Phase 0 of 2026-11-11). The **Roadmap** section is the plan. This is a child
+> of [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
 > first for the target map, the global rules **G1–G13**, and the sequencing.
 > If the code contradicts a fact here, the code wins and the pull request that
 > finds it corrects this document.
@@ -77,7 +77,9 @@ flowchart LR
   (ЕГН by date and checksum, Bulgarian and UK phones, Bulgarian names in both
   scripts, an e-mail recogniser that makes no network call) and their pytest
   suite, behind a digest-pinned `Dockerfile` with no entrypoint, in no Compose
-  file and built by no CI job yet. Nothing calls it.
+  file and built by no CI job yet. Its `test` stage builds from the repository
+  root with its own context (`Dockerfile.dockerignore`, an allowlist, because
+  the root one excludes `tests/`) and runs the pytest suite. Nothing calls it.
 - **D-L1-1 is decided and is code.** `src/lib/ai/pii/scope.ts` holds the five
   types (`PERSON`, `EMAIL_ADDRESS`, `PHONE_NUMBER`, `IBAN_CODE`, `BG_EGN`), the
   two locales and `LOCAL_ROUTE_REDACTED = false`.
