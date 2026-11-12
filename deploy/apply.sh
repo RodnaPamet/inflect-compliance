@@ -113,7 +113,8 @@
 #
 #   ROLLBACK=1 deploy/apply.sh   # name the newest compose backup this script
 #   ROLLBACK=1 CONFIRM=1 deploy/apply.sh
-#                                # kept and validate it; with CONFIRM=1 put it
+#                                # kept that differs from the live file, and
+#                                # validate it; with CONFIRM=1 put it
 #                                # back, `up -d` and health-verify. The compose
 #                                # file only: the other canonical files, the
 #                                # host config and the Caddyfile keep their own
@@ -316,6 +317,25 @@ ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap 
 # scp_vm <local file> <remote path>
 scp_vm() { gcloud compute scp "$1" "${VM_NAME}:$2" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"}; }
 
+# The first `gcloud compute ssh` on a machine with no key GENERATES one, and
+# ssh-keygen writes its banner, the key paths, the fingerprint and the randomart
+# to STDOUT, which is whatever `$(ssh_vm …)` is capturing at that moment: the
+# rollback's backup path, a file's hash. Every run on a GitHub runner is such a
+# first run. So the key is made, when absent, by one throwaway ssh whose stdout
+# is discarded, before any call whose output is read (called once, below, by
+# every mode that reaches the VM).
+ssh_key_ready() {
+    [ -f "${HOME}/.ssh/google_compute_engine" ] && return 0
+    log "no gcloud ssh key on this machine: making one with a throwaway ssh"
+    ssh_vm true >/dev/null
+}
+
+# The hash a `sha256sum` printed, and nothing else the remote side said: the
+# first word of the first line that is exactly 64 hex digits. Empty when there
+# is none. It reads to the end rather than `exit` early, so the writer never
+# meets a closed pipe, which `pipefail` would turn into a failed assignment.
+first_sha() { awk '!found && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ { print $1; found = 1 }'; }
+
 # ── Health-verify ────────────────────────────────────────────────────────
 #
 # BOTH public origins, because Caddy serves two vhosts and a Caddyfile or
@@ -360,8 +380,8 @@ host_config_preflight() {
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
         [ -f "$local_path" ] || { err "host config missing from the repo: $local_path"; return 1; }
 
-        lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | awk '{print $1}')"
+        lsha="$(sha256sum "$local_path" | first_sha)"
+        rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | first_sha)"
         if [ -z "$rsha" ]; then
             log "    WOULD CREATE ${remote_path} (absent on the VM)"
         elif [ "$lsha" = "$rsha" ]; then
@@ -423,8 +443,8 @@ caddy_preflight() {
     [ -f "$CADDY_LOCAL" ] || { err "Caddyfile missing from the repo: $CADDY_LOCAL"; return 1; }
 
     log "Caddyfile (pushed to ${CADDY_REMOTE}, activated by reload — no container is recreated):"
-    lsha="$(sha256sum "$CADDY_LOCAL" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$CADDY_LOCAL" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${CADDY_REMOTE}' 2>/dev/null || true" | first_sha)"
     if [ -z "$rsha" ]; then
         log "    WOULD CREATE ${CADDY_REMOTE} (absent on the VM)"
     elif [ "$lsha" = "$rsha" ]; then
@@ -618,6 +638,11 @@ host_config_apply() {
     done
 }
 
+# Every mode below but DRY_RUN reaches the VM, and DRY_RUN never does.
+if [ "${DRY_RUN:-0}" != "1" ]; then
+    ssh_key_ready
+fi
+
 # ── CADDY_ONLY: the other no-service-window path (#3589) ─────────────────
 #
 # Returns before anything compose-related runs, like HOST_CONFIG_ONLY, so it
@@ -671,41 +696,63 @@ if [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
     exit 0
 fi
 
-# ── ROLLBACK: the newest compose backup, back into service ───────────────
+# ── ROLLBACK: the newest DIFFERENT compose backup, back into service ─────
 #
 # Every apply keeps `${REMOTE_COMPOSE}.bak.<timestamp>` and prints a one-line
 # rollback naming THIS run's timestamp. That line needs a person with a shell on
 # the VM; this mode is the same restore for a caller without one (the `VM apply`
-# workflow's `rollback`), and it picks the NEWEST backup, which is the one the
-# last apply took, because the timestamp format sorts as time.
+# workflow's `rollback`).
 #
-# Without CONFIRM=1 it names the backup, says whether it differs from the live
-# file, and validates it with `docker compose config` in place (so relative
-# paths resolve as they will). It refuses a backup identical to the live file:
-# restoring it would recreate nothing and report a rollback that did not
-# happen. It restores the compose file only, as the printed rollback does; the
-# other canonical files, the host config and the Caddyfile keep their own
-# backups. The VM then drifts from the repo until a revert merges, which
-# check-drift.sh reports.
+# It picks the newest backup whose content DIFFERS from the live file, newest by
+# the timestamp in its name, which sorts as time. Not simply the newest: every
+# CONFIRM apply backs the compose file up, also when it does not change it, so a
+# retried apply, or one that pushed only another file, leaves a newest backup
+# identical to the live file in front of the one worth restoring. Those are
+# skipped and counted. When EVERY backup equals the live file it refuses:
+# restoring one would recreate nothing and report a rollback that did not
+# happen.
+#
+# Without CONFIRM=1 it names the backup and validates it with `docker compose
+# config` in place (so relative paths resolve as they will). It restores the
+# compose file only, as the printed rollback does; the other canonical files,
+# the host config and the Caddyfile keep their own backups. The VM then drifts
+# from the repo until a revert merges, which check-drift.sh reports.
 if [ "${ROLLBACK:-0}" = "1" ]; then
     if [ "${DRY_RUN:-0}" = "1" ] || [ "${CADDY_ONLY:-0}" = "1" ] || [ "${HOST_CONFIG_ONLY:-0}" = "1" ]; then
         err "ROLLBACK=1 restores the compose file and takes no other mode."
         exit 2
     fi
-    log "ROLLBACK — the newest backup of ${REMOTE_COMPOSE}"
-    BACKUP="$(ssh_vm "sudo sh -c 'ls -1 ${REMOTE_COMPOSE}.bak.* 2>/dev/null' | grep -E '\\.bak\\.[0-9]{8}-[0-9]{6}\$' | sort | tail -n 1" | tr -d '\r')" \
-        || BACKUP=""
-    if [ -z "$BACKUP" ]; then
+    log "ROLLBACK — the newest backup of ${REMOTE_COMPOSE} that differs from it"
+    LSHA="$(ssh_vm "sudo sha256sum '${REMOTE_COMPOSE}' 2>/dev/null || true" | first_sha)"
+    # Every backup with its hash, in one call. Only lines of exactly the shape
+    # `<64 hex>  <REMOTE_COMPOSE>.bak.<YYYYmmdd-HHMMSS>` are read, so nothing
+    # else the remote side prints can become a path; newest first. The awk
+    # reads sha256sum's lines, never a backup's content.
+    BAK_PREFIX="${REMOTE_COMPOSE}.bak."
+    BACKUPS="$(ssh_vm "sudo sh -c 'sha256sum ${BAK_PREFIX}* 2>/dev/null' || true" | tr -d '\r' \
+        | awk -v prefix="$BAK_PREFIX" '
+            NF == 2 && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ && index($2, prefix) == 1 \
+                && substr($2, length(prefix) + 1) ~ /^[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]$/ { print }' \
+        | sort -r -k2,2)" || BACKUPS=""
+    if [ -z "$BACKUPS" ]; then
         err "no ${COMPOSE_BASENAME}.bak.<timestamp> on the VM — nothing to roll back to."
         exit 1
     fi
-    BSHA="$(ssh_vm "sudo sha256sum '${BACKUP}'" | awk '{print $1}')"
-    LSHA="$(ssh_vm "sudo sha256sum '${REMOTE_COMPOSE}' 2>/dev/null || true" | awk '{print $1}')"
-    log "    backup  $(basename "$BACKUP") (${BSHA:0:12})"
+    BACKUP=""; BSHA=""; SAME=0
+    while read -r sha path; do
+        if [ "$sha" = "$LSHA" ]; then SAME=$((SAME + 1)); continue; fi
+        BACKUP="$path"; BSHA="$sha"
+        break
+    done <<<"$BACKUPS"
     log "    live    ${COMPOSE_BASENAME} (${LSHA:0:12})"
-    if [ "$BSHA" = "$LSHA" ]; then
-        err "the newest backup IS the live file — restoring it would change nothing."
+    if [ -z "$BACKUP" ]; then
+        err "every backup (${SAME}) IS the live file — restoring one would change nothing."
         exit 2
+    fi
+    log "    backup  $(basename "$BACKUP") (${BSHA:0:12})"
+    if [ "$SAME" -gt 0 ]; then
+        log "    skipped ${SAME} newer backup(s) identical to the live file (an apply that"
+        log "    did not change the compose file still backs it up)"
     fi
     log "validating the backup on the VM: docker compose config"
     if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$BACKUP")' config -q 2>&1" 2>&1 | show compose; then
@@ -879,8 +926,8 @@ fi
 log "other canonical files (pushed alongside the compose file):"
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
-    lsha="$(sha256sum "$local_path" | awk '{print $1}')"
-    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | awk '{print $1}')"
+    lsha="$(sha256sum "$local_path" | first_sha)"
+    rsha="$(ssh_vm "sudo sha256sum '${REMOTE_DIR}/${remote_base}' 2>/dev/null || true" | first_sha)"
     if [ "$lsha" = "$rsha" ]; then
         log "    unchanged  ${remote_base} (${lsha:0:12})"
     else
@@ -989,7 +1036,8 @@ if [ "$HEALTH_FAILED" = "1" ]; then
     err "applied, but health checks FAILED. Roll back with:"
     printf '  %s\n' "$ROLLBACK" >&2
     err "  or ROLLBACK=1 CONFIRM=1 deploy/apply.sh (the VM apply workflow's 'rollback'),"
-    err "  which restores this run's backup, the newest one."
+    err "  which restores the newest backup that differs from the live file: this"
+    err "  run's, when this run changed the compose file."
     exit 1
 fi
 

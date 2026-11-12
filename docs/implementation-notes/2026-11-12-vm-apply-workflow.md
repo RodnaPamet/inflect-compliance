@@ -44,9 +44,18 @@ Twelve actions, each written out in `vm.sh`'s `case`:
   NAME of a variable a `:?` guard found missing; `diagnostics` keeps
   error-shaped lines from caddy and the ops agent's engine, whose only input is
   a repository file; `none` keeps only the count. gcloud gets `--quiet`.
-- **`ROLLBACK=1`.** The newest `docker-compose.prod.yml.bak.<timestamp>`:
-  named, compared by hash with the live file (identical is refused), validated
-  in place; with `CONFIRM=1` restored, `up -d`, health-verified.
+- **`ROLLBACK=1`.** The newest `docker-compose.prod.yml.bak.<timestamp>` whose
+  hash differs from the live file: every CONFIRM apply backs the file up, also
+  when it does not change it, so a retried apply leaves an identical newest
+  backup in front of the one worth restoring. Identical ones are skipped and
+  counted; when all are identical it refuses. Validated in place; with
+  `CONFIRM=1` restored, `up -d`, health-verified.
+- **The ssh key, made first.** A runner has no gcloud ssh key, and the first
+  `gcloud compute ssh` makes one with ssh-keygen printing its banner and
+  randomart on stdout, into whatever `$(ssh_vm …)` captures first (the
+  rollback's backup path, a file's hash). `ssh_key_ready` makes the key with a
+  throwaway ssh whose stdout is discarded, before any mode reaches the VM, and
+  every hash capture keeps only a 64-hex word (`first_sha`).
 - **The NODE_OPTIONS count** (C1 runbook step 3) joins the preflight's env-file
   report: `COUNT NODE_OPTIONS <n>`, and a warning when it is not 0.
 - `scp_vm` and `health_verify` helpers, so the flag reaches every gcloud call
@@ -78,6 +87,14 @@ Twelve actions, each written out in `vm.sh`'s `case`:
   Caddyfile and overlay pushed are the checkout's; dispatching from a branch
   would push unmerged structure, which is what repo-canonical exists to stop.
   The job-level `if` skips the run before it asks the reviewer.
+- **That `if` is a convenience, not the boundary.** A dispatch runs the files
+  of the ref it names, so a branch can delete the `if` and rewrite any action,
+  and the Workload Identity condition reads the repository and the environment,
+  not the ref. The boundary is the `production` environment: deployment
+  branches `main` only, no self-review, and a reviewer who reads the run's
+  branch. Those settings could not be read from the session, so
+  `docs/deployment.md` records them as an operator action to confirm, beside a
+  ref term for the provider's condition, which is the owner's to add.
 - **Preflight twice for a write.** The action runs the preflight-only
   invocation, and the `CONFIRM=1` invocation only if it exited 0. `apply.sh`
   then preflights again before it writes, as it always does. The first is the

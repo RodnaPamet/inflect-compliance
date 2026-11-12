@@ -10,8 +10,10 @@
  * and its logs are public because the repository is. None of the properties
  * below is visible from a green run:
  *
- *   - only a person can start it, from main, behind the `production` reviewer,
- *     with no key or secret;
+ *   - only a person can start it, behind the `production` reviewer, with no
+ *     key or secret, and an unmodified dispatch runs only from main (a branch
+ *     can edit this file, so the environment's branch policy is the boundary:
+ *     docs/deployment.md, "Named changes without a key");
  *   - its one input is a choice of named actions, never a command, a path, a
  *     host or a compose argument;
  *   - every action that writes runs its preflight first, in the same run;
@@ -25,6 +27,7 @@
  */
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
@@ -230,7 +233,10 @@ describe('the OrangeHRM lab', () => {
     const LAB_VHOSTS = ['hrm-mcp.34-140-180-255.sslip.io', 'orangehrm-lab.34-140-180-255.sslip.io'];
 
     it('the hostnames production may stop serving are literals in vm.sh, and no other value reaches CADDY_RETIRE_HOSTS', () => {
-        const assignments = code(VM_SH).filter((l) => l.startsWith('LAB_VHOSTS='));
+        // Every way bash can set it — indented, appended, exported, declared,
+        // read — not only a line that starts with the assignment.
+        const sets = /\bLAB_VHOSTS(\[[^\]]*\])?\+?=|\b(read|declare|typeset|local|export|readonly|mapfile|readarray)\b[^#]*\bLAB_VHOSTS\b|printf\s+-v\s*LAB_VHOSTS\b/;
+        const assignments = code(VM_SH).filter((l) => sets.test(l));
         expect(assignments).toEqual([`LAB_VHOSTS="${LAB_VHOSTS.join(' ')}"`]);
         const retire = code(VM_SH).flatMap((l) => [...l.matchAll(/CADDY_RETIRE_HOSTS=[^\s]*/g)].map((m) => m[0]));
         expect([...new Set(retire)]).toEqual(['CADDY_RETIRE_HOSTS=$LAB_VHOSTS"']);
@@ -303,9 +309,18 @@ describe('the scripts it runs print shape, never content', () => {
     });
 
     it('remote.sh pipes every compose command into shape', () => {
-        const calls = commands(REMOTE_SH).filter((l) => /^\s*compose\s/.test(l));
+        // `docker compose` is spelled once, inside the `compose` helper, so
+        // every compose command goes through the helper's name below.
+        const DEFINITION = 'compose() { docker compose --env-file .env --env-file .env.prod "$@"; }';
+        const lines = commands(REMOTE_SH);
+        expect(lines.filter((l) => /\bdocker\s+compose\b/.test(l)).map((l) => l.trim())).toEqual([DEFINITION]);
+        // A call is the word `compose` anywhere in a command — after `if`, `!`,
+        // `&&`, `$(` or nothing — outside a quoted string (an echo naming the
+        // word is not a call).
+        const unquoted = (l: string) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
+        const calls = lines.filter((l) => l.trim() !== DEFINITION && /(^|[\s;&|(!{])compose\s/.test(unquoted(l)));
         expect(calls.length).toBe(3);
-        expect(calls.filter((l) => !/2>&1 \| shape\b/.test(l))).toEqual([]);
+        expect(calls.filter((l) => !/\bcompose\s[^|]*2>&1 \| shape\b/.test(l))).toEqual([]);
     });
 
     it('remote.sh calls docker only to list, inspect named fields, remove containers and run compose', () => {
@@ -365,5 +380,103 @@ describe('the output filters withhold what they do not recognise', () => {
         const out = run(`${shellFunction(REMOTE_SH, 'shape')}\nshape`, stream);
         expect(out.split('\n').filter((l) => l.includes(SECRET))).toEqual([]);
         expect(out.split('\n').map((l) => l.trim()).filter((l) => l === 'Network inflect_default Creating')).toHaveLength(1);
+    });
+});
+
+/**
+ * A runner has no gcloud ssh key, so its first `gcloud compute ssh` makes one,
+ * and ssh-keygen prints its banner and randomart on STDOUT — into whatever the
+ * first `$(ssh_vm …)` captures. apply.sh is RUN here against a fake VM (a
+ * directory) through a fake `gcloud` that behaves that way, from an empty HOME.
+ */
+describe('apply.sh on a runner with no ssh key', () => {
+    it('makes the key with a throwaway ssh whose stdout is discarded, before any mode reaches the VM', () => {
+        const body = shellFunction(APPLY_SH, 'ssh_key_ready').split('\n').map((l) => l.trim());
+        expect(body.filter((l) => /^ssh_vm\b/.test(l))).toEqual(['ssh_vm true >/dev/null']);
+        const lines = code(APPLY_SH);
+        const call = lines.findIndex((l) => l.trim() === 'ssh_key_ready');
+        expect(lines.filter((l) => l.trim() === 'ssh_key_ready')).toHaveLength(1);
+        expect(lines[call - 1].trim()).toBe('if [ "${DRY_RUN:-0}" != "1" ]; then');
+        // Before the first mode, and before any top-level read of the VM.
+        const firstMode = lines.findIndex((l) => /^if \[ "\$\{(CADDY_ONLY|HOST_CONFIG_ONLY|ROLLBACK):-0\}" = "1" \]/.test(l));
+        const firstTopLevelSsh = lines.findIndex((l) => /^[A-Z_]+="\$\(ssh_vm\s|^ssh_vm\s|^if ! ssh_vm\s/.test(l));
+        expect(call).toBeGreaterThan(-1);
+        expect(call).toBeLessThan(firstMode);
+        expect(call).toBeLessThan(firstTopLevelSsh);
+    });
+
+    const ROLLBACK_ENV = { ROLLBACK: '1', APPLY_PUBLIC_LOG: '1' };
+    const BANNER = ['Generating public/private rsa key pair.', '+---[RSA 3072]----+', '|   .o+=.  E      |'];
+
+    /** A fake VM with these compose backups (timestamp → content) and live content. */
+    function fakeVm(backups: Record<string, string>, live: string) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-apply-rollback-'));
+        const bin = path.join(root, 'bin');
+        const vm = path.join(root, 'vm');
+        const home = path.join(root, 'home');
+        for (const d of [bin, vm, home]) fs.mkdirSync(d);
+        const exe = (name: string, src: string) => fs.writeFileSync(path.join(bin, name), src, { mode: 0o755 });
+        exe(
+            'gcloud',
+            [
+                '#!/usr/bin/env bash',
+                'cmd=""; while [ $# -gt 0 ]; do [ "$1" = "--command" ] && { cmd="$2"; shift; }; shift; done',
+                'if [ ! -f "$HOME/.ssh/google_compute_engine" ]; then',
+                '  mkdir -p "$HOME/.ssh" && : > "$HOME/.ssh/google_compute_engine"',
+                ...BANNER.map((l) => `  echo '${l}'`),
+                'fi',
+                'exec bash -c "$cmd"',
+                '',
+            ].join('\n'),
+        );
+        exe('sudo', '#!/usr/bin/env bash\nexec "$@"\n');
+        exe('docker', '#!/usr/bin/env bash\nexit 0\n');
+        fs.writeFileSync(path.join(vm, 'docker-compose.prod.yml'), live);
+        for (const [ts, content] of Object.entries(backups)) {
+            fs.writeFileSync(path.join(vm, `docker-compose.prod.yml.bak.${ts}`), content);
+        }
+        const run = () => {
+            try {
+                const out = execFileSync('bash', [path.join(REPO_ROOT, APPLY_SH)], {
+                    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, REMOTE_DIR: vm, ...ROLLBACK_ENV },
+                    encoding: 'utf8',
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+                return { status: 0, out };
+            } catch (e) {
+                const x = e as { status: number; stdout: string; stderr: string };
+                return { status: x.status, out: `${x.stdout}${x.stderr}` };
+            }
+        };
+        return { run, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+    }
+
+    it('rollback-preflight names the newest backup that differs from the live file, skipping identical newer ones', () => {
+        // The C1 apply backed up the pre-C1 file; a retried apply then backed
+        // up the C1 file itself, which is the live file.
+        const vm = fakeVm({ '20261101-000000': 'older\n', '20261112-090000': 'pre-C1\n', '20261112-100000': 'C1\n', '20261112-110000': 'C1\n' }, 'C1\n');
+        try {
+            const r = vm.run();
+            expect(r.status).toBe(0);
+            const named = r.out.split('\n').filter((l) => / backup {2}docker-compose\.prod\.yml\.bak\./.test(l));
+            expect(named).toHaveLength(1);
+            expect(named[0]).toContain('docker-compose.prod.yml.bak.20261112-090000 ');
+            expect(r.out).toContain('skipped 2 newer backup(s)');
+            // ssh-keygen's banner reached no captured value, and no log line.
+            expect(r.out.split('\n').filter((l) => BANNER.some((b) => l.includes(b)))).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('refuses when every backup is the live file', () => {
+        const vm = fakeVm({ '20261112-100000': 'C1\n', '20261112-110000': 'C1\n' }, 'C1\n');
+        try {
+            const r = vm.run();
+            expect(r.status).toBe(2);
+            expect(r.out).toContain('every backup (2) IS the live file');
+        } finally {
+            vm.cleanup();
+        }
     });
 });

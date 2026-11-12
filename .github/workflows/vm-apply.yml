@@ -19,8 +19,17 @@
 #
 # MAIN ONLY. The compose file, the Caddyfile and the overlay this pushes are the
 # checkout's, and the VM's structure is repo-canonical: what reaches production
-# is what merged. A dispatch from any other ref is skipped before it asks for
-# approval.
+# is what merged. The job-level `if` below skips a dispatch from any other ref
+# before it asks for approval.
+#
+# THAT `if` IS NOT THE BOUNDARY. A dispatch runs this file, and every script it
+# calls, from the ref the dispatcher picks, so a branch that deletes the `if`
+# or rewrites an action runs as written. GCP admits the identity on the
+# repository and the `production` environment only, not on the ref. What stops
+# a branch is the `production` environment: its deployment branches must be
+# `main` only, its reviewer must not approve their own dispatch, and the
+# reviewer reads the branch the run names before approving. See
+# docs/deployment.md, "Named changes without a key".
 #
 # PREFLIGHT FIRST. Every action that writes runs its preflight in the same run
 # and writes only if the preflight passed.

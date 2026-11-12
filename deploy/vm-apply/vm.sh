@@ -70,7 +70,9 @@ on_vm() {
         files+=("$HERE/../docker-compose.legacy-mcp-proving.yml")
     fi
     # shellcheck disable=SC2016  # $HOME is the VM user's, expanded there
-    ssh_vm 'rm -rf "$HOME/vm-apply-stage" && mkdir -m 700 "$HOME/vm-apply-stage"'
+    # Its stdout is discarded: on a runner this is the first ssh, which makes a
+    # key and prints ssh-keygen's banner and randomart on stdout.
+    ssh_vm 'rm -rf "$HOME/vm-apply-stage" && mkdir -m 700 "$HOME/vm-apply-stage"' >/dev/null
     gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "${files[@]}" "$VM_NAME:vm-apply-stage/"
     ssh_vm "sudo bash \"\$HOME/vm-apply-stage/remote.sh\" '$ACTION' \"\$HOME/vm-apply-stage\"; rc=\$?; rm -rf \"\$HOME/vm-apply-stage\"; exit \$rc"
 }

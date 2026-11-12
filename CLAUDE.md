@@ -111,8 +111,13 @@ of `VM check` — dispatch it from `main` with one action from its fixed
 list (`deploy/vm-apply/vm.sh`: `apply.sh`'s preflight / apply, the
 Caddy-only and host-config-only modes, the OrangeHRM lab's vhost and
 container retirement, the proving server's recreation, a rollback to
-the newest compose backup), the owner approves the run in
-`production`, and the job uses the same identity. Every write runs its
+the newest compose backup that differs from the live file), the owner
+approves the run in `production`, and the job uses the same identity.
+The in-file `main`-only `if` and the action list bind only an
+unmodified branch: a dispatch runs the files of the ref it names, so
+the boundary is the `production` environment (deployment branches
+`main` only, no self-review, the reviewer reads the run's branch) —
+see `docs/deployment.md`, "Named changes without a key". Every write runs its
 preflight first in the same run. Its logs are public too, so
 `apply.sh` runs with `APPLY_PUBLIC_LOG=1`, which reduces everything a
 tool on the VM prints to shape. A missing action is a PR to

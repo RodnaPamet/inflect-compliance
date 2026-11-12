@@ -197,7 +197,7 @@ a file that had never run.
 
 | | |
 | --- | --- |
-| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. `ROLLBACK=1` names the newest compose backup and validates it; with `CONFIRM=1` it restores it, runs `up -d` and health-verifies. `APPLY_PUBLIC_LOG=1` is for a run whose output is a public log (the `VM apply` workflow): what a tool on the VM prints is reduced to shape. |
+| `deploy/apply.sh` | Pushes the canonical set to the VM. Preflights first and stops; `CONFIRM=1` applies. `DRY_RUN=1` validates the repo file locally and contacts no VM at all (usable in CI). `HOST_CONFIG_ONLY=1 CONFIRM=1` pushes only the host config set and reloads its service — it recreates no container, so it needs no service window. `ROLLBACK=1` names the newest compose backup whose content differs from the live file (an apply that changes nothing still backs it up) and validates it; with `CONFIRM=1` it restores it, runs `up -d` and health-verifies. `APPLY_PUBLIC_LOG=1` is for a run whose output is a public log (the `VM apply` workflow): what a tool on the VM prints is reduced to shape. |
 | `deploy/check-drift.sh` | Compares repo against VM by sha256. Exit 0 in sync, 1 drift in a file `apply.sh` can push, 2 the VM was unreachable (UNKNOWN — never read as "no drift"), 3 only an `UNRECONCILED` file differs — today just the Caddyfile. |
 
 Run `check-drift.sh` on a weekly cadence so a hand-edit on the VM surfaces in
@@ -674,9 +674,37 @@ states, versions and counts, never a log line, a database row or a credential.
 same identity and the same reviewer (owner decision 2026-11-12). A Claude Code
 session that is not signed in to `gcloud` changes production this way:
 it dispatches the workflow from `main` with one action, the reviewer approves,
-and the session reads the output. A dispatch from any other ref is skipped
-before it asks for approval, because what it pushes is the checkout and the
-VM's structure is what merged.
+and the session reads the output. The workflow's job-level `if` skips an
+unmodified dispatch from any other ref before it asks for approval, because
+what it pushes is the checkout and the VM's structure is what merged.
+
+**That `if` is not the security boundary, and neither is the action list.** A
+`workflow_dispatch` runs the workflow file and every script it calls from the
+ref the dispatcher picks. A branch that deletes the `if`, or rewrites an action
+in `deploy/vm-apply/vm.sh`, runs as written, under an identity that is root on
+production. The Workload Identity provider admits a token on
+`assertion.repository` and `assertion.environment == 'production'` only
+(`deploy/harness-scanner/README.md`), not on the ref. So what keeps a branch
+off the VM is the `production` environment's protection, and it must be set
+this way:
+
+- **Deployment branches: `main` only** (Settings → Environments → production →
+  Deployment branches and tags → Selected branches and tags → `main`). A job
+  from any other ref then fails before it asks for approval, whatever its file
+  says. This is the setting the `if` relies on.
+- **Required reviewers, with "Prevent self-review" on**, where the person who
+  dispatches can also review.
+- **The reviewer reads the branch on the pending deployment before approving**,
+  and refuses any run not from `main`.
+
+The same holds for `VM check`, `VM capacity` and `Scanner VM`, which take the
+same environment and identity. These settings could not be read from a session
+(the API path is refused through its proxy), so they are an **operator action
+to confirm**, not a fact recorded here. A second layer is also open: adding
+`&& assertion.ref == 'refs/heads/main'` to the provider's attribute condition
+would refuse the identity to a branch run even after an approval, and would
+limit all four workflows to `main`. It changes a live GCP setting and is the
+owner's to make.
 
 | Action | What it runs |
 | --- | --- |
@@ -685,7 +713,7 @@ VM's structure is what merged.
 | `caddy-preflight` / `caddy-apply` | the same with `CADDY_ONLY=1` |
 | `retire-lab-vhosts-preflight` / `retire-lab-vhosts` | the same with `CADDY_RETIRE_HOSTS` set to the OrangeHRM lab's two hostnames, written in `deploy/vm-apply/vm.sh` |
 | `host-config-preflight` / `host-config-apply` | the same with `HOST_CONFIG_ONLY=1` |
-| `rollback-preflight` / `rollback` | the same with `ROLLBACK=1`: the newest compose backup back into service |
+| `rollback-preflight` / `rollback` | the same with `ROLLBACK=1`: the newest compose backup that differs from the live file, back into service |
 | `retire-lab-containers` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force` of the lab's three services, volumes kept, never `down` |
 | `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
 
