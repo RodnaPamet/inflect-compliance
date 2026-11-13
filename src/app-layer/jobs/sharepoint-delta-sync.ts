@@ -113,7 +113,19 @@ export async function runSharePointDeltaSyncJob(payload: SharePointDeltaSyncPayl
     );
     if (!token) {
         // Not a failure: another run is already doing exactly this work.
-        return { drivesSynced: 0, reimported: 0, staled: 0, skipped: 'sync_already_running' as const };
+        // Every counter stated, including the two added in #5193. This
+        // function's return type is INFERRED, so tsc did not flag the omission
+        // when `SpDeltaSyncResult` gained them — a caller reading `failed`
+        // would have got `undefined` on this path and read it as "not
+        // applicable" rather than "nothing ran".
+        return {
+            drivesSynced: 0,
+            reimported: 0,
+            staled: 0,
+            failed: 0,
+            tokensHeld: 0,
+            skipped: 'sync_already_running' as const,
+        };
     }
 
     try {

@@ -44,13 +44,22 @@ export interface SpImportResult {
     errors: Array<{ itemId: string; message: string }>;
 }
 
-/** Download one DriveItem + create an Evidence row + the sync mapping. */
+/**
+ * Download one DriveItem + create an Evidence row + the sync mapping.
+ *
+ * `opts.reimportChanged` is the DELTA path's mode (#5193). Without it, an item
+ * that is already mapped SYNCED short-circuits to its existing evidence id —
+ * correct for a repeat sync of an UNCHANGED item, and exactly wrong for one the
+ * delta walk has just told us changed. The caller knows which it is; this
+ * function could not.
+ */
 async function importOne(
     ctx: RequestContext,
     client: SharePointClient,
     connectionId: string,
     sel: { driveId: string; itemId: string; name?: string },
     target: { controlIds: string[]; category?: string; description?: string; folder?: string },
+    opts: { reimportChanged?: boolean } = {},
 ): Promise<string> {
     const remoteEntityId = encodeRemoteId(sel.driveId, sel.itemId);
 
@@ -110,7 +119,39 @@ async function importOne(
                 select: { localEntityId: true, syncStatus: true },
             }),
         );
-        if (existing && existing.syncStatus === 'SYNCED') return existing.localEntityId;
+        if (existing && existing.syncStatus === 'SYNCED') {
+            // ═══ A CHANGED ITEM IS NOT A REPEAT (#5193) ═══
+            //
+            // Returning the existing id here is what made "re-import changed
+            // files" never happen: nothing was downloaded, the stored cTag kept
+            // its old value, and the caller still counted a reimport. Because
+            // the delta token advances regardless, the edit was lost for good
+            // rather than retried.
+            //
+            // The claim for this path is a STATUS TRANSITION, not an insert:
+            // the row already exists, so `createMany` can never be the
+            // interlock. `updateMany` scoped to `syncStatus: 'SYNCED'` is —
+            // exactly one concurrent caller moves it to PENDING and gets
+            // count 1; a loser gets 0 and falls through to the refusal below,
+            // which is the same answer it would have had before.
+            if (!opts.reimportChanged) return existing.localEntityId;
+
+            const reclaim = await runInTenantContext(ctx, (db) =>
+                db.integrationSyncMapping.updateMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        provider: 'sharepoint',
+                        remoteEntityType: 'DriveItem',
+                        remoteEntityId,
+                        syncStatus: 'SYNCED',
+                    },
+                    data: { syncStatus: 'PENDING' },
+                }),
+            );
+            if (reclaim.count === 1) {
+                return await reimportChangedItem(ctx, client, connectionId, sel, target, existing.localEntityId);
+            }
+        }
         throw new Error(
             `SharePoint item ${sel.itemId} is already being imported by another pass. Nothing was ` +
                 `downloaded or stored — retry once that pass has finished.`,
@@ -118,31 +159,7 @@ async function importOne(
     }
 
     try {
-        const item = await client.getItem(sel.driveId, sel.itemId);
-        const name = sel.name ?? item.name ?? 'sharepoint-file';
-        const mimeType = item.file?.mimeType ?? 'application/octet-stream';
-        const ab = await client.downloadItemContent(sel.driveId, sel.itemId);
-        const file = new File([ab], name, { type: mimeType });
-
-        const evidence = await uploadEvidenceFile(ctx, file, {
-            title: name,
-            controlIds: target.controlIds.length > 0 ? target.controlIds : null,
-            category: target.category ?? null,
-            description: target.description ?? null,
-            folder: target.folder ?? null,
-        });
-
-        await upsertEvidenceMapping(ctx, {
-            connectionId,
-            evidenceId: evidence.id,
-            driveId: sel.driveId,
-            itemId: sel.itemId,
-            eTag: item.eTag,
-            cTag: item.cTag,
-            webUrl: item.webUrl,
-            remoteUpdatedAt: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null,
-        });
-        return evidence.id;
+        return await downloadAndStore(ctx, client, connectionId, sel, target, target.controlIds);
     } catch (err) {
         // Release the claim so a retry can proceed. Scoped to the placeholder,
         // so this can only ever delete a row THIS call created — a claim that
@@ -157,6 +174,144 @@ async function importOne(
                     remoteEntityId,
                     localEntityId: claimPlaceholder,
                 },
+            }),
+        ).catch(() => undefined);
+        throw err;
+    }
+}
+
+/**
+ * Download one DriveItem and store it: a new Evidence row plus the mapping that
+ * points at it and records the content tag it came from.
+ *
+ * ONE copy, shared by the first import and the re-import of a changed item
+ * (#5193). It was briefly two, and that is worth not repeating for two reasons.
+ * The obvious one is drift: five steps that must agree about title, category,
+ * folder and which tags get stored. The other is that
+ * `evidence-upload-sends-what-it-renders` asserts that the modal, the route and
+ * THIS call all pass the same metadata, and it does so by matching the category
+ * and folder assignments below against this file. A second copy gave each of
+ * those needles two satisfying positions, so the guard would have stayed green
+ * with either copy deleted. The assertion-needle ratchet caught it, which is
+ * the whole point of counting ambiguous needles — and note this comment
+ * deliberately does NOT spell either assignment out, because quoting a needle
+ * in prose recreates the same ambiguity it is describing.
+ *
+ * `controlIds` is a PARAMETER rather than read off `target`, because the two
+ * callers answer it differently: a picker import uses what the person chose,
+ * and a re-import carries the previous Evidence row's links across.
+ */
+async function downloadAndStore(
+    ctx: RequestContext,
+    client: SharePointClient,
+    connectionId: string,
+    sel: { driveId: string; itemId: string; name?: string },
+    target: { category?: string; description?: string; folder?: string },
+    controlIds: string[],
+): Promise<string> {
+    const item = await client.getItem(sel.driveId, sel.itemId);
+    const name = sel.name ?? item.name ?? 'sharepoint-file';
+    const mimeType = item.file?.mimeType ?? 'application/octet-stream';
+    const ab = await client.downloadItemContent(sel.driveId, sel.itemId);
+    const file = new File([ab], name, { type: mimeType });
+
+    const evidence = await uploadEvidenceFile(ctx, file, {
+        title: name,
+        controlIds: controlIds.length > 0 ? controlIds : null,
+        category: target.category ?? null,
+        description: target.description ?? null,
+        folder: target.folder ?? null,
+    });
+
+    // Repoints the mapping at the new row AND stores the new cTag/eTag, which
+    // is what stops the next delta walk seeing the same change again.
+    await upsertEvidenceMapping(ctx, {
+        connectionId,
+        evidenceId: evidence.id,
+        driveId: sel.driveId,
+        itemId: sel.itemId,
+        eTag: item.eTag,
+        cTag: item.cTag,
+        webUrl: item.webUrl,
+        remoteUpdatedAt: item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null,
+    });
+    return evidence.id;
+}
+
+/**
+ * Re-download a changed DriveItem and store it as a NEW Evidence row, carrying
+ * the previous row's control links across (#5193).
+ *
+ * ── WHY A NEW ROW ───────────────────────────────────────────────────────────
+ *
+ * It is what this import path is built for: `uploadEvidenceFile` mints a row
+ * and `upsertEvidenceMapping` is keyed on the REMOTE id, so it repoints the
+ * mapping at whatever the latest import produced. The sync route's own comment
+ * describes the same shape ("a fresh Evidence row for every changed file").
+ * The previous row stays in the library as the historical version — an auditor
+ * who relied on it still finds exactly what they saw, which is the property
+ * that matters for a compliance artefact and the reason this does not overwrite
+ * in place.
+ *
+ * ── WHY THE CONTROL LINKS ARE CARRIED ───────────────────────────────────────
+ *
+ * The delta caller has no control ids to pass — it re-imports whatever changed,
+ * not something a person picked — so a naive re-import creates the new row with
+ * `controlIds: null` and the file silently stops satisfying the controls the old
+ * row was attached to. That is a WORSE failure than the stale version it
+ * replaces: a control's evidence disappears rather than merely ageing. So the
+ * previous row's links are read first and passed through.
+ *
+ * Links are carried, not moved: the old row keeps its own, because it remains
+ * the evidence for the period it covered.
+ *
+ * ── ON FAILURE ──────────────────────────────────────────────────────────────
+ *
+ * The caller claimed the mapping by moving it SYNCED → PENDING. If anything
+ * here throws, the status is put BACK to SYNCED, because the row still
+ * describes a real, intact evidence import — the previous one. Leaving it
+ * PENDING would make every later pass refuse it with "already being imported by
+ * another pass", which is how a transient Graph error would have frozen the
+ * item for ever.
+ */
+async function reimportChangedItem(
+    ctx: RequestContext,
+    client: SharePointClient,
+    connectionId: string,
+    sel: { driveId: string; itemId: string; name?: string },
+    target: { controlIds: string[]; category?: string; description?: string; folder?: string },
+    previousEvidenceId: string,
+): Promise<string> {
+    const remoteEntityId = encodeRemoteId(sel.driveId, sel.itemId);
+    try {
+        // The links the PREVIOUS row carried. Read before the upload, so a
+        // failure leaves nothing half-done.
+        const carried = await runInTenantContext(ctx, (db) =>
+            db.evidenceControlLink.findMany({
+                where: { tenantId: ctx.tenantId, evidenceId: previousEvidenceId },
+                select: { controlId: true },
+                take: 200,
+            }),
+        );
+        const controlIds = target.controlIds.length > 0
+            ? target.controlIds
+            : carried.map((l) => l.controlId);
+
+        return await downloadAndStore(ctx, client, connectionId, sel, target, controlIds);
+    } catch (err) {
+        // Back to SYNCED — see the docblock. Scoped to the row still sitting at
+        // the PENDING this call set, so it can never undo somebody else's work.
+        await runInTenantContext(ctx, (db) =>
+            db.integrationSyncMapping.updateMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    provider: 'sharepoint',
+                    remoteEntityType: 'DriveItem',
+                    remoteEntityId,
+                    syncStatus: 'PENDING',
+                    localEntityId: previousEvidenceId,
+                },
+                data: { syncStatus: 'SYNCED' },
             }),
         ).catch(() => undefined);
         throw err;
@@ -264,8 +419,29 @@ export async function importSharePointItems(
 
 export interface SpDeltaSyncResult {
     drivesSynced: number;
+    /**
+     * Changed items whose content was actually re-downloaded and stored.
+     *
+     * It used to be incremented whether or not anything happened — the delta
+     * path called `importOne`, which returned the existing evidence id without
+     * downloading, and the counter went up anyway (#5193). A run that
+     * re-imported nothing reported `reimported: N`, which is the kind of figure
+     * an operator trusts.
+     */
     reimported: number;
     staled: number;
+    /** Changed items whose re-import threw. Their drive's token is held back. */
+    failed: number;
+    /**
+     * Drives whose delta cursor was NOT advanced because a re-import failed in
+     * them (#5193).
+     *
+     * Non-zero means the next run re-walks those drives. That is the intended
+     * cost: advancing past a failed item means its change is never offered
+     * again, because a delta response carries only what changed since the token
+     * it was given.
+     */
+    tokensHeld: number;
     /**
      * Set when another run held the per-connection sync lock, so this one did
      * nothing. Kept on the SAME shape rather than returned as a separate union
@@ -302,8 +478,14 @@ export async function runSharePointDeltaSync(
     const tokens = await readDeltaTokens(ctx, connectionId);
     let reimported = 0;
     let staled = 0;
+    let failed = 0;
+    let tokensHeld = 0;
 
     for (const driveId of driveIds) {
+        // The failure count as this drive STARTS, so the decision below is
+        // about this drive alone — a failure in an earlier drive must not pin
+        // a later drive's cursor.
+        const failedBefore = failed;
         const delta = await client.getDelta(driveId, tokens[driveId]);
         for (const it of delta.items) {
             const remoteId = encodeRemoteId(driveId, it.id);
@@ -328,9 +510,23 @@ export async function runSharePointDeltaSync(
             const curTag = it.cTag ?? it.eTag;
             if (curTag && curTag !== prevTag) {
                 try {
-                    await importOne(ctx, client, connectionId, { driveId, itemId: it.id }, { controlIds: [] });
+                    await importOne(
+                        ctx,
+                        client,
+                        connectionId,
+                        { driveId, itemId: it.id },
+                        { controlIds: [] },
+                        // The whole point (#5193): tell importOne this item
+                        // CHANGED, so it re-downloads instead of returning the
+                        // existing evidence id untouched.
+                        { reimportChanged: true },
+                    );
+                    // Counted only now. It used to be counted whether or not
+                    // anything was stored, so a run that re-imported nothing
+                    // reported `reimported: N`.
                     reimported++;
                 } catch (err) {
+                    failed++;
                     edgeLogger.error('SharePoint delta re-import failed', {
                         component: 'sharepoint',
                         remoteId,
@@ -339,11 +535,41 @@ export async function runSharePointDeltaSync(
                 }
             }
         }
-        if (delta.deltaToken) tokens[driveId] = delta.deltaToken;
+        // ═══ THE TOKEN ONLY ADVANCES OVER WORK THAT LANDED (#5193) ═══
+        //
+        // It used to advance unconditionally. A delta response returns only
+        // what changed since the token it was given, so advancing past an item
+        // whose re-import threw meant that change was never offered again —
+        // the same silent permanent loss this change exists to fix, by a
+        // different route.
+        //
+        // Held back PER DRIVE, because the token is per drive. The cost is that
+        // the next run re-walks this drive's changes, and the items that DID
+        // succeed are then no-ops: their stored cTag now matches, so the
+        // `curTag !== prevTag` test is false and nothing is re-downloaded. That
+        // is why holding the token is affordable here and why re-walking is not
+        // re-importing.
+        //
+        // A permanently failing item does hold its drive's cursor. That is
+        // deliberate: the alternative is losing its changes silently, and this
+        // way the run reports `failed > 0` every time, which is a signal
+        // somebody can act on. `tokensHeld` carries it to the caller.
+        if (delta.deltaToken) {
+            if (failed === failedBefore) {
+                tokens[driveId] = delta.deltaToken;
+            } else {
+                tokensHeld++;
+                edgeLogger.warn('SharePoint delta token held back — a re-import failed in this drive', {
+                    component: 'sharepoint',
+                    driveId,
+                    failedInDrive: failed - failedBefore,
+                });
+            }
+        }
     }
 
     await writeDeltaTokens(ctx, connectionId, tokens);
-    return { drivesSynced: driveIds.size, reimported, staled };
+    return { drivesSynced: driveIds.size, reimported, staled, failed, tokensHeld };
 }
 
 async function readDeltaTokens(ctx: RequestContext, connectionId: string): Promise<Record<string, string>> {
