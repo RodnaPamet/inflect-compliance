@@ -56,13 +56,21 @@
  * `admin.tenant_lifecycle`, which `src/lib/permissions.ts` denies ADMIN.
  *
  * The leaver's equivalent justifies this key by saying the button "makes the
- * product write to a system we do not own". THAT ARGUMENT DOES NOT HOLD HERE
- * AND IS NOT BORROWED: `JOINER_MAX_MODE` is `DRY_RUN`, the snapshot
- * provisioner refuses every mutating verb, and the pass writes no directory
- * and no HRIS. The key is the same for a DIFFERENT reason — the artefact this
- * produces names which of a customer's people the product would create an
- * account for and at what address, which is the same authority as reading the
- * report (the subtree rule below) and the same class as granting the create.
+ * product write to a system we do not own". THAT ARGUMENT NOW HOLDS HERE TOO,
+ * and this docblock said it did not. It read: *"`JOINER_MAX_MODE` is `DRY_RUN`,
+ * the snapshot provisioner refuses every mutating verb, and the pass writes no
+ * directory and no HRIS."* #2954 raised the clamp to `AUTOMATIC`, and a pass at
+ * that rung on a connection whose joiner opt-in is ticked reaches
+ * `executePlannedCreates` and creates accounts. So the directory-write argument
+ * is the FIRST reason for this key, not an argument to be disclaimed.
+ *    clamp-claim-allow: quotes the superseded docblock to show the inversion
+ *
+ * The key is unchanged, because the SECOND reason was always sufficient on its
+ * own: the artefact this produces names which of a customer's people the
+ * product would create an account for and at what address, which is the same
+ * authority as reading the report (the subtree rule below) and the same class as
+ * granting the create. Had the key been derived from the first argument alone,
+ * the disclaimer above is what somebody would have re-derived it from.
  *
  * `ROUTE_PERMISSIONS` carries an exact-anchored rule for THIS path, ordered
  * BEFORE the `identity-joiner-passes(/...)` subtree rule that already covers

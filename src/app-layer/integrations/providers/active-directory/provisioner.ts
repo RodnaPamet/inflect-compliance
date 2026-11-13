@@ -184,15 +184,15 @@ export function createActiveDirectoryProvisioner(
     // strictly, and asked for explicitly so this call site cannot inherit a
     // disable grant by forgetting an argument.
     //
-    // This refuses for EVERY connection today, because `AD_JOINER_WRITES_FIELD`
-    // is deliberately not on the connection form while `JOINER_MAX_MODE` is
-    // `DRY_RUN` (see `write-direction.ts`). That costs nothing now and is the
-    // point: `resolveDirectoryProvisioner` builds a live provisioner only at
-    // `AUTOMATIC`, and an AUTOMATIC joiner pass is already refused at the clamp
-    // before this factory is reached — so the arm is unreachable in both
-    // directions, and the gate is here so that the reviewed diff which lifts the
-    // clamp does not ALSO, silently, grant create authority over every AD
-    // connection that had merely consented to disables.
+    // This refuses for EVERY connection, because `AD_JOINER_WRITES_FIELD` is not
+    // on the connection form (see `write-direction.ts`) — and that undeclared
+    // field is the ONLY thing refusing it. This comment used to add that an
+    // AUTOMATIC joiner pass "is already refused at the clamp before this factory
+    // is reached", making the arm "unreachable in both directions". #2954 raised
+    // `JOINER_MAX_MODE` to `AUTOMATIC`, so the clamp refuses nothing and this is
+    // the sole gate. `resolveDirectoryProvisioner` still builds a live
+    // provisioner only at `AUTOMATIC`, which narrows who gets here but is not a
+    // second barrier: `AUTOMATIC` is a rung tenants may reach.
     const writesRefusal = adDirectionWriteRefusal(connection, 'joiner');
     if (writesRefusal) throw new Error(writesRefusal);
 

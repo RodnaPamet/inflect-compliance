@@ -221,7 +221,27 @@ describe('the provisioner refuses for every connection today', () => {
     it('says WHY there is no switch rather than telling the operator to find one', () => {
         const detail = adDirectionWriteRefusal({}, 'joiner') ?? '';
         expect(detail).toContain('CREATE an account');
-        expect(detail).toContain('DRY_RUN');
+
+        // THE NEEDLE HERE USED TO BE `toContain('DRY_RUN')`, and that assertion
+        // was itself a copy of the claim #5566 removed. It passed for as long
+        // as the message quoted a clamp value, which is the one thing this
+        // message must not do: #2954 raised `JOINER_MAX_MODE` to AUTOMATIC, and
+        // the sentence went on sending administrators away to wait for a lift
+        // that had shipped. A green test is what let it.
+        //
+        // So the assertions are on the DURABLE properties instead — what the
+        // real barrier is, and that the ladder is not it.
+        expect(detail).toContain(AD_JOINER_WRITES_FIELD);
+        expect(detail).toMatch(/undeclared by decision/);
+        expect(detail).toMatch(/does not depend on the tenant write-mode ladder/);
+
+        // NAMES NO WRITE MODE AT ALL. An operator cannot act on a mode from
+        // here — the refusal does not clear by widening one — so quoting a mode
+        // can only mislead, and quoting one is how this message went stale.
+        // `tests/guards/clamp-claims-match-the-constants.test.ts` holds the same
+        // rule over the whole tree; this is it at the one site that burned.
+        expect(detail).not.toMatch(/\b(DISABLED|DRY_RUN|AUTOMATIC)\b/);
+
         expect(detail).not.toContain('Turn on "Allow offboarding writes"');
     });
 

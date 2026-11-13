@@ -992,14 +992,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.tenant_lifecycle',
         note:
-            'Fires a joiner pass NOW, off the 04:30 schedule. NOT because it ' +
-            'writes to a customer directory — JOINER_MAX_MODE is DRY_RUN and ' +
-            'the pass writes none — but because the artefact it produces names ' +
-            'which of a customer\'s people the product would create an account ' +
-            'for, and at what address. Same OWNER-only key as reading that ' +
-            'report and as the write policy the passes run under. Its own ' +
-            'exact-anchored rule rather than riding the subtree rule, so a ' +
-            'later weakening of the read surface cannot reach the trigger.',
+            'Fires a joiner pass NOW, off the 04:30 schedule. OWNER-only for TWO ' +
+            'reasons, and this note recorded only the second until #5566. A pass ' +
+            'at AUTOMATIC on a consented connection DOES write to a customer ' +
+            'directory. This note used to deny that, on the strength of a clamp ' +
+            'value that #2954 moved; see the joiner pass for the constant rather ' +
+            'than any sentence about it. The second reason stands on ' +
+            'its own and is why the key was never weaker: the artefact this ' +
+            'produces names which of a customer\'s people the product would ' +
+            'create an account for, and at what address. Same OWNER-only key as ' +
+            'reading that report and as the write policy the passes run under. ' +
+            'Its own exact-anchored rule rather than riding the subtree rule, so ' +
+            'a later weakening of the read surface cannot reach the trigger.',
     },
 
     // ── JML joiner pass reports (the seven-day observation record) ──

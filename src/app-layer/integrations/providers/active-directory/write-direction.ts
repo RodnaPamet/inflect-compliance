@@ -59,24 +59,43 @@
  * absent from `ActiveDirectoryProvider.configSchema.configFields` — the same
  * shape Entra's joiner field has, reached by a slightly different route.
  *
- * Entra's joiner has no create verb at all. AD's does: `provisioner.ts` is
- * real, and `LIVE_PROVISIONER_PROVIDERS` is `['active-directory']` alone. What
- * holds it is `JOINER_MAX_MODE = 'DRY_RUN'`, a SOURCE constant — so an AD
- * create cannot execute today, and the day it can is a reviewed diff.
+ * AD has a create verb: `provisioner.ts` is real, and it is one of the TWO
+ * members of `LIVE_PROVISIONER_PROVIDERS`, alongside `entra-id` since #2878
+ * f11. Entra's joiner field is on its connection form, off by default. AD's is
+ * not on the form, and the difference is a product decision rather than a
+ * difference in capability.
  *
- * That is exactly why the box stays off the form. If it were declared now,
- * operators could tick it now, against a capability that authorises nothing
- * now — and the diff that lifts the clamp would land on connections whose
- * boxes are ALREADY TICKED. A grant collected before the capability exists is
- * not a grant to that capability.
+ * ═══ READ THIS PARAGRAPH BEFORE DECLARING THE FIELD ═══
  *
- * Gating the provisioner on an undeclared field therefore refuses the joiner
- * direction for every connection. That is FAIL-CLOSED BACKSTOP, not a
- * behaviour change: `resolveDirectoryProvisioner` builds a live provisioner
- * only at `AUTOMATIC`, and an AUTOMATIC joiner pass is refused at the
- * `JOINER_MAX_MODE` clamp before the factory is reached. The arm is
- * unreachable today in both directions, and it is gated now so that lifting
- * the clamp does not also, silently, grant create authority.
+ * THE UNDECLARED FIELD IS THE ONLY THING REFUSING AN AD CREATE. It is not a
+ * backstop behind a clamp, and this docblock claimed it was until #5566. The
+ * claim was `JOINER_MAX_MODE = 'DRY_RUN'`, which made the arm "unreachable in
+ * both directions"; #2954 raised that constant to `AUTOMATIC`, so with the
+ * clamp on the ladder's last rung `isAboveClamp` can never be true and
+ * `MODE_ABOVE_CLAMP` is unreachable for the joiner. The clamp refuses nothing.
+ * One barrier remains, and it is this field.
+ *    clamp-claim-allow: quotes the superseded DRY_RUN claim to name what moved
+ *
+ * So declaring `AD_JOINER_WRITES_FIELD` on the form is not the small,
+ * well-covered step the old paragraph described. It makes an AD account
+ * creation reachable the moment an operator ticks the box on a tenant already
+ * at `AUTOMATIC` — with no second gate underneath. Whoever makes that change
+ * owns that whole consequence, and should say so in the diff.
+ *
+ * ═══ WHY THE BOX IS STILL OFF THE FORM ═══
+ *
+ * The original consent argument stands and has outlived its own premise. It
+ * read: a box ticked against a capability that authorises nothing today would
+ * ALREADY BE TICKED on the day the clamp lifts, and a grant collected before
+ * the capability exists is not a grant to that capability. That is exactly what
+ * would have happened — the clamp DID lift, in a diff that did not revisit this
+ * field — so the reasoning is vindicated rather than expired.
+ *
+ * What holds the field off the form now is simply that nobody has decided to
+ * offer AD account creation to operators, and the refusal below says so.
+ * `resolveDirectoryProvisioner` still builds a live provisioner only at
+ * `AUTOMATIC`, which is a narrowing worth keeping; it is no longer a second
+ * barrier, because `AUTOMATIC` is a rung tenants may reach.
  *
  * @module integrations/providers/active-directory/write-direction
  */
@@ -237,10 +256,13 @@ const DIRECTION_COPY: Readonly<
     joiner: {
         act: 'CREATE an account',
         instruction:
-            `There is no switch for this direction on the connection yet: ${AD_JOINER_WRITES_FIELD} ` +
-            'is deliberately undeclared while JOINER_MAX_MODE is DRY_RUN, because a box ticked for a ' +
-            'capability that authorises nothing today would already be ticked on the day the clamp ' +
-            'lifts. Until then this direction refuses for every connection.',
+            `There is no switch for this direction on this connection: ${AD_JOINER_WRITES_FIELD} is ` +
+            'undeclared by decision, so Active Directory account creation is refused for every ' +
+            'connection. That refusal does not depend on the tenant write-mode ladder and will not ' +
+            'clear by widening it — it is not a setting you can reach. If you need joiner account ' +
+            'creation today, Microsoft Entra ID is the supported directory for it: its own ' +
+            '"Allow joiner credential issuance" opt-in is on the Entra connection form, off by ' +
+            'default, and needs its own administrator consent.',
     },
 };
 

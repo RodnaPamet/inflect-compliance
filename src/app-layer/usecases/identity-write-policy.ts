@@ -235,17 +235,26 @@ export function classifyRefusal(
     // fires only when LEAVING DRY_RUN, so once past that rung there is no further
     // delay at all.
     //
-    // The clamp that rung would meet EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
+    // The clamp that rung would meet EXISTS — `JOINER_MAX_MODE` in
     // `identity-joiner-pass`, which the admin route reports verbatim (#2638) —
     // and so does the trigger (#2687). The entitlement map has a SCHEMA and a
     // READER (#2713 — `IdentityDepartmentGroupRule` for the rules,
     // `identityDefaultGroupId` + `identityDefaultGroupName` for the fallback)
     // and a WRITER as of #2839 (`identity-entitlement-map`), so "a configured
     // tenant" is a state a tenant can now reach and an operator can clear the
-    // refusal. What is still missing is the create
-    // VERB (#2714): the pass can say which group it WOULD add the person to and
-    // cannot add them. That is why `DIRECTION_IMPLEMENTED.joiner` is still
-    // false; see the docblock on it.
+    // refusal.
+    //
+    // EVERYTHING THIS PARAGRAPH WAS WAITING FOR HAS LANDED, and it said
+    // otherwise until #5566. It said `JOINER_MAX_MODE` is DRY_RUN — #2954 raised
+    // that constant to AUTOMATIC — and ended "What is still missing is the create
+    // VERB (#2714):
+    // the pass can say which group it WOULD add the person to and cannot add
+    // them. That is why `DIRECTION_IMPLEMENTED.joiner` is still false." The verb
+    // landed in #2923, the Entra provisioner in #2940, and the flag is TRUE as
+    // of #2949. So the branch below is unreachable for both directions today and
+    // is kept as the brake: narrowing a `DIRECTION_IMPLEMENTED` entry is a
+    // one-line reviewed diff, and this is what would then refuse the widen.
+    //    clamp-claim-allow: quotes the superseded DRY_RUN wording to record it
     //
     // Placed BELOW the narrowing check on purpose. A tenant already sitting above
     // DISABLED — set before this gate existed, or after the joiner ships and is
@@ -256,10 +265,12 @@ export function classifyRefusal(
         // false the day it scheduled one — a refusal whose stated reason an
         // operator can disprove by looking at the pass report is worse than a
         // vaguer one, because it invites them to conclude the gate is stale.
-        // What is true of an unimplemented direction in general, and of the
-        // joiner in particular, is that the pass cannot ACT on the mode: it
-        // can now DECIDE a group (#2713 gave the map a home), but there is
-        // no create verb behind that decision (#2714).
+        // What is true of an unimplemented direction in general is that the
+        // pass cannot ACT on the mode. It is no longer true of the JOINER in
+        // particular — this comment used to end "there is no create verb behind
+        // that decision (#2714)", and #2923 wired it — so no direction reaches
+        // this return today. Whoever narrows a `DIRECTION_IMPLEMENTED` entry
+        // makes it reachable again and owns the sentence it renders.
         return { code: 'NOT_IMPLEMENTED' };
     }
 
