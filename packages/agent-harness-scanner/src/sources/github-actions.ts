@@ -52,8 +52,8 @@
  */
 import * as yaml from 'js-yaml';
 
-import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT, MAX_EVIDENCE_CHARS } from '@/lib/agentic/harness-contract';
-import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
+import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT, MAX_EVIDENCE_CHARS } from '@rodnapamet/scanent-contract/harness-contract';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { nextLinkFrom } from '../http';
 import {

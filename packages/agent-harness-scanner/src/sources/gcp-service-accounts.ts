@@ -43,7 +43,7 @@
  */
 import { createSign } from 'crypto';
 
-import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT } from '@/lib/agentic/harness-contract';
+import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT } from '@rodnapamet/scanent-contract/harness-contract';
 
 import {
     ageInDays,

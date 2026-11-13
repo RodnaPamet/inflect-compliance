@@ -558,13 +558,13 @@ Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
 dependency, and needed by `tsx`, which runs the scanner; the scanner container,
 #3686, installs a pinned version of it, owner answer 2026-10-19); `js-yaml`,
 which the `cicd` source reads workflow files with (already the repository's own
-dependency, #3784); the wire
-contract from the application —
-`@/lib/agentic/harness-contract`, `@/lib/agentic/harness-findings`,
-`@/lib/agentic/harness-ladder` and `@/lib/canonical-json`; and the application's
-pure CIDR parser, `@/lib/security/cidr`, so a private-range allowlist parses
-exactly as the application's egress allowlist does. Nothing else:
-`eslint.config.mjs` refuses any other `@/` import from `src/`, and any
+dependency, #3784); and the wire contract,
+`@rodnapamet/scanent-contract` (`harness-contract`, `harness-findings`,
+`harness-ladder`, `canonical-json`, and the pure CIDR parser `cidr`, so a
+private-range allowlist parses exactly as the application's egress allowlist
+does). The contract is the standalone scanent product's package, which the
+application's own `src/lib` modules re-export (scanent #26). Nothing else:
+`eslint.config.mjs` refuses every `@/` import from `src/`, and any
 `@prisma/*`, `next` or `@inflect/ui` import, at error level. Sharing the contract
 is deliberate. The scanner checks its report against the ingest's own schema and
 secret-shape scan **before** it signs, and signs the message the ingest
@@ -763,10 +763,10 @@ operator. The image holds no credential and no configuration. It runs as uid
 
 What the image is, and why:
 
-- **What it holds.** The scanner's source, the eight application modules it
-  imports (the wire contract and what that imports), and four packages pinned
-  exactly in its own manifest, `container/package.json`, with its own lockfile:
-  `tsx`, which runs it; `typescript`, whose parser the `code` source reads
+- **What it holds.** The scanner's source and five packages pinned exactly in
+  its own manifest, `container/package.json`, with its own lockfile: `tsx`,
+  which runs it; the wire contract, `@rodnapamet/scanent-contract`, installed
+  from its release file on GitHub; `typescript`, whose parser the `code` source reads
   JavaScript and TypeScript with (owner answer, 2026-10-19); `js-yaml`, which
   the `cicd` source reads workflow files with (#3784); and `zod`. No npm,
   no npx, no corepack. The build context is an allowlist,
@@ -776,7 +776,8 @@ What the image is, and why:
   and the allowlist to the import closure of `src/cli.ts`, and the packages to
   the manifest and its lockfile.
 - **Its base is pinned by digest**, so the image a client builds is the image CI
-  scanned. Dependabot proposes the digest's and the packages' updates.
+  scanned. Dependabot proposes the digest's and the registry packages' updates;
+  the contract's release-file URL is moved by hand, with the application's.
 - **It runs as the image's `node` user**, never root, with nothing under `/app`
   writable, and works with a read-only root filesystem: tsx compiles each start
   rather than caching (`TSX_DISABLE_CACHE`).

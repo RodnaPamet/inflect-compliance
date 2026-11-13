@@ -86,12 +86,15 @@ const PLATFORM_SYNTAX_BANS = [
 
 // The harness scanner package's import boundary (#3678), shared by the
 // package block and the stricter block for its `code` source (#3737), which
-// would otherwise replace it.
+// would otherwise replace it. The wire contract and the CIDR parser it once
+// took through `@/` are the `@rodnapamet/scanent-contract` package's since
+// scanent #26, so no `@/` import is left to allow: the image installs the
+// package and copies no application module.
 const HARNESS_SCANNER_IMPORT_PATTERNS = [
     {
-        regex: '^@/(?!lib/agentic/harness-(contract|findings|ladder)$|lib/canonical-json$|lib/security/cidr$)',
+        regex: '^@/',
         message:
-            'The harness scanner imports the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json) and the pure CIDR parser (lib/security/cidr), and nothing else of the application. See packages/agent-harness-scanner/README.md.',
+            'The harness scanner imports nothing of the application: the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json, cidr) comes from @rodnapamet/scanent-contract/<module>. See packages/agent-harness-scanner/README.md.',
     },
     {
         group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
@@ -362,7 +365,14 @@ const config = [
                 {
                     patterns: [
                         {
-                            group: ['@/lib/agentic/harness-ladder', '**/harness-ladder'],
+                            group: [
+                                '@/lib/agentic/harness-ladder',
+                                '**/harness-ladder',
+                                // Where the ladder lives since scanent #26, and
+                                // the table model that imports it at run time.
+                                '@rodnapamet/scanent-contract/harness-ladder',
+                                '@rodnapamet/scanent-contract/harness-matrix-model',
+                            ],
                             message:
                                 'The harness ladder is report-only: a level raises findings and never gates a call or an activation. Do not import it into the authority funnel.',
                         },
@@ -380,14 +390,11 @@ const config = [
         // through the function the ingest verifies with — and nothing else of
         // the application: no database, no tenant, no Next.js, no usecase. A
         // scanner that could import `@/lib/prisma` is one refactor from a
-        // scanner that writes somewhere it should only read. One exception,
-        // `@/lib/security/cidr` (#3738): the strict CIDR parser, pure and
-        // import-free, so the scanner's private-range allowlist parses ranges
-        // exactly as the application's egress allowlist does, not by a copy.
-        //
-        // A regex rather than a `group` with negations: gitignore semantics
-        // cannot re-include a file under an excluded parent, so `@/*` with
-        // `!@/lib/agentic/harness-contract` would refuse the contract too.
+        // scanner that writes somewhere it should only read. The contract, and
+        // the strict CIDR parser (#3738) that makes the scanner's private-range
+        // allowlist parse ranges exactly as the application's egress allowlist
+        // does, come from `@rodnapamet/scanent-contract` (scanent #26), so the
+        // scanner takes nothing through `@/` at all.
         files: ['packages/agent-harness-scanner/src/**/*.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: HARNESS_SCANNER_IMPORT_PATTERNS }],

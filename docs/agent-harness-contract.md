@@ -19,7 +19,12 @@ Three contract ids are in force:
 implementation**. Where this prose and that file disagree, the file is the one
 the suite validates against the schemas, so it is the one to copy. The schemas
 and the verifier are `src/lib/agentic/harness-contract.ts`; the ladder that
-scores the verdicts is `src/lib/agentic/harness-ladder.ts`.
+scores the verdicts is `src/lib/agentic/harness-ladder.ts`. Both, and the
+other modules this page names under `src/lib`, re-export the
+`@rodnapamet/scanent-contract` package: the contract's code is the standalone
+scanent product's ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent),
+`docs/contract.md` there), installed at one exact version from its release
+file.
 `packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
 `/4`, builds its report against those schemas and refuses to sign one they
 would refuse.

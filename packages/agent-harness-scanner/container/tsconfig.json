@@ -1,5 +1,7 @@
-// The scanner image's tsconfig, copied to /app. tsx reads it from the working
-// directory for one thing: the `@/` alias the scanner's contract imports use.
+// The scanner image's tsconfig, copied to /app, where tsx reads it from the
+// working directory. The scanner imports the wire contract from its package
+// (`@rodnapamet/scanent-contract`), so no `@/` alias is declared: an
+// application import has nothing to resolve to in the image.
 // See ../README.md, Container.
 {
   "compilerOptions": {
@@ -8,10 +10,6 @@
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "skipLibCheck": true
   }
 }

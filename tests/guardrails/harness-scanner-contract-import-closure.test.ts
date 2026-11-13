@@ -1,31 +1,36 @@
 /**
- * The harness scanner's contract is a closed set of eight files.
+ * The harness contract is the scanent package's, and the eight application
+ * modules that name it are re-exports of it and nothing else.
  *
- * The reference scanner (`packages/agent-harness-scanner`) runs in a client's
- * estate, and what it shares with the product is the contract it signs
- * against: the report schema, the ladder, the findings planner, canonical
- * JSON, receipt verification, redaction and the CIDR helper. Those are
- * `CONTRACT_FILES` below. They are what a build of the scanner outside this
- * repository has to carry, so the set has to be closed under import: a ninth
- * file reached from any of them is a file that build does not have.
+ * The contract the reference scanner signs against and the ingest verifies
+ * with (the report schema, the ladder, the findings planner, canonical JSON,
+ * receipt verification, redaction and the CIDR helper) lives in
+ * `@rodnapamet/scanent-contract` (scanent #26). The application keeps eight
+ * files at the paths the contract used to occupy, `CONTRACT_FILES` below, so
+ * its ~100 importers keep their `@/` paths; each re-exports its package
+ * module. The scanner package (`packages/agent-harness-scanner`, a client's
+ * estate) imports the package directly.
  *
  * TYPE-ONLY IMPORTS COUNT. `import type` is erased at run time, so a bundler
  * never notices one, but a type-check resolves it and then everything THAT
  * file imports. The contract once took two types from the read model, which
- * takes a type from the IAM skill outputs, and so on into the application:
- * nothing failed here, and the contract could not be type-checked on its own.
+ * takes a type from the IAM skill outputs, and so on into the application.
  *
- * Two claims:
+ * Three claims:
  *
- *   1. The transitive import closure of the eight files, over every kind of
- *      import (value, type, re-export, `import()`, `require()`, a
- *      triple-slash reference), contains no other file of this repository.
- *      Packages and Node built-ins are not repository files and are not
- *      walked. A specifier that looks like a repository path and resolves to
- *      nothing fails too: an edge that cannot be followed is not a clean one.
- *   2. Every file of the scanner package that imports from outside the
- *      package imports one of the eight. This is what makes the eight the
- *      scanner's whole run-time closure, and not merely a closed set.
+ *   1. Each of the eight is a re-export of the package module of its own name:
+ *      its only import is `@rodnapamet/scanent-contract/<module>`. Code put
+ *      back beside the re-export would be a second copy of the contract that
+ *      the package's releases never reach.
+ *   2. The transitive import closure of the eight, over every kind of import
+ *      (value, type, re-export, `import()`, `require()`, a triple-slash
+ *      reference), contains no other file of this repository. Packages and
+ *      Node built-ins are not repository files and are not walked. A specifier
+ *      that looks like a repository path and resolves to nothing fails too.
+ *   3. The scanner package imports no file of this repository outside itself:
+ *      the contract reaches it from the package, which is what its image
+ *      installs. An application import there would be a file the image does
+ *      not carry.
  *
  * The edges come from the TypeScript compiler (`ts.preProcessFile`) and the
  * targets from its module resolution under this repository's `tsconfig.json`,
@@ -38,7 +43,7 @@ import * as ts from 'typescript';
 
 import { REPO_ROOT, repoRelative, repoRelativeFiles } from '../helpers/repo-files';
 
-/** The contract: the only files outside its package the scanner may reach. */
+/** The application's re-exports of the contract package. */
 const CONTRACT_FILES: readonly string[] = [
     'src/lib/agentic/harness-contract.ts',
     'src/lib/agentic/harness-contract-rules.ts',
@@ -51,6 +56,8 @@ const CONTRACT_FILES: readonly string[] = [
 ];
 
 const SCANNER_PACKAGE = 'packages/agent-harness-scanner/';
+
+const CONTRACT_PACKAGE = '@rodnapamet/scanent-contract';
 
 const COMPILER_OPTIONS: ts.CompilerOptions = (() => {
     const configPath = path.join(REPO_ROOT, 'tsconfig.json');
@@ -153,35 +160,57 @@ describe('the harness scanner contract is closed under import', () => {
         expect(strangersIn(closure)).toEqual([]);
     });
 
-    it('is what the scanner package imports from outside itself, and nothing else', () => {
+    it('re-exports, in each of the eight, the package module of the same name and nothing else', () => {
+        const notReexports: string[] = [];
+        for (const file of CONTRACT_FILES) {
+            const source = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8');
+            const info = ts.preProcessFile(source, true, true);
+            const specs = info.importedFiles.map((f) => f.fileName);
+            const expected = `${CONTRACT_PACKAGE}/${path.basename(file, '.ts')}`;
+            // The package resolves, under this repository's tsconfig, to its
+            // installed declarations: an unresolvable subpath is not a re-export.
+            const resolved = ts.resolveModuleName(expected, path.join(REPO_ROOT, file), COMPILER_OPTIONS, ts.sys)
+                .resolvedModule?.resolvedFileName ?? null;
+            const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+            const statements = sf.statements.map((st) => st.getText(sf));
+            if (
+                specs.length !== 1
+                || specs[0] !== expected
+                || resolved === null
+                || statements.length !== 1
+                || statements[0] !== `export * from '${expected}';`
+            ) {
+                notReexports.push(`${file}: ${statements.length} statement(s), imports ${JSON.stringify(specs)}`);
+            }
+        }
+        expect(notReexports).toEqual([]);
+    });
+
+    it('is not imported by the scanner package, which imports no repository file outside itself', () => {
         const scannerFiles = repoRelativeFiles().filter(
-            (f) => f.startsWith(`${SCANNER_PACKAGE}src/`) && /\.tsx?$/.test(f),
+            (f) => f.startsWith(SCANNER_PACKAGE) && /\.tsx?$/.test(f),
         );
         expect(scannerFiles.length).toBeGreaterThan(0);
 
-        const contract = new Set(CONTRACT_FILES);
         const outside: string[] = [];
         const unresolved: string[] = [];
-        const used = new Set<string>();
+        let packageImports = 0;
         for (const file of scannerFiles) {
+            const source = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8');
+            packageImports += ts.preProcessFile(source, true, true).importedFiles
+                .filter((f) => f.fileName.startsWith(`${CONTRACT_PACKAGE}/`)).length;
             for (const edge of repoEdgesOf(file)) {
                 if (edge.to === null) {
                     unresolved.push(`${edge.from} imports '${edge.spec}', which resolves to no file`);
-                } else if (edge.to.startsWith(SCANNER_PACKAGE)) {
-                    continue;
-                } else if (contract.has(edge.to)) {
-                    used.add(edge.to);
-                } else {
+                } else if (!edge.to.startsWith(SCANNER_PACKAGE)) {
                     outside.push(`${edge.from} imports '${edge.spec}' (${edge.to})`);
                 }
             }
         }
         expect(unresolved).toEqual([]);
         expect(outside).toEqual([]);
-        // The other direction: a contract file nothing reaches is not part of
-        // the scanner's closure, and the list above would be claiming too much.
-        const reachedFromScanner = closureOf([...used]).reached;
-        expect(CONTRACT_FILES.filter((f) => !reachedFromScanner.has(f))).toEqual([]);
+        // The denominator: the scanner does take the contract, from the package.
+        expect(packageImports).toBeGreaterThan(0);
     });
 
     // The detector, shown to detect. Each case hands the walk one contract

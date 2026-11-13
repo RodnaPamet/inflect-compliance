@@ -58,8 +58,8 @@
  */
 import { z } from 'zod';
 
-import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
-import { MAX_AGENTS } from '@/lib/agentic/harness-contract';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
+import { MAX_AGENTS } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { EgressProof } from '../egress-proof';
 

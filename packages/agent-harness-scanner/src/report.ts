@@ -2,7 +2,7 @@
  * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/4` REPORT.
  *
  * The report is built against the contract's own schemas
- * (`src/lib/agentic/harness-contract.ts`) rather than a copy of them, and the
+ * (`@rodnapamet/scanent-contract/harness-contract`) rather than a copy of them, and the
  * scanner checks its own output with them BEFORE it signs: a body the ingest
  * would refuse as SCHEMA, or as SECRET_IN_REPORT, is refused here and never
  * leaves the estate. The signed message is the contract's
@@ -69,9 +69,9 @@ import {
     type HarnessReportAgent,
     type HarnessReportBodyV4,
     type HarnessUnboundCredential,
-} from '@/lib/agentic/harness-contract';
-import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
-import { collapseVerdicts, type CriterionVerdict } from '@/lib/agentic/harness-ladder';
+} from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
+import { collapseVerdicts, type CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { SCANNER_VERSION, scannerManifestHash } from './scanner-surface';
 import type {

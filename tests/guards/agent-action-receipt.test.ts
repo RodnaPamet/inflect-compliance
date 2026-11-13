@@ -288,7 +288,9 @@ describe('pipelock license boundary', () => {
     });
 
     it('verifier documents the Apache-core boundary', () => {
-        const mod = readFileSync(join(REPO_ROOT, 'src/lib/mcp/receipt-verification.ts'), 'utf8');
+        // The verifier is the contract package's (scanent #26);
+        // src/lib/mcp/receipt-verification.ts re-exports it.
+        const mod = readFileSync(require.resolve('@rodnapamet/scanent-contract/receipt-verification'), 'utf8');
         expect(mod).toMatch(/Apache-2\.0/);
         expect(mod).toMatch(/CORE/);
     });

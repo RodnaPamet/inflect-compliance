@@ -14,7 +14,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
-import type { HarnessReportBodyV4 } from '@/lib/agentic/harness-contract';
+import type { HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { sourceCredentialEnv, type ScannerConfig } from './config';
 import type { ResolveHost } from './customer-host';

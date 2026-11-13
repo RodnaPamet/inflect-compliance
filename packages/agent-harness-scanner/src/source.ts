@@ -24,13 +24,13 @@
  *     `scheme://locator` reference, and the runner refuses to sign a report in
  *     which any string has a secret's shape.
  */
-import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 import type {
     HarnessPaymentCapability,
     HarnessReportAgent,
     INCOMPLETE_REASONS_V2,
     SOURCE_KINDS_V3,
-} from '@/lib/agentic/harness-contract';
+} from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { McpListingWire, OpenShellReadWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from './http';
 

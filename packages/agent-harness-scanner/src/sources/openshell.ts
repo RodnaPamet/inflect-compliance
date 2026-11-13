@@ -74,7 +74,7 @@
  */
 import { createHash } from 'crypto';
 
-import type { CriterionVerdict } from '@/lib/agentic/harness-ladder';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE, type OpenShellTarget } from '../http';
 import {

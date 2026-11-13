@@ -1861,6 +1861,21 @@ Six use cases that extend IAM controls to autonomous agents, in five phases.
 step issues under #3654 are the work, one pull request each. Rules that bind
 every step are listed at the end of that document.
 
+**The contract's code is the scanent package's** (scanent #26). The report
+contract, the ladder, the findings planner and their helpers are
+`@rodnapamet/scanent-contract`, the standalone scanent product's package,
+installed from its GitHub release file at one exact version (`package.json`;
+Dependabot does not move it, so a version is taken by hand, on purpose).
+`src/lib/agentic/harness-{contract,contract-rules,findings,ladder}.ts`,
+`src/lib/canonical-json.ts`, `src/lib/security/cidr.ts`,
+`src/lib/mcp/receipt-verification.ts` and `src/lib/audit-redact.ts` are
+one-line re-exports of it, so importers keep their paths; a change to the
+contract is a scanent release and a version bump here, never an edit to those
+files, and `tests/guardrails/harness-scanner-contract-import-closure.test.ts`
+refuses code beside the re-export. The client import-graph guards walk into
+the package's compiled modules, so a client reaching one that requires
+`crypto` still fails. The rules below hold in the package.
+
 **The harness ladder** (`src/lib/agentic/harness-ladder.ts`, H0–H5) has three
 properties that are each one careless edit from being undone:
 
@@ -2046,9 +2061,9 @@ today; Entra, MCP, the register and the container are #3686.
   reference.
 - **It imports the contract, never a copy.** It checks its report with the
   ingest's schema and `firstSecretShapedMember` before it signs, through
-  `harnessSignedMessage`. `eslint.config.mjs` allows `harness-contract`,
-  `harness-findings`, `harness-ladder` and `canonical-json` from `@/` and refuses
-  every other `@/`, `@prisma/*`, `next` and `@inflect/ui` import.
+  `harnessSignedMessage`. It takes them from `@rodnapamet/scanent-contract`,
+  which its image installs, and `eslint.config.mjs` refuses every `@/`,
+  `@prisma/*`, `next` and `@inflect/ui` import.
 - **No register link from the estate's own labels.** `registeredAgentId` is
   `null` from these sources: an Okta profile or a vault tag is written by the
   estate's administrator, who could use it to hide a shadow agent.
