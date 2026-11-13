@@ -27,9 +27,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OVERLAY="$HERE/../docker-compose.harness-scanner.yml"
 
 # The pinned digest, read from the overlay in this checkout — the one reviewed
-# place it is written. The scanner and its egress proxy run the same image, so
-# both lines name one digest, and two different ones are refused.
-IMAGE="$(sed -n 's#^ *image: *\(ghcr\.io/rodnapamet/agent-harness-scanner@sha256:[0-9a-f]\{64\}\) *$#\1#p' "$OVERLAY" | sort -u)"
+# place it is written. The scanner and its egress proxy run the same image,
+# scanent's (scanent #26), so both lines name one digest, and two different
+# ones are refused.
+IMAGE="$(sed -n 's#^ *image: *\(ghcr\.io/rodnapamet/scanent@sha256:[0-9a-f]\{64\}\) *$#\1#p' "$OVERLAY" | sort -u)"
 [ -n "$IMAGE" ] || { echo "the overlay names no pinned scanner digest" >&2; exit 1; }
 [ "$(printf '%s\n' "$IMAGE" | wc -l)" -eq 1 ] || { echo "the overlay pins more than one scanner digest" >&2; exit 1; }
 

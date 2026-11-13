@@ -438,11 +438,12 @@ each member out of the result. No owner is reported.
 
 The container (#3686) is how an estate runs the scanner, and it changes
 nothing above: it adds no source, no data category, no recipient and no stored
-column. A client builds it from this repository. The one published copy is
-Inflect's own, for its estate's scanner on the production VM, and it goes to the
-repository's private GHCR package (owner decision, 2026-10-20). Publishing
-changes no data flow: the image holds no credential, no configuration and no
-estate data. On the VM it runs from an opt-in Compose overlay,
+column. A client builds it from this repository. Inflect's own estate's scanner
+on the production VM runs scanent's public image instead (scanent #26), the
+standalone scanner product Inflect Ltd. publishes, signed by its release
+workflow; it reads the same four sources and posts the same contract, so this
+changes no data flow either. Neither image holds a credential, a configuration
+or estate data. On the VM it runs from an opt-in Compose overlay,
 `deploy/docker-compose.harness-scanner.yml`, pinned by digest. Its credentials
 sit in their own root-only environment file, `.env.scanner`, not in the
 application's `.env.prod`. So the scanner receives none of the application's

@@ -10,6 +10,10 @@
 # carrying a quote or a newline, which the single-quoted dotenv line could not
 # hold as written.
 #
+# The configuration is scanent's (scanent #26): the template's `outputs` and
+# every other member pass through as written. `remote.sh configure` has the
+# pinned image parse it before installing anything.
+#
 set -euo pipefail
 
 OUT="${1:?output directory}"

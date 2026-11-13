@@ -145,9 +145,11 @@ the only source whose `registeredAgentId` reaches a report. The scanner runs as
 a container a client builds from this repository
 (`packages/agent-harness-scanner/Dockerfile`, #3686): built, smoke-tested and
 scanned by Trivy in CI on every pull request (owner decision, 2026-10-19).
-Inflect's own estate runs a copy published by digest to the repository's
+Inflect's own estate ran a copy published by digest to the repository's
 private GHCR package, by the dispatch-only `Scanner image` workflow, which
-smoke-tests and scans before it pushes (owner decision, 2026-10-20). On the
+smoke-tests and scans before it pushes (owner decision, 2026-10-20). Since
+scanent #26 it runs scanent's public image (`ghcr.io/rodnapamet/scanent`,
+pinned by digest and signed by scanent's release workflow) instead. On the
 production VM it runs from the opt-in Compose overlay
 `deploy/docker-compose.harness-scanner.yml`, beside a configuration template for
 the pilot estate (`deploy/harness-scanner/`). It runs read-only, as a non-root

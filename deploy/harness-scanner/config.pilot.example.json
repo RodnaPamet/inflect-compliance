@@ -9,6 +9,11 @@
     "tenantSlug": "replace-with-the-tenant-slug",
     "apiKeyEnv": "INFLECT_INGEST_KEY"
   },
+  "outputs": [
+    {
+      "kind": "inflect"
+    }
+  ],
   "schedule": {
     "everyHours": 24
   },

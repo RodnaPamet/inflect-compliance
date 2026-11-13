@@ -286,13 +286,14 @@ and carries on after a failed run.
 The scanner runs in the estate as a container that the estate builds from a
 checkout of this repository (`packages/agent-harness-scanner/Dockerfile`, owner
 decision 2026-10-19). Inflect's own estate is the exception. Its scanner runs on
-the production VM from a copy published by digest to the repository's private
-GHCR package (owner decision 2026-10-20; the README's Container section), as
-the opt-in Compose overlay `deploy/docker-compose.harness-scanner.yml`. The
-dispatch-only `Scanner VM` workflow configures, checks and starts it, from
-credentials kept as `production` environment secrets
-(`deploy/harness-scanner/README.md` has the one-time setup and the order of the
-actions). Its default command is `schedule`.
+the production VM from scanent's public image (`ghcr.io/rodnapamet/scanent`,
+the standalone scanner product, scanent #26), pinned by its multi-arch index
+digest and signed by scanent's release workflow, as the opt-in Compose overlay
+`deploy/docker-compose.harness-scanner.yml`. The dispatch-only `Scanner VM`
+workflow configures, checks and starts it, from credentials kept as
+`production` environment secrets (`deploy/harness-scanner/README.md` has the
+one-time setup, the order of the actions and how the configuration and paths
+differ from this package's). Its default command is `schedule`.
 Run it read-only, with every capability dropped, as its own non-root user
 (uid 1000); mount the configuration and each `code` root read-only and readable
 by that user; and supply the environment variables the configuration names from
