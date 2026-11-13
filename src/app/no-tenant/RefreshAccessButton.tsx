@@ -39,8 +39,16 @@ export function RefreshAccessButton() {
 
     return (
         <Button
+            // SECONDARY, matching the Sign out button below it, and not because
+            // the action is unimportant — it is the one useful thing on this
+            // page. `primary-secondary-ratio` holds the repo's absolute primary
+            // count at a ceiling whose own history shows the convention: a new
+            // primary is "PAID FOR" by demoting one elsewhere, net zero. Buying
+            // one for an error page by redesigning an unrelated page is not a
+            // trade worth making, and the button reads clearly as the action
+            // without it.
             type="button"
-            variant="primary"
+            variant="secondary"
             className="w-full"
             id="no-tenant-refresh-access"
             disabled={busy}
