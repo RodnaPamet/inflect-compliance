@@ -232,19 +232,34 @@ What the scanner deliberately does not take from these labels:
   and reported as nothing; which of a vault's secrets belong to agents is the
   estate's statement to make.
 - **An owner for a service account.** Google records none, so each is reported
-  unowned and raises `SHADOW_AGENT` until somebody registers it.
+  unowned and raises a finding until somebody registers it.
 - **An owner for a workflow.** GitHub records none, and the scanner does not read
-  CODEOWNERS, so each workflow is reported unowned and raises `SHADOW_AGENT`
-  until somebody registers it.
+  CODEOWNERS, so each workflow is reported unowned and raises a finding until
+  somebody registers it.
 - **An owner for a coded agent.** The `code` source reports each agent
   definition as `code:<label>/<path>#<name>`, where the name is the variable the
   definition is bound to, with no owner: code names no accountable person. It
   raises `SHADOW_AGENT` until somebody registers it.
 
 Every Okta API token is reported as a principal acting for the administrator who
-created it, and so raises `SHADOW_AGENT` until it is registered, except the token
+created it, and so raises a finding until it is registered, except the token
 the scanner reads with. The scanner identifies that one by its id, from
 `GET /api/v1/api-tokens/current`, never by its name.
+
+**Which finding an unregistered principal raises.** Inflect decides it from the
+report, and the scanner sends nothing extra. A principal with no row in the
+agent register raises `SHADOW_AGENT` (HIGH) when the report shows a sign that
+it runs a model: it was found in agent code, in a tracing system or on an MCP
+server, or it lists a tool or a model endpoint. A principal that shows none of
+those raises `UNREGISTERED_IDENTITY` (MEDIUM), and is not held to the harness
+bar. A service account, a workflow and an Okta API token usually show none, so
+they are reported as unregistered automated identities; a coded agent is found
+in code, so it is a shadow agent. The name of a credential is not a sign. A
+scan cannot show that an identity runs no model: if one of yours is an agent,
+register it from its finding and it is scored as one from the next scan; if it
+is not, give it an owner where you keep such identities, or retire it. The full
+rule, including what a scan that could not read every source may conclude, is
+in [the contract](agent-harness-contract.md#transport).
 
 ## 4. The scanner configuration and its schedule
 

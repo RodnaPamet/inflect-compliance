@@ -713,7 +713,8 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['POST'],
         permission: 'admin.agent_registry',
         note:
-            'Register a shadow agent from its SHADOW_AGENT harness finding: a ' +
+            'Register a shadow agent from its SHADOW_AGENT harness finding, or an ' +
+            'unregistered identity from its UNREGISTERED_IDENTITY one: a ' +
             'DRAFT register row and a provisional AI-system entry at ' +
             'UNCLASSIFIED, in one transaction, owned by the person the caller ' +
             'confirms. The agent cannot be activated until the entry is classified.',

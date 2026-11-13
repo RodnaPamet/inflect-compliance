@@ -151,6 +151,7 @@ const NO_SCANS: HarnessMatrixView = {
     scannersNotShown: 0,
     scannersWithoutScan: { rows: [], truncated: false },
     shadow: { rows: [], truncated: false, basis: 'NOT_EVIDENCED', basisAsOf: null },
+    unregisteredIdentities: { rows: [], truncated: false, basis: 'NOT_EVIDENCED', basisAsOf: null },
     acceptances: { rows: [], truncated: false },
 };
 

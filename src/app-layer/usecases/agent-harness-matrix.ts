@@ -42,7 +42,19 @@
  *   • an empty shadow list reads as "none" only when EVERY trusted scanner's
  *     latest scan is complete: one scanner's complete scan says nothing about
  *     the sources another reads, and a scanner holding a key with no scan in
- *     the window has read nothing anybody can see.
+ *     the window has read nothing anybody can see. The unregistered-identity
+ *     list is the same read split in two, and holds the same rule.
+ *
+ * ── SHADOW AGENT, OR UNREGISTERED IDENTITY ──────────────────────────────────
+ *
+ * A principal with no live register row is one or the other (owner decisions,
+ * 2026-11-13), and WHICH is read off the finding on record, by the planner's
+ * own reader (`unregisteredIdentitiesOnRecord`): an identity when its
+ * UNREGISTERED_IDENTITY finding is the one open, a shadow agent otherwise.
+ * Never from the stored scan rows — an incomplete scan overwrites those, and
+ * the ingest deliberately does not let one move the class. An identity keeps
+ * its matrix row, level and cells; it is held to no bar, so it is never
+ * `belowBar` and is offered no shortfall action or note.
  *
  * The matrix is gated on the INVENTORY READ (#3710): `admin.agent_registry_view`,
  * or the register key whose holders always could (`mayReadAgentInventory`). The
@@ -72,6 +84,8 @@ import {
     isHarnessShortfall,
     isIntakeClaimLinkable,
     shadowRefOf,
+    unregisteredIdentitiesOnRecord,
+    unregisteredIdentityRefOf,
 } from '@/lib/agentic/harness-findings';
 import { collapseVerdicts, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 import { acceptAffordanceFor } from '@/lib/agentic/harness-acceptance-rules';
@@ -387,24 +401,12 @@ export async function getHarnessMatrix(
             const seen = latestClock.get(a.discoveredAgentId);
             if (!seen || a.expiresAt.getTime() > seen.expiresAt.getTime()) latestClock.set(a.discoveredAgentId, a);
         }
-        const acceptanceRows: AcceptanceRow[] = [...latestClock.values()]
-            .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime())
-            .map((a) => {
-                const register = a.discoveredAgent.registeredAgent;
-                const inForce = a.expiresAt.getTime() > now.getTime();
-                return {
-                    id: a.id,
-                    discoveredAgentId: a.discoveredAgentId,
-                    agentLabel: register && register.deletedAt === null ? register.name : a.discoveredAgent.discoveredId,
-                    acceptedLevel: a.acceptedLevel,
-                    expiresAt: a.expiresAt.toISOString(),
-                    inForce,
-                    acceptAffordance: affordanceFor(ctx, a.discoveredAgent, inForce),
-                };
-            });
+        const clockRows = [...latestClock.values()].sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
 
-        // 3g. The shadow list: never registered, or whose register row was
-        // deleted after the scan linked it (the FK does not null on a soft delete).
+        // 3g. Every principal with no live register row: never registered, or
+        // whose register row was deleted after the scan linked it (the FK does
+        // not null on a soft delete). Split below into the shadow list and the
+        // unregistered-identity list by the finding on record.
         const shadowRead = await db.discoveredAgent.findMany({
             where: {
                 tenantId: ctx.tenantId,
@@ -423,24 +425,58 @@ export async function getHarnessMatrix(
             take: shadowCap + 1,
         });
         const shadowShown = shadowRead.slice(0, shadowCap);
-        // 3h. What the Register action needs (#3712), read-only: each shown
-        // agent's SHADOW_AGENT finding, and the intake row already made from
-        // it. One read each, never one per row.
-        const shadowFindings = shadowShown.length === 0
+        // 3h. The findings on record for every principal this page shows with
+        // no live register row: the two lists' rows, the matrix rows and the
+        // acceptance clock's agents. ONE read, never one per row. It answers
+        // two things: which class each is on record as (shadow agent, or
+        // unregistered identity — `unregisteredIdentitiesOnRecord`, the rule
+        // every reader of the record shares), and which finding the Register
+        // action registers from (#3712).
+        const isUnlinked = (register: { deletedAt: Date | null } | null) => register === null || register.deletedAt !== null;
+        const unlinkedShown = [
+            ...new Set([
+                ...shadowShown.map((d) => d.discoveredId),
+                ...heavy.filter((h) => isUnlinked(h.discoveredAgent.registeredAgent)).map((h) => h.discoveredAgent.discoveredId),
+                ...clockRows.filter((a) => isUnlinked(a.discoveredAgent.registeredAgent)).map((a) => a.discoveredAgent.discoveredId),
+            ]),
+        ];
+        const shadowFindings = unlinkedShown.length === 0
             ? []
             : await db.finding.findMany({
                 where: {
                     tenantId: ctx.tenantId,
                     sourceKind: HARNESS_FINDING_SOURCE_KIND,
-                    sourceRef: { in: shadowShown.map((d) => shadowRefOf(d.discoveredId)) },
+                    sourceRef: { in: unlinkedShown.flatMap((id) => [shadowRefOf(id), unregisteredIdentityRefOf(id)]) },
                     deletedAt: null,
                 },
-                select: { id: true, sourceRef: true },
+                select: { id: true, sourceRef: true, status: true },
                 orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-                take: shadowShown.length * 2,
+                take: unlinkedShown.length * 4,
             });
         const findingByRef = new Map<string, string>();
         for (const f of shadowFindings) if (f.sourceRef && !findingByRef.has(f.sourceRef)) findingByRef.set(f.sourceRef, f.id);
+        const identitiesOnRecord = unregisteredIdentitiesOnRecord(shadowFindings);
+
+        const acceptanceRows: AcceptanceRow[] = clockRows.map((a) => {
+            const register = a.discoveredAgent.registeredAgent;
+            const inForce = a.expiresAt.getTime() > now.getTime();
+            return {
+                id: a.id,
+                discoveredAgentId: a.discoveredAgentId,
+                agentLabel: register && register.deletedAt === null ? register.name : a.discoveredAgent.discoveredId,
+                acceptedLevel: a.acceptedLevel,
+                expiresAt: a.expiresAt.toISOString(),
+                inForce,
+                acceptAffordance: affordanceFor(
+                    ctx,
+                    {
+                        ...a.discoveredAgent,
+                        unregisteredIdentity: isUnlinked(register) && identitiesOnRecord.has(a.discoveredAgent.discoveredId),
+                    },
+                    inForce,
+                ),
+            };
+        });
         const intakeRows = shadowShown.length === 0
             ? []
             : await db.registeredAgent.findMany({
@@ -470,9 +506,13 @@ export async function getHarnessMatrix(
                 take: shadowShown.length,
             });
         const suggestionBy = new Map(suggestionRows.map((r) => [r.discoveredAgentId, storedSuggestionView(r)]));
-        const shadowRows: ShadowRow[] = shadowShown.map((d) => {
+        const unregisteredRows: ShadowRow[] = shadowShown.map((d) => {
             const intake = intakeBy.get(d.id);
+            const identity = identitiesOnRecord.has(d.discoveredId);
+            const shadowFinding = findingByRef.get(shadowRefOf(d.discoveredId));
+            const identityFinding = findingByRef.get(unregisteredIdentityRefOf(d.discoveredId));
             return {
+                kind: identity ? 'UNREGISTERED_IDENTITY' : 'SHADOW_AGENT',
                 discoveredAgentId: d.id,
                 discoveredId: d.discoveredId,
                 discoveredVia: d.discoveredVia,
@@ -480,7 +520,11 @@ export async function getHarnessMatrix(
                 lastSeenAt: d.lastSeenAt.toISOString(),
                 lastLevel: d.lastLevel,
                 reason: d.registeredAgentId === null ? 'UNREGISTERED' : 'REGISTER_ROW_DELETED',
-                findingId: findingByRef.get(shadowRefOf(d.discoveredId)) ?? null,
+                // The intake takes either finding. An identity's is its own; a
+                // shadow agent that never had a SHADOW_AGENT finding (it was an
+                // identity, was registered, and its row was deleted) registers
+                // from the identity finding it had.
+                findingId: (identity ? identityFinding : (shadowFinding ?? identityFinding)) ?? null,
                 intake: intake
                     ? {
                         agentId: intake.id,
@@ -491,6 +535,9 @@ export async function getHarnessMatrix(
                 suggestion: suggestionBy.get(d.id) ?? null,
             };
         });
+        // One bounded read, two lists: the class is the finding on record.
+        const shadowRows = unregisteredRows.filter((r) => r.kind === 'SHADOW_AGENT');
+        const identityRows = unregisteredRows.filter((r) => r.kind === 'UNREGISTERED_IDENTITY');
 
         // 4. The sections.
         const sections: HarnessScannerSection[] = planned.map((p) => {
@@ -502,14 +549,17 @@ export async function getHarnessMatrix(
                 const verdicts = parseStoredHarnessVerdicts(item.verdictsJson);
                 const register = da.registeredAgent && da.registeredAgent.deletedAt === null ? da.registeredAgent : null;
                 const accepted = inForceBy.get(id);
+                const unregisteredIdentity = register === null && identitiesOnRecord.has(da.discoveredId);
                 rows.push({
                     discoveredAgentId: id,
                     discoveredId: da.discoveredId,
                     discoveredVia: da.discoveredVia,
                     registered: register ? { agentId: register.id, name: register.name } : null,
+                    unregisteredIdentity,
                     level: item.level,
                     reach: item.reach,
-                    belowBar: isHarnessShortfall(item.level, item.reach),
+                    // Held to no bar, so never below one.
+                    belowBar: !unregisteredIdentity && isHarnessShortfall(item.level, item.reach),
                     bar: harnessBarFor(item.reach),
                     blockingNextRung: item.blockingNextRung,
                     verdicts: verdicts === null ? [] : [...collapseVerdicts(verdicts).values()],
@@ -525,9 +575,13 @@ export async function getHarnessMatrix(
                             renewal: accepted.renewedFromId !== null,
                         }
                         : null,
-                    acceptAffordance: affordanceFor(ctx, da, accepted !== undefined),
+                    acceptAffordance: affordanceFor(ctx, { ...da, unregisteredIdentity }, accepted !== undefined),
                 });
             }
+            // The rows were CHOSEN worst-first from the whole scan by the
+            // ladder alone (the class is read only for the rows shown). Order
+            // them again now that an identity is known not to be below a bar.
+            rows.sort(compareMatrixRows);
             return {
                 scannerAgentId: p.scannerAgentId,
                 scannerName: p.latest.scannerName,
@@ -563,6 +617,12 @@ export async function getHarnessMatrix(
             scannersWithoutScan: { rows: scannersWithoutScan, truncated: keyHoldersTruncated },
             shadow: {
                 rows: shadowRows,
+                truncated: shadowRead.length > shadowCap,
+                basis: everyScannerComplete ? 'EVIDENCED' : 'NOT_EVIDENCED',
+                basisAsOf: everyScannerComplete ? oldestLatest : null,
+            },
+            unregisteredIdentities: {
+                rows: identityRows,
                 truncated: shadowRead.length > shadowCap,
                 basis: everyScannerComplete ? 'EVIDENCED' : 'NOT_EVIDENCED',
                 basisAsOf: everyScannerComplete ? oldestLatest : null,

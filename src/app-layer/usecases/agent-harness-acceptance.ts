@@ -14,7 +14,9 @@
  * accepting a risk is the act of the person accountable for it; the key
  * because the route sits with the register's other authority. A shadow agent
  * has no owner and so cannot be accepted: it has to be registered first, which
- * is the point of the SHADOW_AGENT finding beside it.
+ * is the point of the SHADOW_AGENT finding beside it. An unregistered
+ * automated identity is held to no bar, so it has no shortfall to accept, and
+ * an expired acceptance never reopens one for it.
  *
  * ── EXPIRY ──────────────────────────────────────────────────────────────────
  *
@@ -35,8 +37,11 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
     HARNESS_FINDING_SOURCE_KIND,
     isHarnessShortfall,
+    shadowRefOf,
     shortfallFinding,
     shortfallRefOf,
+    unregisteredIdentitiesOnRecord,
+    unregisteredIdentityRefOf,
     type StoredReach,
 } from '@/lib/agentic/harness-findings';
 import type { HarnessLevel } from '@/lib/agentic/harness-ladder';
@@ -82,9 +87,33 @@ export async function acceptHarnessShortfall(ctx: RequestContext, input: z.infer
             },
         });
         if (!agent) throw notFound('Discovered agent not found');
+        // A principal with no live register row is a shadow agent or an
+        // unregistered automated identity, by the finding on record (owner
+        // decisions, 2026-11-13). Read only for one: a registered agent is
+        // neither.
+        const unlinked = agent.registeredAgent === null || agent.registeredAgent.deletedAt !== null;
+        const onRecord = !unlinked
+            ? []
+            : await db.finding.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                    sourceRef: { in: [shadowRefOf(agent.discoveredId), unregisteredIdentityRefOf(agent.discoveredId)] },
+                    status: { not: 'CLOSED' },
+                    deletedAt: null,
+                },
+                select: { sourceRef: true, status: true },
+                take: 8,
+            });
+        const unregisteredIdentity = unregisteredIdentitiesOnRecord(onRecord).has(agent.discoveredId);
         // The SAME rule the harness tab decides its accept action with, so the
         // action is never shown and then refused, or hidden from the owner.
-        switch (shortfallAcceptanceRefusal(agent, ctx.userId)) {
+        switch (shortfallAcceptanceRefusal({ ...agent, unregisteredIdentity }, ctx.userId)) {
+            case 'UNREGISTERED_IDENTITY':
+                throw badRequest(
+                    'An unregistered automated identity is held to no harness bar, so it has no shortfall to accept; '
+                    + 'if it is an agent, register it',
+                );
             case 'SHADOW':
                 throw badRequest('A shadow agent has no owner to accept its risk; register it first');
             case 'NOT_OWNER':
@@ -211,7 +240,14 @@ export async function reopenExpiredHarnessAcceptances(
             id: true,
             tenantId: true,
             discoveredAgentId: true,
-            discoveredAgent: { select: { discoveredId: true, lastLevel: true, lastReach: true } },
+            discoveredAgent: {
+                select: {
+                    discoveredId: true,
+                    lastLevel: true,
+                    lastReach: true,
+                    registeredAgent: { select: { deletedAt: true } },
+                },
+            },
         },
         take: 1_000,
     });
@@ -243,6 +279,47 @@ export async function reopenExpiredHarnessAcceptances(
         take: 1_000,
     });
     const findingBy = new Map(findings.map((f) => [keyOf(f.tenantId, f.sourceRef ?? ''), f]));
+    // An agent accepted while registered may since have lost its register row
+    // and been classed an UNREGISTERED AUTOMATED IDENTITY, which is held to no
+    // bar (owner decisions, 2026-11-13): its shortfall is not reopened. The
+    // class is the finding on record, per tenant, by the planner's own reader.
+    const unlinked = expired.filter(
+        (a) => a.discoveredAgent.registeredAgent === null || a.discoveredAgent.registeredAgent.deletedAt !== null,
+    );
+    const classFindings = unlinked.length === 0
+        ? []
+        : await db.finding.findMany({
+            where: {
+                tenantId: { in: [...new Set(unlinked.map((a) => a.tenantId))] },
+                sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                sourceRef: {
+                    in: [
+                        ...new Set(
+                            unlinked.flatMap((a) => [
+                                shadowRefOf(a.discoveredAgent.discoveredId),
+                                unregisteredIdentityRefOf(a.discoveredAgent.discoveredId),
+                            ]),
+                        ),
+                    ],
+                },
+                status: { not: 'CLOSED' },
+                deletedAt: null,
+            },
+            select: { tenantId: true, sourceRef: true, status: true },
+            take: 4_000,
+        });
+    const classFindingsByTenant = new Map<string, typeof classFindings>();
+    for (const f of classFindings) {
+        const list = classFindingsByTenant.get(f.tenantId) ?? [];
+        list.push(f);
+        classFindingsByTenant.set(f.tenantId, list);
+    }
+    const identitiesByTenant = new Map(
+        [...classFindingsByTenant].map(([tenant, list]) => [tenant, unregisteredIdentitiesOnRecord(list)]),
+    );
+    const isUnregisteredIdentity = (a: (typeof expired)[number]) =>
+        (a.discoveredAgent.registeredAgent === null || a.discoveredAgent.registeredAgent.deletedAt !== null)
+        && (identitiesByTenant.get(a.tenantId)?.has(a.discoveredAgent.discoveredId) ?? false);
 
     let reopened = 0;
     for (const a of expired) {
@@ -257,7 +334,7 @@ export async function reopenExpiredHarnessAcceptances(
         const reach = a.discoveredAgent.lastReach as StoredReach;
         const outcome = {
             renewedBy: renewalBy.get(keyOf(a.tenantId, a.discoveredAgentId))?.id ?? null,
-            stillBelowBar: isHarnessShortfall(level, reach),
+            stillBelowBar: !isUnregisteredIdentity(a) && isHarnessShortfall(level, reach),
             findingId: null as string | null,
         };
 

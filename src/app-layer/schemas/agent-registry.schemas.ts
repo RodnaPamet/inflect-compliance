@@ -301,7 +301,7 @@ export type AgentToolGrantInput = z.infer<typeof AgentToolGrantSchema>;
  */
 export const RegistrationIntakeSchema = z
     .object({
-        findingId: z.string().min(1, 'The SHADOW_AGENT finding to register from is required'),
+        findingId: z.string().min(1, 'The SHADOW_AGENT or UNREGISTERED_IDENTITY finding to register from is required'),
         ownerUserId: z.string().min(1).optional(),
         confirmOwner: z.boolean().optional(),
         name: z.string().min(2, 'Name is required').max(200).trim(),
