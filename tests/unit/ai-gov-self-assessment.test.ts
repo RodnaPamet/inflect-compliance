@@ -108,6 +108,10 @@ describe('raiseFindingsFromAiGovGaps', () => {
         const r = await raiseFindingsFromAiGovGaps(ctx, { architecture: 'NONE' });
         expect(createFinding).toHaveBeenCalledTimes(1);
         expect(r.created).toEqual(['f1']);
+        // A finding the real create accepts (#5181): 'AI governance' is not a
+        // FindingType, and the enum column refused it.
+        const { ProposedFindingSchema } = jest.requireActual('@/lib/schemas');
+        expect(ProposedFindingSchema.safeParse(createFinding.mock.calls[0][1]).success).toBe(true);
     });
 
     it('does not duplicate a finding that already exists (idempotent marker)', async () => {

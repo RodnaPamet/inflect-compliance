@@ -765,11 +765,12 @@ export async function executeFlueRun(
         // rule to a new inbound edge). Built here because the guard reaches
         // `app-layer/ai/guard` and Prisma, which the interceptor's ESM graph
         // cannot load — the same reason the tools and the cap are resolved
-        // here. It throws to block, and reports through `noteVerdict`, so a
-        // flagged answer trips the same latch a flagged tool result does and
-        // settles the run `AWAITING_APPROVAL`.
+        // here. It records through the run's own latch (`offered.review`,
+        // whose observer is `noteVerdict`), so a flagged answer refuses every
+        // later tool call as a flagged tool result does (#5290) and settles
+        // the run `AWAITING_APPROVAL`.
         guardDelegateOutput: (text, taskId) =>
-            guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+            guardDelegateAnswer(ctx, text, taskId, offered.review),
         // THE KILL SWITCH AND THE CAPS, before every model call (#4196).
         beforeModelCall,
         // THE DELEGATION, IN THE LEDGER (#3473 part 3).

@@ -319,6 +319,15 @@ function makeDb() {
                 store.runs.set(id, row);
                 return select ? { id } : { ...row };
             },
+            // The resume's claim (#5119): a conditional move out of the paused
+            // states, so it matches only a row still in one of them.
+            updateMany: async ({ where, data }: any) => {
+                const row = store.runs.get(where.id);
+                const allowed: string[] | undefined = where.status?.in;
+                if (!row || (allowed && !allowed.includes(row.status))) return { count: 0 };
+                Object.assign(row, data);
+                return { count: 1 };
+            },
             update: async ({ where, data }: any) => {
                 const row = store.runs.get(where.id);
                 if (!row) throw new Error(`no such run ${where.id}`);

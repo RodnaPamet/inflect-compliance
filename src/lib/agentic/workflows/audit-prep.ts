@@ -62,7 +62,11 @@ export const auditPrepWorkflow: WorkflowDefinition = {
                 const unmapped = gaps?.unmappedRequirements ?? [];
                 return unmapped.slice(0, 20).map((r) => ({
                     severity: 'MEDIUM',
-                    type: 'Coverage Gap',
+                    // A FindingType (#5181). 'Coverage Gap' is not one, so every
+                    // proposal this step raised failed when a person approved it.
+                    // A requirement with no mapped control is a gap in the
+                    // management system — a nonconformity.
+                    type: 'NONCONFORMITY',
                     title: `Coverage gap: ${r.code}`,
                     description: r.title ? `Requirement ${r.code} (${r.title}) has no mapped control.` : `Requirement ${r.code} has no mapped control.`,
                 }));
