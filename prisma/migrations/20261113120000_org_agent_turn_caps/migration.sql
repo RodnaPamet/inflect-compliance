@@ -50,18 +50,23 @@ ALTER TABLE "TenantSecuritySettings"
     ADD CONSTRAINT "TenantSecuritySettings_agentMaxToolCallsPerTurn_range"
     CHECK ("agentMaxToolCallsPerTurn" IS NULL OR "agentMaxToolCallsPerTurn" BETWEEN 1 AND 10);
 
--- ─── The workspace's delegation narrowing: relaxed, values untouched ─
+-- ─── The workspace's delegation narrowing: relaxed, and the defaults cleared ─
 --
 -- The column moves to the shape its twin has: NULL follows the organization.
--- THIS DEPLOY ONLY RELAXES IT. A container still running the previous build has
--- a Prisma client that types the column as a required Int, and a required
--- field that reads NULL is a conversion error rather than a fallback — every
--- full-row read of `TenantSecuritySettings` on that container would throw. So
--- every stored 3 stays here, and reads as a workspace narrowing to 3, which is
--- exactly today's value. A second, data-only migration sets the stored 3s to
--- NULL once this build is live everywhere: the column has had no writer since
--- #3473, so every stored 3 is the 20261015060000 default and none is a
--- workspace's choice.
+--
+-- The stored 3s are cleared HERE, in the same migration, because this is the
+-- last moment at which every one of them is certainly the 20261015060000
+-- default: the column has had no writer since #3473, and this change adds the
+-- first one. A later data migration could no longer tell a default from a
+-- workspace that saved 3 on purpose, and would erase that choice.
+--
+-- One deploy is safe, measured rather than assumed: main's generated client
+-- (Prisma 7.10.1) reads a NULL in its required `Int` as `null` without
+-- throwing, and the only reader of the column, the previous build's
+-- `readFanOutCap`, turns that into its default of 3, today's value. A previous
+-- build that CREATES a settings row during the roll sends 3 itself (the schema
+-- default lives in the client), which reads as a workspace narrowing to 3:
+-- today's value again, and changeable on the security page.
 --
 -- The CHECK `TenantSecuritySettings_agentMaxSubagentsPerTurn_nonneg` (>= 0)
 -- already admits NULL — a CHECK is satisfied by an unknown — so it stays as
@@ -70,3 +75,7 @@ ALTER TABLE "TenantSecuritySettings"
 ALTER TABLE "TenantSecuritySettings"
     ALTER COLUMN "agentMaxSubagentsPerTurn" DROP NOT NULL,
     ALTER COLUMN "agentMaxSubagentsPerTurn" DROP DEFAULT;
+
+UPDATE "TenantSecuritySettings"
+   SET "agentMaxSubagentsPerTurn" = NULL
+ WHERE "agentMaxSubagentsPerTurn" = 3;

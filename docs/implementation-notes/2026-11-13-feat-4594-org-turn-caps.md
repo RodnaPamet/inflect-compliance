@@ -75,26 +75,21 @@ basis, and "narrowed by your organization" when the ceiling binds.
 
 ## Decisions
 
-- **First deploy only.** The migration relaxes the fan-out column (`DROP NOT
-  NULL`, `DROP DEFAULT`) and leaves every stored 3 in place; the existing
-  `>= 0` CHECK already admits NULL, so it is the design's "NULL or >= 0" as
-  written. The second, data-only migration that sets the stored 3s to NULL is
-  NOT in this change; it is merged once this build is live everywhere.
-- **Measured, not assumed: what an older client does with the relaxed column.**
+- **One deploy; the stored 3s are cleared in it.** The migration relaxes the
+  fan-out column (`DROP NOT NULL`, `DROP DEFAULT`) and sets every stored 3 to
+  NULL. The design first planned that as a second, data-only deploy. That would
+  have come too late: this change adds the column's first writer since #3473,
+  so once it is live a stored 3 may be a workspace's deliberate choice, and
+  nulling it would erase that. Clearing in the same migration is the last moment
+  every 3 is certainly the default. The existing `>= 0` CHECK already admits
+  NULL, so it is the design's "NULL or >= 0" as written.
+- **Measured, not assumed: what an older client does with the cleared column.**
   A probe with main's generated client (Prisma 7.10.1) against the migrated
-  database showed that it still WRITES 3 on create (it sends the schema's
-  default itself, so `DROP DEFAULT` does not reach it) and that a full-row read
-  of a NULL in its required `Int` returns `null` rather than throwing. The old
-  `readFanOutCap` then reads `null ?? 3`. So a NULL written by the new build
-  during the roll does not break an old container; the two-deploy split is kept
-  anyway, because the design asked for it and it costs nothing.
-- **The second deploy has a question to answer first.** This change adds the
-  column's first writer since #3473. Once it is live, a stored 3 is no longer
-  certainly the migration's default: a workspace may have saved 3 on purpose,
-  and nulling every 3 would erase that choice (it would follow a ceiling the
-  organization may later raise). The data migration should null only the 3s no
-  `AGENT_TURN_CAPS_CHANGED` row set, or the design should say the loss is
-  accepted.
+  database showed that a full-row read of a NULL in its required `Int` returns
+  `null` rather than throwing, and the old `readFanOutCap` reads `null ?? 3`.
+  It still WRITES 3 on create (it sends the schema's default itself), which
+  reads as a workspace narrowing to 3: today's value. That is why no deploy
+  split is needed.
 - **A refused call counts nothing.** The per-turn map counts admitted calls, so
   the model's "already made N" is the cap, and a refusal does not push later
   turns over. Each refusal is still one STEPS charge, as every recorded step is.

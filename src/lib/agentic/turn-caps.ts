@@ -189,7 +189,7 @@ export const TOOL_CALLS_PER_TURN_EXCEEDED = 'TOOL_CALLS_PER_TURN_EXCEEDED';
 export function toolCallsPerTurnRefusalMessage(verdict: ToolCallsPerTurnVerdict): string {
     return (
         `tool_calls_per_turn_exceeded: this turn has already made ${verdict.madeThisTurn} tool `
-        + `call${verdict.madeThisTurn === 1 ? '' : 's'}, the most your organization allows in one turn `
+        + `call${verdict.madeThisTurn === 1 ? '' : 's'}, the most allowed in one turn `
         + `(${verdict.cap}). Continue with the results you have; a later turn may call tools again.`
     );
 }

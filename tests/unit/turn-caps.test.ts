@@ -90,7 +90,7 @@ describe('resolveTurnCaps', () => {
         expect(caps.toolCallsPerTurn).toEqual({ value: 3, basis: 'ORGANIZATION_CEILING', ceiling: 3, workspace: null });
     });
 
-    it('a stored 3 between the two deploys reads as a narrowing to 3: exactly today\'s value', () => {
+    it('a stored 3 (a previous build creating a row during the roll) reads as a narrowing to 3: exactly today\'s value', () => {
         expect(resolveTurnCaps({ organization: org(3, 1), workspace: ws(3, null) }).delegationsPerTurn.value).toBe(3);
     });
 
@@ -116,8 +116,8 @@ describe('the tool-call admission', () => {
         const refused = evaluateToolCallsPerTurn({ cap: 2, madeThisTurn: 2 });
         expect(refused).toEqual({ allowed: false, cap: 2, madeThisTurn: 2 });
         expect(toolCallsPerTurnRefusalMessage(refused)).toBe(
-            'tool_calls_per_turn_exceeded: this turn has already made 2 tool calls, the most your organization '
-            + 'allows in one turn (2). Continue with the results you have; a later turn may call tools again.',
+            'tool_calls_per_turn_exceeded: this turn has already made 2 tool calls, the most allowed '
+            + 'in one turn (2). Continue with the results you have; a later turn may call tools again.',
         );
     });
 

@@ -348,7 +348,7 @@ it, and a workspace may only **narrow** it:
 
 | Cap | What it counts | Org ceiling (new) | Workspace narrowing |
 | --- | --- | --- | --- |
-| Delegations per turn | `delegate` calls in one turn of a Tool Runner parent; `task` operations in one turn of a Flue parent | `Organization.agentMaxSubagentsPerTurn`, `NOT NULL DEFAULT 3`, CHECK 0 to 10 | `TenantSecuritySettings.agentMaxSubagentsPerTurn`, the existing column, made nullable (`DROP NOT NULL`, `DROP DEFAULT`; the stored 3s set to `NULL` in a second deploy), CHECK `NULL` or `>= 0` |
+| Delegations per turn | `delegate` calls in one turn of a Tool Runner parent; `task` operations in one turn of a Flue parent | `Organization.agentMaxSubagentsPerTurn`, `NOT NULL DEFAULT 3`, CHECK 0 to 10 | `TenantSecuritySettings.agentMaxSubagentsPerTurn`, the existing column, made nullable (`DROP NOT NULL`, `DROP DEFAULT`, the stored 3s set to `NULL` in the same migration), CHECK `NULL` or `>= 0` |
 | Tool calls per turn | every `tool_use` block in one Tool Runner turn: funnel tools, `activate_skill` and `delegate` alike | `Organization.agentMaxToolCallsPerTurn`, `NOT NULL DEFAULT 1`, CHECK 1 to 10 | `TenantSecuritySettings.agentMaxToolCallsPerTurn`, new, nullable, CHECK `NULL` or 1 to 10 |
 
 **The value that applies is `min(org ceiling, workspace value)`**, per cap. A
@@ -377,23 +377,25 @@ value above the organization's current ceiling is refused, 400
 `TURN_CAP_ABOVE_ORGANIZATION_CEILING` with the ceiling in `details`, because it
 would store a choice that changes nothing. Both columns
 mean the same thing: `NULL` follows the organization. The fan-out column is
-moved to that shape by B (the column relaxed in B's migration, the stored 3s
-set to `NULL` once B is live, below). That rewrites no choice, because the column has
+moved to that shape by B (the column relaxed and the stored 3s set to `NULL`
+in B's migration, below). That rewrites no choice, because the column has
 had no writer since #3473, so every stored 3 is the migration's default and none
 is a workspace's decision. Kept `NOT NULL`, those 3s would sit under every
 ceiling, and an organization raising its delegation ceiling would reach no
 workspace until each one raised its own value, which is the opposite of an
 org-level setting.
 
-**This one change takes two deploys.** A container still running the previous
-build has a Prisma client that types the column as a required `Int`, and a
-required field that reads `NULL` is a conversion error, not a fallback: every
-full-row read of `TenantSecuritySettings` on that container would throw, not
-only the fan-out read. So B's migration only relaxes the column
-(`DROP NOT NULL`, `DROP DEFAULT`, CHECK `NULL` or `>= 0`) and its schema says
-`Int?`, while every stored 3 stays. Only once B is live everywhere does a
-second, data-only migration set the stored 3s to `NULL`. Between the two, a
-stored 3 reads as a workspace narrowing to 3, which is exactly today's value.
+**One deploy, and the 3s are cleared in it.** B's migration relaxes the
+column (`DROP NOT NULL`, `DROP DEFAULT`) and sets every stored 3 to `NULL` in the
+same migration. That is the last moment at which every 3 is certainly the
+default: B adds the column's first writer, and a later data migration could not
+tell a default from a workspace that saved 3 on purpose. It needs no second
+deploy, measured on main's generated client (Prisma 7.10.1): a `NULL` in its
+required `Int` reads as `null` without throwing, and the column's only reader,
+the previous build's `readFanOutCap`, turns that into 3, today's value. A
+previous build that creates a settings row during the roll sends 3 itself, which
+reads as a workspace narrowing to 3: today's value, changeable on the security
+page.
 
 **The resolver.** One function decides both caps, in two halves, as the fan-out
 cap is split today:
@@ -437,7 +439,7 @@ offers no per-turn bound, so B does not apply that cap to Flue.
   segment, keyed by the loop (parent, or the child's delegation) and its turn
   number, on the way in. The call past the cap is refused with a tool error
   naming the cap, so the model sees why ("this turn has already made 2 tool
-  calls, the most your organization allows in one turn; continue with the
+  calls, the most allowed in one turn; continue with the
   results you have"), and is recorded as a `FAILED` `TOOL_CALL` step,
   `refused: TOOL_CALLS_PER_TURN_EXCEEDED`, with the cap in its output. It is
   charged one `STEPS`, as every recorded step is, and the funnel is never asked.
@@ -481,11 +483,9 @@ before and after, beside `SECURITY_SETTINGS_UPDATED`, as
 deploy on the argument `20261030120000_org_agent_switches` made (only the new
 usecase writes it); the two `Organization` columns with their CHECKs; and the
 nullable `TenantSecuritySettings.agentMaxToolCallsPerTurn` with its CHECK; and
-the fan-out column relaxed (`DROP NOT NULL`, `DROP DEFAULT`), its stored values
-untouched. The new columns are ones an older Prisma client never selects, and
-the relaxed one still holds a number on every row, so the first deploy needs no
-split. The second deploy is the data-only migration that sets the fan-out
-column's stored 3s to `NULL`, merged only once B is live everywhere (see "The
+the fan-out column relaxed (`DROP NOT NULL`, `DROP DEFAULT`) and its stored 3s
+set to `NULL`. The new columns are ones an older Prisma client never selects,
+and it reads the cleared one as `null`, so no deploy split is needed (see "The
 workspace narrowing").
 
 ### 1. The model
