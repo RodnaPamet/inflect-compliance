@@ -19,6 +19,8 @@ jest.mock('@/env', () => ({ env: mockEnv }));
 import {
     sandboxedCollectorExec,
     collectorExecForDeploy,
+    COLLECTOR_PROVIDER_NAME,
+    SHARED_PROVIDER_REFUSAL,
 } from '@/app-layer/integrations/cloud-posture/sandboxed-collector-exec';
 import { runPowerpipeBenchmark } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import {
@@ -226,7 +228,10 @@ describe('the deploy switch leaves an unconfigured deploy alone (#3961)', () => 
         // every collection ERROR. The deploy has declared a capability it cannot
         // provide, and that is the safe way to find out.
         mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
-        const exec = collectorExecForDeploy();
+        // An explicit provider, so this test still exercises the GATEWAY path.
+        // Without one the refusal below (#5251) would short-circuit first and
+        // this case would pass for a reason its name does not describe.
+        const exec = collectorExecForDeploy({ providerName: 'tenant-a-aws' });
         expect(exec).not.toBeNull();
         const r = await runPowerpipeBenchmark({
             benchmarkId: BENCHMARK,
@@ -235,6 +240,67 @@ describe('the deploy switch leaves an unconfigured deploy alone (#3961)', () => 
             exec: exec!,
         });
         expect(r.status).toBe('ERROR');
+    });
+});
+
+describe('a collection that cannot name its tenant refuses (#5251)', () => {
+    beforeEach(() => {
+        for (const k of Object.keys(mockEnv)) delete mockEnv[k];
+    });
+
+    it('refuses by name rather than attaching the shared collector credential', async () => {
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        expect(exec).not.toBeNull();
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        expect({ ok: r.ok, failure: r.failure }).toEqual({
+            ok: false,
+            failure: SHARED_PROVIDER_REFUSAL,
+        });
+    });
+
+    it('reaches ERROR with the REASON an operator reads off the execution', async () => {
+        // `errorMessage` is persisted on IntegrationExecution and served to the
+        // browser (powerpipe-core.ts), so asserting the reason survives to it is
+        // the operator-visible half of the owner's decision. Asserting only
+        // `status === 'ERROR'` would not discriminate: with no gateway the
+        // pre-fix shared-provider path also errors, so that assertion passed
+        // under the mutation and detected nothing.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        const r = await runPowerpipeBenchmark({
+            benchmarkId: BENCHMARK,
+            env: { NODE_ENV: 'test' },
+            secretValues: [],
+            exec: exec!,
+        });
+        expect(r.status).toBe('ERROR');
+        expect(r.errorMessage ?? '').toContain('#5251');
+    });
+
+    it('names no credential, account or provider in what it reports', async () => {
+        // The refusal is read by an operator off an IntegrationExecution, so it
+        // must not carry the shared provider's name or anything account-shaped.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy();
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        // Both directions: the refusal IS named (so this is not vacuous under a
+        // mutation that restores the shared default) and the provider's name is
+        // NOT, because this string reaches the browser.
+        expect(r.stderr).toContain('#5251');
+        expect(r.stderr).not.toContain(COLLECTOR_PROVIDER_NAME);
+        expect(r.stdout).toBe('');
+    });
+
+    it('still runs when a per-tenant provider IS named', async () => {
+        // The positive control: the refusal must not be unconditional, or it
+        // would be indistinguishable from removing the feature.
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+        const exec = collectorExecForDeploy({ providerName: 'tenant-a-aws' });
+        const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        // No gateway in this test, so it fails — but as UNREACHABLE, having got
+        // past the refusal, which is the distinction that matters.
+        expect(r.failure).not.toBe(SHARED_PROVIDER_REFUSAL);
     });
 });
 
