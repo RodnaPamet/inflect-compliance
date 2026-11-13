@@ -14,6 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import {
     recomputeClampedRiskScores,
     findClampedScores,
@@ -24,6 +25,12 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
+    // #4371: without this every interactive `$transaction` waits at most
+    // Prisma's default 2000 ms for a connection, which throws "Unable to start
+    // a transaction in the given time" under CI shard load. The recompute
+    // opens one transaction per correction, so this suite would be among the
+    // first to feel it.
+    transactionOptions: TENANT_TX_OPTIONS,
 }) as unknown as PrismaClient;
 const db = prisma as unknown as RecomputeClient;
 
