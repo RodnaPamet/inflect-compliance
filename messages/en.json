@@ -15599,6 +15599,39 @@
           },
           "confirm": "Turn off"
         }
+      },
+      "evaluations": {
+        "title": "Evaluations",
+        "description": "Two nightly evaluations test the platform's AI features. They run as GitHub Actions against a throwaway copy of the app built for the run, never against production, and they are switched on and off in the GitHub repository, not here. This card describes them; it does not show whether they are on.",
+        "offByDefault": "Off by default",
+        "shared": {
+          "offByDefault": "Both are off by default: the nightly run happens only while its repository variable is set to true.",
+          "manualRun": "Running the workflow by hand from GitHub always runs it, whatever the variable says.",
+          "key": "Each uses its own dedicated key secret if one is set, and the shared <code>{shared}</code> secret otherwise."
+        },
+        "labels": {
+          "tests": "What it tests",
+          "schedule": "When it runs",
+          "budget": "Spending cap",
+          "switch": "Switch",
+          "key": "API key",
+          "runs": "Runs"
+        },
+        "schedule": "Every night at {time} UTC, while switched on",
+        "switch": "Repository variable <code>{name}</code> set to <code>{value}</code>",
+        "key": "<code>{dedicated}</code>, or <code>{shared}</code> if that is not set",
+        "runsLink": "Open the {workflow} runs on GitHub",
+        "variablesLink": "Open the repository's Actions variables on GitHub",
+        "garak": {
+          "name": "garak — red-team of the assistant",
+          "tests": "Attacks the assistant the way an attacker would reach it — prompt injection, jailbreaks and data leakage — through the product's own endpoint, so the guards around the model are tested together with it.",
+          "budget": "USD {amount} a night: its share of a USD {cap} nightly cap shared with the Ragas evaluation ({decision})."
+        },
+        "inspect": {
+          "name": "Inspect — governed agent runs",
+          "tests": "Runs a fixed set of tasks on the product's own agent engines, Flue and the Tool Runner, and scores each run from the record it left: what it called, what it proposed and how it settled.",
+          "budget": "USD {amount} a night for both engines together ({decision})."
+        }
       }
     },
     "forbidden": {
