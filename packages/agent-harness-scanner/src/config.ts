@@ -173,6 +173,13 @@ const CodeSourceConfigSchema = z
                 const labels = roots.map((r) => r.label);
                 if (new Set(labels).size !== labels.length) ctx.addIssue({ code: 'custom', message: 'each root label appears once' });
             }),
+        /**
+         * Agents built directly on a model provider's SDK (Anthropic, OpenAI
+         * and Azure OpenAI, Google Gemini, AWS Bedrock): a model call that is
+         * given tools. Read unless this is `false`. Off, the source parses and
+         * reports what it did before it recognised them.
+         */
+        providerSdks: z.boolean().optional(),
     })
     .strict();
 

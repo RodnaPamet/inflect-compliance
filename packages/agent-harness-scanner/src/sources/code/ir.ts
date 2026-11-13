@@ -4,8 +4,8 @@
  * The Python reader (`python.ts`) and the JavaScript/TypeScript reader
  * (`javascript.ts`) each turn one file into `FileFacts`: what it imports, what
  * each name is bound to, and every call in it. The recogniser
- * (`recognize.ts`) then reads LangChain and LangGraph agent definitions out of
- * those facts, once, for both languages.
+ * (`recognize.ts`, and `provider-sdk.ts` beside it) then reads agent
+ * definitions out of those facts, once, for both languages.
  *
  * The IR is deliberately tiny. It names what a definition is built from —
  * calls, keyword or option arguments, lists, dictionaries, string literals,
@@ -42,7 +42,12 @@ export type Expr =
     | { readonly k: 'concat'; readonly parts: readonly Expr[]; readonly line: number }
     /** A function or lambda: known to be code, never followed. */
     | { readonly k: 'func'; readonly line: number }
-    | { readonly k: 'opaque'; readonly line: number };
+    /**
+     * Anything else. `absent` marks Python's `None` and JavaScript's `null`:
+     * a value written to say there is none, which is still not a value the
+     * reader follows.
+     */
+    | { readonly k: 'opaque'; readonly line: number; readonly absent?: true };
 
 export interface CallExpr {
     readonly k: 'call';
@@ -73,16 +78,36 @@ export interface ToolDeclaration {
     readonly toolName: string;
 }
 
+/** A function the file defines by name, with the decorators written above it (Python). */
+export interface FunctionDefinition {
+    readonly line: number;
+    readonly decorators: readonly Expr[];
+}
+
 export interface FileFacts {
     readonly language: 'python' | 'javascript';
     /** Local name → what it was imported as. */
     readonly imports: ReadonlyMap<string, Qualified>;
+    /**
+     * Every module the file names in an import, whole: `google.generativeai`
+     * for `import google.generativeai`, which binds only `google`; a module
+     * imported for its types alone, or for its side effect, which binds
+     * nothing a call resolves through. It answers "does this file import that
+     * package at all", which `imports` cannot.
+     */
+    readonly modules: ReadonlySet<string>;
     /** Every binding of a name, in source order. Scope is not modelled: one file, one namespace. */
     readonly bindings: ReadonlyMap<string, readonly Binding[]>;
     /** Local name → a tool the file declares (a `@tool` function, a tool subclass). */
     readonly toolDeclarations: ReadonlyMap<string, ToolDeclaration>;
-    /** Every call in the file, outermost first, with the name it is the whole value of. */
-    readonly calls: readonly { readonly call: CallExpr; readonly boundTo: string | null }[];
+    /** Python: each `def` by name, with its decorators. Empty for JavaScript. */
+    readonly functions: ReadonlyMap<string, FunctionDefinition>;
+    /**
+     * Every call in the file, outermost first, with the name it is the whole
+     * value of, and the function it is written in (`within`: the innermost
+     * named function, `Class.method` for a method; null at the top level).
+     */
+    readonly calls: readonly { readonly call: CallExpr; readonly boundTo: string | null; readonly within: string | null }[];
 }
 
 /** The modules whose members the recogniser knows. Nothing else is resolved. */

@@ -1986,8 +1986,8 @@ through their own routes. Rules that are easy to undo:
 **The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
 client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
 LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
-LangGraph, #3737; the Claude Agent SDK, #4156) today; Entra, MCP, the register
-and the container are #3686.
+LangGraph, #3737; the Claude Agent SDK, #4156; a model provider's own SDK)
+today; Entra, MCP, the register and the container are #3686.
 
 - **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
   verb is GET — do not give `getJson` a method parameter. The OAuth token
@@ -2040,7 +2040,26 @@ and the container are #3686.
   anything that does not resolve is `UNPARSEABLE` — never dropped, and never
   guessed into a value. A file that names none of those modules is not parsed
   (`FRAMEWORK_MARKERS` in `sources/code/files.ts`): a framework recognised
-  without its marker there finds nothing, silently.
+  without its marker there finds nothing, silently. A file over 1 MiB is not
+  parsed; up to `MAX_MARKER_SCAN_BYTES` it is read only to look for a marker,
+  and is `BYTE_CAP` only when it names one. Anything else a reader or the
+  recogniser throws on a file makes that file `UNPARSEABLE` and the read goes
+  on. The places not read go to the scanner's log (`notReadOf`, at most 25,
+  through `codeLocator`) and never into the signed report. An agent built
+  directly on the Anthropic, OpenAI (and Azure OpenAI), Gemini or Bedrock SDK
+  is read by
+  `sources/code/provider-sdk.ts`, on unless the `code` source says
+  `providerSdks: false`: a call counts when the file imports the provider's
+  package (for its types alone included) AND has one of that package's method
+  shapes, and its packages' names are `PROVIDER_SDK_MARKERS`, which a test
+  holds to the module list. An agent is a model call that is GIVEN TOOLS:
+  tools the reader cannot follow make an agent and an `UNPARSEABLE` place, an
+  empty list or options read in full with no tools is a completion and records
+  nothing, and options that cannot be read at all make an agent only for a
+  tool loop (`toolRunner`, `tool_runner`, `runTools`) and an `UNPARSEABLE`
+  place either way. It reads through the recogniser's seam (`RecognizerSeam`),
+  and evaluates nothing until a call has both the import and the shape, so
+  ordinary code never becomes an unresolved place.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure
