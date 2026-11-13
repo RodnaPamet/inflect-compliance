@@ -239,7 +239,7 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Key | Rotation procedure |
 |---|---|
-| `DATA_ENCRYPTION_KEY` | 1. Set new key, 2. Run `scripts/backfill-encryption.ts` to re-encrypt, 3. Remove old key |
+| `DATA_ENCRYPTION_KEY` | 1. Set `DATA_ENCRYPTION_KEY_PREVIOUS` to the outgoing key and `DATA_ENCRYPTION_KEY` to the new one, then deploy; `decryptField` falls back to the previous key, so every existing value still reads. 2. For each tenant, `POST /api/t/{slug}/admin/key-rotation`, which enqueues the `key-rotation` job: it re-wraps the tenant's DEK under the new key and re-encrypts any remaining `v1:` values. 3. Remove `DATA_ENCRYPTION_KEY_PREVIOUS` only once every tenant reports zero `v1:` values under the old key. `scripts/backfill-encryption.ts` is not a rotation tool (#5244): it only fills empty `*Encrypted` columns and skips any value already encrypted, so it re-encrypts nothing. |
 | `AUTH_SECRET` / `JWT_SECRET` | Set new value — existing sessions are invalidated |
 | `POSTGRES_PASSWORD` | Update in both Docker env and `.env.production` |
 
@@ -398,8 +398,8 @@ All 12 critical entity models are intercepted by `SOFT_DELETE_MODELS` in the sof
 
 ### Key rotation caveats
 
-1. **DATA_ENCRYPTION_KEY rotation** requires running `scripts/backfill-encryption.ts` after setting the new key — all existing encrypted values must be re-encrypted under the new key
-2. During rotation, there is a brief window where new writes use the new key but old reads may fail if the backfill hasn't completed — the middleware's `decryptField` catch block falls back to the plaintext column during this window
+1. **DATA_ENCRYPTION_KEY rotation** goes through the dual-key path in the table above: the outgoing key stays set as `DATA_ENCRYPTION_KEY_PREVIOUS` while the `key-rotation` job re-wraps each tenant's DEK and re-encrypts the remaining `v1:` values. `scripts/backfill-encryption.ts` cannot do this (#5244) and must not be used for it.
+2. During rotation, new writes use the new key and existing values still read: `decryptField` tries the primary key and falls back to `DATA_ENCRYPTION_KEY_PREVIOUS`. Removing that variable before every tenant has been swept is what makes values unreadable, not the rotation itself. `v2:` values are wrapped under the tenant DEK and are untouched by a master-key rotation.
 3. **AUTH_SECRET** and **JWT_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate
 
 ### Future work (non-blocking)

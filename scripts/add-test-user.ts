@@ -3,10 +3,11 @@
  * Usage: npx tsx scripts/add-test-user.ts
  */
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '@/lib/auth/passwords';
 import { hashForLookup } from '@/lib/security/encryption';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
 async function main() {
     const tenant = await prisma.tenant.findFirst();

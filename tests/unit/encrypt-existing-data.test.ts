@@ -814,3 +814,64 @@ describe('parseArgs — PII flags', () => {
         ).toThrow(/Unknown model in --models filter/);
     });
 });
+
+/**
+ * The loops end, whatever happens to the rows they read (#5243).
+ *
+ * The fake behaves like the table: it applies the SELECT's own filter, its
+ * `id > $2` and its `LIMIT $1`, so a loop that re-reads the head of the table
+ * gets the same rows back. It throws after a bounded number of SELECTs rather
+ * than hanging the suite.
+ */
+describe('the backfill loops terminate (#5243)', () => {
+    function tableDeps(rows: Array<{ id: string; value: string }>, matches: (sql: string, v: string) => boolean) {
+        const queryCalls: unknown[][] = [];
+        const prisma = {
+            async $queryRawUnsafe<T>(sql: string, ...params: unknown[]): Promise<T> {
+                queryCalls.push(params);
+                if (queryCalls.length > 20) throw new Error('the loop never ended: it kept re-reading the table');
+                const [limit, after] = params as [number, string | undefined];
+                const page = rows
+                    .filter((r) => matches(sql, r.value) && (after === undefined || r.id > after))
+                    .sort((a, b) => (a.id < b.id ? -1 : 1))
+                    .slice(0, limit);
+                return page as unknown as T;
+            },
+            async $executeRawUnsafe(): Promise<number> {
+                return 1;
+            },
+        };
+        return { deps: { prisma, log: () => undefined } as Parameters<typeof encryptFieldForModel>[0], queryCalls };
+    }
+    const fieldFilter = (sql: string, v: string) =>
+        v !== '' && !v.startsWith('v1:') && !(sql.includes("NOT LIKE 'v2:%'") && v.startsWith('v2:'));
+
+    it('a dry run reads every plaintext row once and stops', async () => {
+        const rows = Array.from({ length: 25 }, (_, i) => ({ id: `r${String(i).padStart(3, '0')}`, value: `plain-${i}` }));
+        const { deps, queryCalls } = tableDeps(rows, fieldFilter);
+        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', { ...DEFAULTS, execute: false, batchSize: 10 });
+        expect(r).toMatchObject({ scanned: 25, encrypted: 25, errors: 0 });
+        expect(queryCalls).toHaveLength(3); // 10 + 10 + a short page of 5 ends it
+    });
+
+    it('never selects a v2: ciphertext', async () => {
+        const rows = [
+            { id: 'a', value: encryptField('already') .replace(/^v1:/, 'v2:') },
+            { id: 'b', value: 'plain' },
+        ];
+        const { deps } = tableDeps(rows, fieldFilter);
+        const r = await encryptFieldForModel(deps, 'Risk', 'treatmentNotes', { ...DEFAULTS, execute: false });
+        expect(r).toMatchObject({ scanned: 1, encrypted: 1, skippedAlreadyEncrypted: 0 });
+    });
+
+    it('the parallel-column backfill stops on a dry run too', async () => {
+        const rows = Array.from({ length: 12 }, (_, i) => ({ id: `u${String(i).padStart(3, '0')}`, value: `p${i}@example.com` }));
+        const { deps } = tableDeps(rows, (_sql, v) => v !== '');
+        const r = await backfillParallelColumn(
+            deps,
+            { model: 'User', plaintextColumn: 'email', encryptedColumn: 'emailEncrypted', hashColumn: 'emailHash' },
+            { ...DEFAULTS, execute: false, batchSize: 5 },
+        );
+        expect(r).toMatchObject({ scanned: 12, backfilled: 12, errors: 0 });
+    });
+});

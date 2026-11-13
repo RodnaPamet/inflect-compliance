@@ -38,7 +38,7 @@
  *
  * ## Idempotency
  * Mode 1: the SELECT filters out values that already start with the
- * `v1:` prefix, so a resumed run after a partial crash picks up
+ * `v1:` or `v2:` prefix, so a resumed run after a partial crash picks up
  * exactly where the last batch ended. A belt-and-braces per-row
  * `isEncryptedValue()` check inside the loop catches anything that
  * slipped through the SELECT (e.g. a writer landed a ciphertext
@@ -97,6 +97,7 @@ const {
 
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -268,29 +269,35 @@ export async function encryptFieldForModel(
     // SELECT excludes:
     //   - NULL values (nothing to encrypt)
     //   - empty strings (middleware passes them through as well)
-    //   - values that start with the 'v1:' encryption version prefix
+    //   - values that start with either encryption version prefix,
+    //     'v1:' (global KEK) or 'v2:' (per-tenant DEK)
     //
-    // Ordering by id keeps batches stable across a crash-resume.
+    // KEYSET-PAGINATED on id (#5243). The loop used to re-read the head of
+    // the table and rely on its own UPDATE to move the rows out of the
+    // filter. In a dry run (the default) nothing is written, and a row that
+    // fails to encrypt or verify is never written either, so the same batch
+    // came back for ever. A `v2:` value also matched the old filter and was
+    // re-selected for ever. `id > $2` moves past every row seen, whatever
+    // happened to it.
     const selectSql = `
         SELECT id, "${field}" AS value
         FROM "${model}"
         WHERE "${field}" IS NOT NULL
           AND "${field}" <> ''
           AND "${field}" NOT LIKE 'v1:%'
+          AND "${field}" NOT LIKE 'v2:%'
+          AND id > $2
         ORDER BY id
         LIMIT $1
     `;
 
-    // Loop until we exhaust plaintext rows. Because the UPDATE
-    // rewrites each returned row to ciphertext, the next SELECT
-    // naturally returns the NEXT batch of plaintext rows (the ones
-    // we just wrote are filtered out by `NOT LIKE 'v1:%'`).
+    let lastId = '';
     while (true) {
         let rows: Array<{ id: string; value: string }>;
         try {
             rows = await deps.prisma.$queryRawUnsafe<
                 Array<{ id: string; value: string }>
-            >(selectSql, batchSize);
+            >(selectSql, batchSize, lastId);
         } catch (err) {
             deps.log('error', 'backfill.select_failed', {
                 model,
@@ -303,6 +310,7 @@ export async function encryptFieldForModel(
 
         if (rows.length === 0) break;
         result.scanned += rows.length;
+        lastId = rows[rows.length - 1].id;
 
         for (const row of rows) {
             // Belt-and-braces — the SELECT already filtered `v1:%` out
@@ -451,23 +459,26 @@ export async function backfillParallelColumn(
     //   - rows where the plaintext is an empty string (treated like NULL)
     //   - rows where the encrypted column is already populated
     //
-    // Ordering by id keeps batches stable across a crash-resume.
+    // Keyset-paginated on id, for the reason the field backfill above gives
+    // (#5243): a dry run writes nothing, so the head of the table never moved.
     const selectSql = `
         SELECT id, "${target.plaintextColumn}" AS value
         FROM "${target.model}"
         WHERE "${target.plaintextColumn}" IS NOT NULL
           AND "${target.plaintextColumn}" <> ''
           AND "${target.encryptedColumn}" IS NULL
+          AND id > $2
         ORDER BY id
         LIMIT $1
     `;
 
+    let lastId = '';
     while (true) {
         let rows: Array<{ id: string; value: string }>;
         try {
             rows = await deps.prisma.$queryRawUnsafe<
                 Array<{ id: string; value: string }>
-            >(selectSql, batchSize);
+            >(selectSql, batchSize, lastId);
         } catch (err) {
             deps.log('error', 'pii_backfill.select_failed', {
                 model: target.model,
@@ -481,6 +492,7 @@ export async function backfillParallelColumn(
 
         if (rows.length === 0) break;
         result.scanned += rows.length;
+        lastId = rows[rows.length - 1].id;
 
         for (const row of rows) {
             // Belt-and-braces — should never trip given the SELECT,
@@ -801,7 +813,7 @@ export function printReport(report: BackfillReport): void {
 
 async function main(): Promise<void> {
     const options = parseArgs(process.argv);
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
     try {
         const log: BackfillDeps['log'] = (level, msg, fields) => {
             const payload = { component: 'backfill-epic-b', ...fields };

@@ -4,12 +4,20 @@
  * Populates *Encrypted and *Hash columns from existing plaintext fields.
  * Safe to re-run (idempotent — skips already-encrypted rows).
  *
+ * NOT A KEY-ROTATION TOOL (#5244). It skips every value that is already
+ * encrypted, so after a DATA_ENCRYPTION_KEY change it re-encrypts nothing.
+ * Rotate through DATA_ENCRYPTION_KEY_PREVIOUS and the `key-rotation` job
+ * (docs/encryption-data-protection.md, "Key rotation"). For a first-time
+ * backfill prefer scripts/encrypt-existing-data.ts, which covers these
+ * columns in its PII mode, dry-runs by default and verifies a round trip.
+ *
  * Usage: node scripts/backfill-encryption.ts
  */
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 const { encryptField, hashForLookup, isEncryptedValue } = require('../src/lib/security/encryption');
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
 
 const BATCH_SIZE = 100;
 

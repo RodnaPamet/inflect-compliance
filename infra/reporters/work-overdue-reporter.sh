@@ -195,15 +195,19 @@ fi
 if [ "$ABANDONED_TOTAL" -gt 0 ]; then
     echo "ABANDONED work in the last 24h: notification_abandoned=$NOTIFICATION_ABANDONED audit_abandoned=$AUDIT_ABANDONED" >&2
     if [ "$NOTIFICATION_ABANDONED" -gt 0 ]; then
+        # Grouped in a subquery (#5235): grouping by the concatenation put
+        # count(*) inside GROUP BY, which Postgres refuses.
         # The error, not the recipient. `dedupeKey` embeds the address (#3577)
         # and `toEmail` is the address, so neither is printed here — a page is
         # read by whoever is on call, not only by someone entitled to the
         # recipient list.
         read_count "
-SELECT type::text || ' n=' || count(*) || ' err=' || left(coalesce(\"lastError\",'(null)'), 60)
-  FROM \"NotificationOutbox\"
- WHERE status = 'FAILED' AND \"createdAt\" > now() - interval '24 hours'
- GROUP BY 1 ORDER BY 2 DESC LIMIT 20;
+SELECT type::text || ' n=' || n || ' err=' || err
+  FROM (SELECT type, left(coalesce(\"lastError\",'(null)'), 60) AS err, count(*) AS n
+          FROM \"NotificationOutbox\"
+         WHERE status = 'FAILED' AND \"createdAt\" > now() - interval '24 hours'
+         GROUP BY 1, 2) failed
+ ORDER BY n DESC LIMIT 20;
 " >&2
     fi
 fi
