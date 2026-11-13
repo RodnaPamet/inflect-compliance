@@ -85,7 +85,13 @@ export async function loadResidualSuggestion(
             residualLikelihood: true,
             residualImpact: true,
             residualScore: true,
+            // A control in the trash contributes nothing (#5442, owner
+            // decision 2026-11-12): soft-deleting it keeps its `RiskControl`
+            // row and the soft-delete extension does not reach a nested
+            // select, so the suggestion — and the residual `acceptResidual…`
+            // and `completePlan` persist from it — counted it as if live.
             controls: {
+                where: { control: { deletedAt: null } },
                 select: {
                     control: {
                         select: {

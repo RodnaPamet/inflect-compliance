@@ -593,11 +593,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     {
         path: new RegExp(`^${T}\\/admin\\/mcp\\/quarantine$`),
         methods: ['GET'],
-        permission: 'admin.agent_registry_view',
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
         note:
             'The QUARANTINE TRIAGE read — the proposals the agentic output ' +
             'guard refused, with the payload that was attempted. The route ' +
-            'takes the inventory VIEW key and the usecase applies the full ' +
+            'takes either inventory key (#5217) and the usecase applies the full ' +
             'rule: the register key, or the view key only while an owner has ' +
             'let Auditors read the quarantine (owner decision 2026-11-01, ' +
             '#4898; `agent-oversight-settings.ts`). Off by default, which is ' +

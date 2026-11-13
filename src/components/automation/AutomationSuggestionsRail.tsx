@@ -13,7 +13,8 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { useTenantApiUrl, useCurrentUserId } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useCurrentUserId, useTenantContext } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
 import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
@@ -61,9 +62,16 @@ export function AutomationSuggestionsRail() {
     const [dismissed, setDismissed] = useState<Set<string>>(new Set());
     const [applied, setApplied] = useState<Set<string>>(new Set());
     const [busy, setBusy] = useState<string | null>(null);
+    const [failed, setFailed] = useState<{ id: string; message: string } | null>(null);
+    // Creating a rule is the server's `assertCanManageAutomation` — the coarse
+    // admin tier (#5172). The rail offered "Create draft" to every member and
+    // ignored the refusal, so a reader's click silently did nothing.
+    const { permissions } = useTenantContext();
+    const canCreateRule = permissions.canAdmin;
 
     async function createRule(s: RuleSuggestion) {
         setBusy(s.id);
+        setFailed(null);
         try {
             const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.list()), {
                 method: 'POST',
@@ -76,7 +84,14 @@ export function AutomationSuggestionsRail() {
                     status: 'DRAFT',
                 }),
             });
-            if (res.ok) setApplied((prev) => new Set(prev).add(s.id));
+            if (res.ok) {
+                setApplied((prev) => new Set(prev).add(s.id));
+            } else {
+                const body = await res.json().catch(() => null);
+                setFailed({ id: s.id, message: apiErrorMessage(body, t('createFailed')) });
+            }
+        } catch {
+            setFailed({ id: s.id, message: t('createFailed') });
         } finally {
             setBusy(null);
         }
@@ -131,14 +146,16 @@ export function AutomationSuggestionsRail() {
                                 <span className="text-[11px] text-content-success">{t('draftCreated')}</span>
                             ) : (
                                 <>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        disabled={busy === s.id}
-                                        onClick={() => createRule(s)}
-                                    >
-                                        {t('createDraft')}
-                                    </Button>
+                                    {canCreateRule && (
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            disabled={busy === s.id}
+                                            onClick={() => createRule(s)}
+                                        >
+                                            {t('createDraft')}
+                                        </Button>
+                                    )}
                                     <button
                                         type="button"
                                         className="text-[11px] text-content-subtle hover:text-content-muted"
@@ -151,6 +168,11 @@ export function AutomationSuggestionsRail() {
                                 </>
                             )}
                         </div>
+                        {failed?.id === s.id && (
+                            <p role="alert" className="text-[11px] text-content-error">
+                                {failed.message}
+                            </p>
+                        )}
                     </li>
                 ))}
             </ul>

@@ -12,7 +12,7 @@
 
 const mockTx = {
     vendorAssessmentTemplate: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
-    vendorAssessmentTemplateSection: { updateMany: jest.fn() },
+    vendorAssessmentTemplateSection: { updateMany: jest.fn(), count: jest.fn() },
     vendorAssessmentTemplateQuestion: { updateMany: jest.fn() },
 };
 
@@ -64,6 +64,10 @@ beforeEach(() => {
         (fn as jest.Mock).mockReset(),
     );
     mockTx.vendorAssessmentTemplateSection.updateMany.mockReset();
+    // By default every named target section belongs to the template.
+    mockTx.vendorAssessmentTemplateSection.count.mockReset().mockImplementation(
+        async (args: { where: { id: { in: string[] } } }) => args.where.id.in.length,
+    );
     mockTx.vendorAssessmentTemplateQuestion.updateMany.mockReset();
 });
 
@@ -157,6 +161,22 @@ describe('reorderTemplate — happy path', () => {
             sectionId: 's-B',
             sortOrder: 0,
         });
+    });
+});
+
+describe('reorderTemplate — a question stays inside its template (#5155)', () => {
+    test('refuses a move into a section the template does not own, writing nothing', async () => {
+        mockTx.vendorAssessmentTemplate.findFirst.mockResolvedValue({ id: 't-1', isPublished: false, name: 'X' });
+        mockTx.vendorAssessmentTemplateSection.count.mockResolvedValue(0);
+        await expect(
+            reorderTemplate(makeCtx(), 't-1', {
+                sections: [{ id: 's-A', sortOrder: 0, questions: [{ id: 'q-1', sectionId: 'other-templates-section', sortOrder: 0 }] }],
+            }),
+        ).rejects.toThrow(/same template/);
+        const countArgs = mockTx.vendorAssessmentTemplateSection.count.mock.calls[0][0];
+        expect(countArgs.where).toEqual({ id: { in: ['other-templates-section'] }, tenantId: 'tenant-1', templateId: 't-1' });
+        expect(mockTx.vendorAssessmentTemplateSection.updateMany).not.toHaveBeenCalled();
+        expect(mockTx.vendorAssessmentTemplateQuestion.updateMany).not.toHaveBeenCalled();
     });
 });
 

@@ -25,6 +25,7 @@
 process.env.SKIP_ENV_VALIDATION = '1';
 
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { appendAuditEntry } from '../src/lib/audit/audit-writer';
 
 interface TenantRow {
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
         console.log('  No writes performed. Rerun with --execute to persist.\n');
     }
 
-    const prisma = new PrismaClient();
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }) });
     let promoted = 0;
     let skipped = 0;
     let errors = 0;

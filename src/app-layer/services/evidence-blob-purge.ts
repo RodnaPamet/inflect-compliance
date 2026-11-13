@@ -116,6 +116,32 @@ export async function purgeEvidenceBlobs(
     );
     const hasSibling = new Set(survivors.map((s) => s.fileRecordId));
 
+    // NOT ONLY EVIDENCE HOLDS A FILE (#5115). A Trust Center document serves
+    // one by plain id (no FK, so nothing else would stop the delete), an
+    // access review's evidence pack points at one, and a newer version of a
+    // file names its predecessor. Each is a survivor: purging the bytes would
+    // leave a public document, an auditor's evidence or a version chain
+    // pointing at nothing.
+    if (fileIds.length > 0) {
+        const [trustDocs, reviews, newerVersions] = await Promise.all([
+            db.trustCenterDocument.findMany({
+                where: { fileRecordId: { in: fileIds } },
+                select: { fileRecordId: true },
+            }),
+            db.accessReview.findMany({
+                where: { evidenceFileRecordId: { in: fileIds } },
+                select: { evidenceFileRecordId: true },
+            }),
+            db.fileRecord.findMany({
+                where: { previousFileRecordId: { in: fileIds } },
+                select: { previousFileRecordId: true },
+            }),
+        ]);
+        for (const d of trustDocs) hasSibling.add(d.fileRecordId);
+        for (const r of reviews) if (r.evidenceFileRecordId) hasSibling.add(r.evidenceFileRecordId);
+        for (const v of newerVersions) if (v.previousFileRecordId) hasSibling.add(v.previousFileRecordId);
+    }
+
     const files = await db.fileRecord.findMany({
         where: { id: { in: fileIds } },
         select: { id: true, pathKey: true, storageProvider: true },

@@ -854,6 +854,9 @@ const STATUSES_AT_PRIORITY: Record<number, NonPerformingControlRow['status'][]> 
     1: ['IMPLEMENTING'],
 };
 
+/** The buckets, highest priority first. Every non-performing status is in exactly one. */
+const CONTROL_PRIORITY_BUCKETS = [5, 4, 3, 2, 1] as const;
+
 function statusesAtOrBelow(priority: number): NonPerformingControlRow['status'][] {
     const out: NonPerformingControlRow['status'][] = [];
     for (let p = priority; p >= 1; p--) {
@@ -910,24 +913,39 @@ export async function listNonPerformingControls(
     const merged = await fanOutPerTenant<NonPerformingControlRow>(
         tenants,
         async (db, tenant) => {
-            const rows = await db.control.findMany({
-                where: {
-                    tenantId: tenant.id,
-                    status: { notIn: ['IMPLEMENTED', 'NOT_APPLICABLE'] },
-                    applicability: 'APPLICABLE',
-                    deletedAt: null,
-                    ...(cursorWhere ?? {}),
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    code: true,
-                    status: true,
-                    updatedAt: true,
-                },
-                orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-                take: perTenantTake(limit),
-            });
+            // ONE READ PER PRIORITY BUCKET, each taking the per-tenant quota
+            // (#5209). The merge orders by priority first, but this read used
+            // to order by `updatedAt` alone: a tenant with many recently
+            // touched low-priority controls filled its quota with them, and
+            // its older NEEDS_REVIEW controls never reached the merge — on any
+            // page. Postgres cannot order by the priority map, so each bucket
+            // is read on its own; the tenant's true top-N under the merge's
+            // order is always inside the union of each bucket's top-N.
+            const take = perTenantTake(limit);
+            const buckets = await Promise.all(
+                // Over the five fixed priority buckets (STATUSES_AT_PRIORITY), a
+                // compile-time constant — one read per bucket, not per row.
+                CONTROL_PRIORITY_BUCKETS.map((p) => // guardrail-allow: n+1
+                    db.control.findMany({
+                        where: {
+                            tenantId: tenant.id,
+                            applicability: 'APPLICABLE',
+                            deletedAt: null,
+                            AND: [{ status: { in: STATUSES_AT_PRIORITY[p] } }, ...(cursorWhere ? [cursorWhere] : [])],
+                        },
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true,
+                            status: true,
+                            updatedAt: true,
+                        },
+                        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+                        take,
+                    }),
+                ),
+            );
+            const rows = buckets.flat();
             return rows.map((c): NonPerformingControlRow => ({
                 controlId: c.id,
                 tenantId: tenant.id,

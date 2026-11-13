@@ -51,6 +51,7 @@ import { useTranslations } from 'next-intl';
 import type { Editor } from 'tldraw';
 
 import type { ProcessMapSummary } from '@/lib/processes/process-map-summary';
+import { withoutHydratedDisplay } from '@/lib/processes/canvas-rule-wiring';
 import { useToast } from '@/components/ui/hooks';
 import { CanvasCommandPalette } from '@/components/processes/CanvasCommandPalette';
 import { CanvasDiffOverlay } from '@/components/processes/CanvasDiffOverlay';
@@ -117,7 +118,10 @@ function toDiffSnapshot(rows: GraphRows): DiffGraphSnapshot {
             posX: n.posX,
             posY: n.posY,
             parentNodeKey: n.parentNodeKey ?? null,
-            dataJson: n.dataJson ?? null,
+            // Without the rule facts the load merged in (#5285): a stored
+            // version never carries them, so every linked step read as
+            // modified even when nothing had changed.
+            dataJson: withoutHydratedDisplay(n.dataJson ?? null),
         })),
         edges: rows.edges.map((e) => ({
             edgeKey: e.edgeKey,
@@ -170,6 +174,13 @@ export interface TldrawProcessWorkspaceProps {
     canEdit: boolean;
     /** May the viewer delete a map? The server takes the Admin tier. */
     canDelete: boolean;
+    /**
+     * May the viewer change automation rules (`admin.manage` and the Admin
+     * tier)? The step inspector offers rule writes only then (#5283): map edits
+     * are `processes.edit`, which an Editor holds and rule writes do not take.
+     * Optional, defaulting to FALSE, the safe direction for a permission.
+     */
+    canManageRules?: boolean;
     /** A step to select once the map loads: the Rules tab's "Open on canvas". */
     focusStepKey?: string | null;
 }
@@ -246,6 +257,7 @@ function Inner({
     onActiveIdChange,
     onProcessesChange,
     canEdit,
+    canManageRules = false,
     canDelete,
     focusStepKey = null,
 }: TldrawProcessWorkspaceProps) {
@@ -612,6 +624,7 @@ function Inner({
                         rendererHonoursSize={false}
                         onUpdate={selection.onUpdate}
                         onEdgeUpdate={selection.onEdgeUpdate}
+                        canManageRules={canManageRules}
                         {...(activeId ? { mapId: activeId } : {})}
                     />
                 </fieldset>

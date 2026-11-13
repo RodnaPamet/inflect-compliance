@@ -174,6 +174,41 @@ describe('the install wizard', () => {
     });
 });
 
+// #5277 — the install is the only writer of a workspace's pack choice, so a
+// pack whose controls and mappings all exist (taken out of scope, or shared
+// with a pack already chosen) must still be installable to put it back.
+describe('a chosen pack not yet in scope can be added', () => {
+    async function previewChosen() {
+        permissions.frameworks.install = true;
+        render(<InstallWizardPage />);
+        const boxes = await screen.findAllByRole('checkbox');
+        fireEvent.click(boxes[1]);
+        const preview = document.getElementById('preview-chosen-packs-btn') as HTMLButtonElement;
+        await waitFor(() => expect(preview.disabled).toBe(false));
+        await act(async () => { fireEvent.click(preview); });
+        return waitFor(() => {
+            const b = document.getElementById('confirm-install-btn') as HTMLButtonElement | null;
+            if (!b) throw new Error('no install button yet');
+            return b;
+        });
+    }
+    const NOTHING_NEW = { ...PREVIEW, newControls: 0, existingControls: 2, missingMappings: 0, templates: PREVIEW.templates.map((t) => ({ ...t, alreadyInstalled: true })) };
+
+    it('offers to add the pack to scope when nothing else is new', async () => {
+        previewResponse = { ...NOTHING_NEW, packsToAdd: ['iso-extra'] };
+        const install = await previewChosen();
+        expect(install.disabled).toBe(false);
+        expect(install.textContent).toBe(en.frameworks.install.addToScopeN);
+    });
+
+    it('still says all installed when every chosen pack is already in scope', async () => {
+        previewResponse = { ...NOTHING_NEW, packsToAdd: [] };
+        const install = await previewChosen();
+        expect(install.disabled).toBe(true);
+        expect(install.textContent).toBe(en.frameworks.install.allInstalled);
+    });
+});
+
 // #4731
 describe('the install wizard says what happened', () => {
     const I = en.frameworks.install;

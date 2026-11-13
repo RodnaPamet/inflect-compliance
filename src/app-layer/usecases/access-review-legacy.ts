@@ -280,15 +280,32 @@ export async function createLegacyAccessReview(
         // progress, and comparing against it would call a reviewer's unfinished
         // work a personnel move. `AccessReviewStatus` is OPEN | IN_REVIEW |
         // CLOSED; there is no COMPLETED, which the first draft of this assumed.
+        //
+        // OF THIS APPLICATION (#5254). A subject is `connectionId:accountKey`,
+        // and the last closed LEGACY_APP campaign of the tenant may be about a
+        // different application, whose account keys can collide with this
+        // one's (`jsmith` in both). Comparing against it reported moves that
+        // never happened and missed ones that did. The campaign must hold a
+        // subject of this connection, and only those subjects are read.
+        const subjectPrefix = `${parsed.connectionId}:`;
         const priorReview = await db.accessReview.findFirst({
-            where: { tenantId: ctx.tenantId, scope: 'LEGACY_APP', status: 'CLOSED' },
+            where: {
+                tenantId: ctx.tenantId,
+                scope: 'LEGACY_APP',
+                status: 'CLOSED',
+                connectedDecisions: { some: { subjectRef: { startsWith: subjectPrefix } } },
+            },
             orderBy: { createdAt: 'desc' },
             select: { id: true },
         });
         const priorCertification = new Map<string, { department: string | null; managerRef: string | null }>();
         if (priorReview) {
             const priorDecisions = await db.accessReviewConnectedDecision.findMany({
-                where: { tenantId: ctx.tenantId, accessReviewId: priorReview.id },
+                where: {
+                    tenantId: ctx.tenantId,
+                    accessReviewId: priorReview.id,
+                    subjectRef: { startsWith: subjectPrefix },
+                },
                 select: { subjectRef: true, snapshotJson: true },
             });
             for (const d of priorDecisions) {

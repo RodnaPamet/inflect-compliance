@@ -110,6 +110,7 @@ interface DetailProps {
         canManageRegistry: boolean;
         canCloseBreaker: boolean;
         canReadKillHistory?: boolean;
+        canKill?: boolean;
     };
 }
 
@@ -216,6 +217,27 @@ describe('per built-in role', () => {
         const props = await registerProps();
         expect(props.canWrite).toBe(false);
         expect(props.canSetCapacity).toBe(false);
+    });
+});
+
+describe('the kill switch is offered as its routes take it (#5153)', () => {
+    it('the kill-switch key on an Editor membership: not offered, because the edge refuses the route', async () => {
+        const ctx = makeRequestContext('EDITOR');
+        signedInAs('EDITOR', {
+            ...ctx,
+            appPermissions: {
+                ...ctx.appPermissions,
+                admin: { ...ctx.appPermissions.admin, agent_kill_switch: true, agent_registry_view: true },
+            },
+        });
+        const perms = await detailPerms();
+        expect(perms.canKill).toBe(false);
+        expect(perms.canReadKillHistory).toBe(false);
+    });
+
+    it('AI admin: offered, since the edge admits it to the agent paths', async () => {
+        signedInAs('AI_ADMIN', makeRequestContext('AI_ADMIN'));
+        expect((await detailPerms()).canKill).toBe(true);
     });
 });
 

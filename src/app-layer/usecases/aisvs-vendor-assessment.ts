@@ -118,7 +118,10 @@ export async function raiseFindingFromAisvsCoverage(
 
     const finding = await createFinding(ctx, {
         severity: coverage.l1.percent < 40 ? 'HIGH' : 'MEDIUM',
-        type: 'AI vendor security',
+        // A FindingType (#5181): 'AI vendor security' is not one, so raising
+        // this finding failed at the enum column. A vendor's self-attested
+        // gap is an observation, to review before procurement.
+        type: 'OBSERVATION',
         title: `AISVS AI-vendor gap: ${vendorName} (${coverage.l1.percent}% L1)`,
         description:
             `${vendorName} attests to only ${coverage.l1.percent}% of assessed AISVS L1 ` +

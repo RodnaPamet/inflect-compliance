@@ -7063,8 +7063,8 @@
           }
         },
         "orangehrm": {
-          "description": "An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant against an instance on a host covered by ORANGEHRM_HOSTS.",
-          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, and provide the instance URL with the client id and secret. Test connection performs a real token exchange against the instance.",
+          "description": "An OrangeHRM directory, read for the HRIS roster. Connects as an OAuth2 authorization-code client against an instance on a host covered by ORANGEHRM_HOSTS.",
+          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS and register an OAuth client there for the authorization-code grant, with this deployment's /api/integrations/orangehrm/callback as its redirect URI. Provide the instance URL with the client id and secret and save, then use Authorize to grant access in OrangeHRM: the client id and secret alone cannot obtain a token. Test connection performs a real token exchange with the stored refresh token.",
           "fields": {
             "baseUrl": {
               "label": "OrangeHRM instance URL"
@@ -10005,6 +10005,7 @@
       "allInstalled": "All controls already installed",
       "installN": "Install {count} Controls",
       "restoreN": "Restore {count, plural, one {# mapping} other {# mappings}}",
+      "addToScopeN": "Add {count, plural, one {# pack} other {# packs}} to scope",
       "mappingsToRestore": "{count, plural, one {# requirement mapping is} other {# requirement mappings are}} missing from controls you already have. Installing again restores them.",
       "installFailed": "Install failed",
       "networkError": "Network error",
@@ -13387,6 +13388,7 @@
       "emptyCatalogueTitle": "No tools were available to this agent, so nothing was consulted",
       "inputLabel": "Your question",
       "model": "Model",
+      "networkError": "The request could not reach the server. Check your connection and ask again.",
       "noAnswerDescription": "The run finished without producing an answer. The calls it made are listed below.",
       "noAnswerTitle": "No answer was produced",
       "noCalls": "Nothing was consulted, so an answer here is not based on this workspace's records",
@@ -13769,8 +13771,10 @@
     "colCriticality": "Criticality",
     "emptyAssets": "All critical assets are covered by controls",
     "emptyAssetsNone": "There are no high or critical assets yet",
+    "emptyAssetsWithheld": "Your role cannot view assets, so they are not listed here.",
     "emptyRisks": "All risks are mitigated by controls",
     "emptyRisksNone": "There are no risks in the register yet",
+    "emptyRisksWithheld": "Your role cannot view risks, so they are not listed here.",
     "uncoveredAssets": "Uncovered Critical Assets",
     "unmappedRisks": "Unmapped Risks",
     "topControls": "Top Controls by Risk Coverage",
@@ -15425,6 +15429,7 @@
       "statusDraft": "Draft",
       "statusSubmitted": "Submitted",
       "statusRejected": "Rejected",
+      "statusNeedsReview": "Needs review",
       "emptyTitle": "No overdue evidence",
       "emptyDesc": "No evidence item awaiting approval in any of this organization's workspaces is past its review date.",
       "loadMore": "Load more evidence",
@@ -15597,6 +15602,39 @@
             "body": "The Tool Runner engine stops being available in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}). A workspace that chose it runs its agents on the built-in engine instead, and runs that use an agent profile are refused."
           },
           "confirm": "Turn off"
+        }
+      },
+      "evaluations": {
+        "title": "Evaluations",
+        "description": "Two nightly evaluations test the platform's AI features. They run as GitHub Actions against a throwaway copy of the app built for the run, never against production, and they are switched on and off in the GitHub repository, not here. This card describes them; it does not show whether they are on.",
+        "offByDefault": "Off by default",
+        "shared": {
+          "offByDefault": "Both are off by default: the nightly run happens only while its repository variable is set to true.",
+          "manualRun": "Running the workflow by hand from GitHub always runs it, whatever the variable says.",
+          "key": "Each uses its own dedicated key secret if one is set, and the shared <code>{shared}</code> secret otherwise."
+        },
+        "labels": {
+          "tests": "What it tests",
+          "schedule": "When it runs",
+          "budget": "Spending cap",
+          "switch": "Switch",
+          "key": "API key",
+          "runs": "Runs"
+        },
+        "schedule": "Every night at {time} UTC, while switched on",
+        "switch": "Repository variable <code>{name}</code> set to <code>{value}</code>",
+        "key": "<code>{dedicated}</code>, or <code>{shared}</code> if that is not set",
+        "runsLink": "Open the {workflow} runs on GitHub",
+        "variablesLink": "Open the repository's Actions variables on GitHub",
+        "garak": {
+          "name": "garak — red-team of the assistant",
+          "tests": "Attacks the assistant the way an attacker would reach it — prompt injection, jailbreaks and data leakage — through the product's own endpoint, so the guards around the model are tested together with it.",
+          "budget": "USD {amount} a night: its share of a USD {cap} nightly cap shared with the Ragas evaluation ({decision})."
+        },
+        "inspect": {
+          "name": "Inspect — governed agent runs",
+          "tests": "Runs a fixed set of tasks on the product's own agent engines, Flue and the Tool Runner, and scores each run from the record it left: what it called, what it proposed and how it settled.",
+          "budget": "USD {amount} a night for both engines together ({decision})."
         }
       }
     },
@@ -15931,6 +15969,7 @@
       "empty": "No new suggestions — your enabled rules already cover the obvious gaps.",
       "draftCreated": "Draft created",
       "createDraft": "Create draft",
+      "createFailed": "The draft rule could not be created.",
       "dismiss": "Dismiss",
       "events": {
         "CONTROL_STATUS_CHANGED": "Control Status Changed",

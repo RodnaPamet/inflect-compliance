@@ -268,7 +268,16 @@ export function SharePointCard() {
                                 multiple
                                 options={siteOptions}
                                 selected={siteOptions.filter((o) => selectedSites.includes(o.value))}
-                                setSelected={(opts) => setSelectedSites(opts.map((o) => o.value))}
+                                // An allowed site the list did not return is KEPT
+                                // (#5215): the list is bounded, and a change to the
+                                // visible selection must not drop a site nobody could
+                                // see to untick.
+                                setSelected={(opts) =>
+                                    setSelectedSites((prev) => [
+                                        ...prev.filter((id) => !siteOptions.some((o) => o.value === id)),
+                                        ...opts.map((o) => o.value),
+                                    ])
+                                }
                                 placeholder={t('sharepoint.selectSites')}
                                 matchTriggerWidth
                             />

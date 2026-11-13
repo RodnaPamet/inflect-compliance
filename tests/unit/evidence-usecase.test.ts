@@ -172,6 +172,29 @@ describe('getEvidence', () => {
 
 // ─── updateEvidence — three-state folder contract ──────────────────
 
+describe('updateEvidence — an owner the edit does not change (#5164)', () => {
+    it('saves when the stored owner has left, because the modal only sends it back', async () => {
+        mockDb.evidence.findFirst.mockResolvedValueOnce({ type: 'TEXT', status: 'DRAFT', content: null, ownerUserId: 'departed' });
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockClear();
+        (EvidenceRepository.update as jest.Mock).mockResolvedValue({ id: 'ev-1' });
+
+        await updateEvidence(editorCtx, 'ev-1', { title: 'renamed', ownerUserId: 'departed' } as any);
+
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect(EvidenceRepository.update).toHaveBeenCalled();
+    });
+
+    it('still refuses a NEW owner who is not an active member', async () => {
+        mockDb.evidence.findFirst.mockResolvedValueOnce({ type: 'TEXT', status: 'DRAFT', content: null, ownerUserId: 'someone' });
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+        await expect(
+            updateEvidence(editorCtx, 'ev-1', { title: 'x', ownerUserId: 'departed' } as any),
+        ).rejects.toBeDefined();
+        expect(EvidenceRepository.update).not.toHaveBeenCalled();
+    });
+});
+
 describe('updateEvidence', () => {
     it('forwards a string folder to the repository (set)', async () => {
         (EvidenceRepository.update as jest.Mock).mockResolvedValue({ id: 'ev-1' });

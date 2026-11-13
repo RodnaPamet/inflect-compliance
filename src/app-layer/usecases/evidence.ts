@@ -293,7 +293,7 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
         // is the server-side half of that gate, because the API is public.
         const existing = await db.evidence.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            select: { type: true, status: true, content: true },
+            select: { type: true, status: true, content: true, ownerUserId: true },
         });
         if (!existing) throw notFound('Evidence not found');
 
@@ -347,7 +347,13 @@ export async function updateEvidence(ctx: RequestContext, id: string, data: z.in
             content !== undefined &&
             content !== existing.content;
 
-        await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+        // Only an owner the edit CHANGES is checked (#5164). The edit modal
+        // sends the stored owner back on every save, so re-checking it made
+        // every edit of evidence whose owner had left the workspace fail
+        // until somebody reassigned it.
+        if (data.ownerUserId !== existing.ownerUserId) {
+            await assertOwnerIsActiveMember(db, ctx, data.ownerUserId);
+        }
 
         const evidence = await EvidenceRepository.update(db, ctx, id, {
             title,

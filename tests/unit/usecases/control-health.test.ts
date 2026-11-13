@@ -21,6 +21,7 @@ const db = {
     controlRequirementLink: { findMany: jest.fn() },
     controlException: { count: jest.fn() },
     controlEvidenceLink: { findFirst: jest.fn() },
+    evidenceControlLink: { findFirst: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -80,6 +81,7 @@ function primeHealthy() {
     db.controlEvidenceLink.findFirst.mockResolvedValue({
         createdAt: new Date(Date.now() - 10 * DAY),
     });
+    db.evidenceControlLink.findFirst.mockResolvedValue(null);
     computeControlEffectivenessMap.mockResolvedValue(new Map([['c-1', eff()]]));
     listExecutionsForControl.mockResolvedValue([
         { status: 'PASSED', executedAt: '2026-06-20T00:00:00.000Z' },
@@ -189,6 +191,23 @@ describe('getControlHealth', () => {
     it('degrades when there is no evidence at all', async () => {
         db.controlEvidenceLink.findFirst.mockResolvedValue(null);
         expect((await getControlHealth(ctx, 'c-1')).verdict).toBe('DEGRADED');
+    });
+
+    it('reads freshness from the evidence page\'s link table too (#5266)', async () => {
+        // Evidence attached from the evidence page lands in EvidenceControlLink.
+        // Read alone, the legacy table called such a control stale.
+        db.controlEvidenceLink.findFirst.mockResolvedValue(null);
+        db.evidenceControlLink.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 5 * DAY) });
+        expect((await getControlHealth(ctx, 'c-1')).verdict).toBe('HEALTHY');
+        expect(db.evidenceControlLink.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { tenantId: ctx.tenantId, controlId: 'c-1', evidence: { deletedAt: null } },
+        }));
+    });
+
+    it('takes the newer of the two link tables', async () => {
+        db.controlEvidenceLink.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 400 * DAY) });
+        db.evidenceControlLink.findFirst.mockResolvedValue({ createdAt: new Date(Date.now() - 5 * DAY) });
+        expect((await getControlHealth(ctx, 'c-1')).verdict).toBe('HEALTHY');
     });
 
     it('is AT_RISK when the measured pass rate is failing', async () => {

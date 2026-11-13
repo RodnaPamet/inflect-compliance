@@ -39,9 +39,11 @@ import { runScan } from '../../../packages/agent-harness-scanner/src/scan';
 import { scannerManifestHash, SCANNER_SURFACE } from '../../../packages/agent-harness-scanner/src/scanner-surface';
 import type { CodeFs } from '../../../packages/agent-harness-scanner/src/sources/code/files';
 import { MAX_FILE_BYTES } from '../../../packages/agent-harness-scanner/src/sources/code/files';
+import * as recognize from '../../../packages/agent-harness-scanner/src/sources/code/recognize';
 import type { DetectedAgent } from '../../../packages/agent-harness-scanner/src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../../../packages/agent-harness-scanner/src/sources/langchain';
 import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from '../../../packages/agent-harness-scanner/src/http';
+import { MAX_NOT_READ_LOCATIONS } from '../../../packages/agent-harness-scanner/src/source';
 import type { SourceContext, SourceRead } from '../../../packages/agent-harness-scanner/src/source';
 
 const REAL_FS: CodeFs = { lstat: (p) => lstat(p), readdir: (p) => readdir(p), readFile: (p) => readFile(p) };
@@ -114,6 +116,28 @@ const NO_WIRE: Pick<SourceContext, 'http' | 'tokens' | 'mcp' | 'register' | 'ope
 
 function read(source: ReturnType<typeof langchainCodeSource>, deadline = Number.MAX_SAFE_INTEGER): Promise<SourceRead> {
     return source.read({ asOf: new Date(), deadline, now: Date.now, ...NO_WIRE });
+}
+
+/** One real scan of `dir` as the `code` source's only root: the signed report, and every line the scanner logged. */
+async function loggedScan(dir: string) {
+    const { privateKey } = generateKeyPairSync('ed25519');
+    const lines: string[] = [];
+    const { raw, body } = await runScan({
+        config: parseScannerConfig({
+            estate: 'acme-code',
+            scanner: { agentId: 'agt_scanner_code', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+            inflect: { baseUrl: 'https://inflect.example.com', tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+            schedule: { everyHours: 24 },
+            sources: [{ kind: 'code', product: 'langchain', roots: [{ label: 'acme', path: dir }] }],
+        }),
+        env: { SCANNER_SIGNING_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() },
+        log: jsonLineLog((l) => lines.push(l)),
+        fetchImpl: async () => {
+            throw new Error('the code source makes no request');
+        },
+    });
+    const logged = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+    return { raw, body, lines, notRead: logged.filter((l) => String(l.msg).startsWith('not read')).map(({ ts: _ts, ...rest }) => rest) };
 }
 
 const summary = (a: DetectedAgent) => ({
@@ -341,6 +365,144 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
         const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'BYTE_CAP' });
         expect(result.observations).toHaveLength(1);
+    });
+
+    it('a file over the size cap that names no framework is read, and the source is complete', async () => {
+        const dir = estate(LANGCHAIN_PYTHON);
+        // A vendored, minified bundle: more than the per-file limit of somebody else's code.
+        writeFileSync(join(dir, 'bundle.js'), `var a=1;${'a=a+1;'.repeat(Math.ceil(MAX_FILE_BYTES / 6) + 10)}`);
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result.status).toBe('COMPLETE');
+        expect(result.notRead).toBeUndefined();
+        expect(result.notReadTotal).toBeUndefined();
+        expect(result.observations).toHaveLength(1);
+    });
+
+    it('an incomplete read names the places it did not read, the source\'s own reason first', async () => {
+        const dir = estate(LANGCHAIN_PYTHON);
+        writeFileSync(join(dir, 'huge.py'), `# langchain\n${'x = 1\n'.repeat(Math.ceil(MAX_FILE_BYTES / 6) + 10)}`);
+        symlinkSync(join(dir, 'huge.py'), join(dir, 'link.py'));
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        // UNREACHABLE is the source's reason (it claims least); its place is listed first.
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', notReadTotal: 2 });
+        expect(result.notRead).toEqual([
+            { where: 'code://acme/link.py#L0', reason: 'UNREACHABLE' },
+            { where: 'code://acme/huge.py#L0', reason: 'BYTE_CAP' },
+        ]);
+    });
+
+    it('the places go to the scanner\'s log, one line each, and never into the signed report', async () => {
+        const dir = estate(LANGCHAIN_PYTHON);
+        writeFileSync(join(dir, 'huge.py'), `# langchain\n${'x = 1\n'.repeat(Math.ceil(MAX_FILE_BYTES / 6) + 10)}`);
+        writeFileSync(join(dir, 'broken.py'), 'from langchain.agents import AgentExecutor\nagent = (\n');
+        const { raw, body, notRead } = await loggedScan(dir);
+        expect(notRead).toEqual([
+            { level: 'warn', msg: 'not read', source: 'code', where: 'code://acme/huge.py#L0', reason: 'BYTE_CAP' },
+            { level: 'warn', msg: 'not read', source: 'code', where: expect.stringMatching(/^code:\/\/acme\/broken\.py#L\d+$/), reason: 'UNPARSEABLE' },
+        ]);
+        // The report says how far the source got, and no more than it said before.
+        expect(body.population.sources).toEqual([{ kind: 'code', status: 'INCOMPLETE', reason: 'BYTE_CAP', rows: 3 }]);
+        const reported = JSON.parse(raw) as unknown;
+        const text = JSON.stringify(reported);
+        expect(text.includes('notRead')).toBe(false);
+        expect(text.includes('huge.py')).toBe(false);
+        expect(text.includes('broken.py')).toBe(false);
+    });
+
+    it('a complete read logs no place', async () => {
+        const { notRead, body } = await loggedScan(estate(LANGCHAIN_PYTHON));
+        expect(body.population.sources).toEqual([{ kind: 'code', status: 'COMPLETE', rows: 1 }]);
+        expect(notRead).toEqual([]);
+    });
+
+    it('lists at most MAX_NOT_READ_LOCATIONS places and says how many there were; a secret-shaped path is not repeated', async () => {
+        const dir = estate({});
+        const secretShaped = fakeOpenAiKey();
+        expect(looksLikeSecret(secretShaped)).toBe(true);
+        for (let i = 0; i < MAX_NOT_READ_LOCATIONS + 5; i++) symlinkSync('/etc/hostname', join(dir, `l${String(i).padStart(2, '0')}.py`));
+        symlinkSync('/etc/hostname', join(dir, `a_${secretShaped}.py`));
+
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result.notReadTotal).toBe(MAX_NOT_READ_LOCATIONS + 6);
+        expect(result.notRead).toHaveLength(MAX_NOT_READ_LOCATIONS);
+        // The path is given as a hash of itself, so the line still tells two such places apart.
+        expect(result.notRead?.[0].where).toMatch(/^code:\/\/acme\/sha256-[0-9a-f]{24}#L0$/);
+        expect(JSON.stringify(result.notRead).includes(secretShaped)).toBe(false);
+
+        const { lines, notRead, raw } = await loggedScan(dir);
+        expect(notRead).toHaveLength(MAX_NOT_READ_LOCATIONS + 1);
+        expect(notRead[0]).toEqual({ level: 'warn', msg: 'not read', source: 'code', where: result.notRead?.[0].where, reason: 'UNREACHABLE' });
+        expect(notRead[MAX_NOT_READ_LOCATIONS]).toEqual({
+            level: 'warn',
+            msg: 'not read: more places than are listed',
+            source: 'code',
+            listed: MAX_NOT_READ_LOCATIONS,
+            total: MAX_NOT_READ_LOCATIONS + 6,
+        });
+        // The canary: neither the log nor the report repeats it.
+        expect(lines.join('').includes(secretShaped)).toBe(false);
+        expect(raw.includes(secretShaped)).toBe(false);
+    });
+
+    it('a time box is counted and has no place to name', async () => {
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: estate(LANGCHAIN_PYTHON) }] }), Date.now() - 1);
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'TIME_BOX', notRead: [], notReadTotal: 1 });
+    });
+
+    it('a fault in a reader or the recogniser on one file is that file not read, never the end of the source', async () => {
+        // No input is known to make the recogniser throw; if one ever does, it must cost that file and no other.
+        const real = recognize.recognizeAgents;
+        const spy = jest.spyOn(recognize, 'recognizeAgents').mockImplementation((facts, file, options) => {
+            if (file.path === 'odd.py') throw new TypeError('a fault in the recogniser');
+            return real(facts, file, options);
+        });
+        try {
+            const alone = await read(langchainCodeSource({ roots: [{ label: 'acme', path: estate(LANGCHAIN_PYTHON) }] }));
+            const dir = estate(LANGCHAIN_PYTHON, { 'odd.py': LANGCHAIN_PYTHON['support/agent.py'], 'zz/after.py': LANGCHAIN_PYTHON['support/agent.py'] });
+            const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+            expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 3 });
+            expect(result.notRead).toEqual([{ where: 'code://acme/odd.py#L0', reason: 'UNPARSEABLE' }]);
+            // The file before it and the file after it are both read.
+            expect(result.observations.map((o) => o.discoveredId)).toEqual([
+                ...alone.observations.map((o) => o.discoveredId),
+                'code:acme/zz/after.py#support_executor',
+            ]);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('ordinary code is not something that failed to resolve: a file that only names a framework is read in full', async () => {
+        const dir = estate({
+            // No import of a framework: the word appears in a comment and a string.
+            'routes.ts': [
+                '// rules for the langchain proxy',
+                'const RULES = [{ path: "/a", methods: ["GET"] }, { path: "/b", methods: ["POST"] }];',
+                'export const first = [{ path: "/c" }, { path: "/d" }].find((r) => r.path === "/c");',
+                'export const names = [...new Set(RULES.map((r) => r.path))].sort();',
+                'export const MODES = ["STATIC", "langgraph"] as const;',
+                'export const re = new RegExp("x").compile();',
+            ].join('\n'),
+            'notes.py': ['# claude_agent_sdk is not used here', 'RULES = [{"a": 1}, {"b": 2}]', 'names = sorted([*RULES])', 'first = [r for r in RULES][0]'].join('\n'),
+        });
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result).toMatchObject({ status: 'COMPLETE', rows: 2 });
+        expect(result.observations).toHaveLength(0);
+    });
+
+    it.each([
+        ['JavaScript', LANGCHAIN_JS, /\.[cm]?[jt]sx?$/, '\nconst RULES = [{ path: "/a" }, { path: "/b" }].filter((r) => r.path);\nexport const names = [...new Set(RULES.map((r) => r.path))].sort();\n'],
+        ['Python', LANGCHAIN_PYTHON, /\.py$/, '\nRULES = [{"a": 1}, {"b": 2}]\nnames = sorted([*RULES])\n'],
+    ] as const)('ordinary %s beside an agent changes neither the agents nor what was not resolved', async (_language, tree, sourceFile, ordinary) => {
+        const withOrdinary = Object.fromEntries(Object.entries(tree).map(([path, text]) => [path, sourceFile.test(path) ? `${text}${ordinary}` : text]));
+        const plain = await agentsIn(tree);
+        const mixed = await agentsIn(withOrdinary);
+        expect(plain.scan.agents.length).toBeGreaterThan(0);
+        const shape = (scan: typeof plain.scan) => ({
+            agents: scan.agents.map((a) => ({ name: a.name, tools: a.tools.map((t) => t.name), models: a.models.map((m) => m.model) })),
+            problems: scan.problems.map((p) => `${p.reason} ${p.at?.path}#${p.at?.line}`),
+        });
+        expect(shape(mixed.scan)).toEqual(shape(plain.scan));
     });
 
     it('the scan\'s deadline: TIME_BOX', async () => {

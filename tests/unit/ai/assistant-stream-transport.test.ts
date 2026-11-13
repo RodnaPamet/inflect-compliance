@@ -179,9 +179,11 @@ describe('the concurrent-stream cap refuses the N+1', () => {
 
         // A BODY, not an empty refusal: being refused the stream must not look
         // like a hang any more than a guard verdict inside one does.
-        const body = (await refused.json()) as { error: string; reason: string };
+        // In the standard envelope, which is what the client reads (#5170).
+        const body = (await refused.json()) as { error: { code: string; message: string }; reason: string };
         expect(body.reason).toBe('TENANT_AT_CAPACITY');
-        expect(body.error).toMatch(/Too many assistant conversations/);
+        expect(body.error.code).toBe('RATE_LIMITED');
+        expect(body.error.message).toMatch(/Too many assistant conversations/);
     });
 
     it('refuses rather than degrading the streams already open', async () => {

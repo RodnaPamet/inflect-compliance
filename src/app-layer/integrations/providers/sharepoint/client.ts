@@ -222,10 +222,23 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 
     // ── SharePoint-specific surface ──
 
-    /** List sites the connection can reach (admin site-selection). */
-    async listSites(): Promise<SpSite[]> {
-        const body = await this.graphGet<{ value?: SpSite[] }>('/sites?search=*');
-        return body.value ?? [];
+    /**
+     * List sites the connection can reach (admin site-selection).
+     *
+     * Follows `@odata.nextLink` (#5215): Graph pages the search, and reading
+     * the first page alone hid every site past it from the picker, so an
+     * allowed site there could not be seen or kept. Bounded by `maxPages` the
+     * way `getDelta` is, so a tenant with an enormous estate still answers.
+     */
+    async listSites(maxPages = 20): Promise<SpSite[]> {
+        const sites: SpSite[] = [];
+        let url = '/sites?search=*';
+        for (let pages = 0; url && pages < maxPages; pages++) {
+            const body = await this.graphGet<{ value?: SpSite[]; '@odata.nextLink'?: string }>(url);
+            for (const site of body.value ?? []) sites.push(site);
+            url = body['@odata.nextLink'] ?? '';
+        }
+        return sites;
     }
 
     async getSite(siteId: string): Promise<SpSite> {

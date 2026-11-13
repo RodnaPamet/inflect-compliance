@@ -100,6 +100,18 @@ interface WireProfileResult {
 
 type LayoutKind = 'none' | 'wide' | 'long' | 'delimited';
 
+/** The part of a stored mapping the form is seeded from (#5214). */
+interface WireSavedMapping {
+    version: number;
+    fields?: Record<string, string | undefined>;
+    entitlements?:
+        | { kind: 'none' }
+        | { kind: 'wide'; columns: string[] }
+        | { kind: 'long'; column: string }
+        | { kind: 'delimited'; column: string; delimiter: string };
+    statusValues?: Record<string, string>;
+}
+
 const CANONICAL_FIELDS = [
     'accountKey', 'username', 'displayName', 'givenName', 'familyName', 'email',
     'employeeNumber', 'department', 'title', 'managerRef',
@@ -126,6 +138,24 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
     const [layoutColumn, setLayoutColumn] = useState('');
     const [delimiter, setDelimiter] = useState(',');
 
+    /**
+     * The mapping already confirmed for this connection, or null. A read that
+     * fails is treated as none: the suggestions still render, and the save
+     * path's own checks stand.
+     */
+    const readSavedMapping = useCallback(async (): Promise<WireSavedMapping | null> => {
+        try {
+            const res = await fetch(
+                apiUrl(`/admin/legacy-access/mapping?connectionId=${encodeURIComponent(connectionId)}`),
+            );
+            if (!res.ok) return null;
+            const body = (await res.json()) as { mapping?: WireSavedMapping | null };
+            return body.mapping ?? null;
+        } catch {
+            return null;
+        }
+    }, [apiUrl, connectionId]);
+
     const readColumns = useCallback(async () => {
         setReading(true);
         setMsg(null);
@@ -137,23 +167,45 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
             });
             if (!res.ok) throw new Error(String(res.status));
             const body = (await res.json()) as WireProfileResult;
+            const saved = await readSavedMapping();
             setProfile(body);
-            // Pre-select the suggestions. A convenience, not a decision — nothing
-            // reaches the server until Save.
+            // THE SAVED MAPPING FIRST (#5214). The form used to start from the
+            // suggestions alone, so the next Save quietly replaced a mapping a
+            // person had confirmed with whatever the suggester guessed. A
+            // column the saved mapping names keeps its saved target; only the
+            // rest are pre-selected from the suggestions — a convenience, not
+            // a decision, and nothing reaches the server until Save.
+            const observed = new Set(body.columns.map((c) => c.profile.name));
             const next: Record<string, string> = {};
             for (const c of body.columns) {
                 if (!c.suggestion.denied && c.suggestion.suggested) {
                     next[c.profile.name] = c.suggestion.suggested;
                 }
             }
+            if (saved?.fields) {
+                for (const [field, column] of Object.entries(saved.fields)) {
+                    if (!column || !observed.has(column)) continue;
+                    for (const [col, f] of Object.entries(next)) if (f === field) delete next[col];
+                    next[column] = field;
+                }
+                const e = saved.entitlements;
+                if (e) {
+                    setLayout(e.kind);
+                    setLayoutColumns(e.kind === 'wide' ? e.columns : []);
+                    setLayoutColumn(e.kind === 'long' || e.kind === 'delimited' ? e.column : '');
+                    if (e.kind === 'delimited') setDelimiter(e.delimiter);
+                }
+                setStatusValues(saved.statusValues ?? {});
+            } else {
+                setLayout(body.declaredLayout === 'long' ? 'long' : 'none');
+            }
             setTargets(next);
-            setLayout(body.declaredLayout === 'long' ? 'long' : 'none');
         } catch {
             setMsg({ ok: false, text: t('profileFailed') });
         } finally {
             setReading(false);
         }
-    }, [apiUrl, connectionId, t]);
+    }, [apiUrl, connectionId, t, readSavedMapping]);
 
     /** The column currently mapped to `status`, if its values are a vocabulary. */
     const statusColumn = useMemo(() => {

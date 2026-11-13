@@ -38,6 +38,13 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The plan's control limit (#5263). Mocked so a test can see the count each
+// install asks for, and refuse it.
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+    getEffectivePlan: jest.fn().mockResolvedValue('ENTERPRISE'),
+}));
+
 import {
     previewPackInstall,
     previewPacksInstall,
@@ -51,6 +58,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { logEvent } from '@/app-layer/events/audit';
+import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
@@ -62,6 +70,18 @@ const mockReqFindMany = prisma.frameworkRequirement.findMany as jest.MockedFunct
 const mockTemplateFindUnique = prisma.controlTemplate.findUnique as jest.MockedFunction<typeof prisma.controlTemplate.findUnique>;
 const mockTemplateFindMany = prisma.controlTemplate.findMany as jest.MockedFunction<typeof prisma.controlTemplate.findMany>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
+const mockAssertWithinLimit = assertWithinLimit as jest.MockedFunction<typeof assertWithinLimit>;
+
+/**
+ * Every install first reads which of its template codes already have a
+ * control, to ask the plan's limit for the number it would create (#5263).
+ * That read is its own short transaction, queued ahead of the install's.
+ */
+function primeControlCount(existingCodes: string[] = []) {
+    mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+        fn({ control: { findMany: jest.fn().mockResolvedValue(existingCodes.map((code) => ({ code }))) } } as never),
+    );
+}
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -220,6 +240,7 @@ describe('installPack — RBAC + idempotency + audit', () => {
     });
 
     it('skips controls that already exist (idempotent) but restores their missing requirement links, and counts them', async () => {
+        primeControlCount();
         mockPackFind.mockResolvedValueOnce({
             key: 'iso27001-2022',
             name: 'ISO',
@@ -369,6 +390,7 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
     });
 
     it('installs a control the chosen packs share once, in one transaction, with an audit row per pack', async () => {
+        primeControlCount();
         mockPackFindMany
             .mockResolvedValueOnce([
                 { key: 'EU_UAS_OPEN_A3', framework: { key: 'EU-UAS-OPS' } },
@@ -381,7 +403,8 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
 
         const result = await installPacks(makeRequestContext('ADMIN'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3', 'EU_UAS_OPEN_A2']);
 
-        expect(mockRunInTx).toHaveBeenCalledTimes(1);
+        // The limit read, then ONE write transaction for every pack.
+        expect(mockRunInTx).toHaveBeenCalledTimes(2);
         const created = db.control.create.mock.calls.map((c) => (c[0] as { data: { code: string } }).data.code);
         expect(created).toEqual(['UAS-CORE-01', 'UAS-A2-01', 'UAS-A3-01']);
         expect(result.controlsCreated).toBe(3);
@@ -419,10 +442,13 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
             fn({
                 control: { findMany: jest.fn().mockResolvedValue([{ id: 'c-core', code: 'UAS-CORE-01' }]) },
                 controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+                // A2 is already in scope; A3 is not (#5277).
+                tenantFrameworkPack: { findMany: jest.fn().mockResolvedValue([{ packId: A2.id }]) },
             } as never),
         );
 
         const preview = await previewPacksInstall(makeRequestContext('READER'), 'EU-UAS-OPS', ['EU_UAS_OPEN_A2', 'EU_UAS_OPEN_A3']);
+        expect(preview.packsToAdd).toEqual(['EU_UAS_OPEN_A3']);
 
         expect(preview.templates.map((t) => t.code)).toEqual(['UAS-CORE-01', 'UAS-A2-01', 'UAS-A3-01']);
         expect(preview.totalTemplates).toBe(3);
@@ -434,6 +460,7 @@ describe('installPacks / previewPacksInstall — choosing several packs of one f
 
 describe('installSingleTemplate — idempotency', () => {
     it('returns alreadyExisted=true without recreating, but ensures requirement links', async () => {
+        primeControlCount();
         mockTemplateFindUnique.mockResolvedValueOnce({
             id: 'tpl-1', code: 'A.5.1', title: 'X', description: 'd',
             category: 'c', defaultFrequency: 'ANNUAL',
@@ -553,6 +580,7 @@ describe('bulkInstallTemplates', () => {
     });
 
     it('handles a MIX of skip-existing + happy-path templates in one call', async () => {
+        primeControlCount();
         // Stage-3c addition: existing tests covered the "all-error"
         // and "all-skip" branches separately; the mixed sweep covers
         // the inter-template state independence (the existing skip
@@ -631,6 +659,7 @@ describe('installPack — stage-3c additions', () => {
     });
 
     it('happy-path: creates control + tasks + mappings with correct counts', async () => {
+        primeControlCount();
         mockPackFind.mockResolvedValueOnce({
             key: 'iso', name: 'ISO', frameworkId: 'fw-1',
             framework: { key: 'ISO27001' },
@@ -667,6 +696,7 @@ describe('installPack — stage-3c additions', () => {
     });
 
     it("installs ONLY the pack's own templates — never framework-mapped internal controls", async () => {
+        primeControlCount();
         // Regression: installing ISO 27001 created 233 controls, not 93. The pack's
         // own 93 Annex A templates, plus every global ControlTemplate that happened
         // to carry a requirement link into the same framework — 140 internal
@@ -736,6 +766,7 @@ describe('installSingleTemplate — stage-3c additions', () => {
     });
 
     it('happy-path: creates control + tasks + mappings and fires TEMPLATE_INSTALLED audit', async () => {
+        primeControlCount();
         mockTemplateFindUnique.mockResolvedValueOnce({
             id: 't-1', code: 'A.5.1', title: 'X', description: 'd', category: 'GOV', defaultFrequency: 'Q',
             tasks: [{ title: 'T', description: 'd' }],
@@ -792,26 +823,36 @@ describe('bulkMapControls — stage-3c additions', () => {
         ).rejects.toThrow(/framework not found/i);
     });
 
-    it('counts created vs existing — unique-constraint violations land in "existing"', async () => {
-        // The P2002 catch-and-account branch — covers idempotent
-        // re-runs where a previously-attempted mapping survived.
+    it('counts created vs existing from ONE insert that skips the pairs already linked (#5264)', async () => {
+        // It used to create each link and catch the unique violation inside
+        // the interactive transaction. Postgres aborts the transaction at the
+        // first failed statement, so one existing mapping failed the batch.
         mockFrameworkFindFirst.mockResolvedValueOnce({ id: 'fw-1' } as never);
         mockReqFindMany.mockResolvedValueOnce([{ id: 'r-1' }, { id: 'r-2' }] as never);
-        const linkCreate = jest.fn()
-            .mockResolvedValueOnce({ id: 'link-1' })
-            .mockRejectedValueOnce(Object.assign(new Error('unique'), { code: 'P2002' }));
+        const createMany = jest.fn().mockResolvedValue({ count: 1 });
+        const create = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 control: { findMany: jest.fn().mockResolvedValue([{ id: 'c-1' }]) },
                 tenantFrameworkPack: { upsert: jest.fn() },
-                controlRequirementLink: { create: linkCreate },
+                controlRequirementLink: { create, createMany },
             } as never),
         );
 
         const result = await bulkMapControls(makeRequestContext('ADMIN'), 'iso', [
-            { controlId: 'c-1', requirementIds: ['r-1', 'r-2'] },
+            // r-1 twice: a pair named twice is one pair.
+            { controlId: 'c-1', requirementIds: ['r-1', 'r-2', 'r-1'] },
         ]);
 
+        expect(create).not.toHaveBeenCalled();
+        expect(createMany).toHaveBeenCalledTimes(1);
+        expect(createMany.mock.calls[0][0]).toEqual({
+            data: [
+                { tenantId: makeRequestContext('ADMIN').tenantId, controlId: 'c-1', requirementId: 'r-1' },
+                { tenantId: makeRequestContext('ADMIN').tenantId, controlId: 'c-1', requirementId: 'r-2' },
+            ],
+            skipDuplicates: true,
+        });
         expect(result).toEqual({ frameworkKey: 'iso', created: 1, existing: 1, total: 2 });
         expect(mockLog).toHaveBeenCalledWith(
             expect.anything(),
@@ -904,5 +945,102 @@ describe('removeChosenPack — taking a pack out of scope (#4372)', () => {
                 metadata: { packKey: PACK.key, remainingChosenPacks: 1 },
             }),
         );
+    });
+});
+
+describe('every install is held to the plan control limit (#5263)', () => {
+    const TEMPLATE = {
+        id: 't-1', code: 'A.5.1', title: 'Policies', description: null, category: 'GOV', defaultFrequency: 'QUARTERLY',
+        objective: 'Have policies', successCriteria: 'Approved annually', testingMethodology: 'Inspect',
+        relatedPolicies: null, tasks: [], requirementLinks: [],
+    };
+
+    it('installPack asks for the controls it would create, and a refusal writes nothing', async () => {
+        mockPackFind.mockResolvedValueOnce({
+            key: 'p', name: 'P', framework: { key: 'F' }, frameworkId: 'fw',
+            templateLinks: [{ template: { ...TEMPLATE, code: 'A' } }, { template: { ...TEMPLATE, code: 'B' } }, { template: { ...TEMPLATE, code: 'C' } }],
+        } as never);
+        primeControlCount(['B']); // B already exists
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: control'));
+
+        await expect(installPack(makeRequestContext('ADMIN'), 'p')).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenCalledWith(expect.anything(), 'control', 2);
+        // Only the count read ran: the install's own transaction never opened.
+        expect(mockRunInTx).toHaveBeenCalledTimes(1);
+    });
+
+    it('installPacks counts a control shared by several packs once', async () => {
+        mockPackFindMany
+            .mockResolvedValueOnce([{ key: 'a', framework: { key: 'F' } }, { key: 'b', framework: { key: 'F' } }] as never)
+            .mockResolvedValueOnce([
+                { key: 'a', name: 'A', frameworkId: 'fw', templateLinks: [{ template: { ...TEMPLATE, code: 'CORE' } }, { template: { ...TEMPLATE, code: 'A1' } }] },
+                { key: 'b', name: 'B', frameworkId: 'fw', templateLinks: [{ template: { ...TEMPLATE, code: 'CORE' } }] },
+            ] as never);
+        primeControlCount();
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: control'));
+
+        await expect(installPacks(makeRequestContext('ADMIN'), 'F', ['a', 'b'])).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenCalledWith(expect.anything(), 'control', 2);
+    });
+
+    it('installSingleTemplate asks for one control, and none once it exists', async () => {
+        mockTemplateFindUnique.mockResolvedValueOnce(TEMPLATE as never);
+        primeControlCount();
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: control'));
+        await expect(installSingleTemplate(makeRequestContext('ADMIN'), 'A.5.1')).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenLastCalledWith(expect.anything(), 'control', 1);
+    });
+
+    it('bulkInstallTemplates asks for the templates without a control', async () => {
+        mockTemplateFindMany.mockResolvedValueOnce([{ ...TEMPLATE, code: 'X' }, { ...TEMPLATE, code: 'Y' }] as never);
+        primeControlCount(['X']);
+        mockAssertWithinLimit.mockRejectedValueOnce(new Error('plan_limit_exceeded: control'));
+        await expect(bulkInstallTemplates(makeRequestContext('ADMIN'), ['X', 'Y'])).rejects.toThrow(/plan_limit_exceeded/);
+        expect(mockAssertWithinLimit).toHaveBeenCalledWith(expect.anything(), 'control', 1);
+        expect(mockRunInTx).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('the single and bulk template installs write the shared projection (#5265)', () => {
+    const TEMPLATE = {
+        id: 't-1', code: 'IC-01', title: 'Access reviews', description: null, category: 'IAM', defaultFrequency: 'QUARTERLY',
+        objective: 'Review access', successCriteria: 'Every account reviewed', testingMethodology: 'Sample 25 accounts',
+        relatedPolicies: 'Access Control Policy', tasks: [], requirementLinks: [],
+    };
+    const txWithCreate = () => {
+        const create = jest.fn().mockResolvedValue({ id: 'c-new' });
+        const linkMany = jest.fn().mockResolvedValue({ count: 1 });
+        const tx = {
+            control: { findFirst: jest.fn().mockResolvedValue(null), create },
+            task: { create: jest.fn() },
+            controlRequirementLink: { create: jest.fn() },
+            policy: { findMany: jest.fn().mockResolvedValue([{ id: 'pol-1', title: 'Access Control Policy' }]) },
+            policyControlLink: { createMany: linkMany },
+        };
+        return { tx, create, linkMany };
+    };
+
+    it.each([
+        ['installSingleTemplate', () => installSingleTemplate(makeRequestContext('ADMIN'), 'IC-01'), () => mockTemplateFindUnique.mockResolvedValueOnce(TEMPLATE as never)],
+        ['bulkInstallTemplates', () => bulkInstallTemplates(makeRequestContext('ADMIN'), ['IC-01']), () => mockTemplateFindMany.mockResolvedValueOnce([TEMPLATE] as never)],
+    ])('%s carries the objective, success criteria and testing method, and links the related policy', async (_name, run, prime) => {
+        prime();
+        primeControlCount();
+        const { tx, create, linkMany } = txWithCreate();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(tx as never));
+
+        await run();
+
+        expect(create.mock.calls[0][0].data).toMatchObject({
+            code: 'IC-01',
+            name: 'Access reviews',
+            objective: 'Review access',
+            successCriteria: 'Every account reviewed',
+            testingMethodology: 'Sample 25 accounts',
+        });
+        expect(linkMany).toHaveBeenCalledWith({
+            data: [{ tenantId: makeRequestContext('ADMIN').tenantId, policyId: 'pol-1', controlId: 'c-new' }],
+            skipDuplicates: true,
+        });
     });
 });

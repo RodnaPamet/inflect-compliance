@@ -15,6 +15,7 @@ import type {
     EvidencePayload,
 } from '../../types';
 import { runDeviceCheck, DEVICE_CHECKS, type CheckDevice } from './checks';
+import { INTERNAL_CHECK_READ_TAKE, refusePassOnTruncatedRead, withinCap } from '../internal-check-read-cap';
 
 interface DeviceDeps {
     load?: (tenantId: string) => Promise<CheckDevice[]>;
@@ -40,21 +41,24 @@ export class DeviceProvider implements ScheduledCheckProvider {
         return { valid: true };
     }
 
-    private async load(tenantId: string): Promise<CheckDevice[]> {
-        if (this.deps.load) return this.deps.load(tenantId);
-        return prisma.device.findMany({
-            where: { tenantId },
-            select: { serialNumber: true, hostname: true, platform: true, diskEncrypted: true, screenLockEnabled: true, antivirusRunning: true, passwordManagerPresent: true },
-            take: 10000,
-        });
+    private async load(tenantId: string): Promise<{ rows: CheckDevice[]; truncated: boolean }> {
+        if (this.deps.load) return { rows: await this.deps.load(tenantId), truncated: false };
+        return withinCap(
+            await prisma.device.findMany({
+                where: { tenantId },
+                select: { serialNumber: true, hostname: true, platform: true, diskEncrypted: true, screenLockEnabled: true, antivirusRunning: true, passwordManagerPresent: true },
+                orderBy: { id: 'asc' },
+                take: INTERNAL_CHECK_READ_TAKE,
+            }),
+        );
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {
         const start = Date.now();
         try {
-            const devices = await this.load(input.tenantId);
+            const { rows: devices, truncated } = await this.load(input.tenantId);
             const now = this.deps.now ? this.deps.now() : new Date();
-            const result = runDeviceCheck(input.parsed.checkType, devices, now);
+            const result = refusePassOnTruncatedRead(runDeviceCheck(input.parsed.checkType, devices, now), truncated, 'Device');
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
             return { status: 'ERROR', summary: 'Device check failed to run.', details: {}, durationMs: Date.now() - start, errorMessage: err instanceof Error ? err.message : String(err) };

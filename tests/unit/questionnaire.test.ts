@@ -15,6 +15,9 @@ import { StubQuestionnaireProvider } from '@/app-layer/ai/questionnaire/stub-pro
 import { autofillQuestionnaire, uploadQuestionnaire, acceptQuestionnaireItem } from '@/app-layer/usecases/questionnaire';
 import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment/rate-limiter';
+import { logEvent } from '@/app-layer/events/audit';
+import { AuditDetailsSchema } from '@/lib/audit/event-schema';
+import { RateLimitedError } from '@/lib/errors/types';
 import { guardUntrustedInput, assertGuardAllowed } from '@/app-layer/ai/guard';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -25,6 +28,12 @@ const mockDb = {
     control: { findMany: jest.fn() },
     policy: { findMany: jest.fn() },
     evidence: { findMany: jest.fn() },
+    // #5445 — the usecase now reads the tenant's AI-residency posture before
+    // choosing a provider. A mocked client without this delegate describes a
+    // database with no `TenantSecuritySettings` table; `null` is the common
+    // case and resolves to an undefined residency, which the factory reads as
+    // EXTERNAL.
+    tenantSecuritySettings: { findUnique: jest.fn(async () => null) },
 };
 
 const GROUNDING = [
@@ -72,6 +81,37 @@ describe('autofillQuestionnaire', () => {
         const statuses = mockDb.inboundQuestionnaireItem.updateMany.mock.calls.map((c) => c[0].data.status);
         expect(statuses).toEqual(expect.arrayContaining(['DRAFTED', 'FLAGGED']));
         expect(recordGeneration).toHaveBeenCalledWith(ctx.tenantId, ctx.userId);
+    });
+
+    it('logs each draft with an audit category the audit schema accepts (#5075)', async () => {
+        // `logEvent` is mocked here, so the schema the real writer applies is
+        // asked directly: `category: 'ai'` is not one of its categories, and
+        // every autofill threw at its first logged answer.
+        const ctx = makeRequestContext('ADMIN');
+        await autofillQuestionnaire(ctx, 'q1');
+
+        const calls = (logEvent as jest.Mock).mock.calls;
+        expect(calls.length).toBeGreaterThan(0);
+        for (const [, , entry] of calls) {
+            expect(AuditDetailsSchema.safeParse(entry.detailsJson).success).toBe(true);
+        }
+    });
+
+    it('stops at the AI budget and KEEPS the drafts made so far (#5076)', async () => {
+        // The up-front check passes, the first per-question charge passes,
+        // the second is refused. The run must commit what it drafted and say
+        // how many are left, not roll everything back.
+        (checkRateLimit as jest.Mock)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockRejectedValueOnce(new RateLimitedError('AI rate limit reached'));
+        const ctx = makeRequestContext('ADMIN');
+
+        const r = await autofillQuestionnaire(ctx, 'q1');
+
+        expect(r.remaining).toBe(1);
+        expect(r.drafted + r.flagged).toBe(1);
+        expect(mockDb.inboundQuestionnaireItem.updateMany).toHaveBeenCalledTimes(1);
     });
 
     it('honours the governed-AI gate + rate limit (ordering)', async () => {

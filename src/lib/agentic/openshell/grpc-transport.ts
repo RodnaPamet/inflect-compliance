@@ -106,7 +106,11 @@ export interface GrpcTransportConfig {
     readonly policy: unknown;
     /** Optional container/VM template. The gateway defaults it when omitted. */
     readonly template?: unknown;
-    /** Per-call deadline. Short, because an absent gateway must not hang a job. */
+    /**
+     * Per-call deadline for the UNARY calls (create, delete). Short, because an
+     * absent gateway must not hang a job. Not applied to the ExecSandbox
+     * stream, whose bound is the caller's abort signal (#5289).
+     */
     readonly deadlineMs?: number;
     /** Injected for tests: a ready-made client. Production passes nothing. */
     readonly clientForTests?: GrpcClientLike;
@@ -276,7 +280,12 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
                     command: [input.file, ...input.args],
                     environment: input.env ?? {},
                 },
-                opts(),
+                // NO deadline (#5289). On a server-streaming call grpc-js
+                // bounds the WHOLE call, not the first response, so the short
+                // unary deadline cut every run longer than 30 s and reported
+                // it as an unreachable gateway — after the tool had run. The
+                // run's bound is the caller's: `input.signal` cancels it.
+                {},
             );
             let stdout = '';
             let stderr = '';
@@ -285,6 +294,9 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
 
             const onAbort = () => stream.cancel?.();
             input.signal.addEventListener('abort', onAbort, { once: true });
+            // A signal already aborted never fires 'abort'; without a deadline
+            // nothing else would end the stream.
+            if (input.signal.aborted) onAbort();
 
             try {
                 await new Promise<void>((resolve, reject) => {

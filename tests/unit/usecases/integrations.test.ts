@@ -238,6 +238,67 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         );
     });
 
+    it('refuses an update that names another provider than the stored row, writing nothing (#5143)', async () => {
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
+        const update = jest.fn();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findFirst: jest.fn().mockResolvedValue({ id: 'c1', provider: 'github' }),
+                    update,
+                },
+            } as never),
+        );
+
+        await expect(
+            upsertIntegrationConnection(makeRequestContext('ADMIN'), { ...validInput, id: 'c1' }),
+        ).rejects.toThrow(/github connection, not datadog/);
+        expect(update).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it('keeps the stored column mapping and convention when an Edit sends them back as strings (#5067)', async () => {
+        mockGetProvider.mockReturnValue({
+            id: 'legacy-mcp',
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
+        const mapping = { version: 4, fields: { accountKey: 'LOGIN' } };
+        const convention = { template: '{first}.{last}', version: 2 };
+        const update = jest.fn().mockResolvedValue({ id: 'c1' });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        id: 'c1',
+                        provider: 'legacy-mcp',
+                        secretEncrypted: null,
+                        configJson: { applicationName: 'ERP', legacyAccessMapping: mapping, legacyUsernameConvention: convention },
+                    }),
+                    update,
+                },
+            } as never),
+        );
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            id: 'c1',
+            provider: 'legacy-mcp',
+            name: 'ERP (renamed)',
+            configJson: {
+                applicationName: 'ERP',
+                legacyAccessMapping: '[object Object]',
+                legacyUsernameConvention: '[object Object]',
+            },
+        } as never);
+
+        const written = update.mock.calls[0][0].data.configJson;
+        expect(written.legacyAccessMapping).toEqual(mapping);
+        expect(written.legacyUsernameConvention).toEqual(convention);
+        expect(written.applicationName).toBe('ERP');
+    });
+
     it('emits UPDATED audit when id is provided + connection exists', async () => {
         mockGetProvider.mockReturnValue({
             id: 'datadog',
@@ -250,7 +311,7 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
-                    findFirst: jest.fn().mockResolvedValue({ id: 'c1' }),
+                    findFirst: jest.fn().mockResolvedValue({ id: 'c1', provider: 'datadog' }),
                     update: jest.fn().mockResolvedValue({ id: 'c1' }),
                 },
             } as never),

@@ -211,3 +211,34 @@ describe('on the wire, the page reads the sentence', () => {
         expect(apiErrorMessage(body, 'fallback')).toBe(EXPIRED_REFUSAL_MESSAGE);
     });
 });
+
+describe('a rejection that loses the race to an approval (#5111)', () => {
+    it('refuses with 409, stamps no decision and writes no REJECTED audit row', async () => {
+        // The read saw PENDING; an approval landed before the claim, so the
+        // conditional write moved nothing.
+        db.agentProposal.findFirst.mockResolvedValue(pendingRow({ requiredApprovals: 1 }));
+        db.agentProposal.updateMany.mockResolvedValueOnce({ count: 0 });
+        const { recordDecisionOutcomeForDigest } = jest.requireMock('@/app-layer/ai/decision-log') as {
+            recordDecisionOutcomeForDigest: jest.Mock;
+        };
+
+        const err = (await rejectAgentProposal(ctx, 'p1').catch((e: unknown) => e)) as {
+            status?: number;
+            details?: unknown;
+        };
+
+        expect(err.status).toBe(409);
+        expect(err.details).toEqual({ reason: 'PROPOSAL_ALREADY_DECIDED' });
+        expect(recordDecisionOutcomeForDigest).not.toHaveBeenCalled();
+        expect(appendAuditEntry.mock.calls.map((c) => c[0].action)).not.toContain('AGENT_PROPOSAL_REJECTED');
+    });
+
+    it('a rejection that wins the claim still records itself', async () => {
+        db.agentProposal.findFirst.mockResolvedValue(pendingRow({ requiredApprovals: 1 }));
+        db.agentProposal.updateMany.mockResolvedValueOnce({ count: 1 });
+
+        await rejectAgentProposal(ctx, 'p1');
+
+        expect(appendAuditEntry.mock.calls.map((c) => c[0].action)).toContain('AGENT_PROPOSAL_REJECTED');
+    });
+});

@@ -14,6 +14,23 @@
  */
 import type { ScannerLog } from './log';
 
+/**
+ * The longest delay `setTimeout` honours: 2^31-1 ms, about 24.8 days. A longer
+ * delay is not clamped but treated as 1 ms, so a schedule of 597 hours or more
+ * (the configuration allows 720) ran scans back to back (#5239).
+ */
+export const MAX_TIMER_MS = 2_147_483_647;
+
+/** Sleep for `ms`, in steps no timer will misread. */
+export async function boundedSleep(ms: number): Promise<void> {
+    let left = ms;
+    while (left > 0) {
+        const step = Math.min(left, MAX_TIMER_MS);
+        await new Promise<void>((r) => setTimeout(r, step));
+        left -= step;
+    }
+}
+
 export async function runOnSchedule(opts: {
     readonly everyHours: number;
     readonly run: () => Promise<void>;
@@ -24,7 +41,7 @@ export async function runOnSchedule(opts: {
     readonly maxRuns?: number;
 }): Promise<number> {
     const now = opts.now ?? Date.now;
-    const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    const sleep = opts.sleep ?? boundedSleep;
     const period = opts.everyHours * 3_600_000;
     let runs = 0;
     for (;;) {

@@ -19,6 +19,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { fixtureObject } from '../prisma/fixture-io';
+import { seedAgentRiskAssessmentLibrary } from '../prisma/agent-risk-assessment-library';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -90,24 +91,8 @@ async function seedAiGovAssessment(): Promise<void> {
 }
 
 async function seedAgentRiskAssessment(): Promise<void> {
-    const agentRisk = fixtureObject<{
-        questionSetVersion: number;
-        domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
-        questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
-    }>(
-        'fixtures/agent-risk-assessment',
-        require('../prisma/fixtures/agent-risk-assessment.json'),
-        'questionSetVersion', 'domains', 'questions',
-    );
-    for (const d of agentRisk.domains) {
-        const data = { code: d.code, name: d.name, description: d.description, sortOrder: d.sortOrder };
-        await prisma.agentAssessmentDomain.upsert({ where: { id: d.id }, update: data, create: { id: d.id, ...data } });
-    }
-    for (const q of agentRisk.questions) {
-        const data = { domainId: q.domainId, text: q.text, guidance: q.guidance ?? null, mappingsJson: q.mappings, criticality: q.criticality };
-        await prisma.agentAssessmentQuestion.upsert({ where: { id: q.id }, update: data, create: { id: q.id, ...data } });
-    }
-    console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
+    const seeded = await seedAgentRiskAssessmentLibrary(prisma);
+    console.log(`✅ Agent risk assessment v${seeded.questionSetVersion} — ${seeded.domains} domains + ${seeded.questions} questions seeded`);
 }
 
 async function main(): Promise<void> {

@@ -159,6 +159,27 @@ describe('Epic 41 — DispatchedWidget per (type, chartType)', () => {
         ).toBeInTheDocument();
     });
 
+    it('a KPI carries the edit-mode actions, which it used to drop (#5270)', () => {
+        // KPI, threat level, maturity and initiatives own their surface and
+        // render without DashboardWidget's header — and used to render without
+        // its actions too, so edit mode gave them no edit or delete control.
+        const widget = makeWidget({ type: 'KPI', chartType: 'coverage', config: { format: 'percent' } });
+        const { container, rerender } = render(
+            <DispatchedWidget
+                widget={widget}
+                data={makeData()}
+                actionsSlot={<button type="button">Edit widget</button>}
+            />,
+        );
+        expect(screen.getByRole('button', { name: 'Edit widget' })).toBeInTheDocument();
+        expect(container.querySelector('[data-widget-resize-handle]')).not.toBeNull();
+
+        // Outside edit mode there is no slot, so no actions and no handle.
+        rerender(<DispatchedWidget widget={widget} data={makeData()} />);
+        expect(container.querySelector('[data-widget-actions]')).toBeNull();
+        expect(container.querySelector('[data-widget-resize-handle]')).toBeNull();
+    });
+
     it('KPI/critical-risks renders the critical count + open/high subtitle', () => {
         const widget = makeWidget({
             type: 'KPI',

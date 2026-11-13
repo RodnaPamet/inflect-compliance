@@ -141,8 +141,10 @@ async function computeAssetRollups(
     assetId: string,
 ): Promise<AssetRollups> {
     const [riskCount, controlCount, cveOpenCount, topOpenVuln, scanOpenCount, scanSevs, taskCounts] = await Promise.all([
-        db.assetRiskLink.count({ where: { tenantId: ctx.tenantId, assetId } }),
-        db.controlAsset.count({ where: { tenantId: ctx.tenantId, assetId } }),
+        // A linked risk or control in the trash is not counted (#5442, owner
+        // decision 2026-11-12), as the asset page's lists do not show it.
+        db.assetRiskLink.count({ where: { tenantId: ctx.tenantId, assetId, risk: { deletedAt: null } } }),
+        db.controlAsset.count({ where: { tenantId: ctx.tenantId, assetId, control: { deletedAt: null } } }),
         db.assetVulnerability.count({ where: { tenantId: ctx.tenantId, assetId, status: 'OPEN' } }),
         db.assetVulnerability.findFirst({
             where: { tenantId: ctx.tenantId, assetId, status: 'OPEN' },
@@ -360,8 +362,13 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
 
         // Validate a newly-supplied owner (non-empty string) is an active
         // member. `undefined` leaves it unchanged; `''`/null clears it — neither
-        // needs a membership check.
-        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+        // needs a membership check. Nor does the owner the row ALREADY has
+        // (#5159): the edit form sends it back on every save, and re-checking
+        // it made every edit of an asset whose owner had left fail with
+        // "Owner must be an active member" until somebody reassigned it.
+        if (data.ownerUserId && data.ownerUserId !== previousOwnerId) {
+            await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+        }
 
         // A rename to a name another live asset holds gets the same named 409
         // as a create (#4361); left to the index it was a bare P2002. Only an

@@ -25,12 +25,14 @@ const STATUS_VARIANTS: Record<OverdueEvidenceRow['status'], 'warning' | 'info' |
     DRAFT: 'warning',
     SUBMITTED: 'info',
     REJECTED: 'error',
+    NEEDS_REVIEW: 'warning',
 };
 
 const STATUS_LABEL_KEY: Record<OverdueEvidenceRow['status'], string> = {
     DRAFT: 'evidence.statusDraft',
     SUBMITTED: 'evidence.statusSubmitted',
     REJECTED: 'evidence.statusRejected',
+    NEEDS_REVIEW: 'evidence.statusNeedsReview',
 };
 
 function OverdueBadge({ days }: { days: number }) {

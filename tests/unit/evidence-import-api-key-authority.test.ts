@@ -27,8 +27,18 @@ const prismaMock = {
     tenantApiKey: { findUnique: jest.fn(), update: jest.fn() },
     evidence: { updateMany: jest.fn() },
     fileRecord: { delete: jest.fn() },
+    // #5189 — the agent behind an agent-bound key is read on the job path too.
+    registeredAgent: { findFirst: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: prismaMock, prisma: prismaMock }));
+
+// #5189 — the kill read is the funnel's own, so it is mocked rather than
+// reimplemented: the point of the fix is that both doors consult ONE reader.
+const mockResolveKillState = jest.fn();
+jest.mock('@/lib/agentic/kill-switch', () => ({
+    ...jest.requireActual('@/lib/agentic/kill-switch'),
+    resolveKillState: (...a: unknown[]) => mockResolveKillState(...a),
+}));
 
 jest.mock('@/lib/observability/job-runner', () => ({
     runJob: (_name: string, fn: () => unknown) => fn(),
@@ -168,6 +178,12 @@ beforeEach(() => {
     // user alone may do all of it.
     prismaMock.tenantMembership.findFirst.mockResolvedValue(builtIn('OWNER'));
     prismaMock.tenantApiKey.findUnique.mockResolvedValue(keyRow());
+    // Default: no kill, and any agent read resolves ACTIVE. Every existing test
+    // uses a key with `agentId: null`, which never reaches either.
+    mockResolveKillState.mockReset();
+    mockResolveKillState.mockResolvedValue(null);
+    prismaMock.registeredAgent.findFirst.mockReset();
+    prismaMock.registeredAgent.findFirst.mockResolvedValue({ status: 'ACTIVE' });
 });
 
 /** The context the import's first upload ran under. */
@@ -176,6 +192,78 @@ function contextOfFirstWrite(): Record<string, unknown> {
     if (!call) throw new Error('no evidence was created');
     return call[1] as Record<string, unknown>;
 }
+
+/**
+ * #5189 — A STOPPED AGENT'S KEY DOES NOT RUN A QUEUED JOB.
+ *
+ * `resolveKeyInitiatorContext` re-reads the key so that, in its own words, the
+ * job holds "key now ∧ the initiator's membership now". That re-read checked
+ * revoked, expired and tenant_deleted and nothing about the AGENT — so a kill
+ * engaged while the import sat in the queue did not stop it, and the import
+ * wrote evidence for a stopped agent while the same key at REST got a 403.
+ */
+describe('the agent bounds the job too: a killed or suspended agent stops its key (#5189)', () => {
+    const agentKey = () => keyRow({ agentId: 'agent-1' });
+
+    beforeEach(() => {
+        // An agent-bound key resolves its PRINCIPAL first
+        // (`resolveAgentAuthority`, reading the tenant and the membership), and
+        // that refusal — `principal_unresolved` — happens INSIDE the key
+        // re-read, before the agent gate this block is about. Without these two
+        // the tests all fail there instead, which is how the positive control
+        // earned its keep: it failed too, so the setup was wrong rather than
+        // the gate refusing everything.
+        prismaMock.tenant.findUnique.mockResolvedValue({ id: 'tenant-A', slug: 'acme', deletedAt: null });
+        prismaMock.tenantMembership.findUnique.mockResolvedValue(builtIn('OWNER'));
+    });
+
+    it('refuses the import when a kill is in force, before the archive is read', async () => {
+        prismaMock.tenantApiKey.findUnique.mockResolvedValue(agentKey());
+        mockResolveKillState.mockResolvedValue({ scope: 'AGENT', switchId: 'ks-1' });
+
+        await expect(runEvidenceImport(KEY_PAYLOAD)).rejects.toThrow(/agent_killed/);
+        // Ahead of any read of the archive: a stopped agent's job does no work.
+        expect(storage.readStream).not.toHaveBeenCalled();
+        expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses the import when the agent is not ACTIVE', async () => {
+        prismaMock.tenantApiKey.findUnique.mockResolvedValue(agentKey());
+        prismaMock.registeredAgent.findFirst.mockResolvedValue({ status: 'SUSPENDED' });
+
+        await expect(runEvidenceImport(KEY_PAYLOAD)).rejects.toThrow(/agent_not_active/);
+        expect(storage.readStream).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the agent row no longer resolves at all', async () => {
+        // An allowlist, not a denylist: anything that is not ACTIVE refuses,
+        // including a row that has gone.
+        prismaMock.tenantApiKey.findUnique.mockResolvedValue(agentKey());
+        prismaMock.registeredAgent.findFirst.mockResolvedValue(null);
+
+        await expect(runEvidenceImport(KEY_PAYLOAD)).rejects.toThrow(/agent_not_active/);
+    });
+
+    it('POSITIVE CONTROL: an ACTIVE, un-killed agent runs the import as before', async () => {
+        prismaMock.tenantApiKey.findUnique.mockResolvedValue(agentKey());
+
+        const result = await runEvidenceImport(KEY_PAYLOAD);
+
+        // Without this, every assertion above would also pass if the gate
+        // refused every agent-bound key outright.
+        expect(result.errored).toBe(0);
+        expect(storage.readStream).toHaveBeenCalled();
+    });
+
+    it('a key bound to NO agent never reaches the agent read', async () => {
+        prismaMock.tenantApiKey.findUnique.mockResolvedValue(keyRow({ agentId: null }));
+
+        await runEvidenceImport(KEY_PAYLOAD);
+
+        expect(prismaMock.registeredAgent.findFirst).not.toHaveBeenCalled();
+        expect(mockResolveKillState).not.toHaveBeenCalled();
+    });
+});
 
 describe('the key bounds the job: a scope the key lacks is refused, whatever the user holds', () => {
     it('refuses an import whose key cannot upload evidence, before the archive is read', async () => {

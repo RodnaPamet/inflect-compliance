@@ -199,6 +199,18 @@ export interface ConfigField {
 /**
  * Connection validation result.
  */
+/**
+ * What the caller of a Test can do for the provider.
+ *
+ * `persistSecret` saves a PATCH of token fields onto the stored connection.
+ * A provider whose token exchange rotates the refresh token must call it, or
+ * the Test consumes the stored refresh token and leaves the connection holding
+ * a dead one (#5194, #5195). Absent when there is no saved connection to write.
+ */
+export interface ConnectionValidationOptions {
+    persistSecret?: (patch: Record<string, unknown>) => Promise<void>;
+}
+
 export interface ConnectionValidationResult {
     valid: boolean;
     error?: string;
@@ -298,7 +310,8 @@ export interface IntegrationProvider {
      */
     validateConnection(
         config: Record<string, unknown>,
-        secrets: Record<string, unknown>
+        secrets: Record<string, unknown>,
+        opts?: ConnectionValidationOptions,
     ): Promise<ConnectionValidationResult>;
 }
 

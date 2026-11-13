@@ -193,6 +193,7 @@ export async function adjudicateResidue(
             },
             select: {
                 id: true,
+                snapshotId: true,
                 accountKey: true,
                 employeeId: true,
                 candidatesJson: true,
@@ -263,18 +264,25 @@ export async function adjudicateResidue(
         : [];
     const byId = new Map(employees.map((e) => [e.id, e]));
 
+    // THE ACCOUNT THE RESOLUTION WAS MADE FROM (#5145). Read by the
+    // resolution's own snapshot, not by key alone: account keys are the legacy
+    // application's logins, so `jsmith` can sit in another connection's
+    // snapshot, or a later pull of this one, and the newest such row used to
+    // become the payload the model judged. `(snapshotId, accountKey)` is
+    // unique, so each resolution has exactly one account or none.
     const accounts = await runInTenantContext(ctx, (db) =>
         db.legacyAccount.findMany({
-            where: { tenantId: input.tenantId, accountKey: { in: rows.map((r) => r.accountKey) } },
-            orderBy: { createdAt: 'desc' },
+            where: {
+                tenantId: input.tenantId,
+                snapshotId: { in: [...new Set(rows.map((r) => r.snapshotId))] },
+                accountKey: { in: rows.map((r) => r.accountKey) },
+            },
             take: 2_000,
         }),
     );
-    // The NEWEST row per key wins, which is what the per-account
-    // `findFirst({ orderBy: desc })` did: a key can appear in more than one
-    // snapshot, and the first write into the map is the latest.
+    const accountKeyOf = (snapshotId: string, accountKey: string) => `${snapshotId}\u0000${accountKey}`;
     const accountByKey = new Map<string, (typeof accounts)[number]>();
-    for (const a of accounts) if (!accountByKey.has(a.accountKey)) accountByKey.set(a.accountKey, a);
+    for (const a of accounts) accountByKey.set(accountKeyOf(a.snapshotId, a.accountKey), a);
 
     for (const row of rows) {
         const candidates: AdjudicationCandidate[] = [];
@@ -297,7 +305,7 @@ export async function adjudicateResidue(
         }
 
         const built = buildMatchState({
-            account: canonicalFrom(row.accountKey, accountByKey.get(row.accountKey)),
+            account: canonicalFrom(row.accountKey, accountByKey.get(accountKeyOf(row.snapshotId, row.accountKey))),
             candidates,
             budgetChars: budget,
         });

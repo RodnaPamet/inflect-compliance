@@ -200,13 +200,18 @@ export async function pullPolicyFromSharePoint(
     const policy = await runInTenantContext(ctx, (db) =>
         db.policy.findFirst({
             where: { tenantId: ctx.tenantId, spDriveId: input.driveId, spItemId: input.itemId },
-            select: { id: true, spConnectionId: true },
+            select: { id: true, spConnectionId: true, spItemETag: true },
         }),
     );
     if (!policy) return { pulled: false };
 
     const client = await resolveClient(ctx, policy.spConnectionId ?? undefined);
     const item = await client.getItem(input.driveId, input.itemId);
+    // UNCHANGED SINCE THE LAST SYNC (#5148). A drive notification fires for
+    // every change, including the echo of our own push, which stored this
+    // eTag; pulling it again proposed a duplicate version each time. Only an
+    // eTag both sides hold and agree on counts as unchanged.
+    if (item.eTag && policy.spItemETag && item.eTag === policy.spItemETag) return { pulled: false };
     const ab = await client.downloadItemContent(input.driveId, input.itemId);
 
     // SP-F3 — Word docs convert to HTML (mammoth); everything else is treated

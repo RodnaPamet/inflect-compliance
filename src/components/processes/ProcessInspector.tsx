@@ -131,6 +131,8 @@ export interface EdgeControlRef {
 export interface ProcessInspectorProps {
     /** Selected node, or null when nothing is selected. */
     node: SelectedCanvasNode | null;
+    /** May the viewer change automation rules? See the automation panel (#5283). */
+    canManageRules?: boolean;
     /**
      * R28 — selected edge, or null when nothing is selected. Mutually
      * exclusive with `node` in practice: an engine may let you select both,
@@ -213,6 +215,7 @@ export function ProcessInspector({
     onUpdate,
     onEdgeUpdate,
     mapId,
+    canManageRules = false,
 }: ProcessInspectorProps) {
     // Local state mirrors the node's data so the user can type
     // without every keystroke flushing to the canvas state. The
@@ -277,6 +280,7 @@ export function ProcessInspector({
                         ruleIds={ruleIds}
                         unsavedOwners={fed?.unsavedOwners ?? 0}
                         tenantSlug={tenantSlug ?? ""}
+                        canManageRules={canManageRules}
                     />
                 </div>
             </AsidePanel>
