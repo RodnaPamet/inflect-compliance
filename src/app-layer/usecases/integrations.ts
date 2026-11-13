@@ -348,6 +348,49 @@ export async function upsertIntegrationConnection(
             });
             if (!existing) throw notFound('Connection not found');
 
+            /*
+                THE ROW'S PROVIDER IS THE ONE THAT VALIDATES IT (#5143).
+
+                `providerImpl`, `validateProviderSecrets` and
+                `validateProviderConfig` above all read `input.provider`, while an
+                update keeps `existing.provider` and writes the validated config
+                onto that row. So a caller could name ANY registered provider and
+                have its rules applied to another provider's connection — and
+                `validateProviderConfig` returns the config UNCHANGED when
+                `CONFIG_FIELD_RULES` has no entry for the provider named.
+
+                `personnel` (like `device` and `training`) has no rules entry and
+                declares `configFields: []`, `secretFields: []`. So
+                `{ id: <Active Directory row>, provider: 'personnel', configJson:
+                { ...AD config, joinerWritesEnabled: true } }` stored AD keys with
+                NO unknown-key check, no scheme check on `url` (AD's `ldaps:`
+                rule), and defeated the secret-shadowing check #2843 closed —
+                because rule 1 was checking the personnel provider's empty field
+                lists. `joinerWritesEnabled` is the grant CLAUDE.md records as
+                "undeclared on purpose" on Active Directory, read strict
+                `=== true` so an absent value fails closed; this made it present.
+
+                It is one term of several — acting also needs `writesEnabled`,
+                administrator consent and the ladder at AUTOMATIC — so this is a
+                deliberate safeguard bypassed, not account creation on its own.
+
+                REFUSED rather than re-validated, which is what the sibling
+                `testConnectionCredentials` already does a few hundred lines
+                below: "This connection is a X connection, not Y". Refusing makes
+                the mismatch unrepresentable, so every validator above is reading
+                the right provider by construction rather than by a second
+                argument somebody has to remember to thread. Nothing has been
+                written at this point, so the vacuous validation above stores
+                nothing.
+            */
+            if (existing.provider !== input.provider) {
+                throw badRequest(
+                    `This connection is a ${existing.provider} connection, not ${input.provider}. ` +
+                        'A connection keeps the provider it was created with; create a new ' +
+                        'connection for a different provider.',
+                );
+            }
+
             // `existing.provider`, NOT `input.provider`. The update below writes
             // name / configJson / secrets / isEnabled and never `provider`, so
             // the row keeps the provider it was created with whatever the caller

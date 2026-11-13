@@ -211,10 +211,27 @@ describeFn('one enabled HRIS connection per tenant (integration)', () => {
         ).rejects.toThrow(/BambooHR prod/);
     });
 
-    it('reads the provider off the STORED row, not the request body', async () => {
-        // The update never writes `provider`, so the row stays HRIS whatever the
-        // caller claims. Taking the guard's provider from `input.provider` would
-        // make `provider: 'github'` a bypass.
+    it('refuses a MISMATCHED provider outright, naming the stored one (#5143)', async () => {
+        /*
+            This test used to send `provider: 'github'` against a workday row and
+            assert the HRIS refusal still named BambooHR — proving the cardinality
+            guard read `existing.provider` rather than the request body, because
+            "taking the guard's provider from `input.provider` would make
+            `provider: 'github'` a bypass".
+            #5143 found the bypass one layer up: `providerImpl`,
+            `validateProviderSecrets` and `validateProviderConfig` ALL read
+            `input.provider`, so a mismatched provider had another provider's
+            rules — or, for one with no rules entry, none at all — applied to this
+            row's config. The mismatch is now refused before any of that, so the
+            shape this test probed is unrepresentable and the HRIS guard can no
+            longer be reached with a provider the row does not have.
+            WHAT IS STILL ASSERTED, and why this is not a weaker test: the refusal
+            message names the STORED provider first. `workday` can only have come
+            from `existing.provider`, so this still proves the code reads the row
+            rather than the body — the property the old probe existed for —
+            while also pinning the stronger refusal. Asserting only "it throws"
+            would have dropped that evidence.
+        */
         await seedConnection({ provider: 'bamboohr', name: 'BambooHR prod', isEnabled: true });
         const workdayId = await seedConnection({
             provider: 'workday',
@@ -229,7 +246,7 @@ describeFn('one enabled HRIS connection per tenant (integration)', () => {
                 name: 'Workday migration',
                 isEnabled: true,
             }),
-        ).rejects.toThrow(/BambooHR prod/);
+        ).rejects.toThrow(/This connection is a workday connection, not github/);
     });
 
     // ── What the refusal must NOT reach ───────────────────────────────

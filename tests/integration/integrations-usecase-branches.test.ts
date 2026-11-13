@@ -198,6 +198,42 @@ describeFn('integrations usecase — branch coverage (integration)', () => {
         });
         expect(updated.name).toBe('conn-a-renamed');
 
+        /*
+            #5143 — A MISMATCHED PROVIDER IS REFUSED, AND WRITES NOTHING.
+
+            `providerImpl`, `validateProviderSecrets` and `validateProviderConfig`
+            all read `input.provider`, while an update keeps `existing.provider`
+            and writes the validated config onto THAT row. So naming another
+            registered provider had its rules applied to this row's config — and
+            for a provider with no `CONFIG_FIELD_RULES` entry,
+            `validateProviderConfig` returns the config UNCHANGED, so no rules at
+            all. The finding's shape was an Active Directory row updated as
+            `personnel` (empty `configFields`/`secretFields`, no rules entry) to
+            store `joinerWritesEnabled: true` — the grant CLAUDE.md records as
+            "undeclared on purpose" on AD.
+
+            Asserted on the STORED row as well as the throw: a refusal that
+            happened after the write would still reject and still have stored the
+            unchecked config, so "it threw" alone does not say the bypass is shut.
+        */
+        await expect(
+            upsertIntegrationConnection(ctx, {
+                id: created.id,
+                provider: NOCONN_PROVIDER_ID,
+                name: 'conn-a-hijacked',
+                configJson: { region: 'us', unvalidatedKey: true },
+            }),
+        ).rejects.toThrow(new RegExp(`This connection is a ${PROVIDER_ID} connection`));
+
+        const afterRefusal = await prisma.integrationConnection.findFirstOrThrow({
+            where: { id: created.id },
+            select: { name: true, provider: true, configJson: true },
+        });
+        expect(afterRefusal.provider).toBe(PROVIDER_ID);
+        expect(afterRefusal.name).toBe('conn-a-renamed');
+        expect(afterRefusal.configJson).toMatchObject({ region: 'us' });
+        expect(JSON.stringify(afterRefusal.configJson)).not.toContain('unvalidatedKey');
+
         const res = await updateConnectionTestStatus(ctx, created.id, 'OK');
         expect(res.count).toBe(1);
     });

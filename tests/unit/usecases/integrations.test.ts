@@ -250,7 +250,12 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
-                    findFirst: jest.fn().mockResolvedValue({ id: 'c1' }),
+                    // `provider` is REQUIRED on the row, and the update path now
+                    // refuses a caller whose provider is not the stored one
+                    // (#5143). A stub without it describes a row that cannot
+                    // exist — the same reasoning as `configSchema` above — and
+                    // made the refusal fire on `undefined`.
+                    findFirst: jest.fn().mockResolvedValue({ id: 'c1', provider: 'datadog' }),
                     update: jest.fn().mockResolvedValue({ id: 'c1' }),
                 },
             } as never),
