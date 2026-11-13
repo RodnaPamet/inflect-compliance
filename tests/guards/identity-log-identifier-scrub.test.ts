@@ -249,7 +249,7 @@ describe('identity write path — a directory identifier never reaches a log lin
         // a future edit "fixed" the throw for consistency, the operator surface
         // would stop naming the account it is asking them to go and look at.
         const writer = read('src/app-layer/integrations/providers/entra-id/writer.ts');
-        expect(writer).toContain('`The disable of account ${id} did not report back`');
+        expect(writer).toContain('`The ${op} of account ${id} did not report back`');
         // …and bounded-fetch keeps the unscrubbed url on the error it throws,
         // because its consumers scrub at their own boundary.
         expect(read('src/app-layer/integrations/bounded-fetch.ts')).toContain(

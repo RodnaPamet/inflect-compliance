@@ -385,14 +385,14 @@ describeFn('the assessed risk tier is load-bearing', () => {
             const token = await mintKey(agentId);
 
             const proposeAtLow = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'probe' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'probe' }],
             });
             expect(errorOf(proposeAtLow.json)).toBeUndefined();
 
             await setTier(agentId, 'CRITICAL');
 
             const proposeAtCritical = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'probe' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'probe' }],
             });
             expect(errorOf(proposeAtCritical.json)).toMatch(/autonomy/i);
 

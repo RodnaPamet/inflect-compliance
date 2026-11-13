@@ -145,10 +145,12 @@ export const REVIEW_BIAS_SIGNALS = [
     /** A reviewer at or above the sample floor who has never rejected. Estimate. */
     'NEVER_REJECTED',
     /**
-     * The agent's card in force pinned `SECOND_APPROVER`, and the queue
-     * recorded one. `AgentProposal` carries a single `reviewedByUserId`, so
-     * this fires for EVERY such proposal — the declaration is not enforceable
-     * by the schema that is supposed to evidence it. Observation.
+     * The agent's card in force pinned `SECOND_APPROVER`, and an APPROVED
+     * proposal under it has fewer than two distinct signers on record. It
+     * used to fire for every such proposal — written when `AgentProposal`
+     * held only `reviewedByUserId` — and kept firing after two signatures were
+     * enforced and recorded in `AgentProposalApproval` (#5232), so it named
+     * a gap that no longer existed and drowned the one that would. Observation.
      */
     'SECOND_APPROVER_UNRECORDED',
 ] as const;
@@ -232,6 +234,12 @@ export interface ReviewObservation {
      * an old version number.
      */
     approvalRung: ApprovalRung | null;
+    /**
+     * Distinct people who signed the proposal (#5232): every
+     * `AgentProposalApproval` signer, and the recorded reviewer. Absent when
+     * the loader did not count, which reads as the single recorded reviewer.
+     */
+    distinctApprovers?: number;
 }
 
 // ─── Outputs ────────────────────────────────────────────────────────
@@ -535,12 +543,18 @@ export function computeReviewQuality(
             estimates: estimatesFor(own),
         });
 
-        if (secondApproverDeclared > 0) {
+        // Approved under a SECOND_APPROVER card with fewer than two distinct
+        // signers (#5232). A rejection needs only one person, so it is not a
+        // shortfall; an approval with two signatures recorded is not one either.
+        const secondApproverShort = own.filter(
+            (o) => o.approvalRung === 'SECOND_APPROVER' && o.approved && (o.distinctApprovers ?? 1) < 2,
+        ).length;
+        if (secondApproverShort > 0) {
             signals.push({
                 code: 'SECOND_APPROVER_UNRECORDED',
                 scope: 'AGENT',
                 subjectId: agentId,
-                observed: secondApproverDeclared,
+                observed: secondApproverShort,
                 threshold: 0,
                 sampleSize: own.length,
             });

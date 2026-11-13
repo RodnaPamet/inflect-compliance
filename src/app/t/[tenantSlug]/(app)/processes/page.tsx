@@ -55,7 +55,9 @@ export default async function ProcessesPage({
             // rule write the Admin tier, cancelling a stuck run the write tier.
             canEditMaps={ctx.permissions.canWrite && ctx.appPermissions.processes.edit}
             canDeleteMaps={ctx.permissions.canAdmin}
-            canManageRules={ctx.permissions.canAdmin}
+            // Rule writes take `admin.manage` at the route and the Admin tier
+            // in the usecase; the step inspector reads this too (#5283).
+            canManageRules={ctx.permissions.canAdmin && ctx.appPermissions.admin.manage}
         />
     );
 }

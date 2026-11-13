@@ -2117,10 +2117,20 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
     await runInTenantContext(ctx, async (db) => {
-        await db.agentProposal.updateMany({
+        const moved = await db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
             data: { status: 'REJECTED', reviewedByUserId: ctx.userId, reviewedAt: new Date() },
         });
+        // The claim decides (#5111). The status read above is a snapshot; an
+        // approval landing between it and this write leaves nothing PENDING to
+        // move. The rejection used to report success anyway, stamp the decision
+        // log REJECTED over an approved proposal and write
+        // AGENT_PROPOSAL_REJECTED — a record of a refusal that never happened.
+        if (moved.count === 0) {
+            throw staleData('This proposal was decided by someone else before your rejection landed.', {
+                reason: 'PROPOSAL_ALREADY_DECIDED',
+            });
+        }
         // ART 14, the rejection half. In the SAME transaction as the status
         // write: a rejection recorded on the proposal but not on the decision
         // log is a register that says a human is still deciding something they

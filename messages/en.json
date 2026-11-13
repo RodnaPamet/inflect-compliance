@@ -7063,8 +7063,8 @@
           }
         },
         "orangehrm": {
-          "description": "An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant against an instance on a host covered by ORANGEHRM_HOSTS.",
-          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, and provide the instance URL with the client id and secret. Test connection performs a real token exchange against the instance.",
+          "description": "An OrangeHRM directory, read for the HRIS roster. Connects as an OAuth2 authorization-code client against an instance on a host covered by ORANGEHRM_HOSTS.",
+          "setupGuide": "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS and register an OAuth client there for the authorization-code grant, with this deployment's /api/integrations/orangehrm/callback as its redirect URI. Provide the instance URL with the client id and secret and save, then use Authorize to grant access in OrangeHRM: the client id and secret alone cannot obtain a token. Test connection performs a real token exchange with the stored refresh token.",
           "fields": {
             "baseUrl": {
               "label": "OrangeHRM instance URL"
@@ -15429,6 +15429,7 @@
       "statusDraft": "Draft",
       "statusSubmitted": "Submitted",
       "statusRejected": "Rejected",
+      "statusNeedsReview": "Needs review",
       "emptyTitle": "No overdue evidence",
       "emptyDesc": "No evidence item awaiting approval in any of this organization's workspaces is past its review date.",
       "loadMore": "Load more evidence",
@@ -15968,6 +15969,7 @@
       "empty": "No new suggestions — your enabled rules already cover the obvious gaps.",
       "draftCreated": "Draft created",
       "createDraft": "Create draft",
+      "createFailed": "The draft rule could not be created.",
       "dismiss": "Dismiss",
       "events": {
         "CONTROL_STATUS_CHANGED": "Control Status Changed",

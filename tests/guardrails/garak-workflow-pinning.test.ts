@@ -306,6 +306,9 @@ describe('garak never aborts on a status it cannot score, and never scores one i
     it("garak's exit code and the configured probes reach the record", () => {
         const scan = scanSteps[0].run ?? '';
         expect(scan).toContain('echo "$garak_exit" > "garak-out/${role}/garak-exit"');
+        // The container writes as root; without this the summary and the
+        // upload cannot read the report (EACCES on run 43337664860).
+        expect(scan).toContain('sudo chown -R "$(id -u):$(id -g)" "garak-out/${role}"');
         const summarise = steps.find((s) => s.name === 'Summarise per role (record + job summary)');
         expect(summarise?.run).toContain('--probes "$spec" --garak-exit');
     });

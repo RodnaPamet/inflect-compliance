@@ -50,6 +50,11 @@ jest.mock('@/app-layer/integrations/providers/sharepoint', () => ({
     listSharePointConnections: jest.fn(async () => [{ id: 'c1' }]),
 }));
 jest.mock('@/app-layer/events/audit', () => ({ __esModule: true, logEvent: jest.fn() }));
+const mockRecordDistributions = jest.fn(async (_rows: unknown[]) => 0);
+jest.mock('@/app-layer/services/file-distribution', () => ({
+    __esModule: true,
+    recordFileDistributions: (rows: unknown[]) => mockRecordDistributions(rows),
+}));
 
 import { exportAuditPackToSharePoint } from '@/app-layer/usecases/audit-pack-sharepoint-export';
 
@@ -132,6 +137,37 @@ describe('exportAuditPackToSharePoint', () => {
             evidenceSkipped: 1,
         });
     });
+    it('bundles a generated export (FILE item) from its storage key, not as a FileRecord id (#5121)', async () => {
+        // `audit-hardening.ts` records a FILE item with `entityId = pathKey`
+        // and no FileRecord, so the old FileRecord lookup found nothing and the
+        // pack's generated reports were silently missing from the ZIP.
+        const { Readable } = await import('node:stream');
+        const exportKey = 'tenants/t1/exports/readiness-2026-06.csv';
+        mockGetPack.mockResolvedValueOnce({
+            id: 'p1', name: 'Q2', status: 'FROZEN', frozenAt: new Date('2026-01-01'),
+            items: [
+                {
+                    entityType: 'FILE',
+                    entityId: exportKey,
+                    snapshotJson: JSON.stringify({ originalFilename: 'readiness-2026-06.csv', sha256: 'abc' }),
+                },
+                { entityType: 'FILE', entityId: 'tenants/OTHER/exports/x.csv', snapshotJson: '{}' },
+            ],
+        });
+        mockReadStream.mockImplementation(() => Readable.from([Buffer.from('a,b\n')]));
+
+        const res = await exportAuditPackToSharePoint(admin, 'p1', { driveId: 'd1' }, { now: () => new Date('2026-06-09T00:00:00Z') });
+
+        expect(mockDb.fileRecord.findMany).not.toHaveBeenCalled();
+        expect(mockReadStream).toHaveBeenCalledTimes(1);
+        expect(mockReadStream).toHaveBeenCalledWith(exportKey);
+        expect(res.bundled).toBe(1);
+        // The key outside this tenant is refused, as for an evidence file.
+        expect(res.skipped.foreignKey).toBe(1);
+        // A generated export is not a FileRecord, so it is not a ledger row.
+        expect(mockRecordDistributions).toHaveBeenCalledWith([]);
+    });
+
     /**
      * A pack handed to an external auditor must never be quietly incomplete.
      *

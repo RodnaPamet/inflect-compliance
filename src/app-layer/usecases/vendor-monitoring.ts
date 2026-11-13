@@ -131,10 +131,13 @@ export async function runVendorMonitor(
             data: { tenantId: ctx.tenantId, vendorId: vendor.id },
         });
 
+        // NEWEST first, and only extractions that succeeded (#5137). The read
+        // is capped, and ascending it kept the oldest hundred: the current
+        // report is the one a capped read must not lose.
         const extractions = await db.vendorDocExtraction.findMany({
-            where: { tenantId: ctx.tenantId, vendorId: vendor.id, auditPeriodEnd: { not: null } },
+            where: { tenantId: ctx.tenantId, vendorId: vendor.id, auditPeriodEnd: { not: null }, status: { not: 'FAILED' } },
             select: { id: true, reportType: true, auditPeriodEnd: true },
-            orderBy: { auditPeriodEnd: 'asc' },
+            orderBy: { auditPeriodEnd: 'desc' },
             take: 100,
         });
 

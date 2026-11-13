@@ -47,8 +47,12 @@ export interface EmploymentSignals {
  * compared: `new Date('not a date') > now` is false, so a naive comparison reads
  * a garbage termination date as "not in the future" and answers from the wrong
  * branch without anything looking wrong.
+ *
+ * Exported because the rosters need the same rule for `startDate`/`endDate`:
+ * a bare `new Date(raw)` there stored an Invalid Date on the Employee row,
+ * which Prisma refuses, and the whole roster write failed (#5199).
  */
-function parseVendorDate(value: string | Date | null | undefined): Date | null {
+export function parseVendorDate(value: string | Date | null | undefined): Date | null {
     if (!value) return null;
     const d = value instanceof Date ? value : new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;

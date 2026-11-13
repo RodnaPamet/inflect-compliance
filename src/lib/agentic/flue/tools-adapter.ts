@@ -111,16 +111,11 @@
 import type * as v from 'valibot';
 
 import type { RequestContext } from '@/app-layer/types';
-import {
-    guardUntrustedInput,
-    assertGuardAllowed,
-    assertNoReviewRequired,
-} from '@/app-layer/ai/guard';
+import { guardUntrustedInput } from '@/app-layer/ai/guard';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import {
     offerToolSet,
     runGuardedTool as runEngineGuardedTool,
-    stepVerdictOf,
     ReviewLatch,
     type GuardObserver,
     type OfferedToolSet,
@@ -228,10 +223,10 @@ export type FlueToolSet = OfferedToolSet<FlueToolDefinition>;
  *
  * Lives here rather than in the driver because the delegate is the RUNTIME's
  * own `task` tool, so this is Flue-shaped; what it shares with a tool result it
- * takes from the core: `stepVerdictOf` from `engine-tools/review-latch.ts`, and
- * the two assertions and the guard call that `ReviewLatch.check` makes. A second
- * implementation in the driver would be the same sandwich with its own
- * opinions about which verdicts throw.
+ * takes from the core: the run's `ReviewLatch`, whose `check` observes, records
+ * and asserts exactly as it does for a tool result. A second implementation in
+ * the driver would be the same sandwich with its own opinions about which
+ * verdicts throw — and the first one here did forget the recording (#5290).
  *
  * ## Why a delegate's answer is a tool result in every respect that matters
  *
@@ -246,8 +241,9 @@ export type FlueToolSet = OfferedToolSet<FlueToolDefinition>;
  *
  * ## It reports through the SAME observer, so a flag settles the run
  *
- * A flagged answer trips the same latch a flagged tool result does, which is
- * what puts the run into `AWAITING_APPROVAL` with the flag attached. Reported
+ * A flagged answer trips the same latch a flagged tool result does — the
+ * run's `ReviewLatch`, handed in — so every later tool call refuses, and the
+ * run settles `AWAITING_APPROVAL` with the flag attached. Reported
  * BEFORE the assertions for the reason `check` gives: both of those paths
  * leave by throwing, and observing afterwards would record every clean verdict
  * and drop every refusal.
@@ -261,20 +257,17 @@ export async function guardDelegateAnswer(
     ctx: RequestContext,
     text: string,
     taskId: string | undefined,
-    observe: GuardObserver | undefined,
+    review: ReviewLatch,
 ): Promise<void> {
     const outcome = await guardUntrustedInput(ctx, text, {
         source: `flue-delegate-answer:${taskId ?? 'unknown'}`,
     });
-    observe?.({
-        toolCallId: taskId ?? 'standalone',
-        tool: 'task',
-        slice: 'result',
-        verdict: stepVerdictOf(outcome),
-        ruleIds: [...(outcome.ruleIds ?? [])],
-    });
-    assertGuardAllowed(outcome);
-    assertNoReviewRequired(outcome);
+    // THROUGH THE RUN'S OWN LATCH (#5290), not beside it. `check` observes,
+    // records the flag and asserts — and the recording is what makes every
+    // later guarded call refuse. Observing and asserting here without
+    // recording let the parent carry on reading and proposing after a
+    // flagged answer, which is the routing-around the latch exists to stop.
+    review.check(outcome, 'task', 'result', taskId ?? 'standalone');
 }
 
 /**

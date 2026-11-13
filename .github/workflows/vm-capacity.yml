@@ -43,6 +43,7 @@ permissions:
 jobs:
     vm-capacity:
         name: VM capacity snapshot
+        if: github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         environment: production
         # 72 samples at 600 s is 12 hours, past any job's limit; the script

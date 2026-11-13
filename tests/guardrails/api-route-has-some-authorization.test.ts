@@ -3,9 +3,9 @@
  *
  * ─── WHAT THIS LAYER CLAIMS, AND WHAT IT DOES NOT ──────────────────────
  *
- * This walks ALL of `src/app/api/**\/route.ts` — 582 files, 771 exported
- * handlers at the time of writing — and asks one deliberately weak
- * question per handler:
+ * This walks ALL of `src/app/api/**\/route.ts` — every file git lists there,
+ * counted at run time rather than here, where a figure only goes stale — and
+ * asks one deliberately weak question per handler:
  *
  *     Is there ANY authorization on this path at all?
  *

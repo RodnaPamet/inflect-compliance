@@ -232,6 +232,23 @@ export async function loadReviewObservations(
         ),
     );
 
+    // Who signed each proposal (#5232) — one bounded read over the ids above,
+    // never one per row. A SECOND_APPROVER proposal carries one row per signer.
+    const approvals =
+        rows.length === 0
+            ? []
+            : await db.agentProposalApproval.findMany({
+                  where: { tenantId, proposalId: { in: rows.map((r) => r.id) } },
+                  select: { proposalId: true, approverUserId: true },
+                  take: MAX_REPORT_ROWS * 4,
+              });
+    const signersByProposal = new Map<string, Set<string>>();
+    for (const a of approvals) {
+        const set = signersByProposal.get(a.proposalId) ?? new Set<string>();
+        set.add(a.approverUserId);
+        signersByProposal.set(a.proposalId, set);
+    }
+
     const mapped: ReviewObservation[] = rows.map((r) => {
         const cardId = r.agentId ? cardIdByAgent.get(r.agentId) : undefined;
         const rung =
@@ -247,6 +264,10 @@ export async function loadReviewObservations(
             decidedAtMs: (r.reviewedAt ?? r.createdAt).getTime(),
             approved: r.status !== 'REJECTED',
             approvalRung: rung,
+            distinctApprovers: new Set([
+                ...(signersByProposal.get(r.id) ?? []),
+                ...(r.reviewedByUserId ? [r.reviewedByUserId] : []),
+            ]).size,
         };
     });
 

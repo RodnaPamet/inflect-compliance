@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Inflect Compliance API",
-    "version": "3.368.1",
+    "version": "3.368.4",
     "description": "Multi-tenant compliance-management API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.\n\n**Authenticating.** To try an endpoint, click **Authorize**:\n- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n- *SessionCookie* — for the dev/staging \"Try it out\" flow, sign in first; the browser sends the `next-auth.session-token` cookie automatically (same-origin only).\n\n**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/response bodies are not yet published in this contract — only the critical-endpoint set carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, versioning, and error-contract details.",
     "license": {
       "name": "Proprietary"
@@ -1196,6 +1196,72 @@
           "name"
         ],
         "description": "Self-service signup payload. With `orgName`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request's invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+      },
+      "AuthRegisterResponse": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "email",
+              "name",
+              "role"
+            ]
+          },
+          "tenant": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "slug"
+            ]
+          },
+          "emailVerificationRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user",
+          "tenant",
+          "emailVerificationRequired"
+        ],
+        "additionalProperties": {},
+        "description": "The account created, the workspace created with it (null for an account-only registration that an invitation will attach), and whether the email must be verified before sign-in."
       },
       "AuthResetPasswordRequest": {
         "type": "object",
@@ -2844,7 +2910,11 @@
           },
           "type": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "NONCONFORMITY",
+              "OBSERVATION",
+              "OPPORTUNITY"
+            ]
           },
           "title": {
             "type": "string",
@@ -2924,7 +2994,12 @@
             "type": "string"
           },
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "NONCONFORMITY",
+              "OBSERVATION",
+              "OPPORTUNITY"
+            ]
           },
           "title": {
             "type": "string",
@@ -6633,25 +6708,48 @@
           "auth"
         ],
         "x-auth": "public",
-        "x-rate-limit": "API_MUTATION_LIMIT",
+        "x-rate-limit": "TENANT_CREATE_LIMIT",
         "requestBody": {
-          "description": "Signup payload (gated by AUTH_TEST_MODE in non-prod). Password is HIBP-screened before persistence.",
+          "description": "Signup payload with `action: \"register\"`. Open in every environment; rate-limited per IP. Password is HIBP-screened before persistence.",
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AuthRegisterRequest"
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/AuthRegisterRequest"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "enum": [
+                              "register"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "action"
+                        ]
+                      }
+                    ],
+                    "description": "Self-service signup payload. With `orgName`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request's invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+                  }
+                ]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Account created; email verification initiated server-side.",
+            "description": "Account created (with its workspace when `orgName` was given); email verification initiated server-side.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthOkResponse"
+                  "$ref": "#/components/schemas/AuthRegisterResponse"
                 }
               }
             }

@@ -683,6 +683,48 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             });
         });
 
+        it('judges each connection on ITS OWN rows of a campaign spanning two (#5138)', async () => {
+            // One CONNECTED_APP campaign over two directories: every Okta row
+            // decided, one Google row left undecided. The Google shortfall is
+            // Google's alone, and must not be raised against Okta too.
+            const f = await seedTenant('recert-per-unit');
+            const okta = await identityConnection(f.tenantId, 'okta');
+            const google = await identityConnection(f.tenantId, 'google-workspace');
+            const oktaAcc = await account(f.tenantId, okta, 'okta', { status: 'ACTIVE' });
+            const googleAcc = await account(f.tenantId, google, 'google-workspace', { status: 'ACTIVE' });
+            const review = await prisma.accessReview.create({
+                data: {
+                    tenantId: f.tenantId,
+                    name: 'Q3 both directories',
+                    scope: 'CONNECTED_APP',
+                    reviewerUserId: U_OWNER,
+                    createdByUserId: U_SECOND,
+                    status: 'CLOSED',
+                    closedAt: at('2026-09-20T00:00:00Z'),
+                    evidenceFileRecordId: await fileRecord(f.tenantId),
+                },
+            });
+            for (const [conn, acc, decided] of [[okta, oktaAcc, true], [google, googleAcc, false]] as const) {
+                await prisma.accessReviewConnectedDecision.create({
+                    data: {
+                        tenantId: f.tenantId,
+                        accessReviewId: review.id,
+                        connectedAccountId: acc.id,
+                        subjectRef: `${conn}:${acc.externalUserId}`,
+                        snapshotJson: { email: `${acc.externalUserId}@example.test`, connectionId: conn },
+                        ...(decided
+                            ? { decision: 'CONFIRM', decidedAt: at('2026-09-15T00:00:00Z'), decidedByUserId: U_OWNER }
+                            : {}),
+                    },
+                });
+            }
+
+            const judged = await judge(f, [`connection:${okta}`, `connection:${google}`]);
+
+            expect(judged[`connection:${okta}`][1]).not.toContain('CAMPAIGN_INCOMPLETE');
+            expect(judged[`connection:${google}`][1]).toContain('CAMPAIGN_INCOMPLETE');
+        });
+
         it('FAILS a quarter whose only shortfall is a legacy campaign of unverified coverage, and proposes it as a finding', async () => {
             const f = await seedTenant('recert-coverage-run');
             await membershipCampaign(f, (m) => [

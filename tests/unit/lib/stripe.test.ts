@@ -98,6 +98,20 @@ describe('findOrCreateCustomer', () => {
         expect(stripeMock.customers.create).not.toHaveBeenCalled();
     });
 
+    it('gives an operator-made row a real customer instead of its manual: sentinel (#5120)', async () => {
+        // changeTenantPlan writes `manual:<tenantId>`; Stripe refused every
+        // checkout and portal session that named it.
+        db.billingAccount.findUnique.mockResolvedValue({ id: 'ba_m', stripeCustomerId: 'manual:t1', plan: 'PRO' });
+        stripeMock.customers.create.mockResolvedValue({ id: 'cus_real' });
+        const out = await stripeLib.findOrCreateCustomer('t1', 'Acme', 'a@x.io');
+        expect(out).toEqual({ billingAccountId: 'ba_m', stripeCustomerId: 'cus_real' });
+        expect(db.billingAccount.update).toHaveBeenCalledWith({
+            where: { id: 'ba_m' },
+            data: { stripeCustomerId: 'cus_real' },
+        });
+        expect(db.billingAccount.create).not.toHaveBeenCalled();
+    });
+
     it('creates a Stripe customer + billing account when none exists', async () => {
         db.billingAccount.findUnique.mockResolvedValue(null);
         stripeMock.customers.create.mockResolvedValue({ id: 'cus_new' });
@@ -229,7 +243,37 @@ describe('handleWebhookEvent', () => {
             makeEvent('customer.subscription.deleted', { id: 's', customer: 'cus_3', status: 'canceled' }),
         );
         expect(db.billingAccount.update).toHaveBeenCalledWith(
-            expect.objectContaining({ data: { status: 'CANCELED', stripeSubscriptionId: null } }),
+            expect.objectContaining({ data: { status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null } }),
+        );
+    });
+
+    it('an ended subscription entitles to FREE, whatever its metadata says (#5082)', async () => {
+        // Entitlements read the plan alone, so a cancelled PRO tenant kept PRO.
+        for (const status of ['canceled', 'incomplete_expired']) {
+            jest.clearAllMocks();
+            db.billingEvent.findUnique.mockResolvedValue(null);
+            db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
+            await stripeLib.handleWebhookEvent(
+                makeEvent('customer.subscription.updated', {
+                    id: 'sub_e', customer: 'cus_e', status, metadata: { plan: 'ENTERPRISE' },
+                }),
+            );
+            expect(db.billingAccount.update).toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.objectContaining({ plan: 'FREE', status: 'CANCELED' }) }),
+            );
+        }
+    });
+
+    it('a status this build does not know is not read as ACTIVE (#5082)', async () => {
+        db.billingEvent.findUnique.mockResolvedValue(null);
+        db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
+        await stripeLib.handleWebhookEvent(
+            makeEvent('customer.subscription.updated', {
+                id: 'sub_p', customer: 'cus_p', status: 'paused', metadata: { plan: 'PRO' },
+            }),
+        );
+        expect(db.billingAccount.update).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'INCOMPLETE' }) }),
         );
     });
 

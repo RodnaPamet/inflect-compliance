@@ -33,6 +33,7 @@ import { logEvent } from '../events/audit';
 import { UNSET_TRIGGER_EVENT } from '../automation/rule-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { RULE_OWNING_KINDS } from './canvas-rule-link';
+import { HYDRATED_DISPLAY_KEYS } from '@/lib/processes/canvas-rule-wiring';
 
 /** Rule names are capped at 200 by the rule schema. */
 const MAX_RULE_NAME = 200;
@@ -99,13 +100,9 @@ export interface SyncResult {
     ruleIdByNodeKey: Record<string, string>;
 }
 
-/**
- * The display-only fields `hydrateCanvasFromRules` merges into a step's
- * `dataJson` on load. They describe the rule as it was when the map was read,
- * so a save must not store them on the node: they are the rule's facts, and a
- * copy on the node goes stale the moment the rule changes.
- */
-export const HYDRATED_DISPLAY_KEYS = ['ruleStatus', 'executionCount', 'ruleSubtitle'] as const;
+// The display-only keys a save strips live with the client-safe wiring
+// constants, so the canvas's version diff strips the same set (#5285).
+export { HYDRATED_DISPLAY_KEYS };
 
 interface SavedNodeLike {
     nodeKey: string;
@@ -301,23 +298,57 @@ export async function syncCanvasToRules(
         chainsLinked++;
     }
 
+    // UNLINK what the canvas no longer draws (#5116). The loop above only ever
+    // SET a link, so deleting a chain or branch edge left `nextRuleId` /
+    // `elseRuleId` in place and the rule kept chaining to a step the canvas
+    // showed as disconnected. A link is cleared only when its TARGET is a rule
+    // on this canvas: the canvas owns the topology between its own steps,
+    // while a link to a rule elsewhere may have been set from the Rules tab
+    // and is not this save's to remove.
+    const onCanvas = new Set(ruleByNodeKey.values());
+    const drawnNext = new Set<string>();
+    const drawnElse = new Set<string>();
+    for (const edge of edges) {
+        const sourceRuleId = ruleByNodeKey.get(edge.sourceKey);
+        if (!sourceRuleId || !ruleByNodeKey.get(edge.targetKey)) continue;
+        (edge.edgeKind === FAIL_EDGE_KIND ? drawnElse : drawnNext).add(sourceRuleId);
+    }
+    let chainsUnlinked = 0;
+    if (onCanvas.size > 0) {
+        const current = await db.automationRule.findMany({
+            where: { id: { in: [...onCanvas] }, tenantId: ctx.tenantId },
+            select: { id: true, nextRuleId: true, elseRuleId: true },
+        });
+        for (const rule of current) {
+            const clearNext = !drawnNext.has(rule.id) && rule.nextRuleId !== null && onCanvas.has(rule.nextRuleId);
+            const clearElse = !drawnElse.has(rule.id) && rule.elseRuleId !== null && onCanvas.has(rule.elseRuleId);
+            if (!clearNext && !clearElse) continue;
+            await AutomationRuleRepository.update(db, ctx, rule.id, {
+                ...(clearNext ? { nextRuleId: null, nextRuleDelay: null } : {}),
+                ...(clearElse ? { elseRuleId: null } : {}),
+            });
+            chainsUnlinked++;
+        }
+    }
+
     // Audit the RULE writes specifically. `saveProcessMap` already emits a
     // ProcessMap/UPDATE row, but it carries no rule ids — so a chain rewire
     // through the canvas left no trace naming which automation rules changed,
     // which is exactly what a reviewer would need. Emitted only when something
     // was written, so a read-only save stays quiet.
-    if (rulesCreated > 0 || chainsLinked > 0) {
+    if (rulesCreated > 0 || chainsLinked > 0 || chainsUnlinked > 0) {
         await logEvent(db, ctx, {
             action: 'AUTOMATION_RULES_SYNCED_FROM_CANVAS',
             entityType: 'ProcessMap',
             entityId: processMapId,
-            details: `Canvas sync wrote ${rulesCreated} rule(s) and ${chainsLinked} chain link(s)`,
+            details: `Canvas sync wrote ${rulesCreated} rule(s), ${chainsLinked} chain link(s) and removed ${chainsUnlinked}`,
             detailsJson: {
                 category: 'relationship',
                 entityName: 'ProcessMap',
                 operation: 'updated',
                 rulesCreated,
                 chainsLinked,
+                chainsUnlinked,
                 ruleIds: Array.from(new Set(ruleByNodeKey.values())),
             },
         });

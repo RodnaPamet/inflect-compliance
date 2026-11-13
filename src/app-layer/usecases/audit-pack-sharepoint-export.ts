@@ -34,8 +34,9 @@ export const SP_EXPORT_MAX_BYTES = 200 * 1024 * 1024;
 
 interface BundleFile {
     /** FileRecord id + content hash — carried so the ZIP's contents can be
-     *  recorded in the distribution ledger and joined on later. */
-    id: string;
+     *  recorded in the distribution ledger and joined on later. `null` for a
+     *  generated export, which has no FileRecord and is not a ledger entry. */
+    id: string | null;
     sha256: string;
     pathKey: string;
     name: string;
@@ -119,17 +120,49 @@ function streamToBuffer(stream: Readable): Promise<Buffer> {
 }
 
 /**
- * Add the pack's evidence FILE binaries to the ZIP under `evidence/`, skipping
- * unscanned/deleted files and stopping at SP_EXPORT_MAX_BYTES.
+ * A pack's FILE item is a GENERATED EXPORT (#5121): `audit-hardening.ts`
+ * writes the bytes to the object store and records the item with
+ * `entityId = pathKey` and the file's name and hash in `snapshotJson`. No
+ * FileRecord exists for it, so it was looked up as one, never found, and
+ * silently left out of the ZIP. It is our own output — not an upload, never
+ * AV-scanned — so it is bundled from its key, under the same tenant-prefix
+ * check and byte cap as everything else.
+ */
+function generatedExportFile(item: { entityId: string; snapshotJson?: string | null }): BundleFile {
+    let name = '';
+    let sha256 = '';
+    try {
+        const snap = JSON.parse(item.snapshotJson ?? '{}') as { originalFilename?: unknown; sha256?: unknown };
+        if (typeof snap.originalFilename === 'string') name = snap.originalFilename;
+        if (typeof snap.sha256 === 'string') sha256 = snap.sha256;
+    } catch {
+        // An unreadable snapshot still names the object; the key's last
+        // segment stands in for the name.
+    }
+    return {
+        id: null,
+        sha256,
+        pathKey: item.entityId,
+        name: name || item.entityId.split('/').pop() || 'export',
+        scanStatus: 'CLEAN',
+        status: 'STORED',
+        deletedAt: null,
+    };
+}
+
+/**
+ * Add the pack's evidence binaries and generated exports to the ZIP under
+ * `evidence/`, skipping unscanned/deleted files and stopping at
+ * SP_EXPORT_MAX_BYTES.
  */
 async function bundleEvidenceBinaries(
     ctx: RequestContext,
-    packItems: Array<{ entityType: string; entityId: string }>,
+    packItems: Array<{ entityType: string; entityId: string; snapshotJson?: string | null }>,
     zip: JSZip,
 ): Promise<{ bundled: number; skipped: SkippedBreakdown; bytes: number; identities: BundledFileIdentity[] }> {
     const evidenceIds = packItems.filter((i) => i.entityType === 'EVIDENCE').map((i) => i.entityId);
-    const fileIds = packItems.filter((i) => i.entityType === 'FILE').map((i) => i.entityId);
-    if (evidenceIds.length === 0 && fileIds.length === 0) return { bundled: 0, skipped: { ...NO_SKIPS }, bytes: 0, identities: [] };
+    const generatedExports = packItems.filter((i) => i.entityType === 'FILE').map(generatedExportFile);
+    if (evidenceIds.length === 0 && generatedExports.length === 0) return { bundled: 0, skipped: { ...NO_SKIPS }, bytes: 0, identities: [] };
 
     const files: BundleFile[] = await runInTenantContext(ctx, async (db) => {
         const out: BundleFile[] = [];
@@ -145,15 +178,9 @@ async function bundleEvidenceBinaries(
                 }
             }
         }
-        if (fileIds.length) {
-            const fr = await db.fileRecord.findMany({
-                where: { id: { in: fileIds }, tenantId: ctx.tenantId },
-                select: { id: true, sha256: true, pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true },
-            });
-            out.push(...fr.map((f) => ({ id: f.id, sha256: f.sha256, pathKey: f.pathKey, name: f.originalName, scanStatus: f.scanStatus, status: f.status, deletedAt: f.deletedAt })));
-        }
         return out;
     });
+    files.push(...generatedExports);
 
     const provider = getStorageProvider();
     let bundled = 0;
@@ -195,7 +222,10 @@ async function bundleEvidenceBinaries(
             zip.file(`evidence/${name}`, buf);
             bundled++;
             bytes += buf.byteLength;
-            identities.push({ fileRecordId: f.id, sha256: f.sha256 });
+            // The distribution ledger is keyed on FileRecords; a generated
+            // export has none and is not an uploaded file that can later be
+            // condemned, so it is bundled and not recorded there.
+            if (f.id !== null) identities.push({ fileRecordId: f.id, sha256: f.sha256 });
         } catch (err) {
             skipped.unreadable++;
             edgeLogger.warn('Audit-pack export: evidence file read failed', {

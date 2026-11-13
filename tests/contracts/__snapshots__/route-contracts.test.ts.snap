@@ -2893,25 +2893,48 @@ exports[`Route contract — per-operation snapshots operation: POST /api/auth/re
     "auth"
   ],
   "x-auth": "public",
-  "x-rate-limit": "API_MUTATION_LIMIT",
+  "x-rate-limit": "TENANT_CREATE_LIMIT",
   "requestBody": {
-    "description": "Signup payload (gated by AUTH_TEST_MODE in non-prod). Password is HIBP-screened before persistence.",
+    "description": "Signup payload with \`action: \\"register\\"\`. Open in every environment; rate-limited per IP. Password is HIBP-screened before persistence.",
     "required": true,
     "content": {
       "application/json": {
         "schema": {
-          "$ref": "#/components/schemas/AuthRegisterRequest"
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AuthRegisterRequest"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "register"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ]
+                }
+              ],
+              "description": "Self-service signup payload. With \`orgName\`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request's invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side."
+            }
+          ]
         }
       }
     }
   },
   "responses": {
     "200": {
-      "description": "Account created; email verification initiated server-side.",
+      "description": "Account created (with its workspace when \`orgName\` was given); email verification initiated server-side.",
       "content": {
         "application/json": {
           "schema": {
-            "$ref": "#/components/schemas/AuthOkResponse"
+            "$ref": "#/components/schemas/AuthRegisterResponse"
           }
         }
       }

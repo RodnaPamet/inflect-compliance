@@ -16,14 +16,26 @@ const mockUpsert = jest.fn().mockResolvedValue({});
 const mockLinkFindMany = jest.fn();
 const mockReqGroupBy = jest.fn();
 
+const mockSecSettings = jest.fn();
 jest.mock('@/app-layer/usecases/dashboard', () => ({
     getExecutiveDashboard: (...a: unknown[]) => mockGetExecutiveDashboard(...a),
 }));
 jest.mock('@/app-layer/usecases/framework', () => ({
     listFrameworks: (...a: unknown[]) => mockListFrameworks(...a),
 }));
+// Captures the SELECTION the usecase passes (#5192). The factory decides
+// residency; this file's job is to prove the caller hands it the tenant's
+// posture at all — the factory's own behaviour is pinned by
+// tests/guards/every-ai-surface-honours-tenant-residency.test.ts.
+/** The selection shape the usecase passes; only `residency` is asserted here. */
+type PostureSelection = { residency?: 'EXTERNAL' | 'LOCAL_ONLY' | null } | undefined;
+const mockGetPostureProvider = jest.fn((_selection?: PostureSelection) => ({
+    providerName: 'stub',
+    generate: mockProviderGenerate,
+}));
 jest.mock('@/app-layer/ai/compliance-posture/provider', () => ({
-    getCompliancePostureProvider: () => ({ providerName: 'stub', generate: mockProviderGenerate }),
+    getCompliancePostureProvider: (selection?: PostureSelection) =>
+        mockGetPostureProvider(selection),
 }));
 jest.mock('@/lib/db-context', () => ({
     // Invoke the callback with a fake tenant-scoped client.
@@ -32,6 +44,10 @@ jest.mock('@/lib/db-context', () => ({
             controlRequirementLink: { findMany: (...a: unknown[]) => mockLinkFindMany(...a) },
             frameworkRequirement: { groupBy: (...a: unknown[]) => mockReqGroupBy(...a) },
             compliancePostureSummary: { upsert: (...a: unknown[]) => mockUpsert(...a) },
+            // #5192 — the usecase now reads the tenant's AI-residency posture.
+            // A mocked client without this delegate describes a database with
+            // no `TenantSecuritySettings` table.
+            tenantSecuritySettings: { findUnique: (...a: unknown[]) => mockSecSettings(...a) },
         }),
 }));
 jest.mock('@/lib/observability/logger', () => ({
@@ -168,6 +184,59 @@ describe('gatherPostureSignals', () => {
 });
 
 describe('generateCompliancePostureSummary', () => {
+    beforeEach(() => {
+        mockGetPostureProvider.mockClear();
+        // No settings row is the common case and reads as EXTERNAL, which is
+        // the default `residencyTermsFrom` documents.
+        mockSecSettings.mockReset();
+        mockSecSettings.mockResolvedValue(null);
+    });
+
+    /**
+     * #5192 — the factory can only honour a posture it is given.
+     *
+     * `getCompliancePostureProvider` took no tenant input, so a LOCAL_ONLY
+     * tenant's posture snapshot went to the configured external model every day.
+     * The factory's refusal is pinned in its own guard; what this asserts is the
+     * half that guard cannot see — that the USECASE reads the tenant's posture
+     * and passes it. An absent selection reads as EXTERNAL, so a caller that
+     * forgets is a silent leak rather than a compile error.
+     */
+    it('passes the tenant AI-residency posture to the provider factory (#5192)', async () => {
+        mockSecSettings.mockResolvedValue({
+            aiResidency: 'LOCAL_ONLY',
+            aiLocalBaseUrl: null,
+            aiLocalModel: null,
+        });
+
+        await generateCompliancePostureSummary(makeRequestContext('ADMIN'));
+
+        expect(mockGetPostureProvider).toHaveBeenCalledTimes(1);
+        expect(mockGetPostureProvider.mock.calls[0][0]).toMatchObject({ residency: 'LOCAL_ONLY' });
+    });
+
+    it('hands the factory an UNDEFINED residency when the tenant has no settings row', async () => {
+        await generateCompliancePostureSummary(makeRequestContext('ADMIN'));
+
+        /*
+            `undefined`, not 'EXTERNAL' — and the distinction is the contract.
+            `residencyTermsFrom` returns `row?.aiResidency`, so an absent row
+            resolves to `undefined` "throughout, which `resolveFlueModel` and
+            `getProvider` both read as EXTERNAL" (its own words). The default
+            therefore lives in the FACTORY, not the mapper, and this file
+            asserts only that the usecase passes what it read.
+
+            That the factory treats an absent selection as EXTERNAL is pinned
+            separately, in
+            tests/guards/every-ai-surface-honours-tenant-residency.test.ts —
+            which matters, because "absent means external" is exactly why a
+            surface that never passes residency leaks silently.
+        */
+        const selection = mockGetPostureProvider.mock.calls[0][0];
+        expect(selection).toHaveProperty('residency');
+        expect(selection?.residency).toBeUndefined();
+    });
+
     it('runs signals → provider → guard → upsert and returns the result', async () => {
         const ctx = makeRequestContext('ADMIN');
         const result = await generateCompliancePostureSummary(ctx);

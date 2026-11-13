@@ -31,8 +31,9 @@ describe('VR-10 — governance graph', () => {
         const src = read('src/app-layer/services/governance-graph-builder.ts');
         expect(src).toMatch(/export function buildGovernanceGraph/);
         expect(src).toMatch(/export function healthFor/);
-        // sub-flow links come from subFlowGroupId
-        expect(src).toMatch(/subFlowGroupId/);
+        // Sub-flow links come from the INVOKE_SUBFLOW action's own target
+        // (#5117) — not from `subFlowGroupId`, which nothing writes.
+        expect(src).toMatch(/\.targetGroupId;/);
         expect(src).toMatch(/'subflow-call'/);
     });
 });

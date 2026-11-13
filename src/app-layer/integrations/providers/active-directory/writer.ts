@@ -1134,6 +1134,31 @@ export function createActiveDirectoryWriter(
                 );
             }
 
+            // The modify goes to where the account IS, not where it was (#5098).
+            // It used to address the capture's DN, but an account moved to
+            // another OU since the disable has a new DN; the GUID search above
+            // found it there, and a modify sent to the old DN failed
+            // noSuchObject — so a moved account could never be restored. The
+            // GUID is the identity; the DN is only its current address.
+            const trimmedId = externalUserId.trim();
+            const currentDn =
+                firstValue(entry.distinguishedName) ??
+                (GUID_PATTERN.test(trimmedId) ? undefined : trimmedId);
+            if (!currentDn) {
+                throw new DirectoryWriteError(
+                    `Active Directory returned no distinguishedName for ${externalUserId}; a restore would have ` +
+                        'nowhere to be addressed.',
+                    { definitivelyNotApplied: true },
+                );
+            }
+            try {
+                assertUnderBaseDn(currentDn, "the account's current DN");
+            } catch (err) {
+                throw new DirectoryWriteError(err instanceof Error ? err.message : String(err), {
+                    definitivelyNotApplied: true,
+                });
+            }
+
             const expected = cap.userAccountControl | UAC_ACCOUNTDISABLE;
             if (currentUac !== expected) {
                 throw new DirectoryWriteError(
@@ -1161,9 +1186,9 @@ export function createActiveDirectoryWriter(
             ];
 
             try {
-                await c.modify(cap.distinguishedName, changes);
+                await c.modify(currentDn, changes);
             } catch (err) {
-                throw classifyModifyFailure(err, cap, usingDedicatedWriteBind);
+                throw classifyModifyFailure(err, { ...cap, distinguishedName: currentDn }, usingDedicatedWriteBind);
             }
 
             logger.info('active directory account restored', {

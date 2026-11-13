@@ -1103,7 +1103,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         try {
             res = await this.patch(url, token.token, body);
         } catch (err) {
-            return await this.settleLostResponse(err, id);
+            return await this.settleLostResponse(err, id, 'disable');
         }
 
         // ── A 401 is the ONE status it is safe to retry after. ──
@@ -1128,7 +1128,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             try {
                 res = await this.patch(url, token.token, body);
             } catch (retryErr) {
-                return await this.settleLostResponse(retryErr, id);
+                return await this.settleLostResponse(retryErr, id, 'disable');
             }
         }
 
@@ -1224,7 +1224,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         try {
             res = await this.patch(url, token.token, body);
         } catch (err) {
-            return await this.settleLostResponse(err, id);
+            return await this.settleLostResponse(err, id, 'restore');
         }
 
         // 401 is the one status safe to retry after — it proves the request was
@@ -1235,7 +1235,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             try {
                 res = await this.patch(url, token.token, body);
             } catch (retryErr) {
-                return await this.settleLostResponse(retryErr, id);
+                return await this.settleLostResponse(retryErr, id, 'restore');
             }
         }
 
@@ -1410,8 +1410,16 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      *
      * Returns (rather than throws) when the confirming read shows the desired end
      * state, so `disable` resolves and the usecase records APPLIED.
+     *
+     * The desired end state is the OPERATION's (#5095): a disable lands as
+     * `accountEnabled: false`, a restore as `true`. This used to test for
+     * `false` whatever the caller, so a restore whose response was lost, and
+     * which had NOT landed, read the still-disabled account as proof the
+     * restore succeeded — reporting access returned to a person who still had
+     * none.
      */
-    private async settleLostResponse(err: unknown, id: string): Promise<void> {
+    private async settleLostResponse(err: unknown, id: string, op: 'disable' | 'restore'): Promise<void> {
+        const expectedEnabled = op === 'restore';
         if (err instanceof IntegrationAuthError) {
             // 401 after a refresh. 403 never reaches here — it is cloaked into a
             // response and handled by classifyGraphFailure. Evaluated and
@@ -1431,9 +1439,9 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             (err.lastStatus === 429 || err.lastStatus === null);
 
         const observed = await this.readEnabledQuietly(id);
-        if (observed === false) {
+        if (observed === expectedEnabled) {
             logger.warn(
-                'Entra disable lost its response but the account now reads disabled — treating as applied',
+                `Entra ${op} lost its response but the account now reads ${expectedEnabled ? 'enabled' : 'disabled'} — treating as applied`,
                 {
                     component: 'integration-entra-id-writer',
                     externalUserId: id,
@@ -1460,14 +1468,14 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         // asymmetry is deliberate — INDETERMINATE costs an operator a look, a
         // wrong FAILED costs them the account.
         const suffix =
-            observed === true
-                ? ' A confirming read reports the account still ENABLED, which suggests the write did not ' +
+            observed === !expectedEnabled
+                ? ` A confirming read reports the account still ${expectedEnabled ? 'DISABLED' : 'ENABLED'}, which suggests the write did not ` +
                   'land — but a read-back is not the provider rejecting the request, so this stays ' +
                   'unconfirmed.'
                 : ' The confirming read also failed, so the outcome is genuinely unknown.';
 
         throw new DirectoryWriteError(
-            `The disable of account ${id} did not report back` +
+            `The ${op} of account ${id} did not report back` +
                 `${throttled ? ' (throttled beyond the absorb budget)' : ''}: ${detail}. The directory may ` +
                 `or may not have changed.${suffix}`,
         );

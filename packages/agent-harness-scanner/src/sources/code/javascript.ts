@@ -51,9 +51,13 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
 
     const lineOf = (node: ts.Node) => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
     const imports = new Map<string, Qualified>();
+    const modules = new Set<string>();
     const bindings = new Map<string, Binding[]>();
     const toolDeclarations = new Map<string, ToolDeclaration>();
-    const calls: { call: CallExpr; boundTo: string | null }[] = [];
+    const calls: { call: CallExpr; boundTo: string | null; within: string | null }[] = [];
+    /** The named function the statements being read are written in, and the class around it. */
+    let scope: string | null = null;
+    let className: string | null = null;
     /** One IR node per syntax node, so a binding and the call list share identity. */
     const lowered = new Map<ts.Node, Expr>();
 
@@ -118,6 +122,8 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
             e = { k: 'func', line };
         } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
             e = { k: 'concat', parts: [lower(node.left, depth + 1), lower(node.right, depth + 1)], line };
+        } else if (node.kind === ts.SyntaxKind.NullKeyword) {
+            e = { k: 'opaque', line, absent: true };
         } else {
             e = { k: 'opaque', line };
         }
@@ -163,6 +169,11 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
 
     // Imports first, so a tool class declared above its import still resolves.
     for (const st of sf.statements) {
+        // Every module the file names, whether or not the import binds a name: one imported for its
+        // types alone, for its side effect, or to re-export.
+        if ((ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) && st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier)) {
+            modules.add(st.moduleSpecifier.text);
+        }
         if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier) && st.importClause) {
             const moduleName = st.moduleSpecifier.text;
             const clause = st.importClause;
@@ -175,10 +186,43 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
         }
     }
 
+    /** Every call in a lowered value, with the function it is written in. */
+    const record = (value: Expr, boundTo: string | null): void => {
+        callsWithin(value).forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && value.k === 'call' ? boundTo : null, within: scope }));
+    };
+    /** Read `body` as written in the function `name`. A function with no name of its own keeps the one around it. */
+    const inFunction = (name: string | null, body: () => void): void => {
+        const outer = scope;
+        if (name !== null) scope = name;
+        try {
+            body();
+        } finally {
+            scope = outer;
+        }
+    };
+    /** `async () => …` or `function () { … }`, as the value of a declaration, an assignment or a property. */
+    const isFunctionValue = (node: ts.Expression): boolean => {
+        let n = node;
+        while (ts.isParenthesizedExpression(n) || ts.isAsExpression(n) || ts.isSatisfiesExpression(n)) n = n.expression;
+        return ts.isArrowFunction(n) || ts.isFunctionExpression(n);
+    };
+    /** The name a function-like node carries itself: `run`, `Agent.run`, `Agent.constructor`. Null for an arrow. */
+    const functionNameOf = (node: ts.Node): string | null => {
+        if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) return node.name?.text ?? null;
+        const owner = ts.isClassLike(node.parent) ? className : null;
+        if (ts.isConstructorDeclaration(node)) return owner === null ? null : `${owner}.constructor`;
+        if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
+            const key = keyOf(node.name);
+            return key === null ? null : owner === null ? key : `${owner}.${key}`;
+        }
+        return null;
+    };
+
     const visit = (node: ts.Node): void => {
         if (ts.isVariableDeclaration(node) && node.initializer) {
             const moduleName = requiredModule(node.initializer);
             if (moduleName !== null) {
+                modules.add(moduleName);
                 if (ts.isIdentifier(node.name)) imports.set(node.name.text, { module: moduleName, path: [] });
                 else if (ts.isObjectBindingPattern(node.name)) {
                     for (const el of node.name.elements) {
@@ -188,10 +232,11 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
                     }
                 }
             } else if (ts.isIdentifier(node.name)) {
-                const value = lower(node.initializer);
+                const initializer = node.initializer;
+                const value = lower(initializer);
                 bind(node.name.text, value, lineOf(node));
-                callsWithin(value).forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && value.k === 'call' ? node.name.getText(sf) : null }));
-                return ts.forEachChild(node.initializer, skipLowered);
+                record(value, node.name.text);
+                return inFunction(isFunctionValue(initializer) ? node.name.text : null, () => skipLowered(initializer));
             }
         }
         if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
@@ -199,15 +244,20 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
             if (key !== null) {
                 const value = lower(node.right);
                 bind(key, value, lineOf(node));
-                callsWithin(value).forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && value.k === 'call' ? key : null }));
-                return ts.forEachChild(node.right, skipLowered);
+                record(value, key);
+                return inFunction(isFunctionValue(node.right) ? key : null, () => skipLowered(node.right));
             }
         }
         if (ts.isPropertyDeclaration(node) && node.initializer && ts.isIdentifier(node.name)) {
-            const value = lower(node.initializer);
+            const initializer = node.initializer;
+            const value = lower(initializer);
             bind(`this.${node.name.text}`, value, lineOf(node));
-            callsWithin(value).forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && value.k === 'call' ? `this.${node.name.getText(sf)}` : null }));
-            return ts.forEachChild(node.initializer, skipLowered);
+            record(value, `this.${node.name.text}`);
+            const own = className === null ? node.name.text : `${className}.${node.name.text}`;
+            return inFunction(isFunctionValue(initializer) ? own : null, () => skipLowered(initializer));
+        }
+        if (ts.isPropertyAssignment(node) && isFunctionValue(node.initializer)) {
+            return inFunction(keyOf(node.name), () => visit(node.initializer));
         }
         if (ts.isClassDeclaration(node) && node.name) {
             const extendsClause = node.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword);
@@ -222,22 +272,39 @@ export function readJavaScript(fileName: string, src: string): FileFacts {
                 toolDeclarations.set(node.name.text, { line: lineOf(node), toolName });
             }
         }
-        if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
-            const value = lower(node);
-            for (const c of callsWithin(value)) calls.push({ call: c, boundTo: null });
-            return ts.forEachChild(node, skipLowered);
-        }
-        ts.forEachChild(node, visit);
-    };
-    /** Below an expression already lowered: only its function bodies hold statements left to read. */
-    const skipLowered = (node: ts.Node): void => {
-        if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isClassExpression(node)) {
-            ts.forEachChild(node, visit);
+        if (ts.isClassLike(node)) {
+            const outer = className;
+            className = node.name?.text ?? null;
+            try {
+                ts.forEachChild(node, visit);
+            } finally {
+                className = outer;
+            }
             return;
         }
+        if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+            record(lower(node), null);
+            return ts.forEachChild(node, skipLowered);
+        }
+        // A function's body: its statements are read as written in it.
+        if (ts.isFunctionLike(node)) return inFunction(functionNameOf(node), () => ts.forEachChild(node, visit));
+        ts.forEachChild(node, visit);
+    };
+    /**
+     * Below an expression already lowered: only its function bodies hold
+     * statements left to read. A function is one whichever form it takes —
+     * an arrow, a function expression, a method or accessor of an object
+     * literal, a class expression's members — and whether it is nested in the
+     * lowered expression or IS it (`const run = async () => { … }`).
+     */
+    const skipLowered = (node: ts.Node): void => {
+        if (ts.isPropertyAssignment(node) && isFunctionValue(node.initializer)) {
+            return inFunction(keyOf(node.name), () => skipLowered(node.initializer));
+        }
+        if (ts.isFunctionLike(node) || ts.isClassLike(node)) return visit(node);
         ts.forEachChild(node, skipLowered);
     };
     ts.forEachChild(sf, visit);
 
-    return { language: 'javascript', imports, bindings, toolDeclarations, calls };
+    return { language: 'javascript', imports, modules, bindings, toolDeclarations, functions: new Map(), calls };
 }

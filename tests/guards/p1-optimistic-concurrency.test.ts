@@ -250,13 +250,14 @@ describe("Epic P1 — process map optimistic concurrency", () => {
             expect(containerSrc).toMatch(/expectedVersion:\s*current\.version/);
         });
 
-        it("the save calls the helper and RETURNS on a conflict, discarding nothing", () => {
-            // The early return is the property: the helper raises a sticky
-            // toast whose Reload action is the caller's `onConflict`, so the
-            // local editor survives until the user asks for the server's
-            // version. A save that carried on past a 409 would overwrite.
+        it("the save calls the helper and STOPS on a conflict, discarding nothing", () => {
+            // Stopping is the property: the helper raises a sticky toast whose
+            // Reload action is the caller's `onConflict`, so the local editor
+            // survives until the user asks for the server's version. A save
+            // that carried on past a 409 would overwrite. It stops by THROWING
+            // (#5282), not returning: a return read as a successful save.
             expect(saveSrc).toMatch(
-                /if\s*\(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*return/,
+                /if\s*\(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*throw new VersionConflictError\(\)/,
             );
         });
 

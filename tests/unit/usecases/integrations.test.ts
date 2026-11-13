@@ -260,6 +260,45 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         expect(mockLog).not.toHaveBeenCalled();
     });
 
+    it('keeps the stored column mapping and convention when an Edit sends them back as strings (#5067)', async () => {
+        mockGetProvider.mockReturnValue({
+            id: 'legacy-mcp',
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
+        const mapping = { version: 4, fields: { accountKey: 'LOGIN' } };
+        const convention = { template: '{first}.{last}', version: 2 };
+        const update = jest.fn().mockResolvedValue({ id: 'c1' });
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        id: 'c1',
+                        provider: 'legacy-mcp',
+                        secretEncrypted: null,
+                        configJson: { applicationName: 'ERP', legacyAccessMapping: mapping, legacyUsernameConvention: convention },
+                    }),
+                    update,
+                },
+            } as never),
+        );
+
+        await upsertIntegrationConnection(makeRequestContext('ADMIN'), {
+            id: 'c1',
+            provider: 'legacy-mcp',
+            name: 'ERP (renamed)',
+            configJson: {
+                applicationName: 'ERP',
+                legacyAccessMapping: '[object Object]',
+                legacyUsernameConvention: '[object Object]',
+            },
+        } as never);
+
+        const written = update.mock.calls[0][0].data.configJson;
+        expect(written.legacyAccessMapping).toEqual(mapping);
+        expect(written.legacyUsernameConvention).toEqual(convention);
+        expect(written.applicationName).toBe('ERP');
+    });
+
     it('emits UPDATED audit when id is provided + connection exists', async () => {
         mockGetProvider.mockReturnValue({
             id: 'datadog',

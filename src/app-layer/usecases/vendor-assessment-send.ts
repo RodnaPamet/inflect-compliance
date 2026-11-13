@@ -292,6 +292,7 @@ export async function resendAssessmentInvite(
                 id: true,
                 status: true,
                 respondentEmail: true,
+                revokedAt: true,
                 vendor: { select: { id: true, name: true } },
                 templateVersion: { select: { name: true } },
             },
@@ -308,7 +309,14 @@ export async function resendAssessmentInvite(
         }
 
         // Mint a FRESH token — the old link is invalidated.
+        //
+        // A resend also LIFTS a revocation (#5154). The revoked link stays dead,
+        // because its hash is replaced here, and the new one is a deliberate
+        // re-grant by somebody who may revoke. Leaving `revokedAt` set emailed a
+        // link `verifyAccessToken` refuses on sight, while the page offers
+        // Resend on a revoked row as the way out.
         const { raw: rawToken, hash: tokenHash } = mintExternalAccessToken();
+        const revocationLifted = assessment.revokedAt !== null;
         await db.vendorAssessment.update({
             where: { id: assessment.id },
             data: {
@@ -316,6 +324,7 @@ export async function resendAssessmentInvite(
                 externalAccessTokenExpiresAt: expiresAt,
                 sentAt: new Date(),
                 sentByUserId: ctx.userId,
+                revokedAt: null,
             },
         });
 
@@ -347,7 +356,7 @@ export async function resendAssessmentInvite(
                 category: 'entity_lifecycle',
                 entityName: 'VendorAssessment',
                 operation: 'sent',
-                after: { respondentEmail: assessment.respondentEmail, expiresAt: expiresAt.toISOString(), notificationQueued: outboxResult !== null },
+                after: { respondentEmail: assessment.respondentEmail, expiresAt: expiresAt.toISOString(), notificationQueued: outboxResult !== null, revocationLifted },
                 summary: 'Vendor assessment invitation resent',
             },
         });

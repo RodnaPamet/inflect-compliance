@@ -88,12 +88,30 @@ export interface Observation {
     readonly registeredAgentId?: string;
 }
 
+/**
+ * One place a source did not read, as the locator an agent found there would
+ * carry (the `code` source: `code://<root label>/<path>#L<line>`). It goes to
+ * the scanner's own log and nowhere else: the signed report carries the
+ * source's status and reason alone.
+ */
+export interface NotReadLocation {
+    readonly where: string;
+    readonly reason: IncompleteReason;
+}
+
+/** How many not-read places one source names; `notReadTotal` counts them all. */
+export const MAX_NOT_READ_LOCATIONS = 25;
+
 /** How far one source got, and what it saw on the way. */
 export interface SourceRead {
     readonly kind: SourceKind;
     readonly status: 'COMPLETE' | 'INCOMPLETE';
     /** Present exactly when `status` is INCOMPLETE. */
     readonly reason?: IncompleteReason;
+    /** The first `MAX_NOT_READ_LOCATIONS` places not read, where a source can name them. For the log only. */
+    readonly notRead?: readonly NotReadLocation[];
+    /** Every place not read, counted. Present with `notRead`. */
+    readonly notReadTotal?: number;
     /** Rows read from the inventory, whether or not each became an observation. */
     readonly rows: number;
     /** Principals seen, including on a read that stopped early: what WAS read is real. */

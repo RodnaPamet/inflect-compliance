@@ -767,7 +767,7 @@ async function assertWithinPolicyCard(
     tool: string | null,
     dataScope: AgentDataAccessScope,
     requiredAutonomy: number,
-): Promise<void> {
+): Promise<() => Promise<void>> {
     // `tool: null` is the RESOURCES surface — see the parameter's own docstring
     // on `PolicyCardRequest`. Named once here so both counters agree about which
     // door a call came through.
@@ -786,7 +786,7 @@ async function assertWithinPolicyCard(
             outcome: inv.governedAgentId === null ? 'no_agent' : 'no_card',
             surface,
         });
-        return;
+        return async () => {};
     }
 
     const deny = async (verdict: Exclude<ReturnType<typeof evaluateCardReach>, { allowed: true }>) => {
@@ -827,18 +827,26 @@ async function assertWithinPolicyCard(
     });
     if (!reach.allowed) await deny(reach);
 
-    const reserved = await reserveDailyAction(
-        inv.ctx.tenantId,
-        binding.inForce.cardId,
-        inv.now(),
-    );
-    const budget = evaluateCardDailyBudget(binding.inForce, reserved);
-    if (!budget.allowed) await deny(budget);
+    // The budgets are SPENT by the caller, once every other gate has passed
+    // (#5233). Reach is decided here, at the card's own step; the spend is
+    // handed back because a call the credential's scope, capability or the
+    // principal's permissions refuse must not burn a unit of the day or the
+    // run on its way out, for the reason the docstring gives about reach.
+    return async () => {
+        const reserved = await reserveDailyAction(
+            inv.ctx.tenantId,
+            binding.inForce.cardId,
+            inv.now(),
+        );
+        const budget = evaluateCardDailyBudget(binding.inForce, reserved);
+        if (!budget.allowed) await deny(budget);
 
-    // Counted only once the call is cleared, so a refused call does not consume
-    // the run's budget either. The two budgets are spent on the same terms.
-    binding.actionsThisRun += 1;
-    recordPolicyCardEvaluation({ outcome: 'allowed', surface });
+        // Counted only once the call is cleared, so a refused call does not
+        // consume the run's budget either. The two budgets are spent on the
+        // same terms.
+        binding.actionsThisRun += 1;
+        recordPolicyCardEvaluation({ outcome: 'allowed', surface });
+    };
 }
 
 /**
@@ -886,13 +894,15 @@ export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
     // the paragraph above gives for the exposure allowlist. The data rung, the
     // autonomy rung and BOTH budgets apply unchanged — a resource read is a
     // tenant-data read and it spends the agent's day like any other.
-    await assertWithinPolicyCard(
+    const spendPolicyCardBudget = await assertWithinPolicyCard(
         inv,
         MCP_RESOURCES_AUDIENCE,
         null,
         RESOURCE_READ_DATA_SCOPE,
         requiredAutonomyFor('read', undefined),
     );
+    // Nothing else gates this door after the card, so the spend follows at once.
+    await spendPolicyCardBudget();
 }
 
 /**
@@ -1182,7 +1192,8 @@ export async function authorizeToolCall(
 
     // 6. Is this call inside the agent's own versioned policy card? Evaluated
     //    HERE, before anything runs — a violation is a refusal, not a note.
-    await assertWithinPolicyCard(
+    //    Its budgets are spent at step 10b, after the checks below (#5233).
+    const spendPolicyCardBudget = await assertWithinPolicyCard(
         inv,
         tool.name,
         tool.name,
@@ -1257,6 +1268,11 @@ export async function authorizeToolCall(
             });
         }
     }
+
+    // 10b. Spend the policy card's daily and per-run budgets. Last among the
+    //     gates, so a call refused by the credential's capability or scope, a
+    //     permission key or the shared policy spends nothing (#5233).
+    await spendPolicyCardBudget();
 
     // 11. Observe. Not a gate — every gate has passed, and this is the only step
     //     that writes something other than a denial. It never throws: the store

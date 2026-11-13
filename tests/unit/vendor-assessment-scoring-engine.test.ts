@@ -247,6 +247,17 @@ describe('parseScoringConfig', () => {
         expect(parseScoringConfig({ mode: 'BOGUS' })).toBeNull();
     });
 
+    test('keeps a declared thresholdScale, and drops an unknown one (#5136)', () => {
+        expect(parseScoringConfig({ mode: 'WEIGHTED_AVERAGE', thresholdScale: 'PERCENT' })).toEqual({
+            mode: 'WEIGHTED_AVERAGE',
+            thresholdScale: 'PERCENT',
+        });
+        expect(parseScoringConfig({ mode: 'WEIGHTED_AVERAGE', thresholdScale: 'RAW' })?.thresholdScale).toBe('RAW');
+        expect(parseScoringConfig({ mode: 'WEIGHTED_AVERAGE', thresholdScale: 'percent' })).toEqual({
+            mode: 'WEIGHTED_AVERAGE',
+        });
+    });
+
     test('parses a valid mode-only config', () => {
         const r = parseScoringConfig({ mode: 'SIMPLE_SUM' });
         expect(r).toEqual({ mode: 'SIMPLE_SUM' });

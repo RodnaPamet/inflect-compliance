@@ -95,7 +95,7 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-const FINDING = { severity: 'MEDIUM', type: 'NONCONFORMITY', title: 'Unreviewed firewall rule' };
+const FINDING = { severity: 'MEDIUM', type: 'NONCONFORMITY' as const, title: 'Unreviewed firewall rule' };
 const RISK = { title: 'Unpatched edge router', description: 'Seen in the last scan.' };
 
 async function refusal(p: Promise<unknown>): Promise<{ status?: number; reason?: unknown }> {

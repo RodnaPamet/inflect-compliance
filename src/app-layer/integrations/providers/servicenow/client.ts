@@ -84,6 +84,21 @@ export function snValue(v: ServiceNowRow[string] | undefined): string {
     return v.display_value ?? v.value ?? '';
 }
 
+/**
+ * The STORED value of a Table API field, never its rendering.
+ *
+ * `display_value` is formatted for the integration user: their time zone and
+ * their date format. A timestamp read from it moved by the user's UTC offset,
+ * and under a `MM/dd/yyyy` profile it did not parse at all (#5197). `value` is
+ * always `yyyy-MM-dd HH:mm:ss` in UTC, and a reference's `value` is its
+ * `sys_id`. Use this for timestamps and ids; `snValue` stays for choice text.
+ */
+export function snRawValue(v: ServiceNowRow[string] | undefined): string {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    return v.value ?? v.display_value ?? '';
+}
+
 export class ServiceNowClient extends BaseIntegrationClient<ServiceNowConnectionConfig> {
     readonly providerId = 'servicenow';
     readonly displayName = 'ServiceNow';
@@ -360,10 +375,10 @@ export class ServiceNowClient extends BaseIntegrationClient<ServiceNowConnection
 }
 
 function toRemoteObject(row: ServiceNowRow): RemoteObject<ServiceNowRow> {
-    const updated = snValue(row.sys_updated_on);
+    const updated = snRawValue(row.sys_updated_on);
     const parsed = updated ? new Date(updated.replace(' ', 'T') + 'Z') : null;
     return {
-        remoteId: snValue(row.sys_id),
+        remoteId: snRawValue(row.sys_id),
         data: row,
         remoteUpdatedAt: parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined,
     };
