@@ -4,7 +4,8 @@
  * night's RECORD for that role, plus a markdown summary for the job page.
  *
  *   node .garak/summarise.mjs <report.jsonl> <ledger.json> <allowlist.tsv> <role>
- *       --probes <comma-separated probe_spec> --garak-exit <code> [--md <out.md>]
+ *       --probes <comma-separated probe_spec> --garak-exit <code>
+ *       [--provenance <provenance.json>] [--md <out.md>]
  *
  * The record (schema `inflect-garak-night/1`) is the Phase 0 shape Phase 2
  * turns into a committed evaluation record:
@@ -24,6 +25,18 @@
  *             evaluations is never a clean night either: "no hits" over
  *             nothing evidences nothing.
  *   notEvaluated  the configured probes with no scored output, by name.
+ *   provenance  how the role's ANSWERS were produced, from the product's own
+ *             Art 12 rows (AiDecisionLog, feature 'assistant'; the workflow
+ *             counts the rows the role added, .garak/provenance.sql). An
+ *             answer garak scored is a statement about the MODEL only when a
+ *             model produced it: the keyword router's posture sentence and the
+ *             loop's "the language model was unavailable" notice both pass
+ *             every detector, so a night of them reads as a perfect score
+ *             while measuring nothing (runs 43337664860 and 43380024012). So:
+ *             no turn reached the model -> NO_MODEL_TURNS; some answers did
+ *             not -> ANSWERS_NOT_FROM_MODEL; fewer rows than answers ->
+ *             ANSWERS_UNRECORDED; no provenance at all ->
+ *             MODEL_PROVENANCE_UNKNOWN. Each makes the night incomplete.
  *   allowlisted  the probe classes .garak/allowlist.tsv names, REPORTED beside
  *             their hits, never subtracted from them.
  *
@@ -103,7 +116,28 @@ export function probesNotEvaluated(raw, probes) {
  *   `probes` is the configured probe_spec; `garakExit` is garak's exit code
  *   (null when it was not recorded, which is never read as success).
  */
-export function buildRecord({ report, ledger, allowlist, role, probes, garakExit }) {
+/**
+ * The provenance reasons, on their own so the rule is testable without a report.
+ *
+ * A turn REACHED the model when its row carries tokens (the provider's own
+ * usage count), or when the egress guard withheld its answer (the guard ran on
+ * model output, and that turn writes no row). A row naming a model provider
+ * with no tokens is a turn whose provider call failed: the loop answered with
+ * its "model was unavailable" notice.
+ */
+export function provenanceReasons(ledger, provenance) {
+    if (provenance === null || provenance === undefined) return ['MODEL_PROVENANCE_UNKNOWN'];
+    const reasons = [];
+    const reachedModel = (provenance.fromModel ?? 0) + (ledger.guardRefusedOutput ?? 0);
+    if ((ledger.forwarded ?? 0) > 0 && reachedModel === 0) reasons.push('NO_MODEL_TURNS');
+    else if ((provenance.deterministic ?? 0) + (provenance.modelUnreached ?? 0) > 0) {
+        reasons.push('ANSWERS_NOT_FROM_MODEL');
+    }
+    if ((provenance.recorded ?? 0) < (ledger.answers ?? 0)) reasons.push('ANSWERS_UNRECORDED');
+    return reasons;
+}
+
+export function buildRecord({ report, ledger, allowlist, role, probes, garakExit, provenance = null }) {
     const { raw, garakVersion } = parseReport(report);
     const evaluated = raw.reduce((n, r) => n + r.evaluated, 0);
     const notEvaluated = probesNotEvaluated(raw, probes);
@@ -116,6 +150,7 @@ export function buildRecord({ report, ledger, allowlist, role, probes, garakExit
     if ((ledger.upstreamErrors ?? 0) > 0) incompleteReasons.push('UPSTREAM_ERRORS');
     if ((ledger.rateLimitAbandoned ?? 0) > 0) incompleteReasons.push('RATE_LIMITED');
     if ((ledger.forwarded ?? 0) === 0) incompleteReasons.push('NOTHING_FORWARDED');
+    incompleteReasons.push(...provenanceReasons(ledger, provenance));
     const allowed = parseAllowlist(allowlist);
     return {
         schema: RECORD_SCHEMA,
@@ -126,6 +161,7 @@ export function buildRecord({ report, ledger, allowlist, role, probes, garakExit
         notEvaluated,
         garakExit,
         ledger,
+        provenance,
         families: familiesFrom(raw),
         allowlisted: allowed.map((a) => ({
             ...a,
@@ -150,6 +186,13 @@ export function toMarkdown(record) {
             `upstream errors ${record.ledger.upstreamErrors}` +
             (record.ledger.upstreamErrors ? ` (${JSON.stringify(record.ledger.upstreamErrorStatuses ?? {})})` : '') +
             `; garak exit ${record.garakExit ?? 'unknown'}.`,
+        '',
+        record.provenance
+            ? `How the answers were produced (decision log): model ${record.provenance.fromModel}, ` +
+              `keyword router ${record.provenance.deterministic}, model call failed ` +
+              `${record.provenance.modelUnreached}, rows ${record.provenance.recorded} for ` +
+              `${record.ledger.answers} answers; egress-withheld (model reached) ${record.ledger.guardRefusedOutput}.`
+            : 'How the answers were produced: UNKNOWN (no provenance recorded).',
         '',
         '| family | evaluated | hits | hit rate |',
         '| --- | ---: | ---: | ---: |',
@@ -193,7 +236,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     // never skipped.
     const report = existsSync(reportPath) ? readFileSync(reportPath, 'utf-8') : '';
     const allowlist = existsSync(allowlistPath) ? readFileSync(allowlistPath, 'utf-8') : '';
-    const record = buildRecord({ report, ledger, allowlist, role, probes, garakExit });
+    // An absent or unreadable provenance file is recorded as unknown, which
+    // makes the night incomplete; it is never read as "every answer was the model's".
+    const provenancePath = flag('--provenance');
+    let provenance = null;
+    if (provenancePath && existsSync(provenancePath)) {
+        try {
+            provenance = JSON.parse(readFileSync(provenancePath, 'utf-8'));
+        } catch {
+            provenance = null;
+        }
+    }
+    const record = buildRecord({ report, ledger, allowlist, role, probes, garakExit, provenance });
     process.stdout.write(`${JSON.stringify(record, null, 2)}\n`);
     const mdOut = flag('--md');
     if (mdOut) writeFileSync(mdOut, toMarkdown(record));
