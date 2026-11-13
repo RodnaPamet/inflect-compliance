@@ -200,7 +200,9 @@ describe('1. the ingest raises one MEDIUM finding, and none about the ladder', (
             status: 'OPEN',
             title: `Unregistered automated identity ${IDENTITY}`,
         });
-        expect(finding.description).toContain('The scan cannot show that it runs no model.');
+        // The text is a business-content column: this client reads the row as it is stored, which is
+        // encrypted. What the finding says is the planner's, and its unit test holds the sentence.
+        expect(finding.description).toMatch(/^v[12]:/);
 
         const row = await prisma.discoveredAgent.findFirstOrThrow({
             where: { tenantId: T1, discoveredId: IDENTITY },
