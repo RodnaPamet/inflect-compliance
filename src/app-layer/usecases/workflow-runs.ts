@@ -917,17 +917,12 @@ export async function resumeWorkflowRun(
         },
     }).catch(() => undefined);
 
-    // THE RUN'S OWN START, not this resume's. `Date.now()` here handed every
-    // resumed run a fresh wall clock, so the hour-long `RUNTIME_MS` cap bounded
-    // a SEGMENT and not a run — and a workflow with two checkpoints could span
-    // three hours while every segment reported itself well inside the ceiling.
-    // The same defect `actionsAlready` already fixed for the action budget, on
-    // the one axis where the wrong answer looks most like the right one,
-    // because a paused run genuinely is not spending anything.
+    // THE ENGINE CLOCK RE-BASES ON THIS RESUME, on BOTH branches below — the
+    // inline static walk passes `Date.now()`, the reasoning engines carry it
+    // to the worker as the job's `clockBase` (#5534). A person's deliberation
+    // is bounded by `approvalExpiresAt`, refused above, not by `RUNTIME_MS`;
+    // the static call site carries the full argument.
     //
-    // A run that sat at a checkpoint for a day has spent a day, and that is the
-    // intended reading: `WALL_CLOCK_MS` is documented as "max wall-clock a run
-    // may span (ACROSS RESUMES)".
     // ── THE SECOND DOOR INTO THE ENGINE, AND IT WENT TO THE WEB TIER ────────
     //
     // `startWorkflowRun` enqueues a Flue run and says why: a reasoning loop
@@ -960,7 +955,23 @@ export async function resumeWorkflowRun(
                 omit: { driver: true },
             }),
         );
-        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId });
+        await enqueue('agent-run-execute', {
+            tenantId: ctx.tenantId,
+            runId,
+            // THE CLOCK RE-BASES ON THIS RESUME, as the inline static path
+            // below does and for its reason: `RUNTIME_MS` is read from the
+            // clock, so measuring from the run's start charged the run for
+            // every minute a person spent deciding, and an approval given more
+            // than an hour after the start halted the resumed segment before
+            // it executed a step (#5534). `approvalExpiresAt`, refused above,
+            // bounds the deliberation instead.
+            //
+            // IN THE PAYLOAD, taken HERE, rather than `Date.now()` in the
+            // worker: a SIGTERM retry re-delivers this same payload, so the
+            // retry keeps this base and a wedged segment cannot buy a fresh
+            // hour per attempt.
+            clockBase: Date.now(),
+        });
         // RUNNING, matching what `startWorkflowRun` returns for the same
         // engine. The transaction above already wrote it; this reports it
         // rather than synthesising a QUEUED the reaper and the list page would
@@ -994,10 +1005,13 @@ export async function resumeWorkflowRun(
         // accumulate across resumes untouched, so a resumed run buys itself
         // wall clock and never more work.
         //
-        // NOT applied to `executeQueuedWorkflowRun`: that path is a SIGTERM
-        // retry of a RUNNING row, where nobody is deliberating and the same
-        // unattended work is resuming. Re-basing there would let a wedged run
-        // buy a fresh hour on every retry.
+        // The reasoning-engine resume above re-bases too, through the job: it
+        // puts its own `Date.now()` in the `agent-run-execute` payload as
+        // `clockBase` (#5534). What `executeQueuedWorkflowRun` must NOT do is
+        // take a fresh `Date.now()` of its own — a job is re-delivered on a
+        // SIGTERM retry, where nobody is deliberating, and a base taken per
+        // attempt would let a wedged run buy a fresh hour on every retry. A
+        // start carries no base, so its clock runs from the run's `startedAt`.
         Date.now(),
         resumeDecision.driver,
     );
@@ -1758,9 +1772,46 @@ export function resumePositionOf(ledgerMaxSeq: number, stepCount: number): numbe
     return Math.max(ledgerMaxSeq + 1, stepCount);
 }
 
+/**
+ * How far a payload's clock base may sit ahead of the worker's clock and still
+ * be read as "now". The web tier that stamps it and the worker that reads it
+ * are different processes, possibly on different hosts.
+ */
+export const QUEUED_CLOCK_BASE_MAX_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * THE INSTANT A QUEUED SEGMENT'S `RUNTIME_MS` CLOCK RUNS FROM (#5534).
+ *
+ * The payload's `clockBase` when a person's resume put one there, the run's
+ * own `startedAt` otherwise. Only server code enqueues this job, but the value
+ * still crosses a queue, so it is checked rather than trusted: anything that
+ * is not a finite time no earlier than the run's start and no later than now
+ * (plus `QUEUED_CLOCK_BASE_MAX_SKEW_MS`) is ignored, and the clock falls back
+ * to `startedAt` — the stricter reading, never a longer one. A base inside the
+ * skew is clamped to now, so skew never buys time either.
+ *
+ * Exported for its unit test.
+ */
+export function queuedRunClockBase(
+    clockBase: unknown,
+    startedAtMs: number,
+    nowMs: number,
+): { baseMs: number; source: 'RESUME' | 'RUN_START'; ignored?: 'NOT_A_TIME' | 'BEFORE_RUN_START' | 'IN_THE_FUTURE' } {
+    if (clockBase === undefined || clockBase === null) return { baseMs: startedAtMs, source: 'RUN_START' };
+    if (typeof clockBase !== 'number' || !Number.isFinite(clockBase)) {
+        return { baseMs: startedAtMs, source: 'RUN_START', ignored: 'NOT_A_TIME' };
+    }
+    if (clockBase < startedAtMs) return { baseMs: startedAtMs, source: 'RUN_START', ignored: 'BEFORE_RUN_START' };
+    if (clockBase > nowMs + QUEUED_CLOCK_BASE_MAX_SKEW_MS) {
+        return { baseMs: startedAtMs, source: 'RUN_START', ignored: 'IN_THE_FUTURE' };
+    }
+    return { baseMs: Math.min(clockBase, nowMs), source: 'RESUME' };
+}
+
 export async function executeQueuedWorkflowRun(
     tenantId: string,
     runId: string,
+    opts: { clockBase?: number } = {},
 ): Promise<QueuedRunOutcome> {
     // Read the row BEFORE there is a context to read it with — the one place
     // that is unavoidable, and scoped by BOTH ids so a wrong tenant cannot
@@ -1849,6 +1900,20 @@ export async function executeQueuedWorkflowRun(
         }),
     );
 
+    // THE CLOCK: the person's resume when one enqueued this job, the run's
+    // start otherwise — never this attempt's, so a retry re-delivering the
+    // same payload halts at the wall clock rather than buying a fresh hour.
+    // See `queuedRunClockBase` and the payload's `clockBase` (#5534).
+    const clock = queuedRunClockBase(opts.clockBase, row.startedAt.getTime(), Date.now());
+    if (clock.ignored) {
+        logger.warn('workflow run: queued clock base ignored, measuring from the run start', {
+            component: 'workflow-runs',
+            tenantId: ctx.tenantId,
+            runId: row.id,
+            reason: clock.ignored,
+        });
+    }
+
     const { status, stepFailures } = await executeFrom(
         ctx,
         runId,
@@ -1856,7 +1921,7 @@ export async function executeQueuedWorkflowRun(
         // The ledger's answer OR the counter's, whichever is further on — see
         // `resumePositionOf` for why neither alone is safe.
         resumePositionOf(ledger._max.seq ?? -1, row.stepCount),
-        row.startedAt.getTime(),
+        clock.baseMs,
         permitted,
     );
     return { status, stepFailures };
