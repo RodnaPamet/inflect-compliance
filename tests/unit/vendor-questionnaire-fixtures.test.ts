@@ -108,6 +108,33 @@ describe.each([
         expect(cfg.mode).toBe('WEIGHTED_AVERAGE');
         expect(cfg.ratingThresholds).toHaveLength(4);
     });
+
+    it('declares thresholdScale PERCENT, because its thresholds are authored 0-100 (#5066)', () => {
+        // This is the field whose absence auto-rated EVERY vendor LOW.
+        //
+        // In WEIGHTED_AVERAGE the engine's `score` is points-per-unit-weight,
+        // and with option points in [-10,10] it cannot exceed about 10. The
+        // thresholds below are authored as percentages, so bracketing the raw
+        // average against them put every achievable score in the first bucket —
+        // LOW — which was then written to `VendorAssessment.riskRating` and
+        // stamped onto `Vendor.inherentRisk`. An ABSENT scale reads as RAW, so
+        // the omission was silent.
+        //
+        // The test above asserts the mode and the threshold COUNT, which looked
+        // like scoringConfig coverage while this field was missing. Hence this
+        // one, stated as the invariant rather than as a value: thresholds on a
+        // 0-100 scale require the scale to say so.
+        const cfg = fixture.scoringConfig as {
+            thresholdScale?: string;
+            ratingThresholds: Array<{ minScore?: number; maxScore?: number }>;
+        };
+        const bounds = cfg.ratingThresholds.flatMap((t) => [t.minScore, t.maxScore])
+            .filter((n): n is number => typeof n === 'number');
+        const authoredOnPercentScale = Math.max(...bounds) > 10;
+
+        expect(authoredOnPercentScale).toBe(true);
+        expect(cfg.thresholdScale).toBe('PERCENT');
+    });
 });
 
 it('YES_NO questions are exactly the 2-option Yes/No sets', () => {
