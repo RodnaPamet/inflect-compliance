@@ -1,0 +1,598 @@
+{
+  "date": "2026-11-13T13:28:06.345Z",
+  "mode": "faux",
+  "model": "claude-sonnet-5-5",
+  "scriptTurns": 10,
+  "node": "v22.22.0",
+  "platform": "linux-x64",
+  "reps": 5,
+  "sizes": {
+    "sdkVersion": "0.3.323",
+    "bundledClaudeCodeVersion": "2.1.323",
+    "sdkPackageMiB": 5.1,
+    "platform": [
+      {
+        "package": "@anthropic-ai/claude-agent-sdk-linux-x64",
+        "packageMiB": 345.6,
+        "binaryMiB": 345.6
+      },
+      {
+        "package": "@anthropic-ai/claude-agent-sdk-linux-x64-musl",
+        "packageMiB": 333,
+        "binaryMiB": 333
+      }
+    ],
+    "peers": [
+      {
+        "package": "@anthropic-ai/sdk",
+        "version": "1.6.0",
+        "MiB": 16.5
+      },
+      {
+        "package": "@modelcontextprotocol/sdk",
+        "version": "1.32.2",
+        "MiB": 4.3
+      }
+    ]
+  },
+  "ttftMs": {
+    "coldMedian": 493,
+    "coldMax": 554,
+    "warmMedian": 108,
+    "warmMax": 134
+  },
+  "startupMs": {
+    "median": 376,
+    "max": 412
+  },
+  "firstApiRequestMs": {
+    "coldMedian": 467,
+    "warmMedian": 101
+  },
+  "totalMs": {
+    "coldMedian": 866,
+    "warmMedian": 503
+  },
+  "peakRssMiB": {
+    "childTree": 256.5,
+    "childMaxHwm": 256.5,
+    "host": 162.4,
+    "hostMaxRss": 164.6,
+    "combined": 414.8
+  },
+  "modelTurns": [
+    10
+  ],
+  "toolCalls": [
+    20
+  ],
+  "results": [
+    "success/completed"
+  ],
+  "initMatchesResolvedSetEveryRun": true,
+  "egressHosts": [],
+  "sideRequests": 0,
+  "costUsd": null,
+  "runs": [
+    {
+      "kind": "cold",
+      "startupMs": null,
+      "initMs": 468,
+      "ttftMs": 512,
+      "firstApiRequestMs": 469,
+      "totalMs": 903,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 252.4,
+        "childMaxHwmMiB": 252.4,
+        "hostPeakMiB": 142.6,
+        "hostMaxRssMiB": 142.6,
+        "combinedPeakMiB": 394.9,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 19
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "warm",
+      "startupMs": 360,
+      "initMs": 62,
+      "ttftMs": 103,
+      "firstApiRequestMs": 96,
+      "totalMs": 539,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 256.5,
+        "childMaxHwmMiB": 256.5,
+        "hostPeakMiB": 151.6,
+        "hostMaxRssMiB": 151.6,
+        "combinedPeakMiB": 406.8,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 19
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "cold",
+      "startupMs": null,
+      "initMs": 448,
+      "ttftMs": 486,
+      "firstApiRequestMs": 460,
+      "totalMs": 866,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 252.8,
+        "childMaxHwmMiB": 252.8,
+        "hostPeakMiB": 156.5,
+        "hostMaxRssMiB": 156.5,
+        "combinedPeakMiB": 409.3,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 19
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "warm",
+      "startupMs": 393,
+      "initMs": 72,
+      "ttftMs": 116,
+      "firstApiRequestMs": 110,
+      "totalMs": 503,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 255.3,
+        "childMaxHwmMiB": 255.3,
+        "hostPeakMiB": 157.4,
+        "hostMaxRssMiB": 157.4,
+        "combinedPeakMiB": 412.7,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 19
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "cold",
+      "startupMs": null,
+      "initMs": 454,
+      "ttftMs": 493,
+      "firstApiRequestMs": 467,
+      "totalMs": 850,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 251.8,
+        "childMaxHwmMiB": 251.8,
+        "hostPeakMiB": 158.1,
+        "hostMaxRssMiB": 158.1,
+        "combinedPeakMiB": 409.9,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 18
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "warm",
+      "startupMs": 412,
+      "initMs": 80,
+      "ttftMs": 134,
+      "firstApiRequestMs": 126,
+      "totalMs": 566,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 251,
+        "childMaxHwmMiB": 253.4,
+        "hostPeakMiB": 158.9,
+        "hostMaxRssMiB": 158.9,
+        "combinedPeakMiB": 409.8,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 21
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "cold",
+      "startupMs": null,
+      "initMs": 408,
+      "ttftMs": 447,
+      "firstApiRequestMs": 412,
+      "totalMs": 806,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 255.1,
+        "childMaxHwmMiB": 256.3,
+        "hostPeakMiB": 159.5,
+        "hostMaxRssMiB": 159.5,
+        "combinedPeakMiB": 414.6,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 18
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "warm",
+      "startupMs": 368,
+      "initMs": 56,
+      "ttftMs": 94,
+      "firstApiRequestMs": 88,
+      "totalMs": 452,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 254.8,
+        "childMaxHwmMiB": 255.6,
+        "hostPeakMiB": 160,
+        "hostMaxRssMiB": 160,
+        "combinedPeakMiB": 414.8,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 18
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "cold",
+      "startupMs": null,
+      "initMs": 502,
+      "ttftMs": 554,
+      "firstApiRequestMs": 529,
+      "totalMs": 974,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 252.9,
+        "childMaxHwmMiB": 252.9,
+        "hostPeakMiB": 162.4,
+        "hostMaxRssMiB": 164.6,
+        "combinedPeakMiB": 408.7,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 21
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    },
+    {
+      "kind": "warm",
+      "startupMs": 376,
+      "initMs": 66,
+      "ttftMs": 108,
+      "firstApiRequestMs": 101,
+      "totalMs": 494,
+      "modelTurns": 10,
+      "toolCalls": 20,
+      "result": {
+        "subtype": "success",
+        "terminal_reason": "completed",
+        "num_turns": 21,
+        "total_cost_usd": 0.004000000000000001
+      },
+      "initMatchesResolvedSet": true,
+      "initTools": [
+        "mcp__inflect__get_assets",
+        "mcp__inflect__get_audits",
+        "mcp__inflect__get_controls",
+        "mcp__inflect__get_evidence",
+        "mcp__inflect__get_findings",
+        "mcp__inflect__get_incidents",
+        "mcp__inflect__get_policies",
+        "mcp__inflect__get_risks",
+        "mcp__inflect__get_tasks",
+        "mcp__inflect__get_vendors",
+        "mcp__inflect__list_assets",
+        "mcp__inflect__list_audits",
+        "mcp__inflect__list_controls",
+        "mcp__inflect__list_evidence",
+        "mcp__inflect__list_findings",
+        "mcp__inflect__list_incidents",
+        "mcp__inflect__list_policies",
+        "mcp__inflect__list_risks",
+        "mcp__inflect__list_tasks",
+        "mcp__inflect__list_vendors"
+      ],
+      "rss": {
+        "childTreePeakMiB": 251.1,
+        "childMaxHwmMiB": 251.3,
+        "hostPeakMiB": 156.3,
+        "hostMaxRssMiB": 164.6,
+        "combinedPeakMiB": 406.6,
+        "childNames": [
+          "claude"
+        ],
+        "samples": 19
+      },
+      "egressHosts": [],
+      "sideRequests": 0
+    }
+  ]
+}

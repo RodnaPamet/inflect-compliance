@@ -670,6 +670,19 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    driver stays the candidate second engine, adopted only if a profile needs
    something the Tool Runner engine cannot give it, such as hook-based deferral
    of a call to a human.
+
+   **Phase 4 trigger (owner, 2026-11-13).** The owner recorded that profiles
+   need three things the Tool Runner engine cannot give them today: (1)
+   deferring a tool call to a person mid-run through an SDK hook, (2) context
+   compaction for long runs, and (3) a file or code workspace. That starts Step
+   4a (#4159) and nothing past it: the decision above stands until the owner
+   has read the spike. Need (3) overlaps Managed Agents (Phases 5 and 6,
+   `docs/claude-managed-agents-design.md`, Step 5e), whose container is a
+   workspace by design, while this document's locked options refuse every
+   built-in file and shell tool. So the spike's recommendation names, for each
+   of the three needs, the engine that serves it: this one, an extension of the
+   Tool Runner, or Managed Agents. The spike and its recommendation are in
+   `docs/implementation-notes/2026-11-13-spike-4a-agent-sdk.md`.
 2. **The four #3351 questions, for instructions instead of compose text.**
    **Decided (owner, 2026-10-25): all four answers below are accepted as
    written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
