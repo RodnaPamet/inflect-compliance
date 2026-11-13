@@ -376,7 +376,18 @@ export default function AdminIntegrationsPage() {
         // editing an unrelated field on a working connection silently turns its
         // booleans into strings, which is how a connection that was writing
         // stops writing with nothing to show for it.
-        setFormConfig(Object.fromEntries(Object.entries(conn.configJson ?? {}).map(([k, v]) => [k, v == null ? '' : String(v)])));
+        // A STRUCTURED value (an object or array) is not a form field: it is
+        // written by its own usecase (the legacy column mapping, the username
+        // convention), and `String(v)` turned it into "[object Object]" that
+        // the save then stored over the real one (#5067). It stays out of the
+        // form; the server keeps the stored value either way.
+        setFormConfig(
+            Object.fromEntries(
+                Object.entries(conn.configJson ?? {})
+                    .filter(([, v]) => v === null || typeof v !== 'object')
+                    .map(([k, v]) => [k, v == null ? '' : String(v)]),
+            ),
+        );
         setFormSecrets({});
         setShowSecrets(false);
         setMessage(null);

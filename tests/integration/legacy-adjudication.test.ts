@@ -53,6 +53,18 @@ const fake: FakeState = {
     },
 };
 
+/** Every account handed to the payload builder, by username (#5145). */
+const builtFor: string[] = [];
+jest.mock('@/app-layer/ai/identity-match/match-state-builder', () => {
+    const actual = jest.requireActual('@/app-layer/ai/identity-match/match-state-builder');
+    return {
+        ...actual,
+        buildMatchState: (input: { account: { username?: string | null } }) => {
+            builtFor.push(String(input.account.username));
+            return actual.buildMatchState(input);
+        },
+    };
+});
 jest.mock('@/app-layer/ai/identity-match', () => ({
     getDecisionProvider: () => ({
         get providerName() {
@@ -489,6 +501,44 @@ describe('what gets written', () => {
         // decision stamp exactly this row through `recordDecisionOutcome`.
         expect(log.sessionRef).toBe(verdict.id);
         expect(log.provider).toBe('laya');
+    });
+
+    it('builds the payload from the resolution’s OWN snapshot, not a newer account of the same key elsewhere (#5145)', async () => {
+        // The same login in another legacy application, pulled later.
+        const otherConnection = await prisma.integrationConnection.create({
+            data: { tenantId: TENANT, provider: 'legacy-mcp', name: 'other legacy', configJson: {} },
+            select: { id: true },
+        });
+        const otherSnapshot = await prisma.legacyAccessSnapshot.create({
+            data: {
+                tenantId: TENANT, connectionId: otherConnection.id, remoteSnapshotId: 'adj-other',
+                mappingVersion: 1, columnSetFingerprint: 'c'.repeat(64), payloadHash: 'd'.repeat(64),
+                rowCount: 1, rowsReceived: 1, status: 'COMPLETE', completedAt: new Date(),
+            },
+            select: { id: true },
+        });
+        try {
+            await prisma.legacyAccount.create({
+                data: {
+                    tenantId: TENANT, snapshotId: otherSnapshot.id, accountKey: 'acct-1',
+                    username: 'decoy.user', displayName: 'Somebody Else', status: 'ACTIVE', accountType: 'HUMAN',
+                    entitlements: [],
+                },
+            });
+            await residue('acct-1', 'SUGGESTED', [
+                { employeeId: employeeA, score: 9 },
+                { employeeId: employeeB, score: 2 },
+            ]);
+            builtFor.length = 0;
+
+            await adjudicateResidue({ tenantId: TENANT, executionId });
+
+            expect(builtFor).toEqual(['i.ivanov']);
+        } finally {
+            await prisma.legacyAccount.deleteMany({ where: { snapshotId: otherSnapshot.id } });
+            await prisma.legacyAccessSnapshot.delete({ where: { id: otherSnapshot.id } });
+            await prisma.integrationConnection.delete({ where: { id: otherConnection.id } });
+        }
     });
 
     it('never stores the payload, only a digest of it', async () => {
