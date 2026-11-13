@@ -68,13 +68,11 @@ describe('3. admission refuses a version with deferred tools on an engine that d
         }) as ProfileRunSpec;
 
     it('refuses by name on every engine whose entry is false, and admits a version that defers nothing', () => {
-        // Deploy 1: the Tool Runner runs profiles but parks on no deferred
-        // call yet, so a version naming one is refused by name, never run as
-        // though its calls did not wait.
-        expect(runsDeferrals('tool-runner')).toBe(false);
-        expect(() => assertEngineRunsProfiles('tool-runner', profile(['propose_risks']))).toThrow(
-            /PROFILE_DEFERRALS_NOT_RUNNABLE/,
-        );
+        // Deploy 2 turned the Tool Runner's entry on (its own commit): it parks
+        // on a deferred call. Every other engine refuses such a version by
+        // name before its own refusals would, never running it without the wait.
+        expect(runsDeferrals('tool-runner')).toBe(true);
+        expect(() => assertEngineRunsProfiles('tool-runner', profile(['propose_risks']))).not.toThrow();
         expect(() => assertEngineRunsProfiles('tool-runner', profile())).not.toThrow();
         expect(() => assertEngineRunsProfiles('tool-runner', profile([]))).not.toThrow();
     });

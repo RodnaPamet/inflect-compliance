@@ -541,7 +541,12 @@ export function isProfileProposeTool(name: string): boolean {
 const RUNS_DEFERRALS: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: false,
-    'tool-runner': false,
+    // TRUE since Step 2f deploy 2 (#5530), in a commit of its own, after every
+    // reader shipped in deploy 1: the engine parks a run on a deferred call
+    // and resumes it from its transcript once a person decides. Reverting it
+    // refuses every version with deferred tools by name rather than running
+    // it as though its calls did not wait.
+    'tool-runner': true,
 };
 
 export function runsDeferrals(driver: AgentDriver): boolean {
