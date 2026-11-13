@@ -183,7 +183,21 @@ is the hit rate per family DERIVED from `raw` on every run and stored nowhere
 else (G11); `complete` is true only when EVERY configured probe has scored
 outputs, garak exited 0, and no request was cut by the wire cap, failed
 upstream or was abandoned to a run of 429s (zero evaluations is never a clean
-night, and a run the timeout killed after some probes is not one either);
+night, and a run the timeout killed after some probes is not one either), AND
+every answer came from the model: `provenance` counts the role's answers by how
+the product's own decision log says they were produced (`.garak/provenance.sql`
+— a model with tokens, the keyword router, or a model provider with no tokens,
+which is a provider call that failed and was answered with the "language model
+was unavailable" notice). No turn reaching the model is `NO_MODEL_TURNS`, and it
+fails the summary step; some answers not from the model is
+`ANSWERS_NOT_FROM_MODEL`. Both of the first dispatched runs (43337664860,
+43380024012) scored every probe a PASS at 0 tokens, about 100 ms a turn: the app
+was started with the organisation-level fallback key and without the
+`anthropic-workspace-id` header that key needs, which fits every model call
+being refused and the notice passing every detector. The app is now given `vars.ANTHROPIC_WORKSPACE_ID` when the fallback
+key is in use, and its own reason for each turn that missed the model
+(`assistant.provider_error`, `assistant.model_not_configured`) is printed in the
+scan step's log;
 `notEvaluated` names the configured probes with no scored output;
 `allowlisted` reports the allowlisted classes with their hits,
 never subtracting them; `ledger` is the proxy's counts (forwarded, guard

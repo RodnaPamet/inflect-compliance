@@ -639,3 +639,58 @@ describe('the tool-call halt notice is about ONE question (#5054 review)', () =>
         expect(halts).toEqual([]);
     });
 });
+
+// ─── Why a turn did not reach the model is logged (garak runs 43337664860, 43380024012) ──
+//
+// The loop keeps no provider error: a failed call settles the turn as
+// `halted-provider-unavailable`, the user reads "the language model was
+// unavailable", and the decision row records a model provider with no tokens.
+// Two garak nights were answered that way end to end, and nothing anywhere
+// said why. The usecase now logs one line per failed call (the provider's own
+// error, never the question) and one per turn with no model to ask.
+
+describe('a turn that did not reach the model says why in the log', () => {
+    const QUESTION = 'which vendors hold customer data?';
+
+    it('a failed provider call is logged with its error; the answer is still the unavailable notice', async () => {
+        const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        (assistantProviderFor as jest.Mock).mockReturnValue({
+            complete: jest.fn().mockRejectedValue(new Error('Anthropic API error 400: workspace header required')),
+        });
+        const answer = await askAssistant(ctx, { question: QUESTION });
+
+        expect(answer.message).toBe(haltNotice('halted-provider-unavailable', DEFAULT_LOOP_BOUNDS));
+        const errorLines = warn.mock.calls.filter(([msg]) => msg === 'assistant.provider_error');
+        expect(errorLines).toEqual([
+            [
+                'assistant.provider_error',
+                {
+                    component: 'assistant',
+                    specifier: 'inflect-external/claude-haiku-4-5',
+                    error: 'Anthropic API error 400: workspace header required',
+                },
+            ],
+        ]);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain(QUESTION);
+        // The row names the model provider and counts no tokens: exactly the
+        // shape .garak/provenance.sql counts as `modelUnreached`.
+        expect(logAiDecisionMock.mock.calls[0][2]).toMatchObject({
+            provider: 'inflect-external',
+            tokensIn: null,
+            tokensOut: null,
+        });
+        warn.mockRestore();
+    });
+
+    it('a turn with no model to ask is logged with a closed reason, and answered by the keyword router', async () => {
+        const info = jest.spyOn(logger, 'info').mockImplementation(() => undefined);
+        (assistantProviderFor as jest.Mock).mockReturnValue(null);
+        await askAssistant(ctx, { question: QUESTION });
+
+        expect(info.mock.calls.filter(([msg]) => msg === 'assistant.model_not_configured')).toEqual([
+            ['assistant.model_not_configured', { component: 'assistant', reason: 'NO_TOOL_USE_PROVIDER' }],
+        ]);
+        expect(logAiDecisionMock.mock.calls[0][2]).toMatchObject({ provider: 'deterministic', tokensIn: 0, tokensOut: 0 });
+        info.mockRestore();
+    });
+});
