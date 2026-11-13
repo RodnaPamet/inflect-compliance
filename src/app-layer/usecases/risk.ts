@@ -6,6 +6,7 @@ import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/commo
 import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.policies';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
+import { readRiskMatrixAxes } from './risk-matrix-axes';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
@@ -227,10 +228,11 @@ export async function createRisk(ctx: RequestContext, data: {
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
-        const inherentScore = calculateRiskScore(data.likelihood ?? 3, data.impact ?? 3, maxScale);
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
+        const inherentScore = calculateRiskScore(
+            data.likelihood ?? 3, data.impact ?? 3, axes.likelihoodLevels, axes.impactLevels,
+        );
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise free-text before persistence.
@@ -312,11 +314,10 @@ export async function createRiskFromTemplate(ctx: RequestContext, templateId: st
     if (!template) throw notFound('Risk template not found');
 
     const created = await runInTenantContext(ctx, async (db) => {
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
         const likelihood = overrides.likelihood ?? template.defaultLikelihood;
         const impact = overrides.impact ?? template.defaultImpact;
-        const score = calculateRiskScore(likelihood, impact, maxScale);
+        const score = calculateRiskScore(likelihood, impact, axes.likelihoodLevels, axes.impactLevels);
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise the merged value (override OR template),
@@ -437,11 +438,10 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     assertCanUpdateRisk(ctx);
 
     const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
         const inherentScore = data.likelihood && data.impact
-            ? calculateRiskScore(data.likelihood, data.impact, maxScale)
+            ? calculateRiskScore(data.likelihood, data.impact, axes.likelihoodLevels, axes.impactLevels)
             : undefined;
 
         // RQ2-1 — residual decomposition: both-or-neither, derived
@@ -454,7 +454,9 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
         }
         const residualScore =
             data.residualLikelihood !== undefined && data.residualImpact !== undefined
-                ? calculateRiskScore(data.residualLikelihood, data.residualImpact, maxScale)
+                ? calculateRiskScore(
+                    data.residualLikelihood, data.residualImpact, axes.likelihoodLevels, axes.impactLevels,
+                )
                 : undefined;
 
         // A newly-supplied owner must be an active member; `undefined` leaves

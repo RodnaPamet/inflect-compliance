@@ -151,19 +151,21 @@ export function suggestResidual(
     inherentImpact: number,
     combined: Pick<CombinedEffectiveness, 'likelihoodReduction' | 'impactReduction'>,
     maxScale: number = 5,
+    /** The impact axis's own bound (#5080); defaults to `maxScale` for a square matrix. */
+    maxImpact: number = maxScale,
 ): ResidualSuggestion {
     const residualLikelihood = Math.min(
         maxScale,
         Math.max(1, Math.ceil(inherentLikelihood * (1 - combined.likelihoodReduction))),
     );
     const residualImpact = Math.min(
-        maxScale,
+        maxImpact,
         Math.max(1, Math.ceil(inherentImpact * (1 - combined.impactReduction))),
     );
     return {
         residualLikelihood,
         residualImpact,
-        residualScore: calculateRiskScore(residualLikelihood, residualImpact, maxScale),
+        residualScore: calculateRiskScore(residualLikelihood, residualImpact, maxScale, maxImpact),
         likelihoodReduction: combined.likelihoodReduction,
         impactReduction: combined.impactReduction,
     };

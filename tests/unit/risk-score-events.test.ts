@@ -17,6 +17,7 @@
 
 const mockDb = {
     tenant: { findUnique: jest.fn() },
+    riskMatrixConfig: { findUnique: jest.fn() },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
     riskScoreEvent: { create: jest.fn(), findMany: jest.fn() },
@@ -85,7 +86,7 @@ import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     jest.clearAllMocks();
-    (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+    (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue(null);
     (mockDb.riskScoreEvent.create as jest.Mock).mockResolvedValue({ id: 'ev-1' });
 });
 

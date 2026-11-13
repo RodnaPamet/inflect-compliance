@@ -216,8 +216,9 @@ function freshDb() {
             findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({}),
         },
-        tenant: {
-            findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }),
+        // No saved matrix: the default 5x5 bounds every score (#5080).
+        riskMatrixConfig: {
+            findUnique: jest.fn().mockResolvedValue(null),
         },
     };
 }
@@ -521,9 +522,9 @@ describe('executeRiskGeneration', () => {
         expect(titles).toContain('Unauthorized Access to Application');
     });
 
-    it('uses default maxRiskScale (5) when tenant row is missing and skips existing risks', async () => {
+    it('uses the default matrix when the tenant saved none, and skips existing risks', async () => {
         const db = mockDbHolder.db;
-        db.tenant.findUnique.mockResolvedValue(null); // Branch: tenant?.maxRiskScale || 5
+        db.riskMatrixConfig.findUnique.mockResolvedValue(null); // Branch: no saved RiskMatrixConfig
         db.risk.findFirst.mockResolvedValue({ id: 'existing' }); // Branch: existing → skip
         const r = await runStepAction(ctx, 'INITIAL_RISK_REGISTER', {}, {
             FRAMEWORK_SELECTION: { selectedFrameworks: ['iso27001'] },

@@ -10,6 +10,8 @@
  * - Risk generation → deterministic rules, checks existing risks by title before creating
  * - Task/team setup → creates starter tasks only if none exist for onboarding
  */
+import { calculateRiskScore } from '@/lib/risk-scoring';
+import { readRiskMatrixAxes } from './risk-matrix-axes';
 import { RequestContext } from '../types';
 import { installPack, resolveFrameworkPackKeys } from './framework';
 import { runInTenantContext } from '@/lib/db-context';
@@ -410,9 +412,8 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
     let skipped = 0;
 
     await runInTenantContext(ctx, async (db) => {
-        // Tenant table is global (no RLS) but accessible via the scoped client
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        // Each axis is bounded by the tenant's own matrix (#5080).
+        const axes = await readRiskMatrixAxes(db, ctx.tenantId);
 
         for (const catalogueRisk of applicableRisks) {
             const risk = localizedStarterRisk(catalogueRisk, locale);
@@ -426,7 +427,7 @@ async function executeRiskGeneration(ctx: RequestContext, allData: StepData, loc
                 continue;
             }
 
-            const score = Math.round((risk.likelihood / maxScale) * (risk.impact / maxScale) * maxScale * maxScale);
+            const score = calculateRiskScore(risk.likelihood, risk.impact, axes.likelihoodLevels, axes.impactLevels);
             // Through the repository so the RSK-N key is minted — see the
             // matching note in risk-suggestions.ts. Creating directly left
             // every onboarding-seeded risk with a NULL key and a blank Code
