@@ -72,7 +72,6 @@ async function deferral() {
             query({ prompt: 'The person approved the held call.', options: { ...lockedOptions(run), persistSession: persist, resume: sessionId } }),
         );
         const results2 = second.filter((m) => m.type === 'result');
-        const r2 = results2[results2.length - 1] ?? {};
         const ranAfter = faux.requests.filter((r) => r.main).length;
         report[persist ? 'persistSession:true' : 'persistSession:false'] = {
             first: { subtype: r1.subtype, terminal_reason: r1.terminal_reason, deferred: r1.deferred_tool_use?.name ?? null },
