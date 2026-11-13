@@ -89,6 +89,42 @@ async function seedResolution(opts: {
     return exec.id;
 }
 
+/**
+ * A second legacy connection with its own snapshot and one resolution for
+ * `accountKey` — the same login in another application (#5144). Returns the
+ * connection and the execution that resolved it.
+ */
+async function seedOtherConnectionResolution(
+    accountKey: string,
+    outcome: 'SUGGESTED' | 'UNMATCHED' = 'UNMATCHED',
+): Promise<{ connectionId: string; executionId: string }> {
+    const otherConnection = (await prisma.integrationConnection.create({
+        data: { tenantId: T1, provider: 'legacy-mcp', name: 'second legacy', configJson: {} },
+    })).id;
+    const otherSnapshot = (await prisma.legacyAccessSnapshot.create({
+        data: {
+            tenantId: T1, connectionId: otherConnection, remoteSnapshotId: 'snap-2', mappingVersion: 1,
+            columnSetFingerprint: 'e'.repeat(64), payloadHash: 'g'.repeat(64),
+            rowCount: 1, rowsReceived: 1, status: 'COMPLETE', completedAt: new Date(),
+        },
+    })).id;
+    const exec = await prisma.integrationExecution.create({
+        data: {
+            tenantId: T1, connectionId: otherConnection, status: 'PASSED',
+            provider: 'legacy-mcp', automationKey: 'legacy-reconcile',
+            executedAt: new Date(), completedAt: new Date(),
+        },
+    });
+    await prisma.legacyAccountResolution.create({
+        data: {
+            tenantId: T1, executionId: exec.id, snapshotId: otherSnapshot,
+            accountKey, outcome, method: 'NO_CANDIDATES',
+            signalsJson: [], candidatesJson: [], vetoesJson: [],
+        },
+    });
+    return { connectionId: otherConnection, executionId: exec.id };
+}
+
 beforeAll(async () => {
     await resetDatabase(prisma);
     await clearOwnRows();
@@ -199,6 +235,18 @@ describe('the server re-checks what the client claims', () => {
                 action: { kind: 'CONFIRM', employeeId },
             })
         ).rejects.toThrow(/replaced by a newer run/);
+    });
+
+    it('a newer run on ANOTHER connection with the same account key does not supersede this one (#5144)', async () => {
+        // `alovelace` is also a login in a second legacy application. Its
+        // newer resolution is that application's evidence, not this one's.
+        await seedOtherConnectionResolution('alovelace');
+
+        const r = await decideLegacyAccount(ctx(), {
+            connectionId, accountKey: 'alovelace', executionId,
+            action: { kind: 'CONFIRM', employeeId },
+        });
+        expect(r.outcome).toBe('WRITTEN');
     });
 
     it('refuses CONFIRM for an employee the engine never scored', async () => {
@@ -574,11 +622,11 @@ describe('the queue stops asking once a reviewer has answered', () => {
     });
 
     it('an alias on a DIFFERENT connection does not suppress', async () => {
-        const other = await prisma.integrationConnection.create({
-            data: { tenantId: T1, provider: 'legacy-mcp', name: 'second legacy', configJson: {} },
-        });
+        // The other application's own run: a decision there is made against
+        // its resolution, never this connection's (#5144).
+        const other = await seedOtherConnectionResolution('alovelace');
         await decideLegacyAccount(ctx(), {
-            connectionId: other.id, accountKey: 'alovelace', executionId,
+            connectionId: other.connectionId, accountKey: 'alovelace', executionId: other.executionId,
             action: { kind: 'ORPHAN', justification: 'unattributable in the OTHER system' },
         });
         // The same login name in two legacy systems is two accounts, and one
