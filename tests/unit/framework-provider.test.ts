@@ -274,20 +274,20 @@ describe('getFrameworkMappings (YAML-backed cross-framework guidance)', () => {
         expect(mappings.length).toBeGreaterThanOrEqual(20);
     });
 
-    it('A.5.1 should map to CC1, CC5 (SOC2) and NIS2-GOV (NIS2)', () => {
+    it('A.5.1 should map to CC1.1, CC5.1 (SOC2) and NIS2-GOV (NIS2)', () => {
         const mappings = getFrameworkMappings();
         const a51 = mappings.find(m => m.isoControlId === 'A.5.1');
         expect(a51).toBeDefined();
-        expect(a51!.soc2Codes).toContain('CC1');
-        expect(a51!.soc2Codes).toContain('CC5');
+        expect(a51!.soc2Codes).toContain('CC1.1');
+        expect(a51!.soc2Codes).toContain('CC5.1');
         expect(a51!.nis2Codes).toContain('NIS2-GOV');
     });
 
-    it('A.8.24 should map to CC6, C1 (SOC2) and NIS2-CR (NIS2)', () => {
+    it('A.8.24 should map to CC6.1, CC6.7, C1 (SOC2) and NIS2-CR (NIS2)', () => {
         const mappings = getFrameworkMappings();
         const a824 = mappings.find(m => m.isoControlId === 'A.8.24');
         expect(a824).toBeDefined();
-        expect(a824!.soc2Codes).toContain('CC6');
+        expect(a824!.soc2Codes).toEqual(expect.arrayContaining(['CC6.1', 'CC6.7']));
         expect(a824!.soc2Codes).toContain('C1');
         expect(a824!.nis2Codes).toContain('NIS2-CR');
     });
