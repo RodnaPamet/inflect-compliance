@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 
 // The sheet is replaced by a marker: this suite is about WHEN the launcher
 // mounts it (#5054), and the sheet's own behaviour has its own suite.
@@ -70,7 +70,7 @@ jest.mock('next-intl', () => ({
 // hooks the shell happens to call.
 
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
-import { AssistantOpenProvider } from '@/components/assistant/assistant-open-context';
+import { AssistantOpenProvider, useAssistantOpen } from '@/components/assistant/assistant-open-context';
 import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { Sheet } from '@/components/ui/sheet';
 import { TenantProvider, type TenantContextValue } from '@/lib/tenant-context-provider';
@@ -273,6 +273,44 @@ describe('the role gate — a reader is not shown a button that refuses them', (
         // the assertion above.
         const { container } = mountAs(true);
         expect(container.querySelector('[data-testid="assistant-launcher"]')).not.toBeNull();
+    });
+
+    /** What the command palette reads: is the assistant on offer, and is it open. */
+    function Probe() {
+        const { available, open } = useAssistantOpen();
+        return <span data-testid="assistant-probe">{`${available}:${open}`}</span>;
+    }
+
+    function mountWithProbe(canWrite: boolean) {
+        const ctx: TenantContextValue = {
+            ...TENANT,
+            permissions: { ...TENANT.permissions, canWrite },
+        };
+        return render(
+            <KeyboardShortcutProvider>
+                <AssistantOpenProvider>
+                    <TenantProvider value={ctx}>
+                        <AssistantLauncher />
+                        <Probe />
+                    </TenantProvider>
+                </AssistantOpenProvider>
+            </KeyboardShortcutProvider>,
+        );
+    }
+
+    it('offers a reader neither the palette entry nor the shortcut (#5171)', () => {
+        const { getByTestId } = mountWithProbe(false);
+        expect(getByTestId('assistant-probe').textContent).toBe('false:false');
+
+        act(() => {
+            fireEvent.keyDown(document, { key: 'A', code: 'KeyA', ctrlKey: true, metaKey: true, shiftKey: true });
+        });
+        expect(getByTestId('assistant-probe').textContent).toBe('false:false');
+    });
+
+    it('offers a writer the palette entry — the control', () => {
+        const { getByTestId } = mountWithProbe(true);
+        expect(getByTestId('assistant-probe').textContent).toBe('true:false');
     });
 });
 

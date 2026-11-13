@@ -21,7 +21,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { forbidden, notFound } from '@/lib/errors/types';
+import { RateLimitedError, forbidden, notFound } from '@/lib/errors/types';
 import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
 import { checkRateLimit, recordGeneration } from '@/app-layer/ai/risk-assessment/rate-limiter';
 import { recordAiGeneration } from '@/lib/observability/integration-metrics';
@@ -101,6 +101,12 @@ export interface AutofillResult {
     drafted: number;
     flagged: number;
     fromLibrary: number;
+    /**
+     * PENDING questions left undrafted because the per-user AI budget ran out
+     * part-way (#5076). They stay PENDING, so running autofill again later
+     * continues from them; the drafts already made are kept.
+     */
+    remaining: number;
 }
 
 export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId: string): Promise<AutofillResult> {
@@ -167,7 +173,7 @@ export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId
         assertGuardAllowed(groundingGuard);
         assertGuardAllowed(egressGuard);
 
-        let drafted = 0, flagged = 0, fromLibrary = 0;
+        let drafted = 0, flagged = 0, fromLibrary = 0, processed = 0;
         for (const item of items) { // guardrail-allow: n+1 — per-question draft, bounded by MAX_QUESTIONS
             // 1. Library retrieval — reuse a previously-accepted answer.
             const libMatch = library.map((l) => ({ l, score: relevance(item.questionText, l.questionText) })).filter((r) => r.score >= LIBRARY_MATCH_FLOOR).sort((a, b) => b.score - a.score)[0];
@@ -184,7 +190,18 @@ export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId
                 // to MAX_QUESTIONS model calls; the old per-RUN charge let one
                 // 500-question upload drive ~500× the daily quota of OpenRouter
                 // calls. checkRateLimit throws when the quota is exhausted.
-                await checkRateLimit(ctx.tenantId, ctx.userId);
+                //
+                // A refusal STOPS the run rather than failing it (#5076). This
+                // loop is one transaction, so letting the limiter's error
+                // escape rolled back every draft already made — a
+                // questionnaire needing more drafts than the per-minute budget
+                // could never be autofilled at all. The rest stay PENDING.
+                try {
+                    await checkRateLimit(ctx.tenantId, ctx.userId);
+                } catch (err) {
+                    if (err instanceof RateLimitedError) break;
+                    throw err;
+                }
                 const out = await provider.draftAnswer({ question: item.questionText, grounding });
                 await recordGeneration(ctx.tenantId, ctx.userId);
                 recordAiGeneration({ feature: 'questionnaire' }); // H6 — AI cost visibility
@@ -196,10 +213,14 @@ export async function autofillQuestionnaire(ctx: RequestContext, questionnaireId
             const status = confidence >= CONFIDENCE_FLOOR ? 'DRAFTED' : 'FLAGGED';
             if (status === 'DRAFTED') drafted += 1; else flagged += 1;
             await db.inboundQuestionnaireItem.updateMany({ where: { id: item.id, tenantId: ctx.tenantId }, data: { draftAnswer, confidence, sourceCitation: citation.slice(0, 500), status } });
-            await logEvent(db, ctx, { action: 'CREATE', entityType: 'InboundQuestionnaireItem', entityId: item.id, details: `AI drafted questionnaire answer (${status})`, detailsJson: { category: 'ai', entityName: 'InboundQuestionnaireItem', operation: 'ai_draft', summary: `AI drafted answer (${status}, confidence ${confidence.toFixed(2)})`, after: { status, confidence, fromLibrary: !!libMatch } } });
+            // `custom`, not `ai` (#5075): the audit schema has no `ai`
+            // category, so every autofill threw at its first logged answer
+            // and rolled the whole run back.
+            await logEvent(db, ctx, { action: 'CREATE', entityType: 'InboundQuestionnaireItem', entityId: item.id, details: `AI drafted questionnaire answer (${status})`, detailsJson: { category: 'custom', entityName: 'InboundQuestionnaireItem', operation: 'ai_draft', summary: `AI drafted answer (${status}, confidence ${confidence.toFixed(2)})`, after: { status, confidence, fromLibrary: !!libMatch } } });
+            processed += 1;
         }
         await db.inboundQuestionnaire.updateMany({ where: { id: questionnaireId, tenantId: ctx.tenantId }, data: { status: 'REVIEW' } });
-        return { drafted, flagged, fromLibrary };
+        return { drafted, flagged, fromLibrary, remaining: items.length - processed };
     });
 
     // H4 — generation is now charged PER question inside the loop (above), not
