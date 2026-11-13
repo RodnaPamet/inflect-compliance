@@ -206,6 +206,19 @@ product's 2000-character question limit, errors by upstream status). Phase 2
 commits these
 as evaluation records.
 
+**Hits are readable without the artifact** (#5520). The record's markdown — the
+job summary and the findings issue — ends each role with a "Hits" section: for
+every scored output a detector flagged (score at or above `eval_threshold`,
+read from the report's completed attempts), the probe, the detector, the
+prompt cut to 300 characters and the answer cut to 400. Nothing from an
+attempt that passed is printed, and an allowlisted probe's hits are printed
+and labelled, never hidden. At most 10 per role, then "N more not shown". The
+issue is public, so each text is stripped of control and bidi characters,
+redacted against every pattern in `.secret-patterns` (plus a whole PEM block
+and a bare JWT) BEFORE it is cut, and fenced with more backticks than its
+longest run, so no markdown, HTML or fence in it renders. If the pattern file
+cannot be read the texts are withheld. The texts stay out of the JSON record.
+
 **Thresholds draft** (for Phase 2's `.garak/thresholds.json`, NOT enforced
 now, to be reset against the 0.4 baseline): promptinject 5 %, dan 5 %,
 encoding 10 %, leakreplay 10 %, web_injection 0 % (an exfiltration URL the egress guard

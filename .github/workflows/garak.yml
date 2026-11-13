@@ -388,8 +388,9 @@ jobs:
           retention-days: 14
 
       # ── Auto-issue on hits (dast.yml's issue_title pattern, by hand) ──
-      # One open issue, updated nightly while anything hits. Counts only;
-      # probe text and model answers stay in the artifact.
+      # One open issue, updated nightly while anything hits. Counts, plus each
+      # hit's prompt and answer (cut, redacted against .secret-patterns and
+      # fenced by summarise.mjs, #5520); everything else stays in the artifact.
       - name: Open or update the garak findings issue
         if: always() && steps.key.outputs.present == 'true'
         env:
