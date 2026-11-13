@@ -899,9 +899,9 @@ This section is the design for Step 2f (#5530), written before any code under
 that step's Part 1. It carries out the owner's decision of 2026-11-13 on the
 Step 4a spike (#5529): a tool call that waits for a person mid-run is built on
 this engine, on a transcript Inflect stores, and not on the Agent SDK's hook.
-The points that need the owner are listed at the end, under **Open for the
-owner (2f)**, each with a recommendation. The design below is drawn to the
-recommendations, and Part 2 starts only once they are decided.
+The points that needed the owner are listed at the end, under **Owner
+decisions (2f, 2026-11-13)**. The owner took every recommendation, and the
+design below is drawn to them.
 
 ### What exists, and what is missing
 
@@ -1281,7 +1281,10 @@ any row exists:
 **Change class:** Significant, for the new table holding an encrypted
 transcript and the security-relevant resume path.
 
-### Open for the owner (2f)
+### Owner decisions (2f, 2026-11-13)
+
+The owner took the recommendation on every point. The options are kept as
+written, so the reasons stay beside the choice.
 
 1. **Which calls can be deferred.**
    (a) Inflect propose tools the version names, decided in the existing
@@ -1291,16 +1294,16 @@ transcript and the security-relevant resume path.
    approval surface and a new permission key, and for a propose tool it means
    two approvals, the release and then the proposal. (c) As (a), but every
    propose call of a version that opts in, with no per-tool list.
-   **Recommendation: (a).** It reuses the queue's four-eyes, kind keys,
+   **Decided (owner, 2026-11-13): (a).** It reuses the queue's four-eyes, kind keys,
    window and staleness check, and adds no second approval path.
 2. **The parked run's status.** (a) Reuse `AWAITING_APPROVAL`, told apart by
-   the deferral row. (b) A new `WorkflowRunStatus` value. **Recommendation:
+   the deferral row. (b) A new `WorkflowRunStatus` value. **Decided (owner, 2026-11-13):
    (a).** Every reader already handles it, and (b) costs two deploys and a
    branch in every reader for a distinction the row already makes.
 3. **How long the transcript is kept.** (a) Cleared when the run resumes or
    settles, keeping its hash. (b) Kept with the run, Operational, until the run
    is deleted. (c) Retained as a regulatory artefact that survives the tenant
-   purge. **Recommendation: (a).** The ledger and the Art 12 rows are the
+   purge. **Decided (owner, 2026-11-13): (a).** The ledger and the Art 12 rows are the
    record; the transcript is working state holding tenant data, and the hash
    still proves what was resumed.
 4. **An expired wait, and a kill while waiting.** (a) An expiry settles the
@@ -1308,7 +1311,7 @@ transcript and the security-relevant resume path.
    window's end, whichever comes first. (b) An expiry resumes the run with an
    "expired" result, so the model can finish its answer without the write.
    (c) As (a), and engaging a kill switch also settles that agent's parked runs
-   at once. **Recommendation: (a).** Nobody decided, so nothing should continue
+   at once. **Decided (owner, 2026-11-13): (a).** Nobody decided, so nothing should continue
    unattended days later, and (c) would make the kill switch write to runs,
    which it has never done.
 5. **The same transcript for the other resumes.** Today a guard flag's resume
@@ -1317,7 +1320,7 @@ transcript and the security-relevant resume path.
    separate issue. (b) 2f also stores one when a guard flag parks the run.
    (c) The run stores its transcript after every turn, so a SIGTERM resume
    continues too, at the cost of one encrypted write per turn.
-   **Recommendation: (a)**, and the restart is recorded in Current state now.
+   **Decided (owner, 2026-11-13): (a)**, and the restart is recorded in Current state now.
 
 ### Finding: a reasoning run resumed by a person is charged its wait
 
@@ -1329,7 +1332,7 @@ passes `row.startedAt.getTime()`. So a flagged run approved more than
 `ENGINE_CAPS.WALL_CLOCK_MS` (one hour) after it started halts at `RUNTIME_MS`
 as soon as it resumes: the defect `approval-window.ts` describes, on the path
 its fix did not reach. Step 2f does not inherit it (its clock comes from `elapsedMsAtPark`),
-and the existing path needs its own fix.
+and the existing path needs its own fix: #5534.
 
 ## Compaction
 
@@ -1337,8 +1340,9 @@ This section is the design for Step 2g (#5531), written before any code under
 that step's Part 1. It carries out the owner's decision of 2026-11-13 on the
 Step 4a spike (#5529): context compaction for long runs is built on this
 engine, not by adopting the Agent SDK. The points that need the owner are
-listed at the end, under **Open for the owner (2g)**. The first of them comes
-before everything else, because the caps change what compaction is for.
+listed at the end, under **Owner decisions (2g, 2026-11-13)**; the owner took
+every recommendation. The first of them comes before everything else, because
+the caps change what compaction is for.
 
 ### What the caps already decide
 
@@ -1552,7 +1556,10 @@ threshold as its parent.
 - **Change class:** Significant, because the design adds a column (the issue's
   own rule).
 
-### Open for the owner (2g)
+### Owner decisions (2g, 2026-11-13)
+
+The owner took the recommendation on every point. The options are kept as
+written, so the reasons stay beside the choice.
 
 1. **What compaction is for, under today's caps.** (a) Build it as a
    token-budget measure, with the threshold at 15% of the run's `TOKENS` limit
@@ -1561,12 +1568,12 @@ threshold as its parent.
    weight, or a larger engine cap for profile runs), so that a run can grow
    towards the context window, and then build compaction for that. Raising a
    cap is a widening, so it is the owner's alone. (c) Hold 2g until a profile
-   is seen to stop at `TOKENS`. **Recommendation: (a)**, recording that it buys
+   is seen to stop at `TOKENS`. **Decided (owner, 2026-11-13): (a)**, recording that it buys
    a few turns per run today, and taking (b) as its own decision: the threshold
    rule is right under either answer.
 2. **A profile's control.** (a) A column on the version: off, or a lower
    threshold, never higher. (b) No control in v1: the engine's threshold for
-   every profile, and no column, which keeps 2g Standard. **Recommendation:
+   every profile, and no column, which keeps 2g Standard. **Decided (owner, 2026-11-13):
    (a).** Turning it off is the safe direction for a profile whose answer needs
    its whole history, and the approver should see it.
 3. **The mechanism.** (a) Inflect's own summary call and rebuild, as above.
@@ -1574,7 +1581,7 @@ threshold as its parent.
    the server summarises the whole of `messages`, the last turn's tool results
    and the activated skills' text included, and returns an opaque
    `encrypted_content` the model reads and Inflect cannot. Its retention terms
-   were not found. **Recommendation: (a).** What survives is decided by code
+   were not found. **Decided (owner, 2026-11-13): (a).** What survives is decided by code
    Inflect can test, the pending results reach the model unsummarised, and
    nothing new is asked of the sub-processor.
 
@@ -2017,8 +2024,8 @@ need (1) of the Phase 4 trigger, which the owner placed on this engine on
 You are implementing Step 2f of the roadmap in docs/claude-tool-runner-design.md.
 Read the global rules and definition of done in the Roadmap of
 docs/claude-agent-sdk-design.md, and this document's Current state and its
-section "Deferral to a person", including "Open for the owner (2f)" and the
-owner's answers recorded on #5530. Read src/lib/agentic/tool-runner/
+section "Deferral to a person", including its "Owner decisions (2f,
+2026-11-13)". Read src/lib/agentic/tool-runner/
 (execute.ts, tools.ts, params.ts, delegate.ts), src/lib/agentic/drivers/,
 src/app-layer/usecases/workflow-runs.ts (resumeWorkflowRun, abortWorkflowRun,
 executeQueuedWorkflowRun) and src/app-layer/usecases/agent-proposals.ts.
@@ -2082,8 +2089,8 @@ this engine on 2026-11-13 (#5529).
 You are implementing Step 2g of the roadmap in docs/claude-tool-runner-design.md.
 Read the global rules and definition of done in the Roadmap of
 docs/claude-agent-sdk-design.md, and this document's Current state and its
-section "Compaction", including "Open for the owner (2g)" and the owner's
-answers recorded on #5531. Read src/lib/agentic/tool-runner/ (execute.ts,
+section "Compaction", including its "Owner decisions (2g,
+2026-11-13)". Read src/lib/agentic/tool-runner/ (execute.ts,
 params.ts, skills.ts, delegate.ts) and src/lib/agentic/run-caps.ts.
 Step 2e is merged.
 
