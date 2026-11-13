@@ -62,6 +62,31 @@ model Control {
   createdByUserId              String?
   frequency                    ControlFrequency?
   nextDueAt                    DateTime?
+  /// WHEN THE AUTOMATION RUNNER LAST TRIED THIS CONTROL, verdict or not (#5204).
+  ///
+  /// `nextDueAt` means "when the next REAL observation is due" and advances
+  /// only on PASSED/FAILED — deliberately, because a check that could not run
+  /// must not report the control as freshly tested. The consequence nobody
+  /// closed is that a control whose check can NEVER run (no enabled
+  /// connection, an unregistered provider, expired credentials) keeps
+  /// `nextDueAt` in the past for ever. Under `orderBy: { nextDueAt: 'asc' }`
+  /// it therefore sorts FIRST, and the dedupe never catches it because that
+  /// counts only PASSED/FAILED/RUNNING executions — four of the runner's
+  /// failure paths write no execution row at all. At 500 such controls the
+  /// bounded batch is full of them and nothing else in the fleet is ever
+  /// checked, while a throwing provider is called again every tick.
+  ///
+  /// This column is the backoff. It is stamped on EVERY attempt, including the
+  /// ones that produce no verdict and no execution row, and the due query
+  /// treats a control attempted within its own frequency window exactly as it
+  /// treats a recent verdict: not due. So a broken control is retried on its
+  /// declared cadence instead of every tick, and it stops crowding out
+  /// controls that can actually run.
+  ///
+  /// NULL means never attempted, which is why no backfill is needed: every
+  /// existing control reads as due on the first tick after deploy, exactly as
+  /// it does today.
+  automationLastAttemptAt      DateTime?
   evidenceSource               EvidenceSourceType?
   automationKey                String?
   automationType               ControlAutomationType?
