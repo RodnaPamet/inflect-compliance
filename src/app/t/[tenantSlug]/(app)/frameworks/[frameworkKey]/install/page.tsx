@@ -53,6 +53,8 @@ interface InstallPreview {
     existingControls: number;
     /** Requirement mappings missing from controls that already exist (#4731). */
     missingMappings?: number;
+    /** Chosen packs not yet in this workspace's scope (#5277); multi-pack preview only. */
+    packsToAdd?: string[];
     templates: InstallPreviewTemplate[];
 }
 interface InstallResult {
@@ -446,8 +448,10 @@ export default function InstallWizardPage() {
                             onClick={handleInstall}
                             // #4731 — a re-install also restores the mappings an
                             // existing control lost, so it is offered while any is
-                            // missing, not only for new controls.
-                            disabled={installing || (preview.newControls === 0 && (preview.missingMappings ?? 0) === 0)}
+                            // missing, not only for new controls. #5277 — and while
+                            // a chosen pack is not yet in scope: the install is the
+                            // only writer of that choice.
+                            disabled={installing || (preview.newControls === 0 && (preview.missingMappings ?? 0) === 0 && (preview.packsToAdd?.length ?? 0) === 0)}
                             id="confirm-install-btn"
                         >
                             {installing ? (
@@ -458,6 +462,8 @@ export default function InstallWizardPage() {
                                 tx('install.installN', { count: preview.newControls })
                             ) : (preview.missingMappings ?? 0) > 0 ? (
                                 tx('install.restoreN', { count: preview.missingMappings ?? 0 })
+                            ) : (preview.packsToAdd?.length ?? 0) > 0 ? (
+                                tx('install.addToScopeN', { count: preview.packsToAdd?.length ?? 0 })
                             ) : (
                                 tx('install.allInstalled')
                             )}

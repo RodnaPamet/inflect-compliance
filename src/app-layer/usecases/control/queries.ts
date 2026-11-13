@@ -85,8 +85,14 @@ export async function listControlKpiCounts(
     filters?: ControlListInputFilters,
 ) {
     assertCanReadControls(ctx);
+    // Resolved as the list resolves them (#5267). The URL filters were cast
+    // `as never` straight into the repository, so `ids` arrived as the raw
+    // comma string and `health` was never turned into an id restriction:
+    // the cards counted a different set than the list they filter.
+    const idRestriction = await resolveControlIdRestriction(ctx, filters);
+    const repoFilters = toRepoFilters(filters, idRestriction);
     return runInTenantContext(ctx, (db) =>
-        ControlRepository.kpiCounts(db, ctx, filters as never),
+        ControlRepository.kpiCounts(db, ctx, repoFilters),
     );
 }
 

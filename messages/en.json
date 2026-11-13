@@ -10005,6 +10005,7 @@
       "allInstalled": "All controls already installed",
       "installN": "Install {count} Controls",
       "restoreN": "Restore {count, plural, one {# mapping} other {# mappings}}",
+      "addToScopeN": "Add {count, plural, one {# pack} other {# packs}} to scope",
       "mappingsToRestore": "{count, plural, one {# requirement mapping is} other {# requirement mappings are}} missing from controls you already have. Installing again restores them.",
       "installFailed": "Install failed",
       "networkError": "Network error",
