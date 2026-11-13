@@ -814,6 +814,18 @@ export interface AgentRunExecutePayload {
     tenantId: string;
     /** The `WorkflowRun` to execute. */
     runId: string;
+    /**
+     * Epoch ms the engine's `RUNTIME_MS` clock is measured from, set ONLY by a
+     * person's resume of a reasoning-engine run (#5534). Absent on a start, so
+     * the clock runs from the run's own `startedAt`.
+     *
+     * In the PAYLOAD, not read off the row, because a BullMQ retry re-delivers
+     * the same payload: a SIGTERM retry of a resumed segment keeps the resume's
+     * base and does not buy a fresh hour, which a `Date.now()` taken in the
+     * worker would. `executeQueuedWorkflowRun` ignores a value that is not a
+     * finite time between the run's start and now, falling back to `startedAt`.
+     */
+    clockBase?: number;
 }
 
 /**
@@ -1246,8 +1258,10 @@ export const JOB_DEFAULTS: Record<JobName, {
         //
         // Three attempts cannot triple the cost: the run budget is seeded from
         // what earlier segments already spent (`actionsAlready`, `spent.TOKENS`),
-        // and `RUNTIME_MS` is measured from the RUN's own start, so a retry of
-        // an old run halts at the wall clock instead of buying a fresh one.
+        // and `RUNTIME_MS` is measured from the RUN's own start — or, for a
+        // person's resume, from the `clockBase` that resume put in the payload
+        // (#5534) — never from the attempt, so a retry re-delivers the same
+        // base and halts at the wall clock instead of buying a fresh one.
         attempts: 3,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,

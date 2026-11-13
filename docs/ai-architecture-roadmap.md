@@ -741,6 +741,13 @@ or under the host's memory minus 1.5 GB for the OS, Docker and the page cache:
 always keeps a core. That is the Laya precedent. A pull request that would
 cross the memory line carries D-CAP-1's answer in the same pull request.
 
+**The window rule** (owner, 2026-11-13). A batch service that runs only inside
+a scheduled window, started by a host timer and stopped when its window ends,
+does not count against the standing line. During its window, the always-on
+services' measured peaks over that same window (C1b measures them across the
+nightly jobs) plus the batch service's own limit stay under the line, and two
+windows never overlap. The document parser is the first such service.
+
 **The lines.** The ceilings are planning estimates, labelled as such, until a
 phase measures its service. "Measured" replaces an estimate in the pull request
 that measures it.
@@ -752,8 +759,8 @@ that measures it.
 | Embeddings | `tei-embed` | Retriever 1 | 1 GB with a small open model (estimate) | 1.0 | TEI on CPU runs fp32 only. The candidates' weights are about 0.13 GB (`bge-small-en-v1.5`, `e5-small-v2`, 33M parameters) and 0.47 GB (`multilingual-e5-small`, 118M) at fp32, plus the engine. D-L4-3 as amended 2026-11-13 compares small open models only, so no Nemotron line remains in Layer 4 |
 | Reranking | `tei-rerank` | Retriever 2 | 1.5 to 3 GB with a small open model (estimates) | 1.0 | the candidates' weights are about 1.1 GB (`bge-reranker-base`, 278M parameters) and 2.3 GB (`bge-reranker-v2-m3`, 568M, multilingual) at fp32, plus the engine |
 | Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | +0.5 GB on `postgres`'s limit (estimate), measured with `postgres` in C0 | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector replaces all of them in one pull request, a SIGNIFICANT change, with its patch cadence open (D-L4-8). Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
-| Parsing | a Docling-class parsing-only service (D-L4-4, 2026-11-11), `docling-serve-cpu` | Parser 1 | 3 GB (estimate, until the parser's Phase 0 measures it) | 1.0 | layout and table models on CPU; the image is about 4.4 GB on disk. RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
-| PII detection | `presidio` | Presidio 1 | 1.5 GB (estimate) | 1.0 | a large spaCy pipeline plus recognisers |
+| Parsing | a Docling-class parsing-only service (D-L4-4, 2026-11-11), `docling-serve-cpu`, **nightly batch only** (00:15–01:45 UTC, the window rule, owner 2026-11-13) | Parser 1 | 0 standing; 3 GB inside its window (estimate, until the parser's Phase 0 measures it) | 1.0 | layout and table models on CPU; the image is about 4.4 GB on disk. RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
+| PII detection | `presidio` | Presidio 1 | 0.7 GB (estimate) | 1.0 | the small spaCy pipelines the Presidio roadmap plans (`en_core_web_sm`; `xx_ent_wiki_sm` for Bulgarian, which has no spaCy pipeline of its own) plus the recognisers; the earlier 1.5 GB assumed a large pipeline (corrected 2026-11-13). The PII record's floors (D-L1-11) decide whether the small pipelines are enough |
 | Guard rails | `nemo-guardrails` | NeMo 1 | 1 GB (estimate) | 0.5 | LLM-free rails; LLM-backed rails call the external API, not this VM |
 | Traces | none: OTel-only (D-L4-5, 2026-11-11) | — | 0 | — | traces stay on the existing OTel export: no Langfuse container, no sub-processor. Self-hosted Langfuse would not have fitted (its own guide sets 8 GiB for ClickHouse alone, plus web, worker, Postgres and blob storage) |
 | In-app work | none (Morpheus CPU detector, Web Bot Auth, Agent Pay, the agent-flow canvas, the seams' clients) | various | inside `app` / `worker` | — | measured with today's stack |
@@ -770,7 +777,11 @@ small candidates. D-L4-3's amendment (2026-11-13) removed the Nemotron pair,
 which would have taken it to about 16 GB.
 C0 and C1 answered the fit on 2026-11-12: today's stack is limited to
 10,496 MiB, leaving about 4 GB of the 14.5 GB line unallocated, so even 8.5 GB
-does not fit beside it. Something has to give, and that is D-CAP-1:
+does not fit beside it. With the smaller pieces of 2026-11-13 (below) the
+standing additions are about 4.7 to 6.2 GB: embedding about 1, reranking 1.5
+to 3, PII 0.7, NeMo 1, pgvector 0.5, with the parser moved into a nightly
+window. That is still 0.7 to 2.2 GB over, before C1b tightens today's limits.
+Something has to give, and that is D-CAP-1:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
@@ -787,6 +798,24 @@ first (C0 and Retriever 0), take the smaller pieces the records allow, and
 resize to `e2-highmem-4` when the measured sum still crosses the line. A second
 VM only if memory alone cannot fit. Self-hosted Langfuse never goes on the
 production VM.
+
+**The smaller pieces, taken 2026-11-13 (owner):**
+
+- **The parser runs as a nightly batch.** A host timer starts it at 00:15 UTC
+  and stops it at 01:45, clear of the 01:53 and 02:00 jobs. The worker's
+  indexing job drains the day's queued documents inside the window. Outside it
+  a queued document waits: the parser's outage fallback (the paragraph stub) is
+  for a failure inside the window, never for "not the window", so a new upload
+  is searchable the next morning rather than indexed from poor text. Counted
+  under the window rule, not the standing line.
+- **The reranker is chosen by the D-L4-3 rule as amended**, which already keeps
+  the smaller English reranker whenever its recall on the Bulgarian slice holds
+  within the margin; nothing more is decided here.
+- **Presidio uses the small spaCy pipelines** its roadmap plans; its capacity
+  line is corrected from 1.5 to 0.7 GB. Its record's floors (D-L1-11) still
+  decide whether they are enough.
+- **Every container's limit is reset to 1.5 times its measured peak** after
+  C1b's re-measure across the nightly jobs, not only `app` and `worker`.
 
 **The budget's own phases** (a status-board row; complete at C1, and C2 if
 needed):
@@ -1066,7 +1095,7 @@ D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
-| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day |
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule, Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
 | D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |
