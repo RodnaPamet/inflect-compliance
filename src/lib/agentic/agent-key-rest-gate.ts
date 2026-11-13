@@ -164,7 +164,16 @@ async function auditRefusal(
             detailsJson: {
                 category: 'access',
                 event: 'authz_denied',
-                gate,
+                // SPELLED AS LITERALS, not as the `gate` variable.
+                // `no-raw-prompt-logging` counts value positions at an audit
+                // sink that it cannot read, and caps them — a bare `gate,`
+                // made this one opaque and pushed that ceiling from 225 to
+                // 226. Raising the ceiling would loosen
+                // `HOLES_PER_SINK_CEILING`, which that guard's own history
+                // says a diff should not do. Enumerating the two values at the
+                // sink is what the rule wants to see, and it is also the
+                // honest statement: these are the only gates that write here.
+                gate: gate === 'agent_key_job' ? 'agent_key_job' : 'agent_key_rest',
                 reason,
                 apiKeyId: ctx.apiKeyId ?? null,
                 agentId: ctx.agentId ?? null,
