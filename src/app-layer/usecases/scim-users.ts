@@ -49,6 +49,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { parseScimEqFilter } from '@/lib/scim/filter';
 import { ScimForbiddenError, type ScimContext } from '@/lib/scim/auth';
 import {
     SCIM_ASSIGNABLE_ROLES,
@@ -249,33 +250,31 @@ export async function scimListUsers(
         status: { in: ['ACTIVE', 'DEACTIVATED', 'INVITED'] },
     };
 
-    let emailFilter: string | undefined;
-    if (filter) {
-        const match = filter.match(/userName\s+eq\s+"([^"]+)"/i);
-        if (match) emailFilter = match[1].toLowerCase();
+    // THE FILTER IS PART OF THE QUERY (#5208). It used to be applied to the
+    // page AFTER skip/take, so a user past the first page was "not found" and
+    // the client created a duplicate; and an unrecognised filter fell through
+    // to the whole population. `userName` is the email, matched by its lookup
+    // hash because the address itself is encrypted; anything else is refused.
+    const parsed = parseScimEqFilter(filter, ['userName'] as const);
+    if (parsed) {
+        memberWhere.user = { emailHash: hashForLookup(parsed.value.trim().toLowerCase()) };
     }
 
-    const memberships = await prisma.tenantMembership.findMany({
-        where: memberWhere,
-        include: {
-            user: {
-                select: { id: true, email: true, name: true, createdAt: true, updatedAt: true },
+    const [memberships, total] = await Promise.all([
+        prisma.tenantMembership.findMany({
+            where: memberWhere,
+            include: {
+                user: {
+                    select: { id: true, email: true, name: true, createdAt: true, updatedAt: true },
+                },
             },
-        },
-        skip: startIndex - 1,
-        take: Math.min(count, 200),
-        orderBy: { createdAt: 'asc' },
-    });
-
-    const filtered = emailFilter
-        ? memberships.filter(m => m.user.email.toLowerCase() === emailFilter)
-        : memberships;
-
-    const total = emailFilter
-        ? filtered.length
-        : await prisma.tenantMembership.count({ where: memberWhere });
-
-    const resources = filtered.map(m => toScimUser(m.user, m, baseUrl));
+            skip: startIndex - 1,
+            take: Math.min(count, 200),
+            orderBy: { createdAt: 'asc' },
+        }),
+        prisma.tenantMembership.count({ where: memberWhere }),
+    ]);
+    const resources = memberships.map(m => toScimUser(m.user, m, baseUrl));
 
     return { resources, total, startIndex };
 }
