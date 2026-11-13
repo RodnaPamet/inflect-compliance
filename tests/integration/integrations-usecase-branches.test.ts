@@ -225,7 +225,7 @@ describeFn('integrations usecase — branch coverage (integration)', () => {
             }),
         ).rejects.toThrow(new RegExp(`This connection is a ${PROVIDER_ID} connection`));
 
-        const afterRefusal = await prisma.integrationConnection.findFirstOrThrow({
+        const afterRefusal = await globalPrisma.integrationConnection.findFirstOrThrow({
             where: { id: created.id },
             select: { name: true, provider: true, configJson: true },
         });
