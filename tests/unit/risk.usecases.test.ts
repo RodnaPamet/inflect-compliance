@@ -14,8 +14,9 @@
 
 // Create a mock db object that withTenantDb will pass to callbacks
 const mockDb = {
-    tenant: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 }),
+    // No saved matrix: the default 5x5 bounds every score (#5080).
+    riskMatrixConfig: {
+        findUnique: jest.fn().mockResolvedValue(null),
     },
     // RQ2-1 — every score-changing write appends a ledger event.
     riskScoreEvent: {

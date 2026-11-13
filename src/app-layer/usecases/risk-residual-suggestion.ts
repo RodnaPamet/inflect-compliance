@@ -23,6 +23,7 @@
  * (vuln = tc/(tc+cs)), so deriving it from an absolute effectiveness
  * percentage would be pseudo-rigor. Reference, not assertion.
  */
+import { readRiskMatrixAxes, largerAxis } from './risk-matrix-axes';
 import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
@@ -108,8 +109,10 @@ export async function loadResidualSuggestion(
     });
     if (!risk) throw notFound('Risk not found');
 
-    const tenant = await db.tenant.findUnique({ where: { id: tenantId } });
-    const maxScale = tenant?.maxRiskScale || 5;
+    // Each axis is bounded by the tenant's own matrix (#5080). `maxScale`
+    // stays in the result as the larger axis for callers that show one bound.
+    const axes = await readRiskMatrixAxes(db, tenantId);
+    const maxScale = largerAxis(axes);
 
     const controls = risk.controls.map((l) => l.control);
     const controlIds = controls.map((c) => c.id);
@@ -146,7 +149,7 @@ export async function loadResidualSuggestion(
     const combined = combineEffectiveness(inputs);
     const suggestion =
         combined.participatingCount > 0
-            ? suggestResidual(risk.likelihood, risk.impact, combined, maxScale)
+            ? suggestResidual(risk.likelihood, risk.impact, combined, axes.likelihoodLevels, axes.impactLevels)
             : null;
 
     return { risk, combined, suggestion, maxScale };

@@ -94,6 +94,7 @@ jest.mock('@/lib/prisma', () => ({
 import {
     runKeyRotation,
     _resetKeyRotationForTests,
+    rotateGlobalPiiColumns,
 } from '@/app-layer/jobs/key-rotation';
 import { keyRotationOutcome } from '@/app-layer/jobs/executor-registry';
 import {
@@ -526,5 +527,104 @@ describe('keyRotationOutcome (#5299)', () => {
         const failedWrap = keyRotationOutcome(1, false, 'bad wrap');
         expect(failedWrap.status).toBe('ERROR');
         expect(failedWrap.errorMessage).toContain('bad wrap');
+    });
+});
+
+/**
+ * THE PII COLUMNS THE SWEEP USED TO SKIP (#5070).
+ *
+ * `pii-middleware` writes its own `*Encrypted` columns with v1 `encryptField`
+ * and they are not in `ENCRYPTED_FIELDS`, so this sweep never saw them and
+ * nothing else rewrote them. The runbook's "zero v1 rows, now remove
+ * DATA_ENCRYPTION_KEY_PREVIOUS" was therefore true of the manifest and false
+ * of the database, and the next read nulled every mapped PII field.
+ */
+describe('runKeyRotation — the PII columns (#5070)', () => {
+    test('sweeps a TENANT-SCOPED PII column, by its physical column name', async () => {
+        const dek = generateDek();
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(dek) });
+        const selected: string[] = [];
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes('LIMIT 0')) return [];
+            if (sql.includes("LIKE 'v1:%'")) selected.push(sql);
+            return [];
+        });
+
+        await runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'admin' });
+
+        // The physical column, because the sweep is raw SQL: on the mapped
+        // models the Prisma field is `email` and the column `emailEncrypted`.
+        const auditor = selected.filter(
+            (sql) => sql.includes('"AuditorAccount"') && sql.includes('"emailEncrypted"'),
+        );
+        expect(auditor.length).toBeGreaterThan(0);
+        // And it is scoped, or one tenant's rotation would rewrite another's.
+        // Asserted as a derived boolean rather than `toContain` on an element
+        // of a captured array: the subject is a binding the Class D ratchet
+        // cannot resolve, so that form counts as an un-analysable read.
+        const scoped = auditor.every((sql) => sql.includes('"tenantId" = $1'));
+        expect({ scoped }).toEqual({ scoped: true });
+    });
+
+    test('does NOT try to sweep a global PII model per tenant', async () => {
+        // `User` has no tenantId; a per-tenant SELECT against it would either
+        // throw or, with a tenantId column added later, scope wrongly. The
+        // job's own probe skips it, and that is why the global sweep exists.
+        const dek = generateDek();
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(dek) });
+        const selected: string[] = [];
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes('LIMIT 0')) return [];
+            if (sql.includes("LIKE 'v1:%'")) selected.push(sql);
+            return [];
+        });
+
+        await runKeyRotation({ tenantId: 'tenant-A', initiatedByUserId: 'admin' });
+
+        expect(selected.filter((sql) => sql.includes('FROM "User"'))).toHaveLength(0);
+        expect(selected.filter((sql) => sql.includes('FROM "Account"'))).toHaveLength(0);
+    });
+});
+
+describe('rotateGlobalPiiColumns — the half a per-tenant job cannot do (#5070)', () => {
+    test('sweeps User and Account with NO tenant predicate', async () => {
+        const selected: string[] = [];
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes("LIKE 'v1:%'")) selected.push(sql);
+            return [];
+        });
+
+        await rotateGlobalPiiColumns();
+
+        expect(selected.filter((sql) => sql.includes('FROM "User"')).length)
+            .toBeGreaterThan(0);
+        expect(selected.filter((sql) => sql.includes('FROM "Account"')).length)
+            .toBeGreaterThan(0);
+        // The discriminator: a tenant predicate here would return nothing on a
+        // table that has no such column, and the sweep would report a clean
+        // zero — the same false "done" that #5070 is about.
+        const anyTenantPredicate = selected.some((sql) => sql.includes('"tenantId"'));
+        expect({ anyTenantPredicate }).toEqual({ anyTenantPredicate: false });
+    });
+
+    test('rewrites what it finds, under the current primary KEK', async () => {
+        let served = false;
+        queryRawUnsafe.mockImplementation(async (sql: string) => {
+            if (sql.includes("LIKE 'v1:%'") && !served) {
+                served = true;
+                return [{ id: 'u-1', value: encryptField('someone@example.com') }];
+            }
+            return [];
+        });
+
+        const out = await rotateGlobalPiiColumns();
+
+        expect({ scanned: out.scanned, rewritten: out.rewritten, errors: out.errors })
+            .toEqual({ scanned: 1, rewritten: 1, errors: 0 });
+        const updates = executeRawUnsafe.mock.calls.filter(
+            (c) => typeof c[0] === 'string' && c[0].includes('UPDATE'),
+        );
+        expect(updates.length).toBeGreaterThan(0);
+        expect(isEncryptedValue(updates[0][1] as string)).toBe(true);
     });
 });

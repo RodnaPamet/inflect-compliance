@@ -8466,7 +8466,8 @@
         "regionName": {
           "US_EAST_1": "United States (East)",
           "EU_WEST_1": "European Union (Ireland)",
-          "AP_SOUTHEAST_1": "Asia Pacific (Singapore)"
+          "AP_SOUTHEAST_1": "Asia Pacific (Singapore)",
+          "EUROPE_WEST1": "European Union (Belgium)"
         }
       },
       "retention": {

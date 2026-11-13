@@ -185,6 +185,7 @@ describe('generateRiskSuggestions — pre-AI controls', () => {
 
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({
                     industry: 'fin', context: 'ctx', maxRiskScale: 5,
                 }) },
@@ -222,6 +223,7 @@ describe('generateRiskSuggestions — pre-AI controls', () => {
 
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'x', maxRiskScale: 5 }) },
                 asset: { findMany: jest.fn().mockResolvedValue([]) },
                 control: { findMany: jest.fn().mockResolvedValue([]) },
@@ -261,6 +263,7 @@ describe('generateRiskSuggestions — pre-AI controls', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => {
             try {
                 const value = await fn({
+                    riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                     tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'x', maxRiskScale: 5 }) },
                     asset: { findMany: jest.fn().mockResolvedValue([]) },
                     control: { findMany: jest.fn().mockResolvedValue([]) },
@@ -341,6 +344,7 @@ describe('applySession — idempotency + state guard', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: itemUpdate },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
@@ -391,6 +395,7 @@ describe('applySession — idempotency + state guard', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: itemUpdate },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
@@ -434,6 +439,7 @@ describe('applySession — idempotency + state guard', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: jest.fn().mockResolvedValue({}) },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 riskScoreEvent: { create: scoreEventCreate },
                 riskKeySequence: riskKeySequenceStub(),
@@ -469,6 +475,7 @@ describe('applySession — idempotency + state guard', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: jest.fn() },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
@@ -501,6 +508,7 @@ describe('applySession — idempotency + state guard', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: jest.fn() },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 // RQ2-7 — accepted AI suggestions land an AI-source ledger event.
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
@@ -628,6 +636,7 @@ describe('generateRiskSuggestions — input-anomaly threat event', () => {
         } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'x', maxRiskScale: 5 }) },
                 asset: { findMany: jest.fn().mockResolvedValue([]) },
                 control: { findMany: jest.fn().mockResolvedValue([]) },
@@ -787,6 +796,7 @@ describe('generateRiskSuggestions — successful generation', () => {
         } as never);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ industry: 'saas', maxRiskScale: 5 }) },
                 // Non-empty so the untrusted-text assembly walks the asset
                 // names as well as the framework list.
@@ -948,6 +958,7 @@ const armGenerate = (h: GenerateHarness) => {
 
     mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
         fn({
+            riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
             tenant: {
                 findUnique: jest.fn(
                     (): Promise<Record<string, unknown> | null> =>
@@ -1332,8 +1343,9 @@ describe('applySession — tenant row absent', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: jest.fn() },
-                // The tenant row is gone — `tenant?.maxRiskScale ?? 5` is the
-                // only thing standing between this and a TypeError.
+                // The tenant row is gone, and nothing on the apply path reads
+                // it any more: the bounds come from the matrix (#5080).
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue(null) },
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
                 riskKeySequence: riskKeySequenceStub(),
@@ -1366,6 +1378,7 @@ describe('applySession — un-accepted item that is no longer PENDING', () => {
                     update: jest.fn().mockResolvedValue({}),
                 },
                 riskSuggestionItem: { update: itemUpdate },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
                 riskKeySequence: riskKeySequenceStub(),
@@ -1501,6 +1514,7 @@ describe("applySession — a reviewer's edits are what gets created", () => {
                     update: jest.fn().mockResolvedValue({ id: 's1', status: 'APPLIED', items: [] }),
                 },
                 riskSuggestionItem: { update: itemUpdate },
+                riskMatrixConfig: { findUnique: jest.fn().mockResolvedValue(null) },
                 tenant: { findUnique: jest.fn().mockResolvedValue({ maxRiskScale: 5 }) },
                 riskScoreEvent: { create: jest.fn().mockResolvedValue({ id: 'evt-ai' }) },
                 riskKeySequence: riskKeySequenceStub(),

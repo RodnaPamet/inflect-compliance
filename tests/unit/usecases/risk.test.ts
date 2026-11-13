@@ -12,8 +12,8 @@
  *      listRisksWithDeleted.
  *   2. Epic D.2 — every free-text field passes through sanitizePlainText
  *      on create AND on update via sanitizeOptional (three-state).
- *   3. inherentScore = calculateRiskScore(likelihood, impact, maxScale)
- *      with maxScale fetched from tenant.maxRiskScale (default 5).
+ *   3. inherentScore = calculateRiskScore(likelihood, impact, L, I), each axis
+ *      bounded by the tenant's RiskMatrixConfig levels (default 5x5, #5080).
  *   4. createRiskFromTemplate: notFound for missing template; merges
  *      override over template and sanitises the merged value.
  *   5. notFound paths: getRisk, updateRisk, deleteRisk, linkControlToRisk.
@@ -92,10 +92,11 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'r1' } as never);
 });
 
-function dbWithTenant(maxRiskScale: number | null = 5) {
+/** `matrix` is the tenant's saved RiskMatrixConfig levels; null = none saved. */
+function dbWithTenant(matrix: { likelihoodLevels: number; impactLevels: number } | null = null) {
     return {
-        tenant: {
-            findUnique: jest.fn().mockResolvedValue({ maxRiskScale }),
+        riskMatrixConfig: {
+            findUnique: jest.fn().mockResolvedValue(matrix),
         },
         // RQ2-1 — every score-changing write appends a ledger event.
         riskScoreEvent: {
@@ -119,7 +120,7 @@ describe('createRisk', () => {
     });
 
     it('sanitises every free-text field before persistence (Epic D.2)', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
@@ -146,28 +147,28 @@ describe('createRisk', () => {
         expect(repoArgs.treatmentNotes).toBe('SANITISED(notes)');
     });
 
-    it('uses tenant.maxRiskScale when computing inherentScore', async () => {
-        const fakeDb = dbWithTenant(10);
+    it('bounds each axis by the tenant matrix when computing inherentScore (#5080)', async () => {
+        const fakeDb = dbWithTenant({ likelihoodLevels: 6, impactLevels: 10 });
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
             title: 't', likelihood: 4, impact: 5,
         });
 
-        expect(mockScore).toHaveBeenCalledWith(4, 5, 10);
+        expect(mockScore).toHaveBeenCalledWith(4, 5, 6, 10);
     });
 
-    it('falls back to maxScale=5 when tenant.maxRiskScale is null', async () => {
+    it('falls back to the default 5x5 matrix when the tenant saved none', async () => {
         const fakeDb = dbWithTenant(null);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
 
-        expect(mockScore).toHaveBeenCalledWith(3, 3, 5);
+        expect(mockScore).toHaveBeenCalledWith(3, 3, 5, 5);
     });
 
     it('emits a CREATE audit row', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
@@ -209,7 +210,7 @@ describe('createRiskFromTemplate', () => {
             defaultLikelihood: 3,
             defaultImpact: 4,
         } as never);
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRiskFromTemplate(makeRequestContext('EDITOR'), 'tpl-1', {
@@ -227,7 +228,7 @@ describe('createRiskFromTemplate', () => {
 
 describe('updateRisk — sanitizeOptional three-state', () => {
     it('preserves "untouched" semantics: undefined fields are NOT written', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -246,7 +247,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 
     it('preserves "explicit-clear" semantics: null fields write SET NULL', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -262,7 +263,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     // #5212 — clearing a date was collapsed to "leave it alone", so a cleared
     // review date came back after a reload behind a "saved" toast.
     it('clears nextReviewAt and targetDate on an explicit null, and leaves them on undefined', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         await updateRisk(makeRequestContext('EDITOR'), 'r1', { nextReviewAt: null, targetDate: null });
         const cleared = mockUpdate.mock.calls.at(-1)![3];
@@ -277,7 +278,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 
     it('throws notFound when repository returns null', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithTenant();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         mockUpdate.mockResolvedValueOnce(null as never);
 
