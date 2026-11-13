@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'crypto';
 import { prismaTestClient } from '../helpers/db';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { prisma as appPrisma } from '@/lib/prisma';
 import { DB_AVAILABLE } from './db-helper';
 import { runInTenantContext } from '@/lib/db-context';
@@ -63,8 +64,15 @@ describeFn('a soft delete belongs to the caller transaction (#5287)', () => {
     });
 
     afterAll(async () => {
-        await prisma.risk.deleteMany({ where: { tenantId } }).catch(() => undefined);
-        await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
+        // Audit rows FIRST: the hash-chained trail holds rows for this
+        // tenant's writes, and deleting the tenant with them in place is what
+        // `tests/guards/integration-suite-audit-teardown.test.ts` refuses.
+        await deleteAuditRowsForTenants(prisma, [tenantId]);
+        // And NOT `.catch(() => undefined)` on the parent delete: a teardown
+        // that swallows its own failure leaves rows behind for the next suite
+        // and reports success (#3343). If this throws, the suite should say so.
+        await prisma.risk.deleteMany({ where: { tenantId } });
+        await prisma.tenant.delete({ where: { id: tenantId } });
     });
 
     it('a ROLLED-BACK transaction leaves the row NOT soft-deleted', async () => {
