@@ -158,8 +158,16 @@ describe('what comes back is bounded and distrusted', () => {
             })),
         );
 
-        const err = await callTool(OPTS, 'nope', {}).catch((e: Error) => e);
+        // `then(_, onRejected)` rather than `.catch`, so the captured value is
+        // typed `Error | null` instead of `Error | McpToolResult` — the latter
+        // does not narrow to `.message` and is a Typecheck failure, not a test
+        // failure, so it passes locally under jest and fails in CI.
+        const err = await callTool(OPTS, 'nope', {}).then(
+            () => null,
+            (e: unknown) => e as Error,
+        );
         expect(err).toBeInstanceOf(Error);
+        if (!err) throw new Error('expected a rejection');
         // Bounded: nowhere near the 5000 the server sent, and the ellipsis says
         // it was cut rather than that the server was terse.
         expect(err.message.length).toBeLessThan(400);
