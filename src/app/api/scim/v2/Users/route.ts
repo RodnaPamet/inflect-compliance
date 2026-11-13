@@ -8,6 +8,7 @@
  */
 import { NextRequest } from 'next/server';
 import { authenticateScimRequest, ScimAuthError } from '@/lib/scim/auth';
+import { ScimFilterError, scimPage } from '@/lib/scim/filter';
 import { scimError, scimListResponse } from '@/lib/scim/types';
 import { scimListUsers, scimCreateUser, type ScimCreateUserInput } from '@/app-layer/usecases/scim-users';
 import { jsonResponse } from '@/lib/api-response';
@@ -18,9 +19,9 @@ export async function GET(req: NextRequest) {
         const ctx = await authenticateScimRequest(req);
         const baseUrl = publicBaseUrl(req);
 
-        const startIndex = parseInt(req.nextUrl.searchParams.get('startIndex') || '1', 10);
-        const count = parseInt(req.nextUrl.searchParams.get('count') || '100', 10);
-        const filter = req.nextUrl.searchParams.get('filter') || undefined;
+        const params = req.nextUrl.searchParams;
+        const { startIndex, count } = scimPage(params.get('startIndex'), params.get('count'), { count: 100, max: 200 });
+        const filter = params.get('filter') || undefined;
 
         const { resources, total } = await scimListUsers(ctx, baseUrl, { startIndex, count, filter });
 
@@ -28,6 +29,9 @@ export async function GET(req: NextRequest) {
             headers: { 'Content-Type': 'application/scim+json' },
         });
     } catch (e) {
+        if (e instanceof ScimFilterError) {
+            return jsonResponse(scimError(e.status, e.message, e.scimType), { status: e.status });
+        }
         if (e instanceof ScimAuthError) {
             return jsonResponse(scimError(e.status, e.message, e.scimType), { status: e.status });
         }
