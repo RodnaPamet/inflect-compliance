@@ -9,7 +9,7 @@
  *   • Snapshot role at campaign creation (frozen evidence)
  *   • Live role today (changes if anyone updated the membership
  *     after snapshot)
- *   • Last activity date (max UserSession.lastActiveAt for the user)
+ *   • Last sign-in (latest UserSession.createdAt across all of the user's sessions, #5106)
  *   • Decision dropdown — CONFIRM / REVOKE / MODIFY
  *   • Decision-aware modal for MODIFY's `modifiedToRole` + notes
  *
@@ -327,7 +327,7 @@ interface ReviewDetail {
      * `admin.agent_registry`. Optional because only an AGENT campaign sets it.
      */
     subjectsRestricted?: boolean;
-    lastActivityByUser: Record<string, string | Date>;
+    lastSignInByUser: Record<string, string | Date>;
 }
 
 interface Props {
@@ -562,14 +562,14 @@ export function AccessReviewDetailClient({
                     ),
             },
             {
-                id: 'lastActive',
-                header: t('colLastActive'),
+                id: 'lastSignIn',
+                header: t('colLastSignIn'),
                 cell: ({ row }) => {
-                    const lastActiveAt =
-                        review.lastActivityByUser[row.original.subjectUserId] ?? null;
+                    const lastSignInAt =
+                        review.lastSignInByUser[row.original.subjectUserId] ?? null;
                     return (
                         <span className="text-sm text-content-muted">
-                            {lastActiveAt ? formatDate(lastActiveAt) : t('never')}
+                            {lastSignInAt ? formatDate(lastSignInAt) : t('never')}
                         </span>
                     );
                 },
@@ -675,7 +675,7 @@ export function AccessReviewDetailClient({
                 ),
             },
         ]),
-        [canDecide, currentUserId, review.lastActivityByUser, t],
+        [canDecide, currentUserId, review.lastSignInByUser, t],
     );
 
 
