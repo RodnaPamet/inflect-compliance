@@ -26,12 +26,15 @@ jest.mock('@/app-layer/usecases/framework', () => ({
 // residency; this file's job is to prove the caller hands it the tenant's
 // posture at all — the factory's own behaviour is pinned by
 // tests/guards/every-ai-surface-honours-tenant-residency.test.ts.
-const mockGetPostureProvider = jest.fn(() => ({
+/** The selection shape the usecase passes; only `residency` is asserted here. */
+type PostureSelection = { residency?: 'EXTERNAL' | 'LOCAL_ONLY' | null } | undefined;
+const mockGetPostureProvider = jest.fn((_selection?: PostureSelection) => ({
     providerName: 'stub',
     generate: mockProviderGenerate,
 }));
 jest.mock('@/app-layer/ai/compliance-posture/provider', () => ({
-    getCompliancePostureProvider: (...a: unknown[]) => mockGetPostureProvider(...(a as [])),
+    getCompliancePostureProvider: (selection?: PostureSelection) =>
+        mockGetPostureProvider(selection),
 }));
 jest.mock('@/lib/db-context', () => ({
     // Invoke the callback with a fake tenant-scoped client.
@@ -205,9 +208,9 @@ describe('generateCompliancePostureSummary', () => {
             which matters, because "absent means external" is exactly why a
             surface that never passes residency leaks silently.
         */
-        const selection = mockGetPostureProvider.mock.calls[0][0] as { residency?: unknown };
+        const selection = mockGetPostureProvider.mock.calls[0][0];
         expect(selection).toHaveProperty('residency');
-        expect(selection.residency).toBeUndefined();
+        expect(selection?.residency).toBeUndefined();
     });
 
     it('runs signals → provider → guard → upsert and returns the result', async () => {
