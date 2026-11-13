@@ -280,6 +280,9 @@ async function delegate(dc: DelegationContext, args: Record<string, unknown>, to
             ...b,
             subagent: sub.name,
             admitToolCall: () => dc.turnCalls.admit(`delegate:${toolUseId}`, childTurn),
+            // A child's loop cannot park (Step 2f): none of its calls waits for
+            // a person, whatever the parent's version defers.
+            deferredTools: new Set<string>(),
         };
         const queue = new SerialQueue();
         const offered = toolRunnerToolsFor(dc.invocation, childBinding, {

@@ -14,7 +14,8 @@
 jest.mock('@/env', () => ({ env: {} }));
 
 import { AGENT_DRIVERS } from '@/lib/agentic/agent-driver';
-import { parseStoredDeferredToolNames, runsDeferrals } from '@/lib/agentic/agent-profile';
+import { checkProfileDeferredTools, parseStoredDeferredToolNames, runsDeferrals } from '@/lib/agentic/agent-profile';
+import { compactionSkip } from '@/lib/agentic/tool-runner/compaction';
 import { assertEngineRunsProfiles } from '@/app-layer/usecases/agent-profile-runs';
 import type { ProfileRunSpec } from '@/lib/agentic/workflow-types';
 
@@ -76,5 +77,45 @@ describe('3. admission refuses a version with deferred tools on an engine that d
         );
         expect(() => assertEngineRunsProfiles('tool-runner', profile())).not.toThrow();
         expect(() => assertEngineRunsProfiles('tool-runner', profile([]))).not.toThrow();
+    });
+});
+
+describe('4. the save and approval rules, by name (deploy 2)', () => {
+    const sub = { name: 'r', instructions: 'x', toolNames: ['propose_risks'], skillRefs: [], maxTurns: 2 };
+    it('refuses each rule with its own reason, and returns the canonical list', () => {
+        const v = { toolNames: VERSION.toolNames, hasFlow: false };
+        expect(checkProfileDeferredTools(['propose_risks', 'propose_finding', 'propose_risks'], v)).toEqual({
+            ok: true,
+            deferredToolNames: ['propose_finding', 'propose_risks'],
+        });
+        expect(checkProfileDeferredTools(['propose_controls'], v)).toMatchObject({ ok: false, reason: 'DEFERRED_TOOL_NOT_IN_VERSION' });
+        expect(checkProfileDeferredTools(['list_risks'], v)).toMatchObject({ ok: false, reason: 'DEFERRED_TOOL_NOT_A_PROPOSE_TOOL' });
+        expect(checkProfileDeferredTools(['propose_risks'], { ...v, hasFlow: true })).toMatchObject({
+            ok: false,
+            reason: 'DEFERRED_TOOLS_WITH_FLOW',
+        });
+        expect(checkProfileDeferredTools(['propose_risks'], { ...v, subagents: [sub] })).toMatchObject({
+            ok: false,
+            reason: 'SUBAGENT_TOOL_DEFERRED',
+        });
+        // A version that defers nothing passes whatever else it holds.
+        expect(checkProfileDeferredTools([], { ...v, hasFlow: true, subagents: [sub] })).toEqual({ ok: true, deferredToolNames: [] });
+    });
+});
+
+describe('5. compaction never runs while a deferral is latched (Step 2f x 2g)', () => {
+    const base = {
+        threshold: 10_000,
+        estimatedNextRequest: 50_000,
+        toolRoundComplete: true,
+        stepsRemaining: 10,
+        stopLatched: false,
+        compactedLastTurn: false,
+        failedThisSegment: false,
+    };
+    it('the turn a run parks on is never summarised', () => {
+        expect(compactionSkip(base)).toBeNull();
+        expect(compactionSkip({ ...base, deferralLatched: true })).toBe('DEFERRAL_LATCHED');
+        expect(compactionSkip({ ...base, deferralLatched: true, stopLatched: true })).toBe('DEFERRAL_LATCHED');
     });
 });

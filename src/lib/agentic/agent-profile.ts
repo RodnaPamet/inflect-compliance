@@ -525,10 +525,10 @@ export function runsSubagents(driver: AgentDriver): boolean {
  * version is never run as though it had no deferrals: its calls would queue
  * and move on, and the person approving it was told the agent waits.
  *
- * FALSE FOR EVERY ENGINE in deploy 1 of Step 2f: this deploy teaches every
- * reader what a parked run means (the refusals, the settlements, the resume
- * branch) and writes no deferral. Deploy 2 adds the parking path and turns the
- * Tool Runner's entry on, in a commit of its own.
+ * Deploy 1 of Step 2f taught every reader what a parked run means (the
+ * refusals, the settlements, the resume branch) with every entry false; deploy
+ * 2 added the parking path and turned the Tool Runner's entry on, in a commit
+ * of its own.
  *
  * A `Record<AgentDriver, boolean>`, as `RUNS_SUBAGENTS` is, so a new driver is a
  * compile error until it is classified here.
@@ -546,6 +546,70 @@ const RUNS_DEFERRALS: Readonly<Record<AgentDriver, boolean>> = {
 
 export function runsDeferrals(driver: AgentDriver): boolean {
     return RUNS_DEFERRALS[driver];
+}
+
+/** Why a version's deferred tools are refused (Step 2f): each a refusal by name, at save and at approval. */
+export type ProfileDeferredToolRefusal =
+    | 'DEFERRED_TOOL_NOT_IN_VERSION'
+    | 'DEFERRED_TOOL_NOT_A_PROPOSE_TOOL'
+    | 'DEFERRED_TOOLS_WITH_FLOW'
+    | 'SUBAGENT_TOOL_DEFERRED';
+
+/**
+ * THE VERSION'S DEFERRED TOOLS, checked (Step 2f, "1. Which calls can be
+ * deferred"): each a tool of the version, each a propose tool, none named by a
+ * sub-agent (a child's loop cannot park), and none beside a flow (a flow
+ * carries its own checkpoints). Returned sorted and deduplicated, or refused by
+ * name, never silently dropped. Pure, so the save and the approval ask the same
+ * question.
+ */
+export function checkProfileDeferredTools(
+    names: readonly string[],
+    version: {
+        readonly toolNames: readonly string[];
+        readonly subagents?: readonly ProfileSubagent[];
+        readonly hasFlow: boolean;
+    },
+):
+    | { readonly ok: true; readonly deferredToolNames: string[] }
+    | { readonly ok: false; readonly reason: ProfileDeferredToolRefusal; readonly message: string; readonly tool?: string } {
+    const canonical = [...new Set(names.map((n) => n.trim()))].sort();
+    if (canonical.length === 0) return { ok: true, deferredToolNames: [] };
+    if (version.hasFlow) {
+        return {
+            ok: false,
+            reason: 'DEFERRED_TOOLS_WITH_FLOW',
+            message: 'A version with a drawn flow carries its own checkpoints; it names no deferred tools.',
+        };
+    }
+    for (const tool of canonical) {
+        if (!version.toolNames.includes(tool)) {
+            return {
+                ok: false,
+                reason: 'DEFERRED_TOOL_NOT_IN_VERSION',
+                message: `${tool} is not one of this version's tools, so a call to it cannot wait for a person.`,
+                tool,
+            };
+        }
+        if (!isProfileProposeTool(tool)) {
+            return {
+                ok: false,
+                reason: 'DEFERRED_TOOL_NOT_A_PROPOSE_TOOL',
+                message: `${tool} is not a propose tool. Only a call that queues a proposal can wait for a person.`,
+                tool,
+            };
+        }
+        const sub = (version.subagents ?? []).find((s) => s.toolNames.includes(tool));
+        if (sub) {
+            return {
+                ok: false,
+                reason: 'SUBAGENT_TOOL_DEFERRED',
+                message: `Sub-agent ${sub.name} names ${tool}, and a sub-agent cannot wait for a person. Remove it from the sub-agent or stop deferring it.`,
+                tool,
+            };
+        }
+    }
+    return { ok: true, deferredToolNames: canonical };
 }
 
 /**

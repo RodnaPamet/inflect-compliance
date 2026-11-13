@@ -158,8 +158,22 @@ Inflect would host it in the worker, the same way it hosts Flue.
   or after a SIGTERM moved it to `PAUSED`, starts from the opening message with
   the steps, tool calls, proposals and tokens it has already spent, and does
   not remember its earlier turns.
-- **Every reader of a parked deferral is in place; nothing writes one yet
-  (Step 2f, deploy 1, #5530).** `WorkflowRunDeferral` exists, with its RLS
+- **A tool call can wait for a person (Step 2f, deploy 2, #5530).** A version
+  names the propose tools that wait in `deferredToolNames`, refused by name at
+  save and again at approval (`DEFERRED_TOOL_NOT_IN_VERSION`,
+  `DEFERRED_TOOL_NOT_A_PROPOSE_TOOL`, `DEFERRED_TOOLS_WITH_FLOW`,
+  `SUBAGENT_TOOL_DEFERRED`), picked under "Wait for a person" in the Behaviour
+  editor and listed on the approval view. `RUNS_DEFERRALS['tool-runner']` is
+  true. A call to one with more than one item is refused before the funnel
+  (`DEFERRED_CALL_ONE_ITEM`); one that queued its proposal latches a `DEFER`
+  stop, the lowest, so no request leaves after it and a later call of the turn
+  is held; with nothing else latched the run parks in one transaction (the
+  encrypted transcript, the PENDING checkpoint labelled `deferral`, the
+  conditional move to `AWAITING_APPROVAL` with the proposal's deadline) and
+  `WORKFLOW_RUN_DEFERRED` is audited. Compaction does not run while a deferral
+  is latched (`DEFERRAL_LATCHED`).
+- **Every reader of a parked deferral is in place (Step 2f, deploy 1,
+  #5530).** `WorkflowRunDeferral` exists, with its RLS
   triple, its shape CHECK, its one-way trigger (which admits the key-rotation
   re-wrap and the clear) and no `app_user` DELETE; `transcriptJson` is in the
   Epic B manifest and `transcriptHash` beside it is plaintext. Its two writers

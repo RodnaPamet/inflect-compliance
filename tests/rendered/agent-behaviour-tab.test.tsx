@@ -692,6 +692,72 @@ describe('Summarise long conversations (Step 2g, #5531)', () => {
     });
 });
 
+describe('Wait for a person (Step 2f, #5530)', () => {
+    const PROPOSES = { tools: ['list_risks', 'propose_risks'], skills: [] };
+
+    it('the approval view lists the deferred tools, and says none when there are none', () => {
+        renderTab(
+            view([SUBMITTED({ toolNames: ['list_risks', 'propose_risks'], deferredToolNames: ['propose_risks'] }), version()]),
+        );
+        expect(screen.getAllByTestId('behaviour-version-2-deferral')[0].textContent).toBe('propose_risks');
+        expect(screen.getAllByTestId('behaviour-version-1-deferral')[0].textContent).toBe(copy('deferral.none'));
+    });
+
+    it('the editor offers the version\'s own propose tools, keeps the starting choice, and saves it', async () => {
+        renderTab(
+            view(
+                [
+                    version({
+                        toolNames: ['list_risks', 'propose_risks'],
+                        outputKind: 'ANSWER_AND_PROPOSALS',
+                        deferredToolNames: ['propose_risks'],
+                    }),
+                ],
+                { options: PROPOSES },
+            ),
+        );
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        const picker = within(editor).getByTestId('behaviour-editor-deferral');
+        // Over the propose tools only: the read tool is not offered.
+        expect(within(picker).queryByText('list_risks')).toBeNull();
+        expect(within(picker).getByRole('checkbox', { name: 'propose_risks' })).toBeChecked();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).deferredToolNames).toEqual(['propose_risks']);
+    });
+
+    it('a version that only answers offers no picker and sends no deferred tools', async () => {
+        renderTab(view([version({ toolNames: ['list_risks', 'propose_risks'], outputKind: 'ANSWER_ONLY' })], { options: PROPOSES }));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).queryByTestId('behaviour-editor-deferral')).toBeNull();
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).deferredToolNames).toBeUndefined();
+    });
+
+    it('a refusal by name is shown beside the picker', async () => {
+        renderTab(
+            view([version({ toolNames: ['list_risks', 'propose_risks'], outputKind: 'ANSWER_AND_PROPOSALS', deferredToolNames: ['propose_risks'] })], {
+                options: PROPOSES,
+            }),
+        );
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        const message = 'Sub-agent r names propose_risks, and a sub-agent cannot wait for a person.';
+        fetchMock.mockResolvedValue(refused('SUBAGENT_TOOL_DEFERRED', message));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(within(editor).getByTestId('behaviour-editor-deferral-error').textContent).toBe(message);
+    });
+});
+
 describe('Reject', () => {
     it('needs a reason, sends it, and shows a refusal beside it', async () => {
         renderTab(view([SUBMITTED(), version()]));

@@ -83,6 +83,12 @@ export const AgentProfileVersionSchema = z
         // threshold BY NAME (`COMPACTION_THRESHOLD_*`), with the bound in
         // `details`, rather than as an anonymous schema error.
         compactionThresholdTokens: z.number().int().min(0).max(PROFILE_COMPACTION_THRESHOLD_MAX * 10).nullable().optional(),
+        // The propose tools whose calls WAIT FOR A PERSON (Step 2f). Bounded
+        // here only: the usecase refuses a tool the version lacks, a tool that
+        // is not a propose tool, a list beside a flow and a tool a sub-agent
+        // names BY NAME (`DEFERRED_TOOL_*`, `DEFERRED_TOOLS_WITH_FLOW`,
+        // `SUBAGENT_TOOL_DEFERRED`), never as an anonymous schema error.
+        deferredToolNames: z.array(z.string().min(1).max(100)).max(PROFILE_MAX_TOOLS).optional(),
         outputKind: z.enum(PROFILE_OUTPUT_KINDS),
         allowedTriggers: z.array(z.enum(PROFILE_TRIGGERS)).min(1).max(PROFILE_TRIGGERS.length),
     })

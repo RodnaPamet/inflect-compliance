@@ -58,6 +58,20 @@ import {
 } from '@/lib/agentic/turn-caps';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
+import { readCallProposals } from '@/lib/agentic/drivers/deferral-store';
+
+import { HELD_BEHIND_DEFERRAL_MESSAGE } from './transcript';
+
+/** A deferred call carrying more than one item (Step 2f): refused before the funnel. */
+export const DEFERRED_CALL_ONE_ITEM = 'DEFERRED_CALL_ONE_ITEM';
+
+/** What the model reads when a deferred call carried more than one item. */
+export function deferredCallOneItemMessage(tool: string, items: number): string {
+    return (
+        `${DEFERRED_CALL_ONE_ITEM}: a call to ${tool} waits for a person, so it carries exactly one item; this one ` +
+        `carried ${items}. Nothing was proposed. Call it again with one item.`
+    );
+}
 
 /** This engine's name in every guard source its tool calls write. */
 export const TOOL_RUNNER_GUARD_SOURCE = 'tool-runner';
@@ -85,7 +99,23 @@ export type RunStop =
      * A compaction found an activated skill whose text no longer hashes to the
      * run's pin (Step 2g): the run stops rather than re-teach it.
      */
-    | { readonly kind: 'SKILL_PIN_MISMATCH' };
+    | { readonly kind: 'SKILL_PIN_MISMATCH' }
+    /**
+     * A call to a tool the version names in `deferredToolNames` queued its one
+     * proposal (Step 2f): the run parks until a person decides it. The lowest
+     * stop: every other one outranks it at settlement.
+     */
+    | { readonly kind: 'DEFER' };
+
+/** A deferred call, latched: what the run parks on (Step 2f). */
+export interface LatchedDeferral {
+    readonly proposalId: string;
+    /** The model's `tool_use` id: the slot the decision fills at the resume. */
+    readonly toolUseId: string;
+    /** The deferred call's TOOL_CALL seq. */
+    readonly stepSeq: number;
+    readonly toolCalled: string;
+}
 
 /** What a run's tools share with the loop that drives them. */
 export interface ToolRunBinding {
@@ -129,6 +159,14 @@ export interface ToolRunBinding {
      * Every tool the run offers asks it, the engine's own included.
      */
     admitToolCall(): ToolCallsPerTurnVerdict;
+    /**
+     * The propose tools whose calls WAIT FOR A PERSON (Step 2f): the version's
+     * `deferredToolNames` for the parent, and empty for a sub-agent, whose loop
+     * cannot park (`SUBAGENT_TOOL_DEFERRED` keeps a child from naming one).
+     */
+    readonly deferredTools: ReadonlySet<string>;
+    /** Latch the deferral a call made, and abort the request in flight: no request leaves after it. */
+    latchDeferral(deferral: LatchedDeferral): void;
 }
 
 /**
@@ -211,6 +249,8 @@ export function stoppedMessage(stop: RunStop): string {
             return 'This run is stopped for review by the AI guard.';
         case 'SKILL_PIN_MISMATCH':
             return 'This run is stopped: a skill it activated no longer matches the version it was pinned to.';
+        case 'DEFER':
+            return HELD_BEHIND_DEFERRAL_MESSAGE;
     }
 }
 
@@ -251,6 +291,26 @@ async function ledgeredCall(
         binding.stopAtCap(stepHalt);
         throw new Error(stepHalt.message);
     }
+    // A DEFERRED CALL CARRIES ONE ITEM (Step 2f): one decision on one screen,
+    // and one answer to the run. More is refused here, before the funnel,
+    // charged the one STEPS above and recorded as a FAILED step, so the model
+    // can call again with one.
+    const deferred = binding.deferredTools.has(name);
+    if (deferred) {
+        const items = proposedItemCount(args);
+        if (items !== 1) {
+            binding.onFailure();
+            await recordStep(ctx, runId, binding.nextSeq(), 'TOOL_CALL', {
+                toolCalled: name,
+                status: 'FAILED',
+                label: name,
+                input: args,
+                output: { refused: DEFERRED_CALL_ONE_ITEM, items },
+                ...subagentOf(binding),
+            });
+            throw new Error(deferredCallOneItemMessage(name, items));
+        }
+    }
     // Past the turn's tool-call cap: refused here, before the funnel is asked
     // and before any other allowance is charged.
     const turn = binding.admitToolCall();
@@ -280,6 +340,15 @@ async function ledgeredCall(
     try {
         const result = await offered.run(args, toolCallId);
         const verdict = binding.takeVerdict(toolCallId);
+        // THE WAIT (Step 2f): a deferred call that queued its one proposal
+        // waits for it. One the funnel refused threw above; one the proposal
+        // guard quarantined is never reviewed, so nothing waits on it and the
+        // run goes on as for any propose call.
+        let waitOn: string | null = null;
+        if (deferred) {
+            const queued = await readCallProposals(ctx, runId, seq);
+            if (queued.length === 1 && queued[0].status === 'PENDING') waitOn = queued[0].id;
+        }
         await recordStep(ctx, runId, seq, 'TOOL_CALL', {
             toolCalled: name,
             status: 'DONE',
@@ -289,9 +358,13 @@ async function ledgeredCall(
             // The arguments the model chose, never the result: the result is
             // tenant content, already guarded on its way to the model.
             input: args,
+            ...(waitOn ? { output: { deferred: true, proposalId: waitOn } } : {}),
             ...subagentOf(binding),
         });
         await recordExternalToolDecision(ctx, { runId, toolName: name, status: 'DONE', latencyMs: Date.now() - startedAt });
+        // Latched after the step is in the ledger: no request leaves after it,
+        // and a later call of this turn is held, not run.
+        if (waitOn) binding.latchDeferral({ proposalId: waitOn, toolUseId: toolCallId, stepSeq: seq, toolCalled: name });
         return result;
     } catch (err) {
         binding.onFailure();

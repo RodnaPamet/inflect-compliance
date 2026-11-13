@@ -73,6 +73,7 @@ export type CompactionSkip =
     | 'BELOW_THRESHOLD'
     | 'NOT_A_TOOL_ROUND'
     | 'TOO_FEW_STEPS'
+    | 'DEFERRAL_LATCHED'
     | 'STOP_LATCHED'
     | 'JUST_COMPACTED'
     | 'FAILED_THIS_SEGMENT';
@@ -86,6 +87,9 @@ export type CompactionSkip =
  *     on a reply that does not ask for another call;
  *   - not with fewer than two STEPS left: the summary and at least one call
  *     after it;
+ *   - not while a deferral is latched (Step 2f): the run parks on the turn
+ *     as it stands, so the transcript a person's decision resumes is the
+ *     conversation the model actually had, never a summary of it;
  *   - not with a stop latched;
  *   - not right after a compaction (twice in a row), and not again in a
  *     segment whose summary failed.
@@ -95,6 +99,8 @@ export function compactionSkip(input: {
     readonly estimatedNextRequest: number;
     readonly toolRoundComplete: boolean;
     readonly stepsRemaining: number;
+    /** A deferred call latched in this turn (Step 2f). */
+    readonly deferralLatched?: boolean;
     readonly stopLatched: boolean;
     readonly compactedLastTurn: boolean;
     readonly failedThisSegment: boolean;
@@ -102,6 +108,7 @@ export function compactionSkip(input: {
     if (input.threshold === null) return 'OFF';
     if (input.failedThisSegment) return 'FAILED_THIS_SEGMENT';
     if (!input.toolRoundComplete) return 'NOT_A_TOOL_ROUND';
+    if (input.deferralLatched) return 'DEFERRAL_LATCHED';
     if (input.stopLatched) return 'STOP_LATCHED';
     if (input.compactedLastTurn) return 'JUST_COMPACTED';
     if (input.stepsRemaining < 2) return 'TOO_FEW_STEPS';

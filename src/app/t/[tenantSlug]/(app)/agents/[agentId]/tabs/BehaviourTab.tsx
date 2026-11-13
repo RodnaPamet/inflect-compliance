@@ -527,6 +527,12 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
                           ? t('compaction.off')
                           : t('compaction.atTokens', { count: v.compactionThresholdTokens })}
                 </dd>
+                {/* WHICH CALLS WAIT FOR A PERSON (Step 2f): part of what the
+                    approver approves, so it is shown whatever it holds. */}
+                <dt>{t('field.deferral')}</dt>
+                <dd data-testid={`behaviour-version-${v.version}-deferral`}>
+                    {(v.deferredToolNames ?? []).length > 0 ? (v.deferredToolNames ?? []).join(', ') : t('deferral.none')}
+                </dd>
                 <dt>{t('field.outputKind')}</dt>
                 <dd>{t(`outputKind.${v.outputKind}`)}</dd>
                 <dt>{t('field.triggers')}</dt>

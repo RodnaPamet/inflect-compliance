@@ -3603,8 +3603,15 @@ each one careless edit from being undone:
 - **Readers before the writer.** `RUNS_DEFERRALS` is a `Record<AgentDriver,
   boolean>`; admission refuses a version naming deferred tools on an engine whose
   entry is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`), and the worker treats such a
-  pinned version as unavailable. The parking path and the flag flip ship in a
-  later deploy than every reader.
+  pinned version as unavailable. The parking path and the flag flip shipped in a
+  later deploy than every reader; the flip is its own commit, so reverting it
+  refuses such versions by name rather than running them without the wait.
+- **The park is a stop, and the lowest.** A deferred call that queued its ONE
+  proposal (`DEFERRED_CALL_ONE_ITEM` refuses more, before the funnel) latches
+  `DEFER` after its step is in the ledger, so no request leaves after it, and
+  every other stop outranks it at settlement. A quarantined item waits for
+  nothing. Only the parent parks: a child's binding defers nothing, and
+  compaction never summarises the turn a run parks on (`DEFERRAL_LATCHED`).
 
 ## Testing Conventions
 
