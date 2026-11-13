@@ -39,6 +39,7 @@ function prior(standing?: SpendingAuthorityStanding): PriorHarnessState {
         acceptedShortfalls: new Set<string>(),
         intakeClaims: new Map<string, IntakeClaim>(),
         openOrphanCredentials: new Set<string>(),
+        onRecordAsAgent: new Set<string>(),
         spendingAuthority: new Map(standing === undefined ? [] : [[ROW, standing]]),
     };
 }

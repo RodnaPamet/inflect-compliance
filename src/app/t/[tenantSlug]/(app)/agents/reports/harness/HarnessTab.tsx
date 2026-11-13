@@ -15,7 +15,8 @@
  * an agent, and the notice at the top says so.
  *
  * THE THREE WRITES are the owner's shortfall acceptance, the scanner-key
- * register and the registration intake from the shadow list (#3712). Each posts
+ * register and the registration intake from the shadow list and the
+ * unregistered-identity list (#3712). Each posts
  * to its own route and then refreshes this server read; the tab holds no copy
  * of any of them to keep in step. The intake's dialog is imported here, inside
  * the chunk `ReportsClient` loads on demand, so the pack tab never ships it.
@@ -40,7 +41,7 @@ import { EstateHealthCard } from './EstateHealthCard';
 import { ScanHistory } from './ScanHistory';
 import { ScannerKeysCard } from './ScannerKeysCard';
 import { ScannerSection } from './ScannerSection';
-import { ShadowList } from './ShadowList';
+import { ShadowList, UnregisteredIdentityList } from './ShadowList';
 
 export function HarnessTab({
     view,
@@ -149,6 +150,15 @@ export function HarnessTab({
             {hasScans && (
                 <ShadowList
                     shadow={view.shadow}
+                    onRegister={canRegisterShadow ? setRegistering : null}
+                />
+            )}
+            {/* A section of its own, beside the shadow list (owner decisions,
+                2026-11-13): no register row and no sign of a model. The server
+                split the two lists; the same Register action serves both. */}
+            {hasScans && (
+                <UnregisteredIdentityList
+                    identities={view.unregisteredIdentities}
                     onRegister={canRegisterShadow ? setRegistering : null}
                 />
             )}

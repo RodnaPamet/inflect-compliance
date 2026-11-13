@@ -12640,6 +12640,7 @@
         "modelAbsent": "model not reported"
       },
       "shadowBadge": "Shadow",
+      "identityBadge": "Unregistered identity",
       "level": {
         "H0": "H0 · Shadow",
         "H1": "H1 · Registered",
@@ -12654,6 +12655,7 @@
         "UNKNOWN": "Unknown (held to the higher bar)"
       },
       "belowBar": "Below the bar ({bar})",
+      "identityNoBar": "Not held to a bar",
       "latestIngestedDiffers": "A scan received later reads this agent at {level}; acceptance follows that reading.",
       "verdictsUnreadable": "The stored verdicts could not be re-read, so every criterion is shown as not met.",
       "cell": {
@@ -12774,6 +12776,12 @@
       "shadowMayBeIncomplete": "Not every trusted scanner’s latest scan is complete, so this list may be missing shadow agents.",
       "shadowNone": "No shadow agent: every trusted scanner’s latest scan is complete, the oldest of them as of {asOf}.",
       "shadowTruncated": "Only the {count} most recently seen shadow agents are listed.",
+      "identityHeading": "Unregistered identities",
+      "identityIntro": "Automated identities a scan found with no live row in the agent register and no sign that they run a model: not found in agent code, in a tracing system or on a tool server, and listing no tool and no model endpoint. Service accounts, build workflows that hold a credential and directory applications look like this. A scan cannot show that one runs no model. If one is an agent, register it, and it is then scored as one. If it is not, it still needs an owner on record, or the principal retired. They are held to no harness bar.",
+      "identityUnstated": "Not every trusted scanner’s latest scan is complete, so whether unregistered identities exist is unknown. An empty list here is not evidence that there are none.",
+      "identityMayBeIncomplete": "Not every trusted scanner’s latest scan is complete, so this list may be missing identities, and a source that was not read may hold a sign that one of these runs a model.",
+      "identityNone": "No unregistered identity: every trusted scanner’s latest scan is complete, the oldest of them as of {asOf}.",
+      "identityTruncated": "Only the {count} most recently seen unregistered identities are listed.",
       "accept": "Accept",
       "renew": "Renew",
       "acceptModal": {
@@ -12836,8 +12844,11 @@
       "shadowIntakePending": "Registered as {name}. It leaves this list at the next scan that sees it, and its finding closes at the next complete one.",
       "shadowIntakeRetired": "Registered once from its finding, into a register row since retired or deleted. It is not registered again from here.",
       "shadowNoFinding": "No shadow-agent finding to register from.",
+      "identityNoFinding": "No unregistered-identity finding to register from.",
       "registerModal": {
         "title": "Register the shadow agent",
+        "identityTitle": "Register the identity as an agent",
+        "identityNotice": "A scan found no sign that this identity runs a model, and it cannot show that it runs none. Registering it records it as an agent: it gets an accountable owner, and from the next scan it is scored as an agent and held to the harness bar. If it is not an agent, do not register it here: give it an owner where your organisation keeps such identities, or retire it.",
         "description": "Take {agent} into the agent register. This creates a DRAFT register row and a provisional EU AI Act entry that is not yet classified. The agent cannot be activated until that entry is classified.",
         "suggestionTitle": "What the owner suggestion rested on",
         "suggestionSuggested": "A {grade} suggestion named somebody. Whom it named is not shown here.",

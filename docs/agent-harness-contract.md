@@ -317,15 +317,66 @@ tools, and links `registeredAgentId` only when the register holds that row; a
 claimed id the register does not hold is treated as no link at all. An agent the
 report links to nothing is linked by the register's own record when the
 registration intake registered a row from it (`RegisteredAgent.intakeDiscoveredAgentId`)
-and that row is live and not RETIRED; such a link resolves `SHADOW_AGENT` only
-on a complete scan, and a report that names a different live row wins, with the
+and that row is live and not RETIRED; such a link resolves `SHADOW_AGENT` (and
+`UNREGISTERED_IDENTITY`) only on a complete scan, and a report that names a different live row wins, with the
 disagreement audited as `AGENT_INTAKE_LINK_CONFLICT` on the intake row. The
 report's own `findings` member is not acted on: the ingest raises its own
 findings, with `sourceKind = 'AGENT_HARNESS'`, from what it derived —
-`SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `HARNESS_SHORTFALL`, `LEVEL_DROP`,
-`EMPTY_SCAN`, `INCOMPLETE_SOURCE` and `ORPHAN_CREDENTIAL` — and resolves one
-only on positive evidence. An agent absent from a scan resolves nothing about
-it.
+`SHADOW_AGENT`, `UNREGISTERED_IDENTITY`, `UNPINNED_WRITE_TOOL`,
+`HARNESS_SHORTFALL`, `LEVEL_DROP`, `EMPTY_SCAN`, `INCOMPLETE_SOURCE` and
+`ORPHAN_CREDENTIAL` — and resolves one only on positive evidence. An agent
+absent from a scan resolves nothing about it.
+
+**`SHADOW_AGENT` or `UNREGISTERED_IDENTITY`: a principal with no register row
+is one or the other** (owner decisions, 2026-11-13). The report says nothing
+about which: the ingest decides, from what the report already carries, and the
+contract does not change. A principal the register is not linked to is a
+**shadow agent** when the report shows a sign that it runs a model, and an
+**unregistered automated identity** when it shows none. A service account, a
+build workflow that holds a credential and a directory application are typical
+identities. The signs are these five, and no others:
+
+| Sign | The report says |
+|---|---|
+| `FOUND_IN_CODE` | `discoveredVia` includes `code` |
+| `FOUND_IN_RUNTIME` | `discoveredVia` includes `runtime` |
+| `FOUND_ON_MCP_SERVER` | `discoveredVia` includes `mcp` |
+| `LISTS_A_TOOL` | `tools[]` holds at least one tool |
+| `LISTS_A_MODEL` | `models[]` holds at least one endpoint |
+
+The name of a credential is not a sign: a secret named after a model provider
+is a guess about what holds it. A model list reported empty, or not reported,
+is not a sign either.
+
+| | `SHADOW_AGENT` | `UNREGISTERED_IDENTITY` |
+|---|---|---|
+| Severity and type | HIGH, nonconformity | MEDIUM, observation |
+| `sourceRef` | `SHADOW_AGENT:<discoveredId>` | `UNREGISTERED_IDENTITY:<discoveredId>` |
+| Held to the harness bar | Yes: `HARNESS_SHORTFALL` is raised when it is below it | No: it has no `HARNESS_SHORTFALL` |
+| Its row, derived level and verdicts | Kept | Kept |
+| Closes | When a scan finds it linked to the register | The same |
+
+The identity finding says that the scan cannot show the principal runs no
+model. If it is an agent, registering it makes it one: it is then scored
+against the bar. If it is not, it still needs an owner on record, or the
+principal retired. The registration intake takes either finding.
+
+A sign is a presence, and counts on any scan. The absence of a sign counts only
+as far as the scan read:
+
+| The scan | The principal shows | The ingest |
+|---|---|---|
+| Complete or not | A sign | Asserts `SHADOW_AGENT`; resolves `UNREGISTERED_IDENTITY` |
+| Complete | No sign | Asserts `UNREGISTERED_IDENTITY`; resolves `SHADOW_AGENT` and `HARNESS_SHORTFALL` |
+| Incomplete | No sign, and its `SHADOW_AGENT` or `HARNESS_SHORTFALL` finding is open | Treats it as the agent it is on record as, and resolves nothing |
+| Incomplete | No sign, and neither finding is open | Asserts `UNREGISTERED_IDENTITY`, and resolves nothing |
+
+So a missing sign on an incomplete scan closes nothing, the class does not move
+back and forth between scans, and a principal holds one of the two findings
+open, not both. What is on record is the open finding, not the stored scan
+rows, which every scan overwrites. A principal the register IS linked to is an
+agent whatever it shows, and its link resolves both findings under the rule
+above for `SHADOW_AGENT`.
 
 **`UNPINNED_WRITE_TOOL`: which read closes it.** A scan in which an agent has
 no unpinned write tool closes the finding only when every source that could

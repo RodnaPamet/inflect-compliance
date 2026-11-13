@@ -14,8 +14,9 @@
  *   • API TOKENS. SSWS tokens act AS the admin who created them, so each is a
  *     principal whose authority is a person's. `GET /api/v1/api-tokens`, paged.
  *     The owner is the token's `userId`, which Okta records itself. Every one
- *     is reported — and so raises SHADOW_AGENT at the ingest until it is
- *     registered or linked — EXCEPT the token this scanner reads with (owner
+ *     is reported — and so raises a finding at the ingest until it is
+ *     registered or linked (UNREGISTERED_IDENTITY, since it shows no sign of
+ *     running a model) — EXCEPT the token this scanner reads with (owner
  *     decision, 2026-10-19). That one is identified POSITIVELY, by id, from
  *     `GET /api/v1/api-tokens/current`, which returns the metadata of the token
  *     that made the request; never by its name, which any administrator can

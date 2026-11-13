@@ -264,20 +264,30 @@ describe('2. the health view, from real scans through the real ingest', () => {
         await scanAndIngest(T1, 2, 3, { INITECH_AZURE_CLIENT_SECRET: undefined });
     });
 
-    it('every Okta API token raises SHADOW_AGENT through the real ingest, except the scanner\'s own', async () => {
-        const shadowRefs = (
-            await prisma.finding.findMany({
-                where: { tenantId: T1, sourceKind: 'AGENT_HARNESS', sourceRef: { startsWith: 'SHADOW_AGENT:okta:api-token:' } },
-                select: { sourceRef: true },
-            })
-        ).map((f) => f.sourceRef as string);
+    it('every Okta API token is raised through the real ingest as an unregistered identity, except the scanner\'s own', async () => {
+        // An API token is a principal on no list, and nothing an Okta read
+        // reports shows it to run a model: it lists no tool and no model
+        // endpoint, and was not found in code, a tracing system or an MCP
+        // server. So it is an UNREGISTERED_IDENTITY, not a shadow agent (owner
+        // decisions, 2026-11-13), and it has no shortfall finding.
+        const refsOf = async (prefix: string) =>
+            (
+                await prisma.finding.findMany({
+                    where: { tenantId: T1, sourceKind: 'AGENT_HARNESS', sourceRef: { startsWith: `${prefix}:okta:api-token:` } },
+                    select: { sourceRef: true },
+                })
+            )
+                .map((f) => f.sourceRef as string)
+                .sort();
         // Acme's org and Globex's, each with two tokens beside the scanner's own.
-        expect(shadowRefs.sort()).toEqual([
-            'SHADOW_AGENT:okta:api-token:00TGToken1',
-            'SHADOW_AGENT:okta:api-token:00TGToken2',
-            'SHADOW_AGENT:okta:api-token:00TToken1',
-            'SHADOW_AGENT:okta:api-token:00TToken2',
+        expect(await refsOf('UNREGISTERED_IDENTITY')).toEqual([
+            'UNREGISTERED_IDENTITY:okta:api-token:00TGToken1',
+            'UNREGISTERED_IDENTITY:okta:api-token:00TGToken2',
+            'UNREGISTERED_IDENTITY:okta:api-token:00TToken1',
+            'UNREGISTERED_IDENTITY:okta:api-token:00TToken2',
         ]);
+        expect(await refsOf('SHADOW_AGENT')).toEqual([]);
+        expect(await refsOf('HARNESS_SHORTFALL')).toEqual([]);
         const own = await prisma.discoveredAgent.count({
             where: { tenantId: T1, discoveredId: { in: [`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`, 'okta:api-token:00TGScannerOwn'] } },
         });

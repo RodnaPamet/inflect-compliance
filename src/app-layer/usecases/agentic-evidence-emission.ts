@@ -144,7 +144,13 @@ import {
     type ReceiptFact,
 } from '@/lib/agentic/evidence-artefact';
 import { parseStoredHarnessSources } from '@/lib/agentic/harness-contract';
-import { isHarnessShortfall } from '@/lib/agentic/harness-findings';
+import {
+    HARNESS_FINDING_SOURCE_KIND,
+    SHADOW_REF_PREFIX,
+    UNREGISTERED_IDENTITY_REF_PREFIX,
+    isHarnessShortfall,
+    unregisteredIdentitiesOnRecord,
+} from '@/lib/agentic/harness-findings';
 import { HARNESS_LEVELS, type HarnessLevel } from '@/lib/agentic/harness-ladder';
 import { harnessScanCompleteness, type HarnessStoredReach } from '@/lib/agentic/harness-read-model';
 import {
@@ -161,6 +167,12 @@ const FRAMEWORK_CATALOGUE_CAP = 500;
 const POPULATION_CAP = 20_000;
 /** Bound on the harness scans one month's artefact reads; one past it is read to know. */
 const HARNESS_SCAN_CAP = 200;
+/**
+ * How many open SHADOW_AGENT / UNREGISTERED_IDENTITY findings the harness
+ * emitter reads to tell an unregistered identity from a shadow agent: at most
+ * one of each per tallied agent. Past it the tallies are withheld.
+ */
+const HARNESS_CLASS_FINDING_CAP = 2 * POPULATION_CAP;
 /** Bound on the scanners holding a trusted key one month's artefact reads. A tenant trusts a handful. */
 const HARNESS_KEY_HOLDER_CAP = 200;
 /** Closed months one tick may re-emit. The previous month is always one of them. */
@@ -612,12 +624,20 @@ type MutableTallies = {
     reach: Record<HarnessStoredReach, number>;
     belowBar: number;
     notInRegister: number;
+    unregisteredIdentities: number;
 };
 
 function emptyTallies(): MutableTallies {
     const levels = {} as Record<HarnessLevel, number>;
     for (const l of HARNESS_LEVELS) levels[l] = 0;
-    return { count: 0, levels, reach: { READ_ONLY: 0, WRITE_OR_EXTERNAL: 0, UNKNOWN: 0 }, belowBar: 0, notInRegister: 0 };
+    return {
+        count: 0,
+        levels,
+        reach: { READ_ONLY: 0, WRITE_OR_EXTERNAL: 0, UNKNOWN: 0 },
+        belowBar: 0,
+        notInRegister: 0,
+        unregisteredIdentities: 0,
+    };
 }
 
 /**
@@ -628,6 +648,9 @@ function emptyTallies(): MutableTallies {
  * of a human surface; the emitter's caller is the job. Only the columns
  * `HarnessScanFact` renders are selected — no `signature`, no `verdictsJson`,
  * no `toolsJson`, no `ownerRef` — so they cannot reach a builder by accident.
+ * The one exception is each agent's `discoveredId`, read to key the class on
+ * record (shadow agent, or unregistered identity) and used for nothing else:
+ * `HarnessTallies` holds counts, and no fact has a member that could carry it.
  *
  * "Latest" is by `asOf`, the moment a report describes, with the ingest's
  * tiebreak (`createdAt`, then `id`), the same order the harness matrix uses: a
@@ -676,12 +699,45 @@ async function loadHarnessFacts(
                   level: true,
                   reach: true,
                   discoveredAgent: {
-                      select: { registeredAgentId: true, registeredAgent: { select: { deletedAt: true } } },
+                      // `discoveredId` is read to key the class on record
+                      // below and goes no further: no fact carries it.
+                      select: {
+                          discoveredId: true,
+                          registeredAgentId: true,
+                          registeredAgent: { select: { deletedAt: true } },
+                      },
                   },
               },
               take: POPULATION_CAP + 1,
           });
-    const tallyTruncated = items.length > POPULATION_CAP;
+    const itemsTruncated = items.length > POPULATION_CAP;
+
+    // WHICH UNREGISTERED PRINCIPALS ARE IDENTITIES, NOT SHADOW AGENTS (owner
+    // decisions, 2026-11-13) — as of this emission, like "not in the register".
+    // The class is the finding on record, read by the planner's own rule
+    // (`unregisteredIdentitiesOnRecord`), never re-derived from the stored
+    // scan rows. Read tenant-wide by prefix rather than by one ref per agent:
+    // the tallied population can be far larger than a bound parameter list.
+    // More open findings than the cap means the class of some agent is unread,
+    // and then every tally is withheld rather than stated on a partial read.
+    const classFindings = itemsTruncated || items.length === 0
+        ? []
+        : await db.finding.findMany({
+              where: {
+                  tenantId: ctx.tenantId,
+                  sourceKind: HARNESS_FINDING_SOURCE_KIND,
+                  status: { not: 'CLOSED' },
+                  deletedAt: null,
+                  OR: [
+                      { sourceRef: { startsWith: SHADOW_REF_PREFIX } },
+                      { sourceRef: { startsWith: UNREGISTERED_IDENTITY_REF_PREFIX } },
+                  ],
+              },
+              select: { sourceRef: true, status: true },
+              take: HARNESS_CLASS_FINDING_CAP + 1,
+          });
+    const tallyTruncated = itemsTruncated || classFindings.length > HARNESS_CLASS_FINDING_CAP;
+    const identitiesOnRecord = unregisteredIdentitiesOnRecord(classFindings);
 
     const tallies = new Map<string, MutableTallies>(talliedIds.map((id) => [id, emptyTallies()]));
     if (!tallyTruncated) {
@@ -691,14 +747,17 @@ async function loadHarnessFacts(
             t.count += 1;
             t.levels[item.level] += 1;
             t.reach[item.reach] += 1;
-            // Reported, never gating: the ladder is report-only.
-            if (isHarnessShortfall(item.level, item.reach)) t.belowBar += 1;
             // A register row deleted after the scan linked it leaves a stale
             // link (the FK is NO ACTION), so it counts as not in the register.
             const registered = item.discoveredAgent.registeredAgentId !== null
                 && item.discoveredAgent.registeredAgent !== null
                 && item.discoveredAgent.registeredAgent.deletedAt === null;
+            const identity = !registered && identitiesOnRecord.has(item.discoveredAgent.discoveredId);
+            // Reported, never gating: the ladder is report-only. An
+            // unregistered identity is held to no bar, so it is not below one.
+            if (!identity && isHarnessShortfall(item.level, item.reach)) t.belowBar += 1;
             if (!registered) t.notInRegister += 1;
+            if (identity) t.unregisteredIdentities += 1;
         }
     }
 
@@ -710,7 +769,13 @@ async function loadHarnessFacts(
         // which makes the artefact INCOMPLETE rather than a number nobody read.
         const stated: HarnessTallies | null =
             !tallyTruncated && t !== undefined && t.count === s.agentCount
-                ? { levels: t.levels, reach: t.reach, belowBar: t.belowBar, notInRegister: t.notInRegister }
+                ? {
+                      levels: t.levels,
+                      reach: t.reach,
+                      belowBar: t.belowBar,
+                      notInRegister: t.notInRegister,
+                      unregisteredIdentities: t.unregisteredIdentities,
+                  }
                 : null;
         return {
             id: s.id,

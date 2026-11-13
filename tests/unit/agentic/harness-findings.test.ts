@@ -18,7 +18,9 @@ import {
 } from '../../helpers/agent-harness-fake-scanner';
 import {
     AGENT_SDK_OPTION_CRITERIA,
+    HARNESS_FINDING_CODES,
     IDENTITY_BEARING_SOURCE,
+    MODEL_SIGNS,
     agentSdkOptionVerdicts,
     firstSecretShapedMember,
     firstSecretShapedPath,
@@ -26,13 +28,20 @@ import {
     isHarnessShortfall,
     isIdentityBearingSource,
     isIntakeClaimLinkable,
+    modelSignsOf,
+    onRecordAsAgentOf,
     orphanCredentialRefOf,
     planHarnessScan,
     reachOf,
+    shadowRefOf,
     shortfallFinding,
+    shortfallRefOf,
+    unregisteredIdentitiesOnRecord,
+    unregisteredIdentityRefOf,
     toolEvidenceSource,
     toolEvidenceSourcesOf,
     type AgentSdkOptionFacts,
+    type HarnessFindingOnRecord,
     type IntakeClaim,
     type PriorHarnessState,
 } from '@/lib/agentic/harness-findings';
@@ -53,6 +62,7 @@ function prior(over: Partial<PriorHarnessState> = {}): PriorHarnessState {
         acceptedShortfalls: new Set<string>(),
         intakeClaims: new Map<string, IntakeClaim>(),
         openOrphanCredentials: new Set<string>(),
+        onRecordAsAgent: new Set<string>(),
         spendingAuthority: new Map(),
         ...over,
     };
@@ -721,6 +731,259 @@ describe('Agent SDK options become NOT MET verdicts, as the owner mapped them (#
             expect(agentOf(plan)).toMatchObject({ registeredAgentId: 'agt_intake', linkBasis: 'INTAKE' });
             expect(plan.resolve).toContain(`SHADOW_AGENT:${SDK_AGENT_ID}`);
             expect(refs(plan.assert)).not.toContain(`SHADOW_AGENT:${SDK_AGENT_ID}`);
+        });
+    });
+});
+
+describe('an unregistered identity is not a shadow agent (owner decisions, 2026-11-13)', () => {
+    // A principal no register row names. By default it shows no sign of a
+    // model: found by a directory source, listing no tool and no model.
+    const IDENTITY = 'entra:sp:build-1';
+    const SHADOW_REF = shadowRefOf(IDENTITY);
+    const IDENTITY_REF = unregisteredIdentityRefOf(IDENTITY);
+    const SHORTFALL_REF = shortfallRefOf(IDENTITY);
+    type Agent = HarnessReportBodyV2['agents'][number];
+    const tool = { server: 'https://mcp.internal.example/crm', name: 'list_accounts', manifestHash: null, pinned: true, readOnlyHint: true };
+
+    /** `validV2CompleteReportBody` (every source COMPLETE, `code` among them) plus the principal. */
+    const body = (over: Partial<Agent> = {}, opts: { incomplete?: boolean } = {}): HarnessReportBodyV2 => {
+        const base = validV2CompleteReportBody();
+        base.population.sources.push({ kind: 'runtime', status: 'COMPLETE', rows: 1 });
+        if (opts.incomplete) {
+            base.population.sources = base.population.sources.map((src) =>
+                src.kind === 'code' ? { kind: 'code', status: 'INCOMPLETE', reason: 'UNPARSEABLE', rows: 4 } : src,
+            );
+        }
+        base.agents.push({
+            discoveredId: IDENTITY,
+            discoveredVia: ['entra-sp'],
+            registeredAgentId: null,
+            owner: null,
+            credentials: [{ ref: 'kv://prod/build/deploy-key', ageDays: 400, expires: false, boundToAgent: true, grant: 'app-only' }],
+            tools: [],
+            skills: [],
+            verdicts: [],
+            ...over,
+        });
+        return base;
+    };
+    const agentOf = (plan: ReturnType<typeof planHarnessScan>) => {
+        const a = plan.agents.find((x) => x.discoveredId === IDENTITY);
+        if (!a) throw new Error('the principal was not planned');
+        return a;
+    };
+    /** Only this principal's findings, so the fixture's other agents cannot satisfy an assertion. */
+    const assertedFor = (plan: ReturnType<typeof planHarnessScan>) =>
+        plan.assert.filter((f) => f.sourceRef.endsWith(`:${IDENTITY}`) || f.sourceRef.includes(`:${IDENTITY}:`));
+    const resolvedFor = (plan: ReturnType<typeof planHarnessScan>) =>
+        plan.resolve.filter((r) => r.endsWith(`:${IDENTITY}`)).sort();
+    const onRecordAsAgent = prior({ onRecordAsAgent: new Set([IDENTITY]) });
+
+    it('the signs are the five the standalone scanner goes by, in its order, and the finding code is on the list', () => {
+        expect(MODEL_SIGNS).toEqual(['FOUND_IN_CODE', 'FOUND_IN_RUNTIME', 'FOUND_ON_MCP_SERVER', 'LISTS_A_TOOL', 'LISTS_A_MODEL']);
+        expect(HARNESS_FINDING_CODES).toContain('UNREGISTERED_IDENTITY');
+    });
+
+    it('a principal nothing names and nothing shows to run a model: one MEDIUM finding, and none about the ladder', () => {
+        const complete = body();
+        expect(complete.population.sources.every((src) => src.status === 'COMPLETE')).toBe(true);
+        const plan = planHarnessScan(complete, prior());
+        expect(assertedFor(plan)).toEqual([
+            {
+                code: 'UNREGISTERED_IDENTITY',
+                sourceRef: `UNREGISTERED_IDENTITY:${IDENTITY}`,
+                severity: 'MEDIUM',
+                type: 'OBSERVATION',
+                title: `Unregistered automated identity ${IDENTITY}`,
+                description: expect.stringContaining('The scan cannot show that it runs no model.') as unknown as string,
+            },
+        ]);
+        const text = assertedFor(plan)[0].description;
+        expect(text).toContain('If it is an agent, register it, and it is then scored as one.');
+        expect(text).toContain('If it is not, it still needs an owner on record; or retire the principal.');
+    });
+
+    it('it keeps its row, its derived level and its verdicts, and is below the ladder\'s bar with no shortfall raised', () => {
+        const withVerdict = body({ verdicts: [{ criterion: 'H2.credential_bound', met: true, evidence: 'entra-sp:servicePrincipals/build-1' }] });
+        const planned = agentOf(planHarnessScan(withVerdict, prior()));
+        expect(planned).toMatchObject({ level: 'H0', registeredAgentId: null, linkBasis: null, modelSigns: [], unregisteredIdentity: true });
+        expect(planned.verdicts).toHaveLength(1);
+        // The ladder alone would call it short; the class is what holds the finding back.
+        expect(isHarnessShortfall(planned.level, planned.reach)).toBe(true);
+    });
+
+    it.each<[string, Partial<Agent>, string[]]>([
+        ['it was found in agent code', { discoveredVia: ['code'] }, ['FOUND_IN_CODE']],
+        ['it was found in a tracing system', { discoveredVia: ['runtime'] }, ['FOUND_IN_RUNTIME']],
+        ['it was found on an MCP server', { discoveredVia: ['entra-sp', 'mcp'] }, ['FOUND_ON_MCP_SERVER']],
+        ['it lists a tool', { tools: [tool] }, ['LISTS_A_TOOL']],
+        ['it lists a model endpoint', { models: [{ endpoint: 'https://api.model.example', model: 'm-1' }] }, ['LISTS_A_MODEL']],
+        ['it shows two signs', { discoveredVia: ['code'], tools: [tool] }, ['FOUND_IN_CODE', 'LISTS_A_TOOL']],
+    ])('with a sign of a model it is a shadow agent, held to the bar: %s', (_label, over, signs) => {
+        const plan = planHarnessScan(body(over), prior());
+        expect(agentOf(plan)).toMatchObject({ modelSigns: signs, unregisteredIdentity: false });
+        const codes = assertedFor(plan).map((f) => f.code);
+        expect(codes).toEqual(expect.arrayContaining(['SHADOW_AGENT', 'HARNESS_SHORTFALL']));
+        expect(codes).not.toContain('UNREGISTERED_IDENTITY');
+        // The sign is what the identity finding says nothing showed.
+        expect(resolvedFor(plan)).toContain(IDENTITY_REF);
+        expect(resolvedFor(plan)).not.toContain(SHADOW_REF);
+    });
+
+    it('a model list given as empty, or not given, is no sign; nor is the name of a credential', () => {
+        const named = [{ ref: 'github://acme/app/secrets/ANTHROPIC_API_KEY', ageDays: 1, expires: false, boundToAgent: true, grant: 'unknown' as const }];
+        for (const over of [{ models: [] }, {}, { credentials: named }] as Partial<Agent>[]) {
+            const plan = planHarnessScan(body(over), prior());
+            expect(agentOf(plan)).toMatchObject({ modelSigns: [], unregisteredIdentity: true });
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(['UNREGISTERED_IDENTITY']);
+        }
+        expect(modelSignsOf({ discoveredVia: ['cicd', 'vault', 'gcp-sa', 'okta-app', 'inflect-register'], tools: [], models: null })).toEqual([]);
+    });
+
+    it('a complete scan closes the shadow and shortfall findings it replaces', () => {
+        // (With no tool listed and every source read, the unpinned-tool
+        // finding closes too, by its own rule, which this one leaves alone.)
+        expect(resolvedFor(planHarnessScan(body(), onRecordAsAgent))).toEqual(
+            [SHORTFALL_REF, SHADOW_REF, `UNPINNED_WRITE_TOOL:${IDENTITY}`].sort(),
+        );
+    });
+
+    describe('a registered principal with no sign of a model is an agent: the register said so', () => {
+        it('a link the report claimed resolves both findings on any scan, and it is scored against the bar', () => {
+            for (const incomplete of [false, true]) {
+                const plan = planHarnessScan(
+                    body({ registeredAgentId: 'agt_registered_9' }, { incomplete }),
+                    prior({ registeredAgentIds: new Set(['agt_registered_1', 'agt_registered_9']) }),
+                );
+                expect(agentOf(plan)).toMatchObject({ linkBasis: 'REPORT', modelSigns: [], unregisteredIdentity: false });
+                expect(resolvedFor(plan)).toEqual(expect.arrayContaining([SHADOW_REF, IDENTITY_REF]));
+                expect(assertedFor(plan).map((f) => f.code)).toEqual(['HARNESS_SHORTFALL']);
+            }
+        });
+
+        const intake = prior({ intakeClaims: new Map([[IDENTITY, { registeredAgentId: 'agt_intake', status: 'DRAFT', deleted: false }]]) });
+
+        it('a link from the intake\'s record resolves both on a complete scan', () => {
+            const plan = planHarnessScan(body(), intake);
+            expect(agentOf(plan)).toMatchObject({ linkBasis: 'INTAKE', unregisteredIdentity: false });
+            expect(resolvedFor(plan)).toEqual(expect.arrayContaining([SHADOW_REF, IDENTITY_REF]));
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(['HARNESS_SHORTFALL']);
+        });
+
+        it('and on an incomplete scan links it but neither raises nor resolves either finding', () => {
+            const plan = planHarnessScan(body({}, { incomplete: true }), intake);
+            expect(agentOf(plan)).toMatchObject({ linkBasis: 'INTAKE', unregisteredIdentity: false });
+            expect(resolvedFor(plan)).not.toContain(SHADOW_REF);
+            expect(resolvedFor(plan)).not.toContain(IDENTITY_REF);
+            const codes = assertedFor(plan).map((f) => f.code);
+            expect(codes).not.toContain('SHADOW_AGENT');
+            expect(codes).not.toContain('UNREGISTERED_IDENTITY');
+        });
+    });
+
+    describe('the absence of a sign is evidence only as far as the scan read', () => {
+        it('an incomplete scan with no sign leaves a principal on record as an agent exactly as it was', () => {
+            const plan = planHarnessScan(body({}, { incomplete: true }), onRecordAsAgent);
+            expect(agentOf(plan)).toMatchObject({ modelSigns: [], unregisteredIdentity: false });
+            expect(assertedFor(plan).map((f) => f.code).sort()).toEqual(['HARNESS_SHORTFALL', 'SHADOW_AGENT']);
+            // Nothing about its class is closed: not the shadow finding, not
+            // the shortfall, and no identity finding is opened beside them.
+            expect(resolvedFor(plan)).not.toContain(SHADOW_REF);
+            expect(resolvedFor(plan)).not.toContain(SHORTFALL_REF);
+            expect(resolvedFor(plan)).not.toContain(IDENTITY_REF);
+        });
+
+        it('the same principal on a complete scan is an identity: the pair proves it is the completeness that decides', () => {
+            const plan = planHarnessScan(body(), onRecordAsAgent);
+            expect(agentOf(plan).unregisteredIdentity).toBe(true);
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(['UNREGISTERED_IDENTITY']);
+        });
+
+        it('an incomplete scan with no sign and nothing on record opens the identity finding and closes nothing', () => {
+            const plan = planHarnessScan(body({}, { incomplete: true }), prior());
+            expect(agentOf(plan).unregisteredIdentity).toBe(true);
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(['UNREGISTERED_IDENTITY']);
+            expect(resolvedFor(plan)).not.toContain(SHADOW_REF);
+            expect(resolvedFor(plan)).not.toContain(SHORTFALL_REF);
+        });
+
+        it('a sign seen on an incomplete scan is a presence: the identity on record becomes a shadow agent', () => {
+            const plan = planHarnessScan(body({ tools: [tool] }, { incomplete: true }), prior());
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(expect.arrayContaining(['SHADOW_AGENT', 'HARNESS_SHORTFALL']));
+            expect(resolvedFor(plan)).toContain(IDENTITY_REF);
+        });
+
+        it('an acceptance in force still holds a held agent\'s shortfall back without resolving it', () => {
+            const plan = planHarnessScan(
+                body({}, { incomplete: true }),
+                prior({ onRecordAsAgent: new Set([IDENTITY]), acceptedShortfalls: new Set([IDENTITY]) }),
+            );
+            expect(assertedFor(plan).map((f) => f.code)).toEqual(['SHADOW_AGENT']);
+            expect(resolvedFor(plan)).not.toContain(SHORTFALL_REF);
+        });
+
+        it('a level that fell is still an event for an identity', () => {
+            const plan = planHarnessScan(body(), prior({ previousLevels: new Map([[IDENTITY, 'H2' as HarnessLevel]]) }));
+            expect(assertedFor(plan).map((f) => f.code).sort()).toEqual(['LEVEL_DROP', 'UNREGISTERED_IDENTITY']);
+        });
+    });
+
+    describe('the class does not flap, and the two findings are never both open', () => {
+        // The ingest's reconcile, reduced to what the class rests on: an
+        // asserted finding is open, a resolved one is closed, and the next
+        // scan's prior is read back off the open findings by the ingest's own
+        // reader.
+        const run = (scans: readonly HarnessReportBodyV2[]) => {
+            const status = new Map<string, 'OPEN' | 'CLOSED'>();
+            const history: string[][] = [];
+            for (const scan of scans) {
+                const record: HarnessFindingOnRecord[] = [...status].map(([sourceRef, st]) => ({ sourceRef, status: st }));
+                const plan = planHarnessScan(scan, prior({ onRecordAsAgent: onRecordAsAgentOf(record) }));
+                for (const f of plan.assert) status.set(f.sourceRef, 'OPEN');
+                for (const r of plan.resolve) if (status.has(r)) status.set(r, 'CLOSED');
+                history.push(
+                    [SHADOW_REF, IDENTITY_REF, SHORTFALL_REF].filter((r) => status.get(r) === 'OPEN').map((r) => r.slice(0, r.indexOf(':'))),
+                );
+            }
+            return history;
+        };
+        const AGENT = ['SHADOW_AGENT', 'HARNESS_SHORTFALL'];
+        const ID = ['UNREGISTERED_IDENTITY'];
+        const noSign = (incomplete: boolean) => body({}, { incomplete });
+        const withSign = (incomplete: boolean) => body({ tools: [tool] }, { incomplete });
+
+        it('an identity stays one through incomplete scans; a sign makes it an agent; only a complete scan with no sign takes that back', () => {
+            expect(
+                run([noSign(false), noSign(true), noSign(true), withSign(true), noSign(true), noSign(true), noSign(false), noSign(true)]),
+            ).toEqual([ID, ID, ID, AGENT, AGENT, AGENT, ID, ID]);
+        });
+
+        it('a shadow agent whose sign goes missing on incomplete scans is not closed by any of them', () => {
+            expect(run([withSign(false), noSign(true), noSign(true), noSign(true)])).toEqual([AGENT, AGENT, AGENT, AGENT]);
+        });
+
+        it('a principal first seen on an incomplete scan with no sign is an identity, and stays one', () => {
+            expect(run([noSign(true), noSign(true), noSign(false)])).toEqual([ID, ID, ID]);
+        });
+    });
+
+    describe('what is on record is read off the open findings', () => {
+        const f = (sourceRef: string, status = 'OPEN'): HarnessFindingOnRecord => ({ sourceRef, status });
+
+        it('on record as an agent: an open SHADOW_AGENT or HARNESS_SHORTFALL finding, never a closed one or another kind', () => {
+            expect([...onRecordAsAgentOf([f(shadowRefOf('a')), f(shortfallRefOf('b')), f(shadowRefOf('c'), 'CLOSED')])].sort()).toEqual(['a', 'b']);
+            expect([...onRecordAsAgentOf([f(unregisteredIdentityRefOf('a')), f('UNPINNED_WRITE_TOOL:a'), f('LEVEL_DROP:a:scan-1')])]).toEqual([]);
+            // Every status but CLOSED is open.
+            expect([...onRecordAsAgentOf([f(shadowRefOf('a'), 'IN_PROGRESS')])]).toEqual(['a']);
+        });
+
+        it('on record as an identity: its identity finding open and its shadow finding not', () => {
+            expect([...unregisteredIdentitiesOnRecord([f(unregisteredIdentityRefOf('entra:sp:x'))])]).toEqual(['entra:sp:x']);
+            expect([...unregisteredIdentitiesOnRecord([f(unregisteredIdentityRefOf('x'), 'CLOSED')])]).toEqual([]);
+            expect([...unregisteredIdentitiesOnRecord([f(unregisteredIdentityRefOf('x')), f(shadowRefOf('x'), 'CLOSED')])]).toEqual(['x']);
+            // Both open: the more severe reading.
+            expect([...unregisteredIdentitiesOnRecord([f(unregisteredIdentityRefOf('x')), f(shadowRefOf('x'))])]).toEqual([]);
+            expect([...unregisteredIdentitiesOnRecord([f(shadowRefOf('x')), { sourceRef: null, status: 'OPEN' }])]).toEqual([]);
         });
     });
 });

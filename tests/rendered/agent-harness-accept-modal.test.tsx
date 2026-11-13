@@ -127,6 +127,7 @@ const row = (over: Partial<MatrixRow>): MatrixRow => ({
     discoveredId: 'entra:sp:one',
     discoveredVia: ['entra-sp'],
     registered: { agentId: 'agt_1', name: 'Reconciler' },
+    unregisteredIdentity: false,
     level: 'H2',
     reach: 'WRITE_OR_EXTERNAL',
     belowBar: true,
@@ -180,6 +181,7 @@ function harnessView(rows: MatrixRow[]): HarnessMatrixView {
         scannersNotShown: 0,
         scannersWithoutScan: { rows: [], truncated: false },
         shadow: { rows: [], truncated: false, basis: 'EVIDENCED', basisAsOf: LATEST.asOf },
+        unregisteredIdentities: { rows: [], truncated: false, basis: 'EVIDENCED', basisAsOf: LATEST.asOf },
         acceptances: { rows: [CARD_ROW], truncated: false },
     };
 }

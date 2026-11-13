@@ -78,10 +78,41 @@ describe('acceptAffordanceFor — what the tab offers', () => {
             for (const lastReach of reaches)
                 for (const registeredAgent of registers)
                     for (const user of [OWNER, OTHER])
-                        for (const inForce of [false, true]) {
-                            const agent = { lastLevel, lastReach, registeredAgent };
-                            const offered = ['ACCEPT', 'RENEW'].includes(acceptAffordanceFor(agent, user, inForce));
-                            expect(offered).toBe(shortfallAcceptanceRefusal(agent, user) === null);
-                        }
+                        for (const inForce of [false, true])
+                            for (const unregisteredIdentity of [false, true]) {
+                                const agent = { lastLevel, lastReach, registeredAgent, unregisteredIdentity };
+                                const offered = ['ACCEPT', 'RENEW'].includes(acceptAffordanceFor(agent, user, inForce));
+                                expect(offered).toBe(shortfallAcceptanceRefusal(agent, user) === null);
+                            }
+    });
+});
+
+describe('an unregistered automated identity is held to no bar (owner decisions, 2026-11-13)', () => {
+    const identity = (over: Partial<AcceptanceSubject> = {}) =>
+        subject({ registeredAgent: null, unregisteredIdentity: true, ...over });
+
+    it('is refused as an identity, in the shadow agent\'s place, whoever asks and whatever its level', () => {
+        expect(shortfallAcceptanceRefusal(identity(), OWNER)).toBe('UNREGISTERED_IDENTITY');
+        expect(shortfallAcceptanceRefusal(identity({ lastLevel: 'H0' }), OTHER)).toBe('UNREGISTERED_IDENTITY');
+        const deleted = identity({ registeredAgent: { ownerUserId: OWNER, deletedAt: new Date() } });
+        expect(shortfallAcceptanceRefusal(deleted, OWNER)).toBe('UNREGISTERED_IDENTITY');
+    });
+
+    it('gets no action and no note, even far below the ladder\'s bar — the pair with a shadow agent proves the flag decides', () => {
+        for (const inForce of [false, true]) {
+            expect(acceptAffordanceFor(identity({ lastLevel: 'H0' }), OWNER, inForce)).toBe('NONE');
+            expect(acceptAffordanceFor(identity({ lastLevel: 'H0' }), OTHER, inForce)).toBe('NONE');
+        }
+        expect(acceptAffordanceFor(subject({ registeredAgent: null, lastLevel: 'H0' }), OWNER, false)).toBe('REGISTER_FIRST');
+    });
+
+    it('the flag is read only for a principal with no live register row: a registered agent is never an identity', () => {
+        expect(shortfallAcceptanceRefusal(subject({ unregisteredIdentity: true }), OWNER)).toBeNull();
+        expect(acceptAffordanceFor(subject({ unregisteredIdentity: true }), OWNER, false)).toBe('ACCEPT');
+    });
+
+    it('absent reads as false: a shadow agent', () => {
+        expect(shortfallAcceptanceRefusal(subject({ registeredAgent: null, unregisteredIdentity: false }), OWNER)).toBe('SHADOW');
+        expect(shortfallAcceptanceRefusal(subject({ registeredAgent: null }), OWNER)).toBe('SHADOW');
     });
 });
