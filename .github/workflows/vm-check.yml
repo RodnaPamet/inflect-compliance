@@ -48,6 +48,7 @@ permissions:
 jobs:
     vm-check:
         name: VM check (${{ inputs.check }})
+        if: github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         environment: production
         timeout-minutes: 15
