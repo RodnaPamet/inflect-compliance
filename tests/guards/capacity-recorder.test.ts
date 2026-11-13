@@ -114,7 +114,10 @@ function fixture(opts: { started?: Record<string, string>; dockerDown?: boolean 
         fs.writeFileSync(path.join(d, 'memory.stat'), `anon ${Math.floor(current * 0.8)}\nfile ${Math.floor(current * 0.2)}\nkernel 4096\n`);
         fs.writeFileSync(path.join(d, 'cpu.stat'), `usage_usec ${usageUsec}\nuser_usec 1\nsystem_usec 1\n`);
     };
-    const env = (extra: Record<string, string> = {}) => ({
+    // A minimal environment on purpose: the scripts see nothing inherited.
+    // NODE_ENV is there for the repo's ProcessEnv type, which requires it.
+    const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({
+        NODE_ENV: 'test',
         PATH: `${bin}:/usr/bin:/bin`,
         HOME: root,
         DATA_DIR: data,

@@ -134,7 +134,7 @@ describe('the scripts it runs', () => {
         expect(lines.filter((l) => /^\s*SCRIPT=/.test(l)).map((l) => l.trim())).toEqual(['SCRIPT=history.sh', 'SCRIPT=remote.sh']);
         const run = (args: string[]) => {
             try {
-                execFileSync('bash', [path.join(REPO_ROOT, 'deploy/capacity/vm.sh'), ...args], { stdio: 'pipe', env: { PATH: '/usr/bin:/bin' } });
+                execFileSync('bash', [path.join(REPO_ROOT, 'deploy/capacity/vm.sh'), ...args], { stdio: 'pipe', env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin' } });
                 return 0;
             } catch (e) {
                 return (e as { status: number }).status;
