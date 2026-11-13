@@ -83,6 +83,7 @@ const NEW_ACTIONS: Array<[string, unknown, string, string]> = [
     ['ORG_AUTHZ_DENIED', { reason: 'OWNER_MEMBERSHIP_NEEDS_OWNER' }, 'Access refused', "Tried to change an owner's membership without being an owner"],
     ['ORG_TENANT_DELETED', { name: 'Acme EU', slug: 'acme-eu', revokedMemberships: 4 }, 'Workspace deleted', 'Acme EU (acme-eu) · 4 memberships ended'],
     ['ORG_AGENT_SWITCHES_CHANGED', { changes: { agentProfiles: { before: true, after: false } } }, 'Agent features changed', 'Agent profiles: on → off'],
+    ['ORG_AGENT_TURN_CAPS_CHANGED', { changes: { delegationsPerTurn: { before: 3, after: 1 }, toolCallsPerTurn: { before: 1, after: 2 } } }, 'Per-turn limits changed', 'Delegations per turn: 3 → 1; Tool calls per turn: 1 → 2'],
 ];
 
 afterEach(() => {

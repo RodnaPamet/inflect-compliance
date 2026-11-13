@@ -82,6 +82,7 @@ import {
     type KillVerdict,
 } from '@/lib/agentic/kill-switch';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
+import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
@@ -92,7 +93,7 @@ import { lastRequestShape } from './client';
 import { recordToolRunnerDecision } from './model-decision';
 import { lockedParams } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
-import { SerialQueue, toolRunnerToolsFor, type RunStop, type ToolRunBinding } from './tools';
+import { SerialQueue, TurnCallCounter, toolRunnerToolsFor, type RunStop, type ToolRunBinding } from './tools';
 
 const RANK: Record<StepGuardObservation['verdict'], number> = { CLEAN: 0, FLAGGED: 1, QUARANTINED: 2 };
 
@@ -222,6 +223,14 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
+    // ── The turn caps (#4594), read ONCE for the segment ────────────────────
+    // The lower of the organization's ceiling and the workspace's narrowing.
+    // Read once so no turn changes cap mid-way: an organization lowering its
+    // ceiling reaches the next segment any run reads. A failed read is 0
+    // delegations and 1 tool call, and never throws.
+    const turnCaps = await readTurnCaps(ctx.tenantId, ctx.requestId);
+    const turnCalls = new TurnCallCounter(turnCaps.toolCallsPerTurn.value);
+
     // ── The run's state, shared by the loop and its tools ───────────────────
     const controller = new AbortController();
     // ONE object, so a check in the loop sees what a tool's closure latched:
@@ -248,6 +257,9 @@ export async function executeToolRunnerRun(
     let seq = fromSeq;
     let stepFailures = 0;
     let lastActivityAt = Date.now();
+    // Model calls answered in this segment: the number of the turn whose tools
+    // the runner is running, since it runs a turn's tools after yielding it.
+    let calls = 0;
 
     const stopped = (): RunStop | null => {
         if (state.operatorAborted) return { kind: 'OPERATOR_ABORT' };
@@ -333,6 +345,7 @@ export async function executeToolRunnerRun(
         onFailure: () => {
             stepFailures += 1;
         },
+        admitToolCall: () => turnCalls.admit('parent', calls),
     };
 
     // ONE queue for every call of the run, the engine's own included, so the
@@ -405,6 +418,7 @@ export async function executeToolRunnerRun(
         caps,
         fromSeq,
         skillCatalogue: skillCatalogueText(skills.documents),
+        toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
     });
     logger.info('tool-runner: dispatching', {
         component: 'agentic',
@@ -414,13 +428,14 @@ export async function executeToolRunnerRun(
         toolsOffered: offered.tools.length,
         toolsOmitted: offered.omitted.length,
         skillsMounted: skills.documents.length,
+        toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
+        toolCallsPerTurnBasis: turnCaps.toolCallsPerTurn.basis,
     });
 
     lastActivityAt = Date.now();
     const runner = client.beta.messages.toolRunner(params, { signal: controller.signal });
     let namedStop: NamedStopReason | null = null;
     let lastStopReason: string | null = null;
-    let calls = 0;
     let failure: string | null = null;
 
     try {

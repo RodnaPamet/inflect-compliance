@@ -386,9 +386,20 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
 
-Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
-the new primary. `decryptField` falls back transparently. Admins
-trigger the v1→v2 re-encryption sweep via
+Master-KEK rotation: **set `LOOKUP_HASH_KEY` to the CURRENT
+(outgoing) `DATA_ENCRYPTION_KEY` value and deploy that FIRST**
+(#5071), then set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
+the new primary, under which `decryptField` falls back
+transparently. The deterministic lookup hashes (`hashForLookup` —
+`User.emailHash` and friends) get no such fallback: they are an
+INDEX, not a ciphertext, so the stored hash IS the lookup key and a
+miss reads as "no such row". While they derived from the KEK, a
+rotation broke every email-based sign-in, SSO/OAuth account match
+and invite redemption from the first request. Unset,
+`LOOKUP_HASH_KEY` reproduces the old derivation exactly, so no
+stored hash moves and no backfill is needed; a production boot with
+`DATA_ENCRYPTION_KEY_PREVIOUS` set and it unset REFUSES to start.
+Admins trigger the v1→v2 re-encryption sweep via
 `POST /api/t/{slug}/admin/key-rotation`, which enqueues the
 background job in `src/app-layer/jobs/key-rotation.ts`. The job
 re-encrypts every `v1:` ciphertext under the new primary KEK and

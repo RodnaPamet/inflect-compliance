@@ -27,6 +27,10 @@ jest.mock('@/app-layer/context', () => ({
 jest.mock('@/app-layer/usecases/org-agent-switches', () => ({
     getOrgAgentSwitches: jest.fn(async () => ({})),
 }));
+// The per-turn ceilings the same section shows (#4594).
+jest.mock('@/app-layer/usecases/org-agent-turn-caps', () => ({
+    getOrgAgentTurnCaps: jest.fn(async () => ({})),
+}));
 jest.mock('next-intl/server', () => ({
     getTranslations: async () => (key: string) => key,
 }));

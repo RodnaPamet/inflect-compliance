@@ -123,9 +123,9 @@ export interface FlueRunBinding {
      * Carried here for the same reason the tools and the skills are: the only
      * place a fan-out cap can be enforced is the Flue execution interceptor,
      * which runs in the ESM graph where `pg` does not load — so the VALUE is
-     * resolved by the driver, in ordinary Node, from
-     * `TenantSecuritySettings.agentMaxSubagentsPerTurn`, and the enforcement
-     * compares against what it was handed.
+     * resolved by the driver, in ordinary Node, through `readTurnCaps`: the
+     * lower of the organization's ceiling and the workspace's narrowing
+     * (#4594). The enforcement compares against what it was handed.
      *
      * OPTIONAL ON THE TYPE AND NEVER OPTIONAL IN EFFECT.
      * `normaliseFanOutCap` turns an absent, negative or non-finite value into

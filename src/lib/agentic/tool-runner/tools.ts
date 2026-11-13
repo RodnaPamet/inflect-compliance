@@ -14,9 +14,12 @@
  *      `disable_parallel_tool_use` is a request to the model, not a guarantee,
  *      so this queue is what keeps the TOOL_CALL order, the cap charging and the
  *      guard latch exact;
- *   3. charges STEPS and TOOL_CALLS, the wall clock, and PROPOSALS per item,
- *      BEFORE the call, as Flue's ledger wrapper does: a refused charge means
- *      the funnel was never asked;
+ *   3. charges STEPS, then admits the call against the turn's tool-call cap
+ *      (#4594): a call past it is refused with a tool error naming the cap and
+ *      recorded as a FAILED TOOL_CALL step, `TOOL_CALLS_PER_TURN_EXCEEDED`, and
+ *      the funnel is never asked. Then TOOL_CALLS, the wall clock, and
+ *      PROPOSALS per item, BEFORE the call, as Flue's ledger wrapper does: a
+ *      refused charge means the funnel was never asked;
  *   4. calls the guarded tool, which runs the egress scan on the arguments, the
  *      funnel (which validates the arguments against the tool's own
  *      `argsSchema`, after its gate) and the scans on the result;
@@ -44,6 +47,12 @@ import {
 } from '@/lib/agentic/engine-tools';
 import { recordExternalToolDecision } from '@/lib/agentic/flue/tool-decision';
 import type { RunBudget, RunCapHalt } from '@/lib/agentic/run-caps';
+import {
+    TOOL_CALLS_PER_TURN_EXCEEDED,
+    evaluateToolCallsPerTurn,
+    toolCallsPerTurnRefusalMessage,
+    type ToolCallsPerTurnVerdict,
+} from '@/lib/agentic/turn-caps';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 
@@ -80,6 +89,57 @@ export interface ToolRunBinding {
     originOf(toolCallId: string): number | undefined;
     forgetOrigin(toolCallId: string): void;
     onFailure(): void;
+    /**
+     * Admit one tool call against the current turn's tool-call cap (#4594),
+     * counted on the way in: an admitted call counts, a refused one does not.
+     * Every tool the run offers asks it, the engine's own included.
+     */
+    admitToolCall(): ToolCallsPerTurnVerdict;
+}
+
+/**
+ * How many tool calls each turn has made, for one segment (#4594).
+ *
+ * Keyed by the LOOP and its turn number, so a sub-agent's loop (a later step)
+ * counts its own turns without touching the parent's. A segment builds one and
+ * drops it with the segment: a resumed run starts its turns afresh, as the
+ * model's own turns do.
+ */
+export class TurnCallCounter {
+    private readonly made = new Map<string, number>();
+
+    constructor(private readonly cap: number) {}
+
+    admit(loop: string, turn: number): ToolCallsPerTurnVerdict {
+        const key = `${loop}:${turn}`;
+        const verdict = evaluateToolCallsPerTurn({ cap: this.cap, madeThisTurn: this.made.get(key) ?? 0 });
+        if (verdict.allowed) this.made.set(key, verdict.madeThisTurn + 1);
+        return verdict;
+    }
+}
+
+/**
+ * Refuse a call past the turn's tool-call cap: one FAILED TOOL_CALL step naming
+ * the refusal and the cap, and the error the model reads. The caller has
+ * already charged its STEPS, as every recorded step is charged; nothing else
+ * is charged and the funnel is never asked.
+ */
+export async function refuseOverTurnCap(
+    binding: ToolRunBinding,
+    toolName: string,
+    verdict: ToolCallsPerTurnVerdict,
+    input?: Record<string, unknown>,
+): Promise<never> {
+    const seq = binding.nextSeq();
+    binding.onFailure();
+    await recordStep(binding.ctx, binding.runId, seq, 'TOOL_CALL', {
+        toolCalled: toolName,
+        status: 'FAILED',
+        label: toolName,
+        ...(input ? { input } : {}),
+        output: { refused: TOOL_CALLS_PER_TURN_EXCEEDED, cap: verdict.cap, madeThisTurn: verdict.madeThisTurn },
+    });
+    throw new Error(toolCallsPerTurnRefusalMessage(verdict));
 }
 
 /** The message a tool call gets when the run has already stopped. */
@@ -128,12 +188,19 @@ async function ledgeredCall(
     const before = binding.stopped();
     if (before) throw new Error(stoppedMessage(before));
 
-    for (const kind of ['STEPS', 'TOOL_CALLS'] as const) {
-        const halt = budget.charge(kind, 1);
-        if (halt) {
-            binding.stopAtCap(halt);
-            throw new Error(halt.message);
-        }
+    const stepHalt = budget.charge('STEPS', 1);
+    if (stepHalt) {
+        binding.stopAtCap(stepHalt);
+        throw new Error(stepHalt.message);
+    }
+    // Past the turn's tool-call cap: refused here, before the funnel is asked
+    // and before any other allowance is charged.
+    const turn = binding.admitToolCall();
+    if (!turn.allowed) return refuseOverTurnCap(binding, name, turn, args);
+    const callHalt = budget.charge('TOOL_CALLS', 1);
+    if (callHalt) {
+        binding.stopAtCap(callHalt);
+        throw new Error(callHalt.message);
     }
     const runtimeHalt = budget.charge('RUNTIME_MS', 0);
     if (runtimeHalt) {

@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getOrgCtx } from '@/app-layer/context';
 import { getOrgAgentSwitches } from '@/app-layer/usecases/org-agent-switches';
+import { getOrgAgentTurnCaps } from '@/app-layer/usecases/org-agent-turn-caps';
 import { Heading } from '@/components/ui/typography';
 import { env } from '@/env';
 import { evalsCardVisible } from '@/lib/evals/evals-card-visibility';
@@ -13,7 +14,8 @@ import { OrgSettingsIntro } from './OrgSettingsIntro';
 
 /**
  * Organization settings (#4557). The two agent switches an organization
- * decides for its workspaces when the deployment leaves them open, and — for
+ * decides for its workspaces when the deployment leaves them open, the
+ * per-turn limits it sets as the ceiling for them (#4594), and — for
  * an org admin of any organization the operator has not opted out in
  * `EVALS_CARD_HIDDEN_ORG_SLUGS` — a read-only card describing the platform's
  * two LLM evaluation nightlies (owner decisions 2026-11-12).
@@ -40,7 +42,7 @@ export default async function OrgSettingsPage({ params }: PageProps) {
     }
 
     const t = await getTranslations('org.settings');
-    const switches = await getOrgAgentSwitches(ctx);
+    const [switches, turnCaps] = await Promise.all([getOrgAgentSwitches(ctx), getOrgAgentTurnCaps(ctx)]);
     // Both gates on the server; nothing about the opt-out list reaches the client.
     const showEvaluations = evalsCardVisible({
         orgSlug: ctx.orgSlug,
@@ -54,7 +56,10 @@ export default async function OrgSettingsPage({ params }: PageProps) {
                 <Heading level={1}>{t('heading')}</Heading>
                 <OrgSettingsIntro />
             </div>
-            <OrgAgentSwitchesSection initial={JSON.parse(JSON.stringify(switches))} />
+            <OrgAgentSwitchesSection
+                initial={JSON.parse(JSON.stringify(switches))}
+                turnCaps={JSON.parse(JSON.stringify(turnCaps))}
+            />
             {showEvaluations && <OrgEvaluationsCard />}
         </div>
     );

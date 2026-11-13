@@ -75,7 +75,7 @@ flowchart LR
   model is the profile tier's (`toolRunnerModelFor`) and `clientForRun` is
   role-independent.
 - **The supervisor/worker shape already exists as subagents.**
-  `flue/subagents/`, `subagent-fanout.ts` + `subagent-fanout-policy.ts`,
+  `flue/subagents/`, `subagent-fanout.ts` + `turn-caps-policy.ts`,
   `delegation-gate.ts`, `delegation-spans.ts` (Flue Phase 3 shipped since the
   2026-10-09 audit). The parent run is the supervisor in the diagram's sense;
   subagents are the workers; fan-out depth and count are capped; subagent

@@ -151,43 +151,29 @@ describe('ConnectedIdentityAccount.protectionReason round-trips through the midd
     });
 });
 
-describe('DataSubjectRequest free text round-trips through the middleware', () => {
+describe('DataSubjectRequest free text is stored as written (#5107)', () => {
     /**
-     * Step 3 of the manifest's own "Adding a new field" checklist.
-     *
-     * `rejectionReason` and `fulfilmentNotes` are narrative ABOUT AN IDENTIFIED
-     * PERSON who has exercised a GDPR right — why their request was refused,
-     * and what was done to satisfy it. By subject matter this is the most
-     * sensitive free text the platform stores.
-     *
-     * It shipped in plaintext, and no guard was bypassed to allow that: the
-     * model is deliberately USER-scoped with no `tenantId`, the coverage guard
-     * scans tenant-scoped columns, so these two were never in its denominator.
-     * They entered it only when the model was listed for RLS.
+     * The model LEFT the manifest (owner decision, 2026-11-13). It has no
+     * `tenantId`, so the middleware encrypted under whichever tenant's DEK the
+     * acting request carried, and the tenant-DEK rotation sweep — which walks
+     * tenant-scoped rows — never re-wrapped it. A value no sweep reaches is a
+     * value a rotation can strand. Rows written while it was listed are turned
+     * back into plaintext by `decryptLegacyDsrFields` at container start.
      */
-    it('declares both columns in the manifest', () => {
-        expect(getEncryptedFields('DataSubjectRequest')).toContain('rejectionReason');
-        expect(getEncryptedFields('DataSubjectRequest')).toContain('fulfilmentNotes');
-        expect(isEncryptedModel('DataSubjectRequest')).toBe(true);
+    it('is not in the manifest', () => {
+        expect(getEncryptedFields('DataSubjectRequest')).toBeUndefined();
+        expect(isEncryptedModel('DataSubjectRequest')).toBe(false);
     });
 
-    it('encrypts the rejection reason, and the subject is not readable in the ciphertext', () => {
+    it('writes the rejection reason and fulfilment notes as plaintext', () => {
         const data: Record<string, unknown> = {
-            rejectionReason: 'Could not verify identity of Ada Lovelace (ada@acme.com)',
+            rejectionReason: 'Could not verify identity of the requester',
+            fulfilmentNotes: 'Exported 4 records; erased marketing profile.',
         };
         encryptDataNode(data, 'DataSubjectRequest', null);
-        expect(isEncryptedValue(data.rejectionReason as string)).toBe(true);
-        expect(data.rejectionReason as string).not.toContain('Ada Lovelace');
-        expect(data.rejectionReason as string).not.toContain('acme.com');
-    });
-
-    it('round-trips fulfilment notes exactly', () => {
-        const plain = 'Exported 4 records; erased marketing profile; confirmed with subject 2026-08-22.';
-        const data: Record<string, unknown> = { fulfilmentNotes: plain };
-        encryptDataNode(data, 'DataSubjectRequest', null);
-        expect(data.fulfilmentNotes).not.toBe(plain);
-        decryptResultNode(data, 'DataSubjectRequest', { primary: null, previous: null, reason: 'by-design' });
-        expect(data.fulfilmentNotes).toBe(plain);
+        expect(isEncryptedValue(data.rejectionReason as string)).toBe(false);
+        expect(data.rejectionReason).toBe('Could not verify identity of the requester');
+        expect(data.fulfilmentNotes).toBe('Exported 4 records; erased marketing profile.');
     });
 
     it('leaves nulls alone — an unfulfilled request is not ciphertext', () => {

@@ -59,6 +59,15 @@ const HMAC_INFO = 'inflect-data-lookup-hash';
 let _cachedEncryptKey: Buffer | null = null;
 let _cachedHmacKey: Buffer | null = null;
 let _lastKeySource: string | null = null;
+/**
+ * The lookup-hash key's OWN cache source (#5071).
+ *
+ * Separate from `_lastKeySource` because the two keys no longer derive from
+ * the same material. One shared source would serve a stale HMAC key for as
+ * long as the KEK happened not to change — which is precisely the window a
+ * rotation opens.
+ */
+let _lastHmacKeySource: string | null = null;
 
 /**
  * Gets the raw encryption key material from environment.
@@ -108,6 +117,45 @@ function deriveKey(rawMaterial: string, info: string): Buffer {
 }
 
 /**
+ * The material the LOOKUP-HASH key derives from — #5071.
+ *
+ * `LOOKUP_HASH_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the
+ * change invisible to every deployment that does nothing: the derivation is
+ * byte-identical, so no stored `*Hash` column moves.
+ *
+ * ═══ WHY A LOOKUP HASH MUST NOT FOLLOW THE KEK ═══
+ *
+ * `hashForLookup` is an INDEX, not a ciphertext. `decryptField` can fall back
+ * to `DATA_ENCRYPTION_KEY_PREVIOUS`, so a rotation leaves ciphertext readable;
+ * a hash has no such fallback, because the stored value is the lookup KEY —
+ * a miss is indistinguishable from "no such row". So the documented master-KEK
+ * rotation silently broke every email-based sign-in from the first request:
+ * credentials, OAuth and SSO account matching, and invite redemption all read
+ * `User.emailHash`, and nothing recomputes it.
+ *
+ * Deriving it from its own secret removes the coupling permanently rather than
+ * papering over one rotation. The zero-backfill adoption path is to set
+ * `LOOKUP_HASH_KEY` to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating:
+ * the material is unchanged, so every existing hash still resolves, and the
+ * KEK is then free to rotate without touching the index.
+ *
+ * Reusing that material under two HKDF `info` strings is not key reuse in the
+ * harmful sense — `ENCRYPT_INFO` and `HMAC_INFO` already separate them, and
+ * this file has derived both from one material since it was written. An
+ * operator who wants genuinely independent material can set a fresh value,
+ * but that CHANGES every hash and needs a backfill of every `*Hash` column
+ * first; it is not the migration path.
+ */
+function getLookupHashKeyMaterial(): string {
+    const key = process.env.LOOKUP_HASH_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
  * Gets the encryption key, caching it for performance.
  * Cache is invalidated if the underlying key material changes.
  */
@@ -117,7 +165,6 @@ function getEncryptionKey(): Buffer {
         return _cachedEncryptKey;
     }
     _cachedEncryptKey = deriveKey(raw, ENCRYPT_INFO);
-    _cachedHmacKey = deriveKey(raw, HMAC_INFO);
     _lastKeySource = raw;
     return _cachedEncryptKey;
 }
@@ -209,13 +256,17 @@ export function deriveSubkey(purpose: string): Buffer {
  * Gets the HMAC key for deterministic lookup hashes.
  */
 function getHmacKey(): Buffer {
-    const raw = getRawKeyMaterial();
-    if (_cachedHmacKey && _lastKeySource === raw) {
+    // Its OWN material and its own cache source (#5071). This used to read the
+    // KEK's material and delegate to `getEncryptionKey()`, which populated both
+    // caches under one source — so the two keys could not move independently
+    // even in principle.
+    const raw = getLookupHashKeyMaterial();
+    if (_cachedHmacKey && _lastHmacKeySource === raw) {
         return _cachedHmacKey;
     }
-    // Calling getEncryptionKey() populates both caches
-    getEncryptionKey();
-    return _cachedHmacKey!;
+    _cachedHmacKey = deriveKey(raw, HMAC_INFO);
+    _lastHmacKeySource = raw;
+    return _cachedHmacKey;
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -565,6 +616,7 @@ export function _resetKeyCache(): void {
     _cachedEncryptKey = null;
     _cachedHmacKey = null;
     _lastKeySource = null;
+    _lastHmacKeySource = null;
     _cachedPreviousEncryptKey = null;
     _lastPreviousKeySource = undefined;
 }

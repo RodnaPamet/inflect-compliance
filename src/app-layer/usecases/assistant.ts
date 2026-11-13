@@ -36,7 +36,13 @@ import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/ag
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { assistantTools, offeredProposeKinds, type ProposalOutcome } from '@/app-layer/ai/assistant/tools';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
-import { runAssistantLoop, haltNotice, DEFAULT_LOOP_BOUNDS, type LoopOutcome } from '@/app-layer/ai/assistant/tool-loop';
+import {
+    runAssistantLoop,
+    haltNotice,
+    DEFAULT_LOOP_BOUNDS,
+    type AssistantTurnProvider,
+    type LoopOutcome,
+} from '@/app-layer/ai/assistant/tool-loop';
 import type { AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
 import {
     AssistantHistorySchema,
@@ -645,10 +651,40 @@ async function answerFromToolLoop(
     // see the header on `tool-loop.ts` for why a race here is a cross-tenant
     // egress rather than a flake.
     const choice = resolveFlueModel(residencyTermsFrom(secSettings));
-    if (!choice.ok) return null;
-
-    const provider = assistantProviderFor(choice, env);
-    if (provider === null) return null;
+    const configured = choice.ok ? assistantProviderFor(choice, env) : null;
+    if (!choice.ok || configured === null) {
+        // Said, not silent: an operator reading the logs of a deployment whose
+        // assistant answers only from the keyword router must be able to see
+        // why no model was asked. The reason is a closed configuration value.
+        logger.info('assistant.model_not_configured', {
+            component: 'assistant',
+            reason: choice.ok ? 'NO_TOOL_USE_PROVIDER' : choice.reason,
+        });
+        return null;
+    }
+    // A provider failure degrades the turn to `halted-provider-unavailable`
+    // inside the loop, which keeps no error by design (the user is told the
+    // model was unavailable, nothing more). Logged here, once per failed call,
+    // so the cause — a refused key, a missing workspace header, an unknown
+    // model — is visible to whoever runs the deployment. The message is the
+    // provider's own error (status and the vendor's first 200 characters),
+    // never the question or the system prompt.
+    const provider: AssistantTurnProvider = {
+        complete: async (req) => {
+            try {
+                return await configured.complete(req);
+            } catch (err) {
+                // A client that hung up is not a provider fault.
+                if (req.signal?.aborted) throw err;
+                logger.warn('assistant.provider_error', {
+                    component: 'assistant',
+                    specifier: choice.specifier,
+                    error: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+                });
+                throw err;
+            }
+        },
+    };
 
     const inv = await resolveMcpInvocation(ctx);
     // `readOnly: false` (#3882). The propose surface is offered to the MODEL

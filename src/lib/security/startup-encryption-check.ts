@@ -61,6 +61,40 @@ export function checkProductionEncryptionKey(
                 'openssl rand -base64 48',
         };
     }
+
+    // ═══ A ROTATION WITH THE LOOKUP HASHES STILL FOLLOWING THE KEK (#5071) ═══
+    //
+    // The one state in which this deployment is about to break every
+    // email-based sign-in, and it is exactly detectable: a rotation is in
+    // progress (the runbook sets DATA_ENCRYPTION_KEY_PREVIOUS) while the
+    // lookup-hash key still falls back to DATA_ENCRYPTION_KEY, which has just
+    // changed. Every stored `*Hash` was computed under the PREVIOUS key, and a
+    // hash has no previous-key fallback the way a ciphertext does — a miss
+    // reads as "no such user", so credentials, OAuth/SSO matching and invite
+    // redemption all fail silently and uniformly.
+    //
+    // Refusing to boot is the right direction: the alternative is a running
+    // deployment nobody can log in to, discovered by its users. The remedy is
+    // one variable and no backfill, so the refusal names it.
+    //
+    // This sits INSIDE the existing check rather than beside it so that every
+    // surface already calling this — the web tier, the worker, the scheduler —
+    // gets it without new wiring to forget.
+    const lookupKey = env.LOOKUP_HASH_KEY;
+    if (env.DATA_ENCRYPTION_KEY_PREVIOUS && !(lookupKey && lookupKey.length >= 32)) {
+        return {
+            ok: false,
+            reason:
+                'DATA_ENCRYPTION_KEY_PREVIOUS is set (a master-KEK rotation is in ' +
+                'progress) but LOOKUP_HASH_KEY is not. The deterministic lookup ' +
+                'hashes (User.emailHash and friends) derive from DATA_ENCRYPTION_KEY ' +
+                'when LOOKUP_HASH_KEY is unset, so every email-based sign-in, SSO/OAuth ' +
+                'account match and invite redemption would miss. Set LOOKUP_HASH_KEY to ' +
+                'the value now in DATA_ENCRYPTION_KEY_PREVIOUS — the key those hashes ' +
+                'were computed under — and restart. No backfill is needed.',
+        };
+    }
+
     return { ok: true };
 }
 

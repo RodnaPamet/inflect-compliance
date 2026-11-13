@@ -174,7 +174,20 @@ jobs:
         env:
           NODE_ENV: production
           ANTHROPIC_API_KEY: ${{ secrets.GARAK_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
+          # The repository's ANTHROPIC_API_KEY is an ORGANISATION-level key:
+          # Anthropic refuses its requests with HTTP 400 unless each names a
+          # workspace (docs/implementation-notes/2026-10-17-anthropic-workspace-header.md),
+          # and skills-evaluate.yml sends the ANTHROPIC_WORKSPACE_ID variable for it.
+          # This job sent none. Runs 43337664860 and 43380024012 read as that
+          # refusal: every turn answered "the language model was unavailable"
+          # at 0 tokens, which every detector scored a PASS. Sent only with that fallback key: the dedicated
+          # GARAK_CI_ANTHROPIC_KEY is created inside its own workspace and
+          # needs no header.
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.GARAK_CI_ANTHROPIC_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
+          KEY_SOURCE: ${{ secrets.GARAK_CI_ANTHROPIC_KEY != '' && 'GARAK_CI_ANTHROPIC_KEY' || 'ANTHROPIC_API_KEY' }}
         run: |
+          # Names and set/unset only; never a value.
+          echo "garak: model key from ${KEY_SOURCE}; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo 'not sent')"
           npm start > /tmp/app.log 2>&1 &
           echo $! > /tmp/app.pid
 
@@ -276,6 +289,9 @@ jobs:
             echo "::add-mask::$SESSION"
 
             mkdir -p "garak-out/${role}"; chmod 777 "garak-out/${role}"
+            # How this role's answers were produced: the assistant's Art 12
+            # rows it adds, counted before and after (.garak/provenance.sql).
+            read -r p_rec0 p_model0 p_det0 p_fail0 < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' -f .garak/provenance.sql)
             GARAK_TARGET_URL="http://localhost:3006/api/t/${TENANT_SLUG}/assistant/ask" \
             GARAK_SESSION_COOKIE="next-auth.session-token=${SESSION}" \
             GARAK_MAX_REQUESTS="$MAX_PER_ROLE" \
@@ -299,11 +315,24 @@ jobs:
             # on the runner reads it.
             sudo chown -R "$(id -u):$(id -g)" "garak-out/${role}"
             if [ "$garak_exit" != "0" ]; then echo "::error::garak exited ${garak_exit} for ${role}"; status=1; fi
+            read -r p_rec1 p_model1 p_det1 p_fail1 < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' -f .garak/provenance.sql)
+            echo "{\"recorded\":$(( p_rec1 - p_rec0 )),\"fromModel\":$(( p_model1 - p_model0 )),\"deterministic\":$(( p_det1 - p_det0 )),\"modelUnreached\":$(( p_fail1 - p_fail0 ))}" > "garak-out/${role}/provenance.json"
+            echo "Answer provenance for ${role}: $(cat "garak-out/${role}/provenance.json")"
 
             kill "$proxy" 2>/dev/null || true
             wait "$proxy" 2>/dev/null || true
             refused_output=$(( refused_output + $(node -p "require('./garak-out/${role}/ledger.json').guardRefusedOutput") ))
           done
+
+          # Why a turn did not reach the model, in the app's own words. The
+          # loop keeps no provider error (the user is told only that the model
+          # was unavailable), so the assistant logs one line per failed call
+          # and per unconfigured turn; /tmp/app.log is not in this job's log
+          # otherwise. Event names only, cut to 500 characters a line.
+          echo "::group::app log: assistant model diagnostics"
+          echo "assistant.provider_error lines: $(grep -c 'assistant.provider_error' /tmp/app.log || true); assistant.model_not_configured lines: $(grep -c 'assistant.model_not_configured' /tmp/app.log || true)"
+          grep -E 'assistant\.(provider_error|model_not_configured)' /tmp/app.log | tail -n 10 | cut -c1-500 || true
+          echo "::endgroup::"
           exit "$status"
 
       - name: Summarise per role (record + job summary)
@@ -319,6 +348,7 @@ jobs:
             report="$(find "garak-out/${role}" -name '*.report.jsonl' | head -n 1)"
             node .garak/summarise.mjs "${report:-/nonexistent}" "garak-out/${role}/ledger.json" .garak/allowlist.tsv "$role" \
               --probes "$spec" --garak-exit "$(cat "garak-out/${role}/garak-exit" 2>/dev/null || echo unknown)" \
+              --provenance "garak-out/${role}/provenance.json" \
               --md "garak-records/${role}.md" > "garak-records/${role}.json"
             cat "garak-records/${role}.md" >> "$GITHUB_STEP_SUMMARY"
           done
@@ -327,6 +357,18 @@ jobs:
             -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
           usd="$(node .garak/spend.mjs usd "$tin" "$tout")"
           echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against garak's share of \$$(node .garak/spend.mjs cap) (evals/cost-meter/shares.json)" >> "$GITHUB_STEP_SUMMARY"
+
+          # A role no turn of which reached the model measured the guard and
+          # the fallbacks, never the model: its PASSes are not findings about
+          # anything. That is a scan that did not run, not a non-blocking
+          # finding, so it fails this step (the records above, the upload and
+          # the issue step all still run). The deferral covers what garak
+          # FINDS; it never covered a night that probed nothing.
+          unmeasured="$(node -e 'const fs=require("fs");const out=[];for(const f of fs.readdirSync("garak-records").filter(f=>f.endsWith(".json"))){const r=JSON.parse(fs.readFileSync("garak-records/"+f,"utf8"));if(r.incompleteReasons.includes("NO_MODEL_TURNS"))out.push(r.role)}process.stdout.write(out.join(" "))')"
+          if [ -n "$unmeasured" ]; then
+            echo "::error::garak: no turn reached the model for role(s) ${unmeasured}; every answer came from the guard or a fallback (see 'app log: assistant model diagnostics' in the scan step)."
+            exit 1
+          fi
 
       - name: Upload garak reports + records
         if: always() && steps.key.outputs.present == 'true'
@@ -337,6 +379,7 @@ jobs:
             garak-out/**/*.report.jsonl
             garak-out/**/*.report.html
             garak-out/**/ledger.json
+            garak-out/**/provenance.json
             garak-out/*.skipped.json
             garak-out/reader.gate.json
             garak-out/**/garak-exit
