@@ -312,6 +312,15 @@ describe('approval and state mapping', () => {
         expect(mapChangeState('Scheduled')).toBe('OPEN');
         expect(mapChangeState('Some Custom State')).toBe('OPEN');
     });
+
+    it('reads the default change model\'s plain "Closed" as complete, and every not-landed close as not (#5198)', () => {
+        expect(mapChangeState('Closed')).toBe('CLOSED_COMPLETE');
+        expect(mapChangeState('Review')).toBe('CLOSED_COMPLETE');
+        expect(mapChangeState('Closed Incomplete')).toBe('CLOSED_INCOMPLETE');
+        expect(mapChangeState('Closed Skipped')).toBe('CLOSED_INCOMPLETE');
+        expect(mapChangeState('Closed Unsuccessful')).toBe('CLOSED_INCOMPLETE');
+        expect(mapChangeState('Cancelled')).toBe('CLOSED_INCOMPLETE');
+    });
 });
 
 describe('dates', () => {
@@ -332,6 +341,31 @@ describe('dates', () => {
     it('the mapper produces a real Date for the timestamp fields', () => {
         const local = new ServiceNowChangeMapper().toLocal(row({ opened_at: '2026-07-04 09:30:00' }));
         expect((local.openedAt as Date).toISOString()).toBe('2026-07-04T09:30:00.000Z');
+    });
+});
+
+describe('timestamps and ids come from the stored value, not the user rendering (#5197)', () => {
+    // `display_value` is formatted in the integration user's time zone and date
+    // format; `value` is always UTC `yyyy-MM-dd HH:mm:ss`.
+    const zoned = {
+        sys_id: { value: 'sid-9', display_value: 'CHG0099' },
+        opened_at: { value: '2026-07-04 09:30:00', display_value: '07/04/2026 05:30:00' },
+        closed_at: { value: '2026-07-04 23:30:00', display_value: '07/04/2026 19:30:00' },
+        sys_updated_on: { value: '2026-08-01 12:00:00', display_value: '08/01/2026 08:00:00' },
+    };
+
+    it('the mapper parses the UTC value', () => {
+        const local = new ServiceNowChangeMapper().toLocal(zoned);
+        expect((local.openedAt as Date).toISOString()).toBe('2026-07-04T09:30:00.000Z');
+        expect((local.closedAt as Date).toISOString()).toBe('2026-07-04T23:30:00.000Z');
+        expect(local.externalId).toBe('sid-9');
+    });
+
+    it('a remote object carries the stored sys_id and update time', async () => {
+        const fetchImpl = fetchStub([{ result: [zoned] }]);
+        const r = await new ServiceNowClient(CFG, fetchImpl as unknown as typeof fetch).listRemoteObjects();
+        expect(r.items[0].remoteId).toBe('sid-9');
+        expect(r.items[0].remoteUpdatedAt?.toISOString()).toBe('2026-08-01T12:00:00.000Z');
     });
 });
 

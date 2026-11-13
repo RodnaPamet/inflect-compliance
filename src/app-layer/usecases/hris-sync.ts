@@ -827,7 +827,12 @@ export async function runHrisSync(input: {
                     await db.integrationExecution.update({
                         where: { id: executionId },
                         data: {
-                            status: 'PASSED',
+                            // PARTIAL, as the result says and as identity-sync
+                            // writes the same case. The row said PASSED, so a
+                            // half-read roster with no departure reconcile read
+                            // as a completed sync on the integrations page and
+                            // passed legacy-reconcile's FRESH-roster gate (#5258).
+                            status: 'PARTIAL',
                             errorMessage: null,
                             resultJson: { upserted, managersLinked, managersCleared, roleChanges, recertification, departed: 0, total: roster.length, partial: true, resuming: true },
                             durationMs: Date.now() - start,

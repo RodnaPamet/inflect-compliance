@@ -57,7 +57,9 @@ describe('a truncated roster splits on whether it can resume', () => {
     it('reports PARTIAL rather than ERROR on that branch', () => {
         // The whole point: a large roster working as designed must not page
         // someone every night.
-        expect(src).toMatch(/status:\s*'PARTIAL'/);
+        // The returned result; the stored row's own PARTIAL is asserted by
+        // behaviour in personnel.test.ts (#5258).
+        expect(src).toMatch(/return \{ executionId, status: 'PARTIAL', upserted/);
     });
 
     it('keeps the non-resumable branch loud and non-retryable', () => {

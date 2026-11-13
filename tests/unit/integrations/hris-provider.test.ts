@@ -367,3 +367,17 @@ describe('BambooHrProvider — status mapping (H2)', () => {
         expect(await statusOf({ status: undefined })).toBe('ACTIVE');
     });
 });
+
+describe('an unparseable vendor date is absent, not an Invalid Date (#5199)', () => {
+    // BambooHR sends "0000-00-00" for an empty date. `new Date` of that is
+    // Invalid, Prisma refuses an Invalid Date, and the whole roster write failed.
+    it('a garbage hire or termination date becomes null and a real one survives', async () => {
+        const [garbage, real] = await rosterOf([
+            baseRow({ workEmail: 'a@acme.com', hireDate: '0000-00-00', terminationDate: 'not a date' }),
+            baseRow({ workEmail: 'b@acme.com', hireDate: '2020-01-15', terminationDate: null }),
+        ]);
+        expect(garbage.startDate).toBeNull();
+        expect(garbage.endDate).toBeNull();
+        expect(real.startDate?.toISOString().slice(0, 10)).toBe('2020-01-15');
+    });
+});
