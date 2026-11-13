@@ -253,6 +253,14 @@ const RICH_TEXT_COVERAGE: Readonly<
  * text — sanitisation does not apply. Each carries a written reason.
  */
 const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
+    AuditPackItem:
+        'snapshotJson is a machine-built JSON string (#5150) — `JSON.stringify` '
+        + 'of a frozen row, never typed by a person and never rendered as markup. '
+        + 'Its free-text CONTENT is sanitised at the source: the test-run notes '
+        + 'and finding summary it copies are sanitised when the run is recorded, '
+        + 'and sanitising the serialised JSON here would corrupt it. Encrypted so '
+        + 'the copy is not plaintext at rest, which is a confidentiality concern '
+        + 'rather than a rendering one.',
     HostConsumerMessage:
         'body is the EXACT JSON-RPC request bytes a host sent (#3861), kept ' +
         'so the stored body can be proved to be the one that arrived. ' +
