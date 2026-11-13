@@ -230,11 +230,7 @@ export function VendorAssessmentClient({
         setSubmitting(true);
         setSubmitErrors([]);
         try {
-            const payload = Object.entries(answers).map(([questionId, value]) => ({
-                questionId,
-                answerJson: { value },
-                evidenceId: null,
-            }));
+            const payload = submittableAnswers(answers, data?.template.sections ?? []);
             const res = await fetch(
                 `/api/vendor-assessment/${assessmentId}/submit`,
                 {
@@ -411,6 +407,34 @@ export function VendorAssessmentClient({
     );
 }
 
+/**
+ * The answers as the submit route takes them (#5225).
+ *
+ * An empty answer is OMITTED rather than sent as `{ value: null }`, which the
+ * server refuses for every type, so clearing an optional field blocked the
+ * whole submission. A NUMBER answer is held as typed and parsed here; text
+ * that is not a number is sent as typed so the server's refusal names it.
+ */
+export function submittableAnswers(
+    answers: Record<string, unknown>,
+    sections: ReadonlyArray<{ questions: ReadonlyArray<{ id: string; answerType: string }> }>,
+): Array<{ questionId: string; answerJson: { value: unknown }; evidenceId: null }> {
+    const typeOf = new Map(sections.flatMap((s) => s.questions.map((q) => [q.id, q.answerType] as const)));
+    const out: Array<{ questionId: string; answerJson: { value: unknown }; evidenceId: null }> = [];
+    for (const [questionId, raw] of Object.entries(answers)) {
+        let value = raw;
+        if (value == null) continue;
+        if (typeof value === 'string' && value.trim() === '') continue;
+        if (Array.isArray(value) && value.length === 0) continue;
+        if (typeOf.get(questionId) === 'NUMBER' && typeof value === 'string') {
+            const n = Number(value.trim());
+            value = Number.isFinite(n) ? n : value;
+        }
+        out.push({ questionId, answerJson: { value }, evidenceId: null });
+    }
+    return out;
+}
+
 function QuestionField({
     question,
     value,
@@ -482,13 +506,11 @@ function QuestionField({
                         type="text"
                         inputMode="decimal"
                         pattern="-?[0-9]*\.?[0-9]*"
-                        value={typeof value === 'number' ? String(value) : ''}
-                        onChange={(e) => {
-                            const txt = e.target.value;
-                            if (txt === '') return onChange(null);
-                            const n = Number(txt);
-                            onChange(Number.isFinite(n) ? n : null);
-                        }}
+                        // The RAW text, parsed only at submit (#5225). Parsing
+                        // on every keystroke re-rendered "1." as "1" and "-" as
+                        // "", so a decimal or a negative could not be typed.
+                        value={typeof value === 'number' ? String(value) : typeof value === 'string' ? value : ''}
+                        onChange={(e) => onChange(e.target.value)}
                         className="border border-border-subtle rounded-md px-3 py-2 text-sm w-40"
                     />
                 </div>

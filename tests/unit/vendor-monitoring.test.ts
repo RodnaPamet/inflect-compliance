@@ -27,10 +27,21 @@ describe('evaluateAttestations', () => {
         expect(evaluateAttestations([], now).status).toBe('OK');
     });
 
-    it('EXPIRED when the earliest report period is in the past', () => {
-        const v = evaluateAttestations([mk('a', '2026-05-01'), mk('b', '2027-01-01')], now);
+    it('EXPIRED when the earliest current report period is in the past', () => {
+        // Two report TYPES: the soonest-lapsing current one governs.
+        const iso = { extractionId: 'b', reportType: 'ISO27001', auditPeriodEnd: new Date('2027-01-01') };
+        const v = evaluateAttestations([mk('a', '2026-05-01'), iso], now);
         expect(v.status).toBe('EXPIRED');
         expect(v.governing?.extractionId).toBe('a'); // earliest-expiring governs
+    });
+
+    it('a renewed report of the same type supersedes the old one (#5137)', () => {
+        // Last year's SOC 2 has lapsed; this year's has not. Judging every
+        // report ever extracted kept the vendor EXPIRED for ever.
+        const v = evaluateAttestations([mk('old', '2026-05-01'), mk('renewed', '2027-05-01')], now);
+        expect(v.status).toBe('OK');
+        expect(v.governing?.extractionId).toBe('renewed');
+        expect(v.earliestExpiry?.toISOString().slice(0, 10)).toBe('2027-05-01');
     });
 
     it('EXPIRING when the earliest report lands inside the 30-day lead window', () => {
