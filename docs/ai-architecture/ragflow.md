@@ -178,8 +178,16 @@ runs on the VM, reachable only from `worker`.
       `EGRESS_REFUSED` included, stands. A host that does not resolve is
       `UNREACHABLE`, not `EGRESS_REFUSED`: nothing was refused.
 - [ ] 1.3 Compose service for the backend, digest-pinned, worker-network only,
-      no published ports; secrets in `.env.prod`. Held by the capacity rule
-      (no new container before the capacity budget's C1). Note for it: the
+      no published ports; secrets in `.env.prod`. **A nightly batch, not an
+      always-on service** (owner, 2026-11-13, D-CAP-1's smaller pieces): the
+      service sits under a Compose profile so `up -d` never starts it; a host
+      timer in the repo-canonical deploy set starts it at 00:15 UTC, waits for
+      its health, and stops it at 01:45; the worker's indexing job drains the
+      queued documents inside that window. Outside the window a queued
+      document WAITS. The outage fallback to the paragraph stub (1.2) applies
+      to a failure inside the window only, so the job must tell "not the
+      window" from an outage and never index stub text for a document that is
+      only waiting. Counted under the capacity budget's window rule. Note for it: the
       client is held to the in-deployment rule, not `safeFetch`, so a plain
       `http://docling:5001` on the worker network is what it expects — no TLS
       terminator and no `EGRESS_PRIVATE_CIDR_ALLOWLIST` entry. A URL naming a
