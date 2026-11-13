@@ -30,6 +30,24 @@
  */
 export const RULE_OWNING_KINDS: ReadonlySet<string> = new Set(['action', 'agent']);
 
+/**
+ * The display-only fields `hydrateCanvasFromRules` merges into a step's
+ * `dataJson` on load. They describe the rule as it was when the map was read,
+ * so a save must not store them on the node, and the version diff must not
+ * compare them: a stored version never carries them, so every linked step read
+ * as "modified" (#5285). Here rather than in the server sync so the canvas can
+ * import it.
+ */
+export const HYDRATED_DISPLAY_KEYS = ['ruleStatus', 'executionCount', 'ruleSubtitle'] as const;
+
+/** `dataJson` without the hydrated display fields; anything else as given. */
+export function withoutHydratedDisplay<T>(dataJson: T): T {
+    if (!dataJson || typeof dataJson !== 'object' || Array.isArray(dataJson)) return dataJson;
+    const copy = { ...(dataJson as Record<string, unknown>) };
+    for (const k of HYDRATED_DISPLAY_KEYS) delete copy[k];
+    return copy as T;
+}
+
 /** The kinds that configure the rule of the Action or Agent step they lead to. */
 export const FEEDING_KINDS: ReadonlySet<string> = new Set(['trigger', 'condition', 'slaGate']);
 

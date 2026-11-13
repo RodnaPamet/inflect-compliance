@@ -262,3 +262,19 @@ describe('a rule is enabled only when it is complete', () => {
         });
     });
 });
+
+describe('an archived rule stays archived through the edit route (#5284)', () => {
+    it('refuses a PUT that would enable an archived rule, writing nothing', async () => {
+        const ctx = makeRequestContext('ADMIN');
+        repo.getById.mockResolvedValue({ ...COMPLETE, id: 'r', status: 'ARCHIVED' } as any);
+        await expect(updateAutomationRule(ctx, 'r', { status: 'ENABLED' } as any)).rejects.toThrow(/archived/);
+        expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('a PUT that edits only the name of an archived rule is not refused', async () => {
+        const ctx = makeRequestContext('ADMIN');
+        repo.getById.mockResolvedValue({ ...COMPLETE, id: 'r', status: 'ARCHIVED' } as any);
+        repo.update.mockResolvedValue({ ...COMPLETE, id: 'r', name: 'Renamed', status: 'ARCHIVED' } as any);
+        await expect(updateAutomationRule(ctx, 'r', { name: 'Renamed' } as any)).resolves.toBeDefined();
+    });
+});

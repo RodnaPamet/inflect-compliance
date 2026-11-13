@@ -212,7 +212,7 @@ describe('it still reports the truth to the state machine', () => {
         expect(view.result.current.status).toBe('error');
     });
 
-    it('a 409 settles as saved, because the reload toast owns it', async () => {
+    it('a 409 settles as an error, not as saved (#5282)', async () => {
         jest.useFakeTimers();
         const fetchMock = responder(409, {
             error: { details: { currentVersion: 9 } },
@@ -229,8 +229,9 @@ describe('it still reports the truth to the state machine', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect((toast.error as jest.Mock)).toHaveBeenCalledTimes(1);
 
-        expect(view.result.current.status).toBe('saved');
-        expect(view.result.current.error).toBeNull();
+        // "Saved" over refused edits turned the unsaved-changes guard off.
+        expect(view.result.current.status).toBe('error');
+        expect(view.result.current.error).toMatch(/Someone else saved this map/);
     });
 });
 
@@ -300,7 +301,7 @@ describe('the manual save (`saveNow`) goes through the same queue', () => {
         expect(Object.keys(bodyOf(fetchMock, 1))).not.toContain('name');
     });
 
-    it('reports a 409 as not saved, though nothing threw', async () => {
+    it('reports a 409 as not saved, and not ok', async () => {
         // `ok` is the state machine's; `saved` is the server's. A rename keyed
         // on `ok` would rename the map in the list while the server kept the
         // old name.
@@ -311,6 +312,6 @@ describe('the manual save (`saveNow`) goes through the same queue', () => {
         await act(async () => {
             result = await view.result.current.saveNow({ name: 'Renamed' });
         });
-        expect(result).toEqual({ ok: true, error: null, saved: false });
+        expect(result).toMatchObject({ ok: false, saved: false });
     });
 });

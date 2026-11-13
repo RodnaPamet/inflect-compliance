@@ -91,6 +91,14 @@ export interface SaveTldrawCanvasInput {
     fetchImpl?: typeof fetch;
 }
 
+/** A save the server refused because somebody else saved first (HTTP 409). */
+export class VersionConflictError extends Error {
+    constructor() {
+        super('Someone else saved this map. Reload to see the latest version.');
+        this.name = 'VersionConflictError';
+    }
+}
+
 export async function saveTldrawCanvas({
     tenantSlug,
     mapId,
@@ -131,11 +139,13 @@ export async function saveTldrawCanvas({
         body: JSON.stringify(payload),
     });
 
-    // 409 first, and BEFORE the `res.ok` check: a conflict is not a failed
-    // save. The helper surfaces the reload toast and this resolves, leaving
-    // autosave in its saved branch rather than starting the error machinery
-    // for something the toast owns.
-    if (await surfaceVersionConflict(res, toast, onConflict)) return;
+    // 409 first, and BEFORE the `res.ok` check: the helper surfaces the
+    // reload toast, whose action is `onConflict`. Then this THROWS (#5282). It
+    // used to resolve, which put autosave in its saved branch: the status read
+    // "Saved" and the unsaved-changes guard switched off over edits the server
+    // had just refused. The thrown error leaves autosave in `error`, which also
+    // stops it retrying a write that can only be refused again.
+    if (await surfaceVersionConflict(res, toast, onConflict)) throw new VersionConflictError();
 
     // The server's sentence, or an empty message for the caller's own —
     // never the status code (#4987).

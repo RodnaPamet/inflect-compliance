@@ -97,9 +97,9 @@ export interface UseTldrawCanvasAutosaveOptions {
 /** A manual save's outcome. */
 export interface ManualSaveResult extends FlushResult {
     /**
-     * True only when the server accepted the save. A 409 resolves without
-     * throwing (the reload toast owns it), so `ok` alone cannot say whether a
-     * rename landed.
+     * True only when the server accepted the save. A 409 throws a
+     * `VersionConflictError` after its reload toast (#5282), so `ok` is false
+     * then too; `saved` stays the direct answer to "did the rename land".
      */
     saved: boolean;
 }

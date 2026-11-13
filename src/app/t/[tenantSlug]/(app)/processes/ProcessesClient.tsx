@@ -211,6 +211,7 @@ export function ProcessesClient({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEditMaps}
                         canDelete={canDeleteMaps}
+                        canManageRules={canManageRules}
                         focusStepKey={requestedStep}
                     />
                 )}
@@ -229,6 +230,7 @@ function CanvasWorkspace({
     canOperateCheckpoints,
     canEdit,
     canDelete,
+    canManageRules,
     focusStepKey,
 }: {
     tenantSlug: string;
@@ -241,6 +243,7 @@ function CanvasWorkspace({
     canOperateCheckpoints: boolean;
     canEdit: boolean;
     canDelete: boolean;
+    canManageRules: boolean;
     /** The step to select once the map loads (`?step=`). */
     focusStepKey: string | null;
 }) {
@@ -290,6 +293,7 @@ function CanvasWorkspace({
                         canOperateCheckpoints={canOperateCheckpoints}
                         canEdit={canEdit}
                         canDelete={canDelete}
+                        canManageRules={canManageRules}
                         focusStepKey={focusStepKey}
                     />
                 </CanvasModeProvider>

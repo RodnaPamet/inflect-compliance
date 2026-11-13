@@ -247,15 +247,15 @@ describe('the tldraw host consumes the hook the way the harness does', () => {
             rendered over unsaved work, the error state unreachable.
 
             On this host the save is a module rather than a component method, so
-            the property is simply that it throws — and the 409 path is
-            deliberately NOT a throw: it returns after the reload toast, because
-            a conflict is handled by the toast rather than by failing the save.
-            Both halves asserted, since swapping them would restore the original
-            bug in mirror image.
+            the property is simply that it throws. The 409 path throws TOO, after
+            its reload toast (#5282): it used to return, which the hook read as
+            "saved" — the dirty flag cleared and "Saved" rendered over work the
+            server had refused. It throws its own class, so the toast stays the
+            one place the conflict is explained.
         */
         expect(save).toMatch(/if \(!res\.ok\) throw new Error\(/);
         expect(save).toMatch(
-            /if \(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*return/,
+            /if \(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*throw new VersionConflictError\(\)/,
         );
     });
 });
