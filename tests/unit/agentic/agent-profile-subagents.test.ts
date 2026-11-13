@@ -158,6 +158,10 @@ describe('3. the content hash', () => {
 });
 
 describe('4. which engines run sub-agents', () => {
+    it('the Tool Runner runs them (Step 2e, its own commit)', () => {
+        expect(runsSubagents('tool-runner')).toBe(true);
+    });
+
     it('is classified for every driver, and Flue and the static engine run none', () => {
         expect(AGENT_DRIVERS.map((d) => [d, typeof runsSubagents(d)])).toEqual(AGENT_DRIVERS.map((d) => [d, 'boolean']));
         expect(runsSubagents('static')).toBe(false);

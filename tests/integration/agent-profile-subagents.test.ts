@@ -302,12 +302,12 @@ describeFn('inline sub-agents in the profile version (real DB)', () => {
             { name: 'risk_reader', instructions: SUB_TEXT, toolNames: ['list_risks'], skillRefs: [], maxTurns: 4 },
         ]);
 
-        // Admission: a version with sub-agents is never run without them. On an
-        // engine that does not run them it is refused before the run row exists.
+        // Admission: the Tool Runner runs sub-agents, so the refusal by name
+        // (`PROFILE_SUBAGENTS_NOT_RUNNABLE`) is not what stops this run. The
+        // agent here is not risk-assessed, which a reasoning run requires.
         expect(
             await refusalOf(startWorkflowRun(authorA({ agentId: AGENTS.frozen }), key, {}, { profileTrigger: 'ASK' })),
-        ).toMatchObject({ reason: 'PROFILE_SUBAGENTS_NOT_RUNNABLE' });
-        expect(await prisma.workflowRun.count({ where: { tenantId: TA, workflowKey: key } })).toBe(0);
+        ).not.toMatchObject({ reason: 'PROFILE_SUBAGENTS_NOT_RUNNABLE' });
     });
 
     it('the database freezes an approved version\'s sub-agents for every role; a swapped ciphertext fails the hash', async () => {

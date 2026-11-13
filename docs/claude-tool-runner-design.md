@@ -114,6 +114,23 @@ Inflect would host it in the worker, the same way it hosts Flue.
   charged to the step cap, and never a funnel call. It is reported to the
   register as engine-supplied (`tool-runner/supplied-tools.ts`), beside Flue's
   runtime tools on the agent's Tools tab.
+- **A profile version may define inline sub-agents, run through `delegate`
+  (Step 2e, #4594).** At most four, each a name, instructions, a subset of the
+  version's tools and skills and a turn limit, with no description; stored
+  encrypted in `AgentProfileVersion.subagentsJson`, frozen by the version
+  trigger, covered by the content hash under its own domain (every existing
+  version's hash unchanged), and refused by name at save and approval
+  (`SUBAGENT_*`, `SUBAGENTS_WITH_FLOW`). `delegate` (`tool-runner/delegate.ts`)
+  is offered to the parent only and reported as engine-supplied
+  (`when-subagents-defined`). A delegation runs a child loop through the same
+  loop body as the parent (`runModelLoop`), over the parent's invocation, latch,
+  client, budget and both turn caps, with tools that are a filter of the
+  parent's offered set under `tool-runner-subagent.<name>`. Before every model
+  call in both loops the loop reads the kill switch and the breaker and charges
+  one `STEPS`. Every child step carries `WorkflowStep.subagentName`, and the
+  `delegate` marker closes the span the run page groups. `RUNS_SUBAGENTS` is
+  true for this engine alone; any other engine refuses such a version
+  `PROFILE_SUBAGENTS_NOT_RUNNABLE`.
 - **The engine has run in production (Step 2H, 2026-11-11).** A profile's Test
   run completed in the proving tenant, a second was stopped by the kill switch
   and settled Aborted, and a `LOCAL_ONLY` tenant's run was refused

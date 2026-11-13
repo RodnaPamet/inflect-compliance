@@ -3431,7 +3431,8 @@ are each one careless edit from being undone:
   - **`RUNS_SUBAGENTS` is the brake.** A `Record<AgentDriver, boolean>` in
     `agent-profile.ts`; admission refuses a version with sub-agents on an engine
     whose entry is false (`PROFILE_SUBAGENTS_NOT_RUNNABLE`), and so do resume and
-    the preview. Flue's and the static engine's stay false: neither runs a profile.
+    the preview. Only the Tool Runner's is true, flipped in a commit of its own
+    so reverting it is the rollback; Flue's and the static engine's stay false.
 
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).

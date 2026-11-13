@@ -489,7 +489,14 @@ export function describeSubagentsForReview(subagents: readonly ProfileSubagent[]
 const RUNS_SUBAGENTS: Readonly<Record<AgentDriver, boolean>> = {
     static: false,
     flue: false,
-    'tool-runner': false,
+    // TRUE since Step 2e (#4594), in a commit of its own: reverting it refuses
+    // every sub-agent version by name rather than running it without its
+    // delegates. The driver offers `delegate` to the parent and runs each
+    // delegation through the one loop body, under the parent's identity, caps
+    // and latch. A sub-agent's instructions are "tenant-authored agent
+    // instructions", which the Anthropic row of `docs/sub-processors.md`
+    // already names.
+    'tool-runner': true,
 };
 
 export function runsSubagents(driver: AgentDriver): boolean {

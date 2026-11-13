@@ -694,11 +694,10 @@ describe('sub-agents (Step 2e, #4594)', () => {
         expect(screen.getByTestId('behaviour-version-1-subagent-count').textContent).toBe(copy('none'));
     });
 
-    it('a version with sub-agents has its Test run disabled while the engine does not run them', () => {
+    it('a version with sub-agents can be Test-run on the Tool Runner engine, which runs them', () => {
         renderTab(view([SUBMITTED({ subagents: [READER] }), version()], { testRun: { available: true } }));
-        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.SUBAGENTS_NOT_RUNNABLE'));
-        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByTestId('behaviour-test-run-2-reason')).toBeNull();
     });
 
     it('the editor\'s sub-agent tool picker offers only the tools this version has chosen, never the wider grants', async () => {
