@@ -11885,6 +11885,8 @@
       },
       "fromRun": "From an agent run",
       "fromRunStep": "From step {seq} of an agent run",
+      "runWaits": "A run is waiting for this decision: it asked a person before going on, and deciding this proposal continues it.",
+      "runWaitsLink": "Open the run",
       "composedByYou": "You composed this request, so somebody else approves it. Reject withdraws it.",
       "refused": {
         "composer": "You composed this request, so somebody else approves it.",
@@ -11919,6 +11921,7 @@
       "emptyDesc": "Start a workflow above. Each run reads your compliance data, proposes changes for your approval, and produces a summary.",
       "stepMeta": "{steps} steps · ~{tokens} tokens · {date}",
       "resume": "Resume",
+      "openProposal": "Open proposal",
       "abort": "Abort",
       "awaitingApprovalPre": "Paused for review — approve its proposals in the ",
       "proposalsLink": "agent proposals",
@@ -11967,6 +11970,14 @@
           "label": "Conversation summarised",
           "sizes": "about {before} tokens before, about {after} after",
           "notUsed": "about {before} tokens before; the summary was not used"
+        },
+        "deferral": {
+          "waiting": "This run asked a person before going on: it is waiting for a decision on its {kind} proposal.",
+          "deadline": "The decision is due by {deadline}; after that the run stops.",
+          "openProposal": "Open the proposal",
+          "checkpoint": "Deferred to a person",
+          "decidedApproved": "A person ({who}) approved the proposal this run waited on, {when}.",
+          "decidedRejected": "A person ({who}) rejected the proposal this run waited on, {when}."
         },
         "metaStatus": "Status",
         "metaDriver": "Engine",
@@ -16988,6 +16999,7 @@
       "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
       "refused": {
         "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
+        "PROFILE_DEFERRALS_NOT_RUNNABLE": "Version {version} waits for a person on some of its calls, and no engine in this build parks a run on a deferred call, so a run of it is refused rather than run without the wait. This is the message an engine would be handed.",
         "PROFILE_SUBAGENTS_NOT_RUNNABLE": "Version {version} defines sub-agents, and no engine in this build runs them, so a run of it is refused rather than run without them. This is the message an engine would be handed.",
         "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
       },

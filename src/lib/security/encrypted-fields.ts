@@ -456,6 +456,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // is used in a WHERE/orderBy (queries filter on tenantId/status/runId/seq).
     WorkflowRun: ['contextJson', 'summary'],
     WorkflowStep: ['inputJson', 'outputJson'],
+    // `transcriptJson` (Step 2f, #5530) is the conversation a Tool Runner run
+    // resumes from after it deferred a tool call to a person: the request it
+    // would send next, tool results included, which carry tenant data and can
+    // name people. Exact API bytes (a thinking block's signature binds them),
+    // so never sanitised or re-serialised, and cleared to NULL when the run
+    // resumes or settles. `transcriptHash` beside it is a digest and stays
+    // plaintext, as `WorkflowRun.contextHash` does. Never filtered or sorted on.
+    WorkflowRunDeferral: ['transcriptJson'],
 
     // ─── Step 4c (#3680) — tenant-authored skills ──────
     // `instructions` is the procedure a tenant authored — third-party

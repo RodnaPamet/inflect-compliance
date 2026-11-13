@@ -96,6 +96,9 @@ export default async function AgentRunsPage({
         approvalExpiresAt: r.approvalExpiresAt ? r.approvalExpiresAt.toISOString() : null,
         summary: r.summary,
         pendingProposals: r._count.proposals,
+        // A run parked on a deferred call (Step 2f) waits on THIS proposal:
+        // the list offers it in place of Resume, which would be refused.
+        waitingOnProposalId: r.waitingOnProposalId,
     }));
 
     // `requiredInput` travels with each workflow so the client can build its

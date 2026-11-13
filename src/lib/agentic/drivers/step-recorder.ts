@@ -11,6 +11,7 @@ import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
 import type { ContentProvenance } from '@/lib/agentic/content-provenance';
+import type { PrismaTx } from '@/lib/db-context';
 
 /**
  * THE ONE PLACE A `WorkflowStep` IS WRITTEN.
@@ -100,9 +101,17 @@ export async function recordStep(
     kind: WorkflowStepKind,
     rec: StepRecord,
     contextSeq?: number,
+    /**
+     * A write that must land in the SAME transaction as this step, or not at
+     * all (Step 2f): a resumed segment's first step moves its deferral to
+     * RESUMED and clears the transcript, so the ledger never holds the
+     * continuation of a conversation a retry would send again.
+     */
+    alsoInTx?: (db: PrismaTx) => Promise<void>,
 ): Promise<void> {
-    await runInTenantContext(ctx, (db) =>
-        db.workflowStep.create({
+    await runInTenantContext(ctx, async (db) => {
+        if (alsoInTx) await alsoInTx(db);
+        return db.workflowStep.create({
             data: {
                 runId, tenantId: ctx.tenantId, seq, kind,
                 contextSeq: contextSeq ?? null,
@@ -129,8 +138,8 @@ export async function recordStep(
                 // parent. An identifier (CHECK `WorkflowStep_subagent_name_shape`).
                 subagentName: rec.subagent ?? null,
             },
-        }),
-    );
+        });
+    });
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,

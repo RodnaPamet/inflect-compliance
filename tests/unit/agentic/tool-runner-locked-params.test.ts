@@ -257,3 +257,43 @@ describe('only the engine\'s loop starts a runner', () => {
         expect(starters).toEqual(['src/lib/agentic/tool-runner/execute.ts']);
     });
 });
+
+describe('a RESUMED segment is shaped by the same function, and sends the stored request (Step 2f, #5530)', () => {
+    const tools = [tool('list_risks')];
+    const caps = resolveRunCaps(null);
+    const RESUME = {
+        model: 'claude-stored-model',
+        system: [{ type: 'text' as const, text: 'the system the run parked with' }],
+        messages: [
+            { role: 'user' as const, content: 'the opening' },
+            { role: 'assistant' as const, content: [{ type: 'thinking' as const, thinking: 't', signature: 's' }] },
+        ],
+    };
+
+    it('sends the stored system, model and messages; every other value is the function\'s own', () => {
+        const fresh = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 4, toolCallsPerTurn: 1 });
+        const resumed = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 4, toolCallsPerTurn: 1, resume: RESUME });
+        expect(resumed.system).toBe(RESUME.system);
+        expect(resumed.model).toBe(RESUME.model);
+        expect(resumed.messages).toEqual(RESUME.messages);
+        const { system: _s, model: _m, messages: _msg, ...rest } = resumed;
+        const { system: _fs, model: _fm, messages: _fmsg, ...freshRest } = fresh;
+        expect(rest).toEqual(freshRest);
+        expect(resumed.thread).toBe(false);
+    });
+
+    it('a sub-agent never resumes: the option is ignored for a child', () => {
+        const child = lockedParams({
+            def: PROFILE_DEF,
+            tools,
+            message: '',
+            caps,
+            fromSeq: 0,
+            toolCallsPerTurn: 1,
+            subagent: { name: 'risk_reader', instructions: 'Read.', maxTurns: 3, task: 'List.' },
+            resume: RESUME,
+        });
+        expect(child.model).not.toBe(RESUME.model);
+        expect(child.system).not.toBe(RESUME.system);
+    });
+});

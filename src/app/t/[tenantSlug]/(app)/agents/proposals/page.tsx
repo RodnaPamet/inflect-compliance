@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { oversightReadsFor, readAgentOversightSettings } from '@/app-layer/usecases/agent-oversight-settings';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
+import { readProposalsRunsWaitOn } from '@/app-layer/usecases/workflow-run-deferral-views';
 import { buildProposalDiffs } from '@/app-layer/usecases/agent-proposal-diff';
 import {
     PROPOSAL_QUEUE_PAGE_SIZE,
@@ -82,6 +83,11 @@ export default async function AgentProposalsPage({
     // it is not offered (#4970).
     const oversight = await readAgentOversightSettings(ctx);
 
+    // WHICH OF THESE A RUN IS WAITING ON (Step 2f): a deferred tool call parks
+    // its run until the proposal is decided here, so the reviewer is told the
+    // decision continues work. One bounded read for the page.
+    const runsWaitOn = await readProposalsRunsWaitOn(ctx, proposals.map((p) => p.id));
+
     const rows: ProposalRow[] = proposals.map((p) => ({
         id: p.id,
         kind: p.kind,
@@ -114,6 +120,7 @@ export default async function AgentProposalsPage({
         // reviewer and the reasoning behind what they are approving.
         runId: p.runId,
         stepSeq: p.stepSeq,
+        runWaits: runsWaitOn.has(p.id),
         // ─── The agentic output guard's verdict, forwarded ───────────────
         //
         // `guardAgentProposal` returns FLAGGED when a rule fired but nothing

@@ -3589,6 +3589,42 @@ every original step. A profile version's `compactionThresholdTokens` only
 LOWERS the engine's threshold or turns it off (`0`); a value above the tier is
 refused at save and at approval, and the run takes the lowest anyway.
 
+**A deferred tool call is a proposal the run waits on** (Step 2f, #5530;
+`docs/claude-tool-runner-design.md`, "Deferral to a person"). A call to a propose
+tool the profile version names in `deferredToolNames` PARKS the run at
+`AWAITING_APPROVAL` on a `WorkflowRunDeferral` row; the row, not the status, is
+what tells a deferral apart from a guard flag or a checkpoint. Rules that are
+each one careless edit from being undone:
+
+- **The decision is the proposal queue's, unchanged.** Approve, approve with
+  edits, reject and bulk reject call `settleDeferralForProposal` after they
+  commit, and it is the only thing that continues a parked run: a conditional
+  claim on the deferral, then on the run (#5119's), so two decisions resume it
+  once. `resumeWorkflowRun` refuses a run with a WAITING deferral
+  (`RUN_WAITS_ON_A_PROPOSAL`). No new approval path, no new permission key.
+- **The transcript is Inflect's, encrypted, and cleared.** `transcriptJson` is in
+  the Epic B manifest, byte-faithful (never sanitised or re-serialised: a
+  thinking block's signature binds it), and set to NULL when the row moves to
+  RESUMED or SETTLED, with `transcriptHash` kept. The resume moves the row to
+  RESUMED in the transaction that records the segment's first step
+  (`recordStep`'s `alsoInTx`), so a retry never resends a conversation whose
+  continuation is in the ledger. Nothing is stored at Anthropic.
+- **The resume re-checks, and authority only narrows.** The seal, then the
+  envelope, then the decision from the PROPOSAL ROW; the offer is re-resolved,
+  the stored tool definitions keep their bytes and take their runnables from the
+  new offer by name (`resumedToolsFor`): a withdrawn tool refuses
+  (`TOOL_WITHDRAWN_DURING_WAIT`), a newly granted one is not added. The wall
+  clock starts at `elapsedMsAtPark`, never at the run's start.
+- **Nobody deciding is a FAILED run, never a resumed one.** An expiry settles it
+  `tool_runner_deferral_expired`, a retirement `tool_runner_deferral_agent_retired`
+  (in the cascade), an abort settles the deferral `NOT_RESUMED`, and any
+  settlement that is not a park settles an open row (`settleDeferralsAfterRun`).
+- **Readers before the writer.** `RUNS_DEFERRALS` is a `Record<AgentDriver,
+  boolean>`; admission refuses a version naming deferred tools on an engine whose
+  entry is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`), and the worker treats such a
+  pinned version as unavailable. The parking path and the flag flip ship in a
+  later deploy than every reader.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

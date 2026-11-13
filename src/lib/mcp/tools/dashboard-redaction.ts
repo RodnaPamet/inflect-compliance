@@ -212,7 +212,8 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
     ],
     // Runs and proposals are read by `mayReadAgentActivity` (`/agent-runs`,
     // `/agent-proposals`), not the inventory predicate.
-    agentActivity: ['WorkflowRun', 'WorkflowStep', 'AgentProposal', 'AgentProposalApproval'],
+    // A run's deferred tool calls (Step 2f) are read on the run page, under the same predicate.
+    agentActivity: ['WorkflowRun', 'WorkflowStep', 'WorkflowRunDeferral', 'AgentProposal', 'AgentProposalApproval'],
     // The retrospective sample audits of approved proposals: their only read
     // surface is `/agent-proposals/sample-audits`, on the register key alone.
     //

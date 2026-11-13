@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { readWorkflowRunProvenance } from '@/app-layer/usecases/workflow-run-provenance';
+import { readRunDeferralView } from '@/app-layer/usecases/workflow-run-deferral-views';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { profileRunLabel } from '@/lib/agentic/agent-profile';
 import { projectRunSteps } from '@/lib/agentic/run-step-projection';
@@ -95,6 +96,10 @@ export default async function AgentRunDetailPage({
     // Who started it and, for an automation-started run, which rule (#4894).
     // A failed read leaves both unnamed rather than failing the page.
     const provenance = await readWorkflowRunProvenance(ctx, run).catch(() => ({ startedBy: null, ruleName: null }));
+    // A DEFERRED CALL (Step 2f): a run parked on one shows as waiting for a
+    // decision on its proposal; a decided one names who decided and when. A
+    // failed read shows no deferral rather than failing the page.
+    const deferral = await readRunDeferralView(ctx, run.id).catch(() => null);
 
     return (
         <AgentRunDetailClient
@@ -122,6 +127,7 @@ export default async function AgentRunDetailPage({
                 mountedSkills: parseMountedSkillPins(run.mountedSkills),
             }}
             steps={steps}
+            deferral={deferral}
             // Resume and abort open with `assertCanWrite`, as on the runs list.
             canOperate={ctx.permissions?.canWrite === true}
         />

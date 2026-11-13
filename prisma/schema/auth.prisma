@@ -230,6 +230,7 @@ model Tenant {
   agentOwnershipTransfers           AgentOwnershipTransfer[]
   agentServicePrincipalConfirmations AgentServicePrincipalConfirmation[]
   discoveredAgentAttributions       DiscoveredAgentAttribution[]
+  workflowRunDeferrals              WorkflowRunDeferral[]
   auditWorkpapers                   AuditWorkpaper[]
   auditWorkpaperFindings            AuditWorkpaperFinding[]
   auditWorkpaperSampleReviews       AuditWorkpaperSampleReview[]

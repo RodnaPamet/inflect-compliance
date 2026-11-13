@@ -221,6 +221,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
     'src/lib/agentic/openshell/executor.ts — identifier bound elsewhere',
     'src/lib/agentic/openshell/kill-drill.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/workflow-run-deferrals.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
     // driver into the shared settlement module when a second engine arrived —
@@ -879,7 +880,12 @@ const SINK_FLOOR = 30;
 // row carries the parameter set's id. The first was NARROWED before it was
 // counted — it had seven holes as a details template, two `.map` summaries and
 // a three-field metadata object, and is one structured field now.
-const MEASURED_HOLES = 225;
+// 225 -> 229 on 2026-11-13 (Step 2f, #5530, the deferral decision hook). Four
+// holes in its sinks, all `identifier bound elsewhere` over ids and closed
+// values: the proposal id, the deferral id, the decision (`ACCEPTED`,
+// `EDITED`, `REJECTED`, read off the proposal row) and the hook's own named
+// failure message. No model text and no transcript reaches any of them.
+const MEASURED_HOLES = 229;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

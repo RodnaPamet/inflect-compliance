@@ -154,6 +154,12 @@ function makeDb() {
     aiDecisionLog: {
       updateMany: async () => ({ count: 0 }),
     },
+    // No run here is parked on a deferred call (Step 2f).
+    workflowRunDeferral: {
+      findFirst: async () => null,
+      findMany: async () => [],
+      updateMany: async () => ({ count: 0 }),
+    },
     workflowStep: {
       // The replay anchor: the highest chain position this run's
       // APPEND-ONLY ledger has seen. Modelled here because restoring the

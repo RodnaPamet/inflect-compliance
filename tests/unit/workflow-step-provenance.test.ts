@@ -161,6 +161,12 @@ function makeDb() {
     aiDecisionLog: {
       updateMany: async () => ({ count: 0 }),
     },
+    // No run here is parked on a deferred call (Step 2f).
+    workflowRunDeferral: {
+      findFirst: async () => null,
+      findMany: async () => [],
+      updateMany: async () => ({ count: 0 }),
+    },
     workflowStep: {
       aggregate: async ({ where }: any) => {
         const seqs = store.steps

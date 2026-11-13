@@ -158,6 +158,29 @@ Inflect would host it in the worker, the same way it hosts Flue.
   or after a SIGTERM moved it to `PAUSED`, starts from the opening message with
   the steps, tool calls, proposals and tokens it has already spent, and does
   not remember its earlier turns.
+- **Every reader of a parked deferral is in place; nothing writes one yet
+  (Step 2f, deploy 1, #5530).** `WorkflowRunDeferral` exists, with its RLS
+  triple, its shape CHECK, its one-way trigger (which admits the key-rotation
+  re-wrap and the clear) and no `app_user` DELETE; `transcriptJson` is in the
+  Epic B manifest and `transcriptHash` beside it is plaintext. Its two writers
+  are `drivers/deferral-store.ts` and `usecases/workflow-run-deferrals.ts`.
+  `AgentProfileVersion.deferredToolNames` exists, frozen by the replaced
+  lifecycle function and held to a subset of `toolNames` by a CHECK, and is
+  compiled strictly. `RUNS_DEFERRALS` is false for every engine, so admission
+  refuses a version naming deferred tools (`PROFILE_DEFERRALS_NOT_RUNNABLE`)
+  and the save and approval schemas still refuse the field. The readers:
+  `resumeWorkflowRun` refuses a run with a WAITING deferral
+  (`RUN_WAITS_ON_A_PROPOSAL`); `abortWorkflowRun` settles it in its own
+  transaction; `settleDeferralForProposal` runs after every queue decision, in
+  the expiry sweep (with a heal for a deferral left behind a decided proposal)
+  and, as `settleRetiredAgentDeferralsInTx`, in the retirement cascade; the
+  resume branch in `executeToolRunnerRun` opens the transcript (seal, envelope,
+  then the decision from the proposal row), re-resolves the offer, sends the
+  stored `system`, `tools` and `model` through `lockedParams`' `resume` option,
+  starts the wall clock at `elapsedMsAtPark`, and moves the row to RESUMED with
+  the transcript cleared in the first step's transaction; any other settlement
+  settles an open row. The run page, the runs list and the proposals page show
+  a deferral.
 - **The engine has run in production (Step 2H, 2026-11-11).** A profile's Test
   run completed in the proving tenant, a second was stopped by the kill switch
   and settled Aborted, and a `LOCAL_ONLY` tenant's run was refused
