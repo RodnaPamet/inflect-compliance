@@ -53,8 +53,24 @@ export interface SpChildrenPage {
 /** A delta page: changed items plus the opaque token for the next delta query. */
 export interface SpDeltaPage {
     items: SpDriveItem[];
-    /** Opaque token to pass to the next `getDelta` for incremental change. */
+    /**
+     * Opaque cursor to pass to the next `getDelta`.
+     *
+     * When `truncated` is false this is a DELTA token: the walk finished and
+     * the next call asks only for what changed after it. When `truncated` is
+     * true it is a RESUME cursor for the same enumeration, prefixed with the
+     * Graph query parameter it belongs to (#5555).
+     */
     deltaToken?: string;
+    /**
+     * The walk stopped at its page bound with changes still unread (#5555).
+     *
+     * The caller must not report this drive as cleanly synced: items beyond the
+     * bound have not been checked for a change or a deletion. Storing the
+     * cursor above is what lets the next run carry on instead of restarting and
+     * stopping in the same place for ever.
+     */
+    truncated?: boolean;
 }
 
 /** A Graph change-notification subscription (SP-4). */

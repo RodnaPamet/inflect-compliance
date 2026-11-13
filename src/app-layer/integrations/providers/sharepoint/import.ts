@@ -433,6 +433,17 @@ export interface SpDeltaSyncResult {
     /** Changed items whose re-import threw. Their drive's token is held back. */
     failed: number;
     /**
+     * Drives whose walk stopped at its page bound with changes still unread
+     * (#5555).
+     *
+     * Non-zero means those drives are PARTIALLY synced: items past the bound
+     * have not been checked for a change or a deletion. The cursor stored for
+     * them resumes the same enumeration, so the next run carries on — before
+     * this, nothing was stored and the drive restarted and stopped in the same
+     * place for ever, silently.
+     */
+    drivesTruncated: number;
+    /**
      * Drives whose delta cursor was NOT advanced because a re-import failed in
      * them (#5193).
      *
@@ -480,6 +491,7 @@ export async function runSharePointDeltaSync(
     let staled = 0;
     let failed = 0;
     let tokensHeld = 0;
+    let drivesTruncated = 0;
 
     for (const driveId of driveIds) {
         // The failure count as this drive STARTS, so the decision below is
@@ -487,6 +499,20 @@ export async function runSharePointDeltaSync(
         // a later drive's cursor.
         const failedBefore = failed;
         const delta = await client.getDelta(driveId, tokens[driveId]);
+        // The walk stopped at its page bound with changes still unread (#5555).
+        // The cursor below is then a RESUME cursor for the same enumeration
+        // rather than a delta token, and storing it is what lets the next run
+        // carry on instead of restarting and stopping in the same place for
+        // ever. Counted so the run does not read as a clean sync of this drive.
+        if (delta.truncated) {
+            drivesTruncated++;
+            edgeLogger.warn('SharePoint delta walk truncated at its page bound — resuming next run', {
+                component: 'sharepoint',
+                driveId,
+                itemsThisPass: delta.items.length,
+                haveResumeCursor: Boolean(delta.deltaToken),
+            });
+        }
         for (const it of delta.items) {
             const remoteId = encodeRemoteId(driveId, it.id);
             const mapping = byRemoteId.get(remoteId);
@@ -569,7 +595,7 @@ export async function runSharePointDeltaSync(
     }
 
     await writeDeltaTokens(ctx, connectionId, tokens);
-    return { drivesSynced: driveIds.size, reimported, staled, failed, tokensHeld };
+    return { drivesSynced: driveIds.size, reimported, staled, failed, tokensHeld, drivesTruncated };
 }
 
 async function readDeltaTokens(ctx: RequestContext, connectionId: string): Promise<Record<string, string>> {
