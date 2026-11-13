@@ -122,6 +122,19 @@ describe('the harness image', () => {
         expect(pinned).toBe(version);
     });
 
+    it('pins agent-client-protocol, whose 1.0.0 broke inspect-ai on import, in both places', () => {
+        // inspect-ai 0.3.280 declares agent-client-protocol>=0.12.0 and imports
+        // `acp.helpers`, which 1.0.0 removed: run 43348285803 died on import on
+        // both engines. A floating resolution is how that arrived.
+        const docker = read('evals/inspect/Dockerfile');
+        const acp = /^ARG AGENT_CLIENT_PROTOCOL_VERSION=(\d+\.\d+\.\d+)$/m.exec(docker)?.[1];
+        expect(acp).toBeDefined();
+        expect(docker).toContain('"agent-client-protocol==${AGENT_CLIENT_PROTOCOL_VERSION}"');
+        const pinned = /"agent-client-protocol==(\d+\.\d+\.\d+)"/.exec(read('evals/inspect/pyproject.toml'))?.[1];
+        expect(pinned).toBe(acp);
+        expect(Number(acp!.split('.')[0])).toBe(0);
+    });
+
     it('never enters the app image', () => {
         expect(read('Dockerfile')).not.toMatch(/inspect[-_]ai/);
     });
