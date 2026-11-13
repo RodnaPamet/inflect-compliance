@@ -138,6 +138,16 @@ export interface PurgeResult {
     model: string;
     scanned: number;
     purged: number;
+    /**
+     * Rows a RESTRICT child still holds down — #5083.
+     *
+     * REQUIRED, not optional, so every producer states it: an absent count and
+     * a zero count read identically to a caller, and the whole point of this
+     * number is to be noticed. A blocked row stays soft-deleted and is retried
+     * on the next pass, so a figure that stays non-zero day after day is the
+     * signal that an edge needs deciding rather than retrying.
+     */
+    blocked: number;
     dryRun: boolean;
 }
 
@@ -160,6 +170,22 @@ export interface RetentionSweepResult {
  *   - Emits DATA_PURGED audit event per record
  *   - Tenant-scoped
  */
+/**
+ * A foreign-key violation, through either shape Prisma can report it in.
+ *
+ * `$executeRawUnsafe` does not always surface a typed `P2003`: a raw statement
+ * can arrive as the driver's own error carrying Postgres SQLSTATE `23503`. So
+ * both are recognised, and nothing else is — a predicate that matched broadly
+ * would turn this from "tolerate a known, expected refusal" into "ignore every
+ * failure the purge hits", which is a worse bug than the one being fixed.
+ */
+function isForeignKeyViolation(err: unknown): boolean {
+    if (typeof err !== 'object' || err === null) return false;
+    const e = err as { code?: unknown; meta?: { code?: unknown } };
+    if (e.code === 'P2003' || e.code === '23503') return true;
+    return e.meta?.code === '23503';
+}
+
 export async function purgeSoftDeletedOlderThan(
     options: PurgeSoftDeletedOptions = {},
 ): Promise<PurgeResult[]> {
@@ -206,6 +232,7 @@ export async function purgeSoftDeletedOlderThan(
 
             const scanned = candidates.length;
             let purged = 0;
+            let blocked = 0;
 
             if (!dryRun) {
                 // Evidence is the only model in this loop whose rows point at
@@ -229,10 +256,49 @@ export async function purgeSoftDeletedOlderThan(
                 }
 
                 for (const record of candidates) {
-                    await db.$executeRawUnsafe(
-                        `DELETE FROM "${model}" WHERE "id" = $1`,
-                        record.id,
-                    );
+                    // ── ONE BLOCKED ROW USED TO STOP THE WHOLE JOB (#5083) ──
+                    //
+                    // Several child FKs onto these models are ON DELETE
+                    // RESTRICT (ControlTestRun, ControlTestPlan,
+                    // ControlException, RiskTreatmentPlan, and the agent and
+                    // peer vendor references), and the soft-delete usecases
+                    // leave those children in place. So an ordinary deleted
+                    // control that once had a test run raised SQLSTATE 23503
+                    // here 90 days later, `runJob` rethrew, and this sweep has
+                    // NO tenant filter — so one row stopped the purge for
+                    // every tenant, and everything the executor awaits after
+                    // it (the rest of the soft-delete models, the expired
+                    // evidence purge, the identity and legacy-snapshot
+                    // retention purges, `runRetentionSweep` and the
+                    // soft-deleted TENANT purge) never ran. The row stays, so
+                    // it happened again every day, and the retention
+                    // commitments in docs/data-retention.md quietly stopped
+                    // being met. The repo's own drift residue already
+                    // described this hazard.
+                    //
+                    // The row is left soft-deleted and retried next pass: that
+                    // is the honest outcome, because what SHOULD happen to the
+                    // child is a per-edge product decision, not something to
+                    // guess at inside a sweep.
+                    try {
+                        await db.$executeRawUnsafe(
+                            `DELETE FROM "${model}" WHERE "id" = $1`,
+                            record.id,
+                        );
+                    } catch (err) {
+                        if (!isForeignKeyViolation(err)) throw err;
+                        blocked++;
+                        logger.warn('data-lifecycle: row held by a RESTRICT child', {
+                            component: 'data-lifecycle',
+                            model,
+                            // No free text from the error: it can name columns
+                            // and values. The constraint is identified by the
+                            // row and model, which is what an operator needs.
+                            recordId: record.id,
+                            tenantId: record.tenantId,
+                        });
+                        continue;
+                    }
 
                     // Emit audit event
                     await db.auditLog.create({
@@ -253,12 +319,12 @@ export async function purgeSoftDeletedOlderThan(
                 }
             }
 
-            results.push({ model, scanned, purged, dryRun });
+            results.push({ model, scanned, purged, blocked, dryRun });
 
             if (scanned > 0) {
                 logger.info('purge-soft-deleted', {
                     component: 'job',
-                    model, scanned, purged, dryRun, graceDays,
+                    model, scanned, purged, blocked, dryRun, graceDays,
                 });
             }
         }
@@ -354,7 +420,11 @@ export async function purgeExpiredEvidenceOlderThan(
             component: 'job', scanned, purged, dryRun, graceDays,
         });
 
-        return { model: 'Evidence', scanned, purged, dryRun };
+        // `blocked: 0` and not omitted: the field is required so that every
+        // producer states it. This purge deletes Evidence whose retention has
+        // expired and has no RESTRICT child onto it, so the count is a real
+        // zero rather than "not measured".
+        return { model: 'Evidence', scanned, purged, blocked: 0, dryRun };
     }, { tenantId: options.tenantId });
 }
 
