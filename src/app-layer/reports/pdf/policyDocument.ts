@@ -157,6 +157,16 @@ export function looksLikeHtml(content: string): boolean {
     return /<\/?(h[1-6]|p|hr|ul|ol|li|div|table|blockquote)\b/i.test(content);
 }
 
+/**
+ * The per-page watermark for a policy export (#5133). A policy that has not
+ * been published (draft, in review, approved but not yet in force) is
+ * stamped DRAFT, so it cannot be mistaken for the live policy. A published
+ * policy, and an archived one (a record of what was in force), carries none.
+ */
+export function policyWatermark(status: string): 'DRAFT' | 'NONE' {
+    return status === 'PUBLISHED' || status === 'ARCHIVED' ? 'NONE' : 'DRAFT';
+}
+
 export async function generatePolicyDocumentPdf(
     ctx: RequestContext,
     policyId: string,
@@ -209,10 +219,11 @@ export async function generatePolicyDocumentPdf(
 
     // `ReportMeta` (shared chrome) carries a smaller surface — feed
     // the same fields so the per-page header/footer aligns with the
-    // cover page. The classification rides on the watermark slot
-    // intentionally (the watermark is the per-page corner stamp;
-    // for a policy, "INTERNAL" / "CONFIDENTIAL" IS the handling
-    // banner we want stamped).
+    // cover page. The watermark says whether this text is in force: it is
+    // DRAFT for a policy not yet published, whatever its classification.
+    // The classification is on the cover and in the footer, not here
+    // (#5133). The watermark slot used to carry it, so every CONFIDENTIAL
+    // or RESTRICTED export was stamped DRAFT and a real draft was not.
     const dataHash = crypto
         .createHash('sha256')
         .update(
@@ -229,10 +240,7 @@ export async function generatePolicyDocumentPdf(
         reportTitle: policy.title,
         reportSubtitle: policy.category || undefined,
         generatedAt: policyMeta.generatedAt,
-        watermark:
-            classification === 'CONFIDENTIAL' || classification === 'RESTRICTED'
-                ? 'DRAFT' // dual-purpose — paints the watermark band
-                : 'NONE',
+        watermark: policyWatermark(policy.status),
         contentHash: dataHash,
     };
 

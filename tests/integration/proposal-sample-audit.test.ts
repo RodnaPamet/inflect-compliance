@@ -88,6 +88,12 @@ const approverCtx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: APPROVER });
 const reviewerCtx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: REVIEWER });
+/** The FIRST signer of a two-approver proposal — never `reviewedByUserId` (#5112). */
+const FIRST_SIGNER = `u-${SUITE}-first-signer`;
+/** Neither approver — the positive control that the bar refuses approvers, not everyone. */
+const THIRD_HUMAN = `u-${SUITE}-third`;
+const firstSignerCtx = () =>
+    makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: FIRST_SIGNER });
 
 /**
  * Insert one proposal in a chosen terminal state.
@@ -128,7 +134,7 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             update: {},
             create: { id: TENANT, name: TENANT, slug: TENANT },
         });
-        for (const id of [APPROVER, REVIEWER]) {
+        for (const id of [APPROVER, REVIEWER, FIRST_SIGNER, THIRD_HUMAN]) {
             const email = `${id}@example.test`;
             await prisma.user.upsert({
                 where: { id },
@@ -343,6 +349,94 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             });
             expect(row.outcome).toBe('PENDING');
             expect(row.reviewedByUserId).toBeNull();
+        });
+
+        /**
+         * #5112 — THE FIRST SIGNER OF A TWO-APPROVER PROPOSAL.
+         *
+         * At the two-approver rung `approveAgentProposal` records each signature
+         * in `AgentProposalApproval` and writes only the LAST signer to
+         * `AgentProposal.reviewedByUserId`. The bar read that column alone, so
+         * the first signer could answer the retrospective audit of their own
+         * approval — on exactly the proposals held to the highest bar, which is
+         * where a disagreement rate of zero is most misleading. The sampler
+         * draws by status with no `requiredApprovals` filter, so these
+         * proposals are in scope by default.
+         *
+         * The sibling test above covers the single-approver case through
+         * `reviewedByUserId`; this one covers the signature the column does not
+         * mention, and the audit row's `basis` is what tells them apart.
+         */
+        it('the FIRST SIGNER of a two-approver proposal cannot answer it either (#5112)', async () => {
+            // Both humans are seeded by the suite's own loop: the audit append
+            // carries a FK to `User` and is wrapped in `.catch(() => undefined)`,
+            // so a missing row makes the refusal SILENT — the assertion below
+            // would read "no denial was written" when the denial happened.
+            const proposalId = await seedProposal('ACCEPTED', 9101);
+            await prisma.agentProposal.update({
+                where: { id: proposalId },
+                // The final signer is REVIEWER; FIRST_SIGNER appears nowhere on
+                // this row, which is the whole point.
+                data: { requiredApprovals: 2, reviewedByUserId: REVIEWER },
+            });
+            await prisma.agentProposalApproval.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    approverUserId: FIRST_SIGNER,
+                    outcome: 'ACCEPTED',
+                    requiredApprovals: 2,
+                },
+            });
+            const audit = await prisma.agentProposalSampleAudit.create({
+                data: {
+                    tenantId: TENANT,
+                    proposalId,
+                    samplingEpoch: 'epoch-5112',
+                    outcome: 'PENDING',
+                },
+                select: { id: true },
+            });
+
+            await expect(
+                recordSampleAuditOutcome(firstSignerCtx(), audit.id, { outcome: 'CONCURRED' }),
+            ).rejects.toThrow('sample_audit_self_review');
+
+            const denial = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId: TENANT, entityId: audit.id, action: 'AUTHZ_DENIED' },
+                orderBy: { createdAt: 'desc' },
+            });
+            const details = denial.detailsJson as Record<string, unknown>;
+            expect(details.reason).toBe('sample_audit_self_review');
+            // Distinguishes a first-signer refusal from a sole-approver one.
+            expect(details.basis).toBe('recorded_signature');
+
+            // The refusal is ahead of the claim: the row is untouched.
+            const row = await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { id: audit.id },
+            });
+            expect(row.outcome).toBe('PENDING');
+            expect(row.reviewedByUserId).toBeNull();
+
+            // POSITIVE CONTROL: an unrelated human still CAN answer it, so the
+            // bar refuses approvers rather than refusing everyone.
+            const third = await recordSampleAuditOutcome(
+                makeRequestContext('OWNER', {
+                    tenantId: TENANT, tenantSlug: TENANT, userId: THIRD_HUMAN,
+                }),
+                audit.id,
+                { outcome: 'CONCURRED' },
+            );
+            expect(third.outcome).toBe('CONCURRED');
+
+            // CLEAN UP THIS TEST'S OWN ROWS. The sibling tests below assert
+            // COUNTS over the suite's audits and the disagreement rate's
+            // denominator, so an extra answered audit left behind makes them
+            // fail by one — which reads as a defect in the rate, not as this
+            // test's litter. Order would also fix it, and is fragile.
+            await prisma.agentProposalSampleAudit.deleteMany({ where: { id: audit.id } });
+            await prisma.agentProposalApproval.deleteMany({ where: { proposalId } });
+            await prisma.agentProposal.deleteMany({ where: { id: proposalId } });
         });
 
         it('a SECOND human records DISSENTED with codes, and the rate moves', async () => {

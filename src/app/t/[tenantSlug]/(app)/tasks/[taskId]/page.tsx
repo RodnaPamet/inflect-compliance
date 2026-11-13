@@ -329,12 +329,12 @@ export default function TaskDetailPage() {
     // owns its own autosave lifecycle.
     const [showEditModal, setShowEditModal] = useState(false);
 
-    // `POST /tasks/:id/comments` asks `tasks.edit`, and
-    // `assertCanCommentOnTasks` refuses a READER and any role without it.
-    // So AUDITOR and AI_ADMIN, whose sets hold no `tasks.edit`, get no comment
-    // box (owner decision, 2026-10-26); the role check alone offered it to
-    // AUDITOR and every save was refused.
-    const canComment = role !== 'READER' && appPermissions.tasks.edit;
+    // `POST /tasks/:id/comments` asks `tasks.edit`, and so does
+    // `assertCanCommentOnTasks` — that key and nothing else (owner decision,
+    // 2026-11-12, #5376). So AUDITOR and AI_ADMIN, whose sets hold no
+    // `tasks.edit`, get no comment box, and a custom role that grants it does,
+    // whatever its base role.
+    const canComment = appPermissions.tasks.edit;
     // `DELETE /tasks/:id` asks `admin.manage` and `deleteTask` asserts the
     // admin tier, so Delete is offered on both, as the Tasks list's bulk
     // delete is. On the write tier alone an EDITOR was offered it and refused

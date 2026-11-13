@@ -40,7 +40,8 @@ describe('Policy detail — Epic 45.3 review wiring', () => {
     it('mounts <ApprovalBanner> only when a PENDING approval can still be decided', () => {
         // Gate: an active PENDING row that can still be decided. The
         // banner stays informational for non-actors (canDecide=false),
-        // and the actions are gated by canAdmin.
+        // and the actions are gated by `canDecideApproval`: the admin tier
+        // AND `policies.approve`, what `assertCanApprovePolicies` asks (#5276).
         //
         // #4127 — "can still be decided" is no longer "the policy is
         // IN_REVIEW": a revision of a PUBLISHED policy is reviewed while the
@@ -52,7 +53,7 @@ describe('Policy detail — Epic 45.3 review wiring', () => {
             /\{pendingApproval && \([\s\S]{0,40}<ApprovalBanner/,
         );
         expect(source).toMatch(/!isApprovalDecidable\(publication, \{ status: pending\.status/);
-        expect(source).toMatch(/canDecide=\{canAdmin\}/);
+        expect(source).toMatch(/canDecide=\{canDecideApproval\}/);
     });
 
     it('finds the most recent PENDING approval and surfaces version metadata to the banner', () => {

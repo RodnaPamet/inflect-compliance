@@ -689,6 +689,21 @@ describe('task detail — delete, comments and the reviewer (owner decisions, 20
         expect(document.getElementById('comment-body')).toBeNull();
     });
 
+    it('a custom role over Reader that grants tasks.edit gets the comment box (#5376)', async () => {
+        // Commenting takes `tasks.edit` alone (owner decision, 2026-11-12):
+        // the base role no longer decides, on the server or here.
+        const reader = getPermissionsForRole('READER');
+        mockViewer = {
+            role: 'READER',
+            permissions: { canWrite: false, canAdmin: false },
+            appPermissions: { ...reader, tasks: { ...reader.tasks, edit: true } },
+        };
+        renderPage();
+        await waitForTaskLoaded();
+        await openComments();
+        await waitFor(() => expect(document.getElementById('comment-body')).not.toBeNull());
+    });
+
     it('a Reader sees who the reviewer is, without the picker', async () => {
         viewAs('READER');
         renderPage();

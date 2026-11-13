@@ -580,6 +580,18 @@ export default function PolicyDetailPage() {
     const versions = policy.versions || [];
     const canWrite = tenant.permissions.canWrite;
     const canAdmin = tenant.permissions.canAdmin;
+    // Each policy action asks the coarse tier AND the policy key its usecase
+    // asserts (#5276), as the list page does (#4279). The tier alone offered
+    // a custom role without `policies.edit` or `policies.approve` every
+    // button, and every click was refused with an AUTHZ_DENIED row.
+    //   - edit: `assertCanWritePolicies` (versions, approval requests, review)
+    //   - lifecycle: `assertCanAdminPolicies` (publish, rollback, restore)
+    //   - archive: that, and the route's `admin.manage`
+    //   - decide: `assertCanApprovePolicies`
+    const canEditPolicy = canWrite && tenant.appPermissions.policies.edit;
+    const canManagePolicy = canAdmin && tenant.appPermissions.policies.edit;
+    const canArchivePolicy = canManagePolicy && tenant.appPermissions.admin.manage;
+    const canDecideApproval = canAdmin && tenant.appPermissions.policies.approve;
     // A1 — client-side separation-of-duties: a reviewer may not approve a
     // change they requested OR authored. Mirrors the server-side refusal in
     // decidePolicyApproval so the button is disabled before the round-trip.
@@ -632,7 +644,7 @@ export default function PolicyDetailPage() {
      * live version).
      */
     const canRequestApprovalFor = (v: PolicyVersionDTO) =>
-        canWrite &&
+        canEditPolicy &&
         !policyHasPending &&
         policy.status !== 'ARCHIVED' &&
         v.id !== live?.id &&
@@ -647,7 +659,7 @@ export default function PolicyDetailPage() {
      * version still carried an APPROVED row, and every click was refused.
      * `publishableVersionId` is the server's own rule.
      */
-    const canPublishNow = canAdmin && !!publishableId;
+    const canPublishNow = canManagePolicy && !!publishableId;
     const publishableVersion = versions.find((v) => v.id === publishableId) ?? null;
     /**
      * Publish without approval publishes the NEWEST version. Not offered when
@@ -656,7 +668,7 @@ export default function PolicyDetailPage() {
      * APPROVED policy's publish to its approved version even with a bypass.
      */
     const canBypassPublish =
-        canAdmin &&
+        canManagePolicy &&
         !!newest &&
         policy.status !== 'ARCHIVED' &&
         policy.status !== 'APPROVED' &&
@@ -676,7 +688,7 @@ export default function PolicyDetailPage() {
     const currentGuide: { variant: 'success' | 'info'; title: string; body: string } | null =
         canPublishNow && publishableVersion
             ? { variant: 'success', title: t('detail.guideApprovedTitle'), body: t('detail.guideApprovedBody', { n: publishableVersion.versionNumber }) }
-            : canWrite && policy.status === 'DRAFT'
+            : canEditPolicy && policy.status === 'DRAFT'
               ? { variant: 'info', title: t('detail.guideDraftTitle'), body: t('detail.guideDraftBody') }
               : canRequestApproval && live && requestTarget
                 ? {
@@ -694,7 +706,7 @@ export default function PolicyDetailPage() {
         { key: 'traceability', label: t('detail.tabTraceability') },
         { key: 'acknowledgements', label: t('detail.tabAcknowledgements') },
         { key: 'tasks', label: t('detail.tabTasks') },
-        ...(canWrite ? ([{ key: 'editor' as const, label: t('detail.tabEditor') }]) : []),
+        ...(canEditPolicy ? ([{ key: 'editor' as const, label: t('detail.tabEditor') }]) : []),
         { key: 'activity', label: t('detail.tabActivity') },
     ];
 
@@ -808,7 +820,7 @@ export default function PolicyDetailPage() {
                         policy could not be edited, reviewed or published, so it
                         was effectively destroyed by a single unconfirmed
                         click. Offered on the same tier that archived it. */}
-                    {canAdmin && policy.status === 'ARCHIVED' && (
+                    {canManagePolicy && policy.status === 'ARCHIVED' && (
                         <Button variant="secondary" size="sm" onClick={unarchivePolicyAction} disabled={!!actionLoading} id="unarchive-btn">
                             {actionLoading === 'unarchive' ? t('detail.restoring') : t('detail.restoreFromArchive')}
                         </Button>
@@ -823,13 +835,13 @@ export default function PolicyDetailPage() {
                             {t('detail.publishWithoutApproval')}
                         </Button>
                     )}
-                    {canWrite && policy.status !== 'ARCHIVED' && (
+                    {canEditPolicy && policy.status !== 'ARCHIVED' && (
                         <button onClick={() => {
                             setTab('editor');
                             seedEditor(newest);
                         }} className={buttonVariants({ variant: 'primary' })} id="new-version-btn"><Plus className="-ml-0.5 -mr-2.5" />{t('detail.version')}</button>
                     )}
-                    {canAdmin && policy.status !== 'ARCHIVED' && (
+                    {canArchivePolicy && policy.status !== 'ARCHIVED' && (
                         <Button variant="ghost" size="sm" className="text-content-muted hover:text-content-error" onClick={() => setArchiveOpen(true)} disabled={actionLoading === 'archive'} loading={actionLoading === 'archive'} id="archive-btn">
                             {t('detail.archive')}
                         </Button>
@@ -841,14 +853,14 @@ export default function PolicyDetailPage() {
                 approval row is PENDING and can still be decided: the
                 policy is IN_REVIEW, or it is PUBLISHED and the request is
                 for a revision (`pendingApproval` holds that check).
-                Reviewer-only actions are gated by `canAdmin`;
+                Reviewer-only actions are gated by `canDecideApproval`;
                 non-reviewers still see status + requester so the page is
                 informative. The reviewer's comment travels with the
                 decision. */}
             {pendingApproval && (
                 <ApprovalBanner
                     approval={pendingApproval}
-                    canDecide={canAdmin}
+                    canDecide={canDecideApproval}
                     currentUserId={currentUserId}
                     busy={!!actionLoading && actionLoading.startsWith('decide-')}
                     onDecide={(approvalId, decision, comment) =>
@@ -882,7 +894,7 @@ export default function PolicyDetailPage() {
                             <span>{t('detail.versionsCount', { count: versions.length })}</span>
                         </div>
                         {/* Review controls */}
-                        {canWrite && !editingReview && (
+                        {canEditPolicy && !editingReview && (
                             <div className="flex items-center gap-default mt-2">
                                 <button onClick={() => setEditingReview(true)} className="text-xs text-[var(--brand-default)] hover:text-[var(--brand-muted)]">
                                     {t('detail.editReviewSchedule')}
@@ -1008,14 +1020,17 @@ export default function PolicyDetailPage() {
                     ) : (
                         <div className="text-center text-content-subtle py-8">
                             <p>{t('detail.versionEmpty')}</p>
-                            {canWrite && <p className="text-sm mt-1">{t('detail.createVersionHint')}</p>}
+                            {canEditPolicy && <p className="text-sm mt-1">{t('detail.createVersionHint')}</p>}
                         </div>
                     )}
                 </div>
             )}
 
             {/* SP-4 — SharePoint link (renders nothing if SharePoint isn't set up) */}
-            {tab === 'current' && (policy.evidenceItems?.length ?? 0) > 0 && (
+            {/* Mounted for a writer with no items yet, so its add control can
+                create the first one (#5278); the checklist hides itself for a
+                reader with nothing to show. */}
+            {tab === 'current' && ((policy.evidenceItems?.length ?? 0) > 0 || canWrite) && (
                 <PolicyEvidenceChecklist
                     policyId={policyId}
                     items={policy.evidenceItems ?? []}
@@ -1036,7 +1051,7 @@ export default function PolicyDetailPage() {
                             <span className="text-sm text-content-muted">
                                 {t('detail.rollbackHint', { count: policy.lifecycleHistoryJson!.length })}
                             </span>
-                            {canAdmin && (
+                            {canManagePolicy && (
                                 <Button variant="secondary" size="sm" onClick={() => setRollbackOpen(true)} disabled={!!actionLoading} id="policy-rollback-btn">
                                     {actionLoading === 'rollback' ? '…' : t('detail.rollback')}
                                 </Button>
@@ -1097,7 +1112,7 @@ export default function PolicyDetailPage() {
                                             row", so a version approved in an earlier
                                             cycle kept the button and every click was
                                             refused. */}
-                                        {canAdmin && v.id === publishableId && (
+                                        {canManagePolicy && v.id === publishableId && (
                                             <Button variant="secondary" size="sm" onClick={() => publishVersion(v.id)} disabled={!!actionLoading} loading={actionLoading === 'publish-' + v.id} id={`publish-version-${v.versionNumber}`}>
                                                 {t('detail.publish')}
                                             </Button>
@@ -1133,12 +1148,12 @@ export default function PolicyDetailPage() {
                                                             one later Reject dropped a LIVE policy to DRAFT and
                                                             stranded its acknowledgements). Show the row, but
                                                             not an action that will be refused. */}
-                                                        {canAdmin && a.status === 'PENDING' && !decidable && (
+                                                        {canDecideApproval && a.status === 'PENDING' && !decidable && (
                                                             <span className="text-xs text-content-subtle" data-testid={`approval-stale-${a.id}`}>
                                                                 {t('detail.approvalNoLongerCurrent')}
                                                             </span>
                                                         )}
-                                                        {canAdmin && decidable && (() => {
+                                                        {canDecideApproval && decidable && (() => {
                                                             // Client-side SoD mirror: block Approve when the viewer
                                                             // requested this approval or authored the version. The
                                                             // requester/author ids come off the nested refs
@@ -1184,7 +1199,7 @@ export default function PolicyDetailPage() {
             )}
 
             {/* ── Editor ── */}
-            {tab === 'editor' && canWrite && (
+            {tab === 'editor' && canEditPolicy && (
                 <div className={cn(cardVariants(), 'space-y-default')}>
                     <div className="flex items-center justify-between">
                         <Heading level={3}>{t('detail.createNewVersion')}</Heading>
@@ -1269,7 +1284,7 @@ export default function PolicyDetailPage() {
                     tenantHref={tenantHref}
                     policyId={policyId}
                     apiUrl={apiUrl}
-                    canWrite={canWrite}
+                    canWrite={canWrite && tenant.appPermissions.controls.edit}
                 />
             )}
             {tab === 'acknowledgements' && (

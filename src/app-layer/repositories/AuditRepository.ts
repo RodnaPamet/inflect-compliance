@@ -53,17 +53,25 @@ export class AuditRepository {
     }
 
     /**
-     * The audit's status, read `FOR UPDATE` so it holds until the update
-     * commits (#4531). A plain read would let a concurrent cancel land between
-     * the read-only check and the write, and the edit would then reach a
-     * cancelled audit. Null when the audit is not this tenant's.
+     * The audit's status, locked so it holds until the update commits (#4531).
+     * A plain read would let a concurrent cancel land between the read-only
+     * check and the write, and the edit would then reach a cancelled audit.
+     * Null when the audit is not this tenant's.
+     *
+     * `FOR NO KEY UPDATE`, never `FOR UPDATE` (#5063). A checklist FAIL
+     * cascades into `createFinding`, which inserts a Finding referencing this
+     * audit in a transaction of its own while this one waits for it. The
+     * insert's foreign-key check takes `FOR KEY SHARE` on this row, which
+     * `FOR UPDATE` blocks and `FOR NO KEY UPDATE` does not; Postgres cannot
+     * see that wait as a deadlock, so it ran to the transaction timeout. A
+     * concurrent cancel still waits: its UPDATE takes the same lock.
      */
     static async lockStatus(db: PrismaTx, ctx: RequestContext, id: string): Promise<{ status: string } | null> {
         const rows = await db.$queryRaw<Array<{ status: string }>>`
             SELECT "status"::text AS "status"
               FROM "Audit"
              WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId}
-               FOR UPDATE`;
+               FOR NO KEY UPDATE`;
         return rows[0] ?? null;
     }
 

@@ -53,6 +53,16 @@ export interface PendingLink {
  */
 export const LINK_ENTITY_TYPES = ['CONTROL', 'FRAMEWORK_REQUIREMENT', 'ASSET', 'RISK', 'EVIDENCE'] as const;
 
+/**
+ * The types offered in the link-type picker. A framework requirement's
+ * candidates are per framework, and this form has no framework selector,
+ * so its picker could only ever be empty (#5129). It stays in
+ * `LINK_ENTITY_TYPES` so a preset requirement link keeps its label.
+ */
+export const SELECTABLE_LINK_ENTITY_TYPES = LINK_ENTITY_TYPES.filter(
+    (type) => type !== 'FRAMEWORK_REQUIREMENT',
+);
+
 // Extra type-conditional fields kept outside Zod (see file
 // header). Combined with NewTaskFormValues for the field surface.
 export interface NewTaskFormExtras {

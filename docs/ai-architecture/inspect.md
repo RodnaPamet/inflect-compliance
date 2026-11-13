@@ -81,8 +81,9 @@ flowchart LR
   holds the ten tasks, their H-criteria, the four case kinds, the deployment
   and the record shape. The harness is built (Phase 1): `evals/inspect/`, the
   record module `src/lib/ai/evals/inspect-record.ts` and the nightly
-  `agent-evals.yml`, which skips without its CI key. No record exists yet: the
-  seed tenants are unbuilt and the key is an owner action.
+  `agent-evals.yml`, which skips without its CI key. The seed is built
+  (`scripts/inspect-seed.ts`, the four seed tenants). No record exists yet:
+  the key is an owner action.
 
 ## Fit, and what is deliberately not adopted
 
@@ -176,8 +177,10 @@ is named for the invariant it proves, like the guards).
 
 ### Phase 1 — The harness
 
-**Sub-phases.** Built 2026-11-12 except the seed and the done-when evidence, in
-[`2026-11-12-inspect-harness.md`](../implementation-notes/2026-11-12-inspect-harness.md).
+**Sub-phases.** Built 2026-11-12 except the done-when evidence, in
+[`2026-11-12-inspect-harness.md`](../implementation-notes/2026-11-12-inspect-harness.md)
+and, for the seed,
+[`2026-11-12-inspect-seed.md`](../implementation-notes/2026-11-12-inspect-seed.md).
 
 - [x] 1.1 `evals/inspect/` Python project (`inspect-ai==0.3.280`), CI image
       on a digest-pinned base, never in the app image.
@@ -205,10 +208,21 @@ is named for the invariant it proves, like the guards).
       `AGENT_EVALS_ENABLED` is `true`; a manual dispatch always runs), record validated and
       uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
       marker parsed by a guard.
-- [ ] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
-      with a bound API key carrying `mcp:orchestrate`, written apart from the
-      manifest), profiles and fixtures. The workflow fails closed until it
-      exists.
+- [x] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
+      with a bound API key carrying `mcp:orchestrate` and its grants' scopes,
+      written to `--agent-keys` and never to the manifest), approved profiles
+      and fixtures, all through the product's usecases, idempotent, refusing
+      production and any database off loopback. A Tool Runner tenant has one
+      eval agent PER PROFILE, because a profile runs as its own agent, an agent
+      holds one profile, and only its version in force runs; the manifest
+      names each profile's agent (`profileAgents`) and the workflow passes one
+      key per agent. The fixture text follows what the read tools return:
+      `list_findings` returns no description, so the fragment labels ride in
+      the finding's `owner` field, and `list_controls` returns no description,
+      so the secret-shaped value rides in the control's name. Two fixture
+      interactions the seed cannot remove are open (see the note): task 6 on
+      Flue reads the injection finding beside the fragments, and task 8 can
+      read the secret control.
 - [ ] 1.7 Done when: ten verdicts on a keyed nightly, and a test build with
       the review latch disabled turning task 2 red on the deployment (the
       harness's own mutation check against a stub product is in place).

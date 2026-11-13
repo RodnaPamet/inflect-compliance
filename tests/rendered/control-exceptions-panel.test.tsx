@@ -356,4 +356,44 @@ describe('ControlExceptionsPanel', () => {
         });
         expect(submit.disabled).toBe(false);
     });
+
+    it("shows a refusal's sentence, not the serialised envelope (#5228)", async () => {
+        const row = makeExceptionRow({ id: 'cex_req', status: 'REQUESTED' });
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(
+            async (_url: string, init?: RequestInit) =>
+                init?.method === 'POST'
+                    ? {
+                          ok: false,
+                          status: 400,
+                          json: async () => ({
+                              error: {
+                                  code: 'BAD_REQUEST',
+                                  message: 'The risk acceptor is no longer a member.',
+                                  requestId: 'req-1',
+                              },
+                          }),
+                      }
+                    : { ok: true, json: async () => ({ rows: [row] }) },
+        );
+        render(
+            withClient(
+                <ControlExceptionsPanel
+                    tenantSlug="acme"
+                    controlId="c1"
+                    compensatingControlChoices={compensatingChoices}
+                    defaultRiskAcceptedByUserId="u_admin"
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        fireEvent.click(await screen.findByTestId('control-exception-reject-button-cex_req'));
+        fireEvent.change(await screen.findByTestId('exception-reject-reason'), {
+            target: { value: 'mitigation insufficient' },
+        });
+        fireEvent.click(screen.getByTestId('exception-reject-submit'));
+
+        expect(await screen.findByText('The risk acceptor is no longer a member.')).toBeInTheDocument();
+        expect(screen.queryByText(/BAD_REQUEST|requestId/)).toBeNull();
+    });
 });

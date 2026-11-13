@@ -34,6 +34,8 @@ let keyRisksB = '';
 let keyControlsOnly = ''; // tenant A: mcp:read + controls:read (NO risks:read)
 let keyFrameworksA = ''; // tenant A: mcp:read + frameworks:read
 let keyEveryDomainA = ''; // tenant A: mcp:read + every domain read scope
+let keyFindingsOnlyA = ''; // tenant A: mcp:read + findings:read (NO audits scope)
+let keyAuditsOnlyA = ''; // tenant A: mcp:read + audits:read (NO findings scope)
 
 async function mintKey(tenantId: string, userId: string, scopes: string[]): Promise<string> {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
@@ -129,8 +131,12 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         // AUTHZ_DENIED rows and buries the signal they exist for.
         keyEveryDomainA = await mintKey(TENANT_A, userA, [
             'mcp:read', 'risks:read', 'controls:read', 'frameworks:read',
-            'evidence:read', 'audits:read', 'tasks:read',
+            'evidence:read', 'findings:read', 'tasks:read',
         ]);
+        // #5409: `list_findings` is a findings-domain tool. These two keys are
+        // the pair that tells the findings scope from the audits scope.
+        keyFindingsOnlyA = await mintKey(TENANT_A, userA, ['mcp:read', 'findings:read']);
+        keyAuditsOnlyA = await mintKey(TENANT_A, userA, ['mcp:read', 'audits:read']);
 
         const fw = await prisma.framework.create({
             data: { key: FW_KEY, version: '1', name: 'MCP RS Test Framework', kind: 'NIST_FRAMEWORK', description: 'x' },
@@ -249,6 +255,40 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
             // funnel routed. What it contains is this tenant's business.
             expect(Array.isArray(toolResult(json))).toBe(true);
         }
+    });
+
+    /**
+     * `list_findings` checks the FINDINGS scope, not the audits one (#5409).
+     *
+     * The tool's resource scope and its `findings.view` key (evaluated against
+     * the KEY's own permissions, `basis: 'effective'`) both come from
+     * `findings:read`. A key holding only `audits:read` reaches audits and
+     * nothing in the findings register, so it is refused in-band and the tool
+     * is not advertised to it. Both directions, or a gate that admitted every
+     * key would pass.
+     */
+    it('list_findings answers a findings:read key and refuses an audits:read key', async () => {
+        const allowed = await rpc(keyFindingsOnlyA, {
+            jsonrpc: '2.0', id: 31, method: 'tools/call',
+            params: { name: 'list_findings', arguments: { limit: 1 } },
+        });
+        expect(Array.isArray(toolResult(allowed.json))).toBe(true);
+
+        const refused = await rpc(keyAuditsOnlyA, {
+            jsonrpc: '2.0', id: 32, method: 'tools/call',
+            params: { name: 'list_findings', arguments: { limit: 1 } },
+        });
+        expect(refused.status).toBe(200);
+        const r = refused.json as { error?: { message: string }; result?: unknown };
+        expect(r.result).toBeUndefined();
+        expect(r.error?.message).toMatch(/scope/i);
+
+        const listed = async (token: string) => {
+            const { json } = await rpc(token, { jsonrpc: '2.0', id: 33, method: 'tools/list' });
+            return (json as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
+        };
+        expect(await listed(keyFindingsOnlyA)).toContain('list_findings');
+        expect(await listed(keyAuditsOnlyA)).not.toContain('list_findings');
     });
 
     /**

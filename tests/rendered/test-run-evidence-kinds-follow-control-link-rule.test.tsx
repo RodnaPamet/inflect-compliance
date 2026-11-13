@@ -78,9 +78,12 @@ const RUN = {
     createdAt: '2026-10-01T00:00:00.000Z',
 };
 
+// GET /evidence answers with the capped `{ rows, truncated }` envelope.
+let mockEvidenceBody: unknown = { rows: [], truncated: false };
+
 jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (key: string | null) => ({
-        data: key === '/tests/runs/run_1' ? RUN : key === '/evidence' ? [] : undefined,
+        data: key === '/tests/runs/run_1' ? RUN : key === '/evidence' ? mockEvidenceBody : undefined,
         isLoading: false,
         error: undefined,
         mutate: jest.fn(),
@@ -121,6 +124,7 @@ async function offeredKinds(select: HTMLElement): Promise<string[]> {
 
 beforeEach(() => {
     mockControlsEdit = true;
+    mockEvidenceBody = { rows: [], truncated: false };
 });
 
 describe('test run — the evidence kinds follow the control-link rule', () => {
@@ -137,5 +141,16 @@ describe('test run — the evidence kinds follow the control-link rule', () => {
         // It starts on the one kind it may use, not on an upload it would be refused.
         expect(document.getElementById('evidence-file-input')).toBeNull();
         expect(await offeredKinds(select)).toEqual([KIND.evidence]);
+    });
+
+    it('library evidence lists the rows of the capped /evidence reply (#5126)', async () => {
+        mockControlsEdit = false;
+        mockEvidenceBody = { rows: [{ id: 'ev_1', title: 'SOC 2 Type II report' }], truncated: false };
+        await openEvidenceForm();
+        const picker = document.getElementById('evidence-id-input') as HTMLElement;
+        await act(async () => {
+            fireEvent.click(picker);
+        });
+        expect(await screen.findByRole('option', { name: /SOC 2 Type II report/ })).toBeTruthy();
     });
 });

@@ -40,7 +40,7 @@ import { createHash } from 'crypto';
 import { PrismaClient, OrgAuditAction } from '@prisma/client';
 import * as prismaModule from '../prisma';
 import { computeOrgEntryHash } from './org-canonical-hash';
-import { toCanonicalTimestamp } from './canonical-hash';
+import { nextChainTimestamp, toCanonicalTimestamp, toStoredAuditJson } from './canonical-hash';
 import { AUDIT_APPEND_TX_OPTIONS } from '../db/concurrency-limits';
 
 /**
@@ -114,7 +114,9 @@ export async function appendOrgAuditEntry(
     // detailsJson canonicalisation — null when caller omitted it so
     // the hash is stable across "explicit null" and "undefined" call
     // shapes.
-    const detailsForHash: unknown = input.detailsJson ?? null;
+    // Normalised to its stored form, so the hash covers exactly what is
+    // stored (#5069).
+    const detailsForHash: unknown = toStoredAuditJson(input.detailsJson ?? null);
     const targetUserId = input.targetUserId ?? null;
 
     const db = client || getDefaultPrisma();
@@ -145,19 +147,23 @@ export async function appendOrgAuditEntry(
             'org:' + input.organizationId,
         );
 
-        // 2. Timestamp AFTER lock so concurrent appends serialize
-        //    with strictly-monotonic occurredAt within an org.
-        const occurredAt = toCanonicalTimestamp(new Date());
-
-        // 3. Latest entryHash for this org chain
-        const lastRows: Array<{ entryHash: string }> = await tx.$queryRawUnsafe(
-            `SELECT "entryHash" FROM "OrgAuditLog"
+        // 2. Latest entryHash for this org chain
+        const lastRows: Array<{ entryHash: string; occurredAtMs: number }> = await tx.$queryRawUnsafe(
+            `SELECT "entryHash",
+                    (EXTRACT(EPOCH FROM "occurredAt") * 1000)::float8 AS "occurredAtMs"
+             FROM "OrgAuditLog"
              WHERE "organizationId" = $1
              ORDER BY "occurredAt" DESC, "id" DESC
              LIMIT 1`,
             input.organizationId,
         );
         const previousHash: string | null = lastRows.length > 0 ? lastRows[0].entryHash : null;
+
+        // 3. Timestamp AFTER the lock and strictly after the predecessor
+        //    (#5180): serialised appends inside one millisecond used to
+        //    share an occurredAt, and the id tie-break could walk them in
+        //    the opposite order to the one they were chained in.
+        const occurredAt = toCanonicalTimestamp(nextChainTimestamp(lastRows[0]?.occurredAtMs));
 
         // 4. Compute entry hash
         const entryHash = computeOrgEntryHash({

@@ -34,7 +34,8 @@ import type {
 // platform because `./pagination-utils` owns that name on the barrel.
 import type { PaginationState } from "@tanstack/react-table";
 import { Dispatch, HTMLAttributes, MouseEvent, ReactNode, SetStateAction, useEffect, useRef, useState } from "react";
-import { type BatchAction, renderBatchActions } from "./selection-toolbar";
+import { type BatchAction, renderBatchActions, SelectionToolbar } from "./selection-toolbar";
+import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 import { Table, useTable } from "./table";
 import { cn } from "./table-utils";
 import type { UseTableProps } from "./types";
@@ -688,17 +689,40 @@ export function DataTable<T extends TableRowData>({
   // justified.
   const collapsesToCards = (mobileFallback ?? "card") === "card";
 
+  // The bulk-action bar and the load-on-scroll sentinel used to live in
+  // `<Table>` alone, so the card view (a phone) and the virtualized view (a
+  // list that loads past the threshold mid-session) let rows be ticked with
+  // no bar to act on them (#5230), and the card view stopped after its first
+  // batch (#5229). Both branches now render them too. The bar is the same
+  // overlay `<Table>` mounts, positioned over the top of the list.
+  const selectionToolbar =
+    (selectionEnabled ?? true) ? (
+      <SelectionToolbar
+        table={table}
+        controls={effectiveSelectionControls}
+        className="absolute left-0 top-0 z-30 rounded-t-[inherit]"
+      />
+    ) : null;
+
   if (belowMd && collapsesToCards && data.length > 0 && !error && !loading) {
     return (
-      <div id={dataTestId} data-testid={dataTestId} className={wrapperClassName}>
+      <div id={dataTestId} data-testid={dataTestId} className={cn(wrapperClassName, "relative")}>
+        {selectionToolbar}
         <DataTableCards<T> table={table} onRowClick={onRowClick} />
+        {onReachEnd && (
+          <InfiniteScrollSentinel
+            onReachEnd={onReachEnd}
+            testId="cards-infinite-scroll-sentinel"
+          />
+        )}
       </div>
     );
   }
 
   if (useVirtual) {
     return (
-      <div id={dataTestId} data-testid={dataTestId} className={wrapperClassName}>
+      <div id={dataTestId} data-testid={dataTestId} className={cn(wrapperClassName, "relative")}>
+        {selectionToolbar}
         <VirtualTable<T>
           table={table}
           rowHeight={virtualRowHeight}

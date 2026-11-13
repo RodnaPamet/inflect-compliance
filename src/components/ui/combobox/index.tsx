@@ -43,7 +43,7 @@
  */
 
 import { cn } from "@inflect/ui/lib/cn";
-import { Command, useCommandState } from "cmdk";
+import { Command, defaultFilter, useCommandState } from "cmdk";
 import { ChevronDown } from "lucide-react";
 import { useTranslations } from "next-intl";
 import * as React from "react";
@@ -57,6 +57,7 @@ import {
     ReactNode,
     useCallback,
     useEffect,
+    useMemo,
     useState,
 } from "react";
 import { AnimatedSizeContainer } from "../animated-size-container";
@@ -519,6 +520,23 @@ export function Combobox<
                   />
               );
 
+    // Epic 68's virtualized branch bypasses cmdk's item registry, so cmdk
+    // never filters it: past the threshold, typing changed nothing (#5286).
+    // Filter and rank here with cmdk's own scorer, over the same string the
+    // `Command.Item`s register (`label + value`), so both branches agree.
+    const virtualizedOptions = useMemo(() => {
+        if (!sortedOptions || !shouldFilter || search === "") return sortedOptions;
+        return sortedOptions
+            .map((option, index) => ({
+                option,
+                index,
+                score: defaultFilter(option.label + option.value, search),
+            }))
+            .filter(({ score }) => score > 0)
+            .sort((a, b) => b.score - a.score || a.index - b.index)
+            .map(({ option }) => option);
+    }, [sortedOptions, shouldFilter, search]);
+
     const showLoading = loading || sortedOptions === undefined;
 
     return (
@@ -664,7 +682,7 @@ export function Combobox<
                                         // search input.
                                         <>
                                             <VirtualizedComboboxOptions<TMeta>
-                                                options={sortedOptions!}
+                                                options={virtualizedOptions!}
                                                 selected={selected}
                                                 onSelect={handleSelect}
                                                 multiple={isMultiple}

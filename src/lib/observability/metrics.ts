@@ -825,7 +825,14 @@ function getScimAuth() {
  */
 export function recordScimAuth(attrs: {
     outcome: 'success' | 'failure';
-    reason: 'ok' | 'missing_header' | 'empty_token' | 'not_found' | 'revoked';
+    reason:
+        | 'ok'
+        | 'missing_header'
+        | 'empty_token'
+        | 'not_found'
+        | 'revoked'
+        /** The token is live but its tenant has been removed (#5184). */
+        | 'tenant_deleted';
 }): void {
     getScimAuth().add(1, { outcome: attrs.outcome, reason: attrs.reason });
 }

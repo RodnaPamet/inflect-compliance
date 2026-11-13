@@ -18,9 +18,17 @@
  * — it is the same judgement twice, and it would drive the disagreement rate to
  * zero exactly in the tenants where rubber-stamping is worst, because there the
  * approver is also the only person looking. So `recordSampleAuditOutcome`
- * refuses when the caller is the proposal's `reviewedByUserId`, writes a
- * hash-chained `AUTHZ_DENIED` row, and returns a 403 naming the condition and
- * nothing else.
+ * refuses when the caller is ANY of the proposal's approvers — its recorded
+ * `reviewedByUserId` or the holder of any counted `AgentProposalApproval`
+ * signature — writes a hash-chained `AUTHZ_DENIED` row, and returns a 403
+ * naming the condition and nothing else.
+ *
+ * READING `reviewedByUserId` ALONE IS NOT ENOUGH, and that was the bug (#5112).
+ * Only the FINAL signer of a multi-approver proposal is written there; the
+ * earlier signatures live in `AgentProposalApproval`. So the first signer of a
+ * two-approver proposal could answer the audit of their own approval, and the
+ * sampler draws by status with no `requiredApprovals` filter, so those
+ * proposals are in scope by default.
  *
  * That refusal is a 403 rather than a 400 for the reason `refuseExpired` is:
  * it is a statement about who has the authority to answer, not about the shape
@@ -211,13 +219,49 @@ export async function recordSampleAuditOutcome(
                 id: true,
                 outcome: true,
                 proposalId: true,
-                proposal: { select: { reviewedByUserId: true } },
+                proposal: {
+                    select: {
+                        reviewedByUserId: true,
+                        /*
+                            EVERY COUNTED SIGNATURE, not just the final one (#5112).
+
+                            At the two-approver rung `approveAgentProposal` records
+                            each signature in `AgentProposalApproval` and writes only
+                            the LAST signer to `AgentProposal.reviewedByUserId`. So a
+                            check against that column alone let the FIRST signer of a
+                            two-approver proposal answer the retrospective audit of
+                            their own approval — on exactly the proposals held to the
+                            highest bar, and pushing the ASI09 disagreement rate
+                            toward zero there.
+
+                            `outcome` is filtered to the two values the model's own
+                            docstring says "count toward the requirement": a REJECTED
+                            signature is not an approval (and a rejected proposal is
+                            never drawn, since the sampler takes ACCEPTED/EDITED), and
+                            a PENDING row records no judgement to be re-made.
+                        */
+                        approvals: {
+                            where: { outcome: { in: ['ACCEPTED', 'EDITED'] } },
+                            select: { approverUserId: true },
+                        },
+                    },
+                },
             },
         }),
     );
     if (!audit) throw notFound('Sample audit not found');
 
-    if (audit.proposal.reviewedByUserId && audit.proposal.reviewedByUserId === ctx.userId) {
+    // The caller is barred if they are the recorded final reviewer OR hold any
+    // counted signature on the proposal. Both are "the approver" for the purpose
+    // of the control; the two are distinguished only in the audit row below, so a
+    // reader can tell a single-approver self-review from a first-signer one.
+    const isFinalReviewer =
+        audit.proposal.reviewedByUserId !== null
+        && audit.proposal.reviewedByUserId === ctx.userId;
+    const heldASignature = audit.proposal.approvals.some(
+        (a) => a.approverUserId === ctx.userId,
+    );
+    if (isFinalReviewer || heldASignature) {
         await appendAuditEntry({
             tenantId: ctx.tenantId,
             userId: ctx.userId,
@@ -231,6 +275,11 @@ export async function recordSampleAuditOutcome(
                 event: 'authz_denied',
                 reason: 'sample_audit_self_review',
                 proposalId: audit.proposalId,
+                // Which of the two conditions matched. A first-signer refusal
+                // and a sole-approver refusal are the same verdict and
+                // different facts, and the row is the only place to tell them
+                // apart — the 403 names the condition and nothing else.
+                basis: isFinalReviewer ? 'reviewed_by' : 'recorded_signature',
             },
             metadataJson: { role: ctx.role, proposalId: audit.proposalId },
         }).catch(() => undefined);

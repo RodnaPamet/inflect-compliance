@@ -81,12 +81,32 @@ CREATE POLICY tenant_isolation_insert ON "Evidence"
 -- Control (nullable tenantId — global controls have NULL tenantId)
 ALTER TABLE "Control" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Control" FORCE ROW LEVEL SECURITY;
+-- ONE ASYMMETRIC POLICY, NOT THE SPLIT PAIR (#5241).
+--
+-- This stanza used to recreate the shape migration
+-- 20260806120000_control_rls_single_asymmetric_policy REMOVED as a leak:
+--
+--   tenant_isolation        FOR ALL    USING ("tenantId" IS NULL OR own)
+--   tenant_isolation_insert FOR INSERT WITH CHECK (own)
+--
+-- A FOR ALL policy with no WITH CHECK takes its USING clause as the check, so
+-- the pair let an app_user session UPDATE a global (tenantId NULL) row every
+-- tenant reads, and set its own row's tenantId to NULL — publishing it into
+-- every tenant's library. The INSERT-only policy does not constrain UPDATE.
+--
+-- This file calls itself "fully IDEMPOTENT — safe to re-run at any time", so an
+-- operator replaying it to REPAIR RLS would have reopened the hole the
+-- migration closed. Keep this identical to that migration.
+DROP POLICY IF EXISTS tenant_isolation_insert ON "Control";
 DROP POLICY IF EXISTS tenant_isolation ON "Control";
 CREATE POLICY tenant_isolation ON "Control"
-    USING ("tenantId" IS NULL OR "tenantId" = current_setting('app.tenant_id', true)::text);
-DROP POLICY IF EXISTS tenant_isolation_insert ON "Control";
-CREATE POLICY tenant_isolation_insert ON "Control"
-    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+    USING (
+        "tenantId" IS NULL
+        OR "tenantId" = current_setting('app.tenant_id', true)::text
+    )
+    WITH CHECK (
+        "tenantId" = current_setting('app.tenant_id', true)::text
+    );
 
 -- Asset
 ALTER TABLE "Asset" ENABLE ROW LEVEL SECURITY;
@@ -630,7 +650,7 @@ DROP POLICY IF EXISTS allow_all ON "PolicyApproval";
 -- ═══════════════════════════════════════════════════════════════════
 -- TABLES WITHOUT tenantId (handled in rls-fix.sql with USING(true))
 -- ═══════════════════════════════════════════════════════════════════
--- PolicyAcknowledgement                                 → deferred: need tenantId via migration
+-- PolicyAcknowledgement                                 → isolated via EXISTS on PolicyVersion (20260422180000)
 -- FrameworkMapping                                      → global by design (cross-tenant mapping)
 
 -- ═══════════════════════════════════════════════════════════════════

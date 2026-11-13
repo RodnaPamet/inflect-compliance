@@ -40,6 +40,33 @@ class SeedManifest:
     markers: Dict[str, str] = field(default_factory=dict)  # taskId → fixture marker
 
 
+def seed_for(tenant: Dict[str, Any], task: Dict[str, Any], engine: str) -> SeedManifest:
+    """The seed one sample runs with, naming the agent its run binds.
+
+    A Flue run binds the tenant's eval agent (``agentId``). A profile run binds
+    the agent its profile runs as (``profileAgents``): the product refuses a key
+    that speaks for another agent (``PROFILE_AGENT_MISMATCH``), an agent holds
+    one profile, and only its version in force runs, so a Tool Runner tenant
+    has one eval agent per profile. Task 3's kill and task 5's grants read
+    refer to that same agent.
+    """
+    arm = task["engines"][engine]
+    if "notApplicable" in arm:
+        raise ValueError(f"{task['id']} is n/a on {engine}; the set decides that, never a run")
+    if "profileFixture" in arm:
+        agent_id = (tenant.get("profileAgents") or {}).get(arm["profileFixture"])
+    else:
+        agent_id = tenant.get("agentId")
+    if not isinstance(agent_id, str) or not agent_id:
+        raise ValueError(f"the seed manifest names no agent for {task['id']} on {engine}")
+    return SeedManifest(agent_id=agent_id, profiles=dict(tenant.get("profiles") or {}), markers=dict(tenant.get("markers") or {}))
+
+
+def agent_key_env(slug: str, agent_id: str) -> str:
+    """The variable the workflow puts an agent's bound key in: one per (tenant, agent)."""
+    return "INSPECT_AGENT_KEY_" + re.sub(r"[^A-Z0-9]", "_", f"{slug}_{agent_id}".upper())
+
+
 @dataclass
 class Clock:
     now_ms: Callable[[], int] = lambda: int(time.time() * 1000)

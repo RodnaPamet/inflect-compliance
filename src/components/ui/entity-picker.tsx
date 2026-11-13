@@ -74,7 +74,7 @@ interface CandidateRow {
     label: string;
 }
 
-interface FetchedCandidate {
+export interface FetchedCandidate {
     id: string;
     [k: string]: unknown;
 }
@@ -165,6 +165,39 @@ function rowsFromResponse(
 }
 
 /**
+ * The parts of a framework tree node (`FrameworkTreeNode` in
+ * `@/lib/framework-tree/types`) the picker reads, declared structurally so
+ * this shared-UI file takes no import from the domain layer.
+ */
+export interface TreeNodeLike {
+    id: string;
+    kind: string;
+    label: string;
+    code?: string;
+    title: string;
+    children?: readonly TreeNodeLike[];
+}
+
+/**
+ * Every `requirement` node of a framework tree, depth first, as picker
+ * rows. Section nodes are synthesised groupings with no
+ * `FrameworkRequirement` row, so they are never offered.
+ */
+export function requirementRowsOf(nodes: readonly TreeNodeLike[]): FetchedCandidate[] {
+    const out: FetchedCandidate[] = [];
+    const walk = (list: readonly TreeNodeLike[]) => {
+        for (const n of list) {
+            if (n.kind === 'requirement') {
+                out.push({ id: n.id, code: n.code ?? n.label, title: n.title });
+            }
+            if (n.children?.length) walk(n.children);
+        }
+    };
+    walk(nodes);
+    return out;
+}
+
+/**
  * Per-type fetch routine. Returns a Promise of an array of
  * `FetchedCandidate` rows. Callers needn't know which API path is
  * involved — the picker hides that detail.
@@ -241,14 +274,19 @@ async function fetchCandidates(
         const res = await fetch(url, { credentials: 'same-origin' });
         if (!res.ok) return [];
         const json = await res.json();
-        // Tenant list APIs return `{ rows }`; framework tree returns
-        // `{ requirements }`. Normalise.
+        // Tenant list APIs return `{ rows }`. The framework tree returns a
+        // `FrameworkTreePayload` (`{ framework, nodes, totals }`) with the
+        // requirements nested in `nodes`. This read a top-level
+        // `requirements` the route never sends, so the list was always
+        // empty (#5129).
+        if (kind === 'FRAMEWORK_REQUIREMENT') {
+            return json && Array.isArray(json.nodes)
+                ? requirementRowsOf(json.nodes as TreeNodeLike[])
+                : [];
+        }
         if (Array.isArray(json)) return json as FetchedCandidate[];
         if (json && Array.isArray(json.rows)) {
             return json.rows as FetchedCandidate[];
-        }
-        if (json && Array.isArray(json.requirements)) {
-            return json.requirements as FetchedCandidate[];
         }
         return [];
     } catch {

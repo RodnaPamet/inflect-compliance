@@ -223,4 +223,28 @@ describe('BIA register — labels and truncation (#4632)', () => {
         const banner = getByTestId('list-truncation-banner').textContent ?? '';
         expect(banner).toContain('They are the first in recovery order');
     });
+
+    it('refuses an RTO that is not whole hours, rather than clearing it (#5162)', async () => {
+        const { container, findByText } = render(
+            <Wrapper><BiaDetailClient bia={DETAIL} tenantSlug="acme" canWrite /></Wrapper>,
+        );
+        await act(async () => { fireEvent.click(container.querySelector('#bia-edit-btn') as Element); });
+        const rto = document.getElementById('bia-edit-rto') as HTMLInputElement;
+        fireEvent.change(rto, { target: { value: '48h' } });
+
+        expect(await findByText('Enter whole hours, zero or more.')).toBeInTheDocument();
+        const save = document.getElementById('bia-edit-save') as HTMLButtonElement;
+        expect(save.disabled).toBe(true);
+        await act(async () => { fireEvent.click(save); });
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+
+        // Whole hours save; blank clears the objective.
+        fireEvent.change(rto, { target: { value: '48' } });
+        fireEvent.change(document.getElementById('bia-edit-rpo') as HTMLInputElement, { target: { value: '' } });
+        expect(save.disabled).toBe(false);
+        await act(async () => { fireEvent.click(save); });
+        const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+        expect(put).toBeDefined();
+        expect(JSON.parse(String(put![1].body))).toMatchObject({ rtoHours: 48, rpoHours: null, mtpdHours: 24 });
+    });
 });

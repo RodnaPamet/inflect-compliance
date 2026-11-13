@@ -1317,7 +1317,8 @@ export default function ControlDetailPage() {
                         apiBase={apiUrl('')}
                         entityType="control"
                         entityId={controlId}
-                        canWrite={canEditControl}
+                        canLinkControlRisk={canEditControl}
+                        canLinkAsset={permissions.canWrite && appPermissions.assets.edit}
                         tenantHref={tenantHref}
                     />
                     <div className="border-t border-border-subtle pt-default">

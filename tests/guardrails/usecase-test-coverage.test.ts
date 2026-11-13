@@ -47,9 +47,8 @@ const TEST_DIRS = [
  * goes down.
  */
 const EXEMPTIONS: Record<string, string> = {
-    // Q3 — Reports + cross-domain
-    'src/app-layer/usecases/notification.ts':
-        'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
+    // Empty since 2026-11-12: report.ts and notification.ts, the last
+    // two entries, both earned a direct test in #5376.
 };
 
 const EXEMPTION_COUNT = Object.keys(EXEMPTIONS).length;
@@ -162,9 +161,11 @@ describe('every usecase file has an importing test', () => {
         // unnoticed. The stale-exemption test below is the half that
         // was missing.
         //
-        // 2 → 1 on 2026-11-12: `report.ts` earned an integration test
-        // (tests/integration/report-risk-register-usecase.test.ts, #5376).
-        const BASELINE = 1;
+        // 2 → 0 on 2026-11-12 (#5376): `report.ts` earned an integration
+        // test (tests/integration/report-risk-register-usecase.test.ts) and
+        // `notification.ts` another
+        // (tests/integration/notification-per-user-scope.test.ts).
+        const BASELINE = 0;
         expect(EXEMPTION_COUNT).toBeLessThanOrEqual(BASELINE);
     });
 
