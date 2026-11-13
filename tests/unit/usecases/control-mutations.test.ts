@@ -318,7 +318,16 @@ describe('deleteControl', () => {
     it('emits SOFT_DELETE audit on success', async () => {
         const deleteSpy = jest.fn();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
-            fn({ control: { delete: deleteSpy } } as never),
+            fn({
+                control: { delete: deleteSpy },
+                // The RESTRICT children `deleteControl` now checks (#5083),
+                // all at zero. The usecase throws on a MISSING delegate
+                // rather than treating absence as "nothing blocks", so an
+                // omission fails loudly instead of passing quietly.
+                controlException: { count: async () => 0 },
+                controlTestPlan: { count: async () => 0 },
+                controlTestRun: { count: async () => 0 },
+            } as never),
         );
         mockGetById.mockResolvedValueOnce({
             id: 'c1', tenantId: 'tenant-1', code: 'CTRL', name: 'X',

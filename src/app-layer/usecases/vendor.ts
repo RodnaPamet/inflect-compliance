@@ -12,7 +12,11 @@ import {
 } from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
-import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
+import { notFound, badRequest, conflict, ConflictError } from '@/lib/errors/types';
+import {
+    findBlockedParents,
+    bulkSoftDeleteBlockedMessage,
+} from '@/lib/soft-delete-blockers';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { CreateVendorSchema } from '@/lib/schemas';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
@@ -810,6 +814,13 @@ export async function bulkDeleteVendor(ctx: RequestContext, vendorIds: string[])
     return runInTenantContext(ctx, async (db) => {
         const rows = await VendorRepository.listByIds(db, ctx, vendorIds);
         if (rows.length === 0) return { deleted: 0 };
+        // #5083: a registered agent or an A2A peer pointing at a vendor holds
+        // it down at the 90-day purge, and those are AUTHORITY references —
+        // never cascaded. One query per blocking edge, not per vendor.
+        const blocked = await findBlockedParents(db, 'Vendor', rows.map((r) => r.id));
+        if (blocked.size > 0) {
+            throw conflict(bulkSoftDeleteBlockedMessage('vendors', blocked));
+        }
         await db.vendor.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {
