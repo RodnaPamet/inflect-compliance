@@ -148,6 +148,19 @@ describe('the run shape', () => {
         expect(run).toMatch(/--model mockllm\/model\b/);
     });
 
+    it('runs the worker from the bundle production runs, never through tsx', () => {
+        // Under tsx the sources load as CommonJS, and @flue/runtime exports
+        // `./node` under the `import` condition only: every Flue run threw in
+        // the worker and sat RUNNING to the harness's deadline (run 43380027909).
+        const steps = WORKFLOW.jobs.inspect.steps;
+        const build = steps.find((s) => s.name === 'Build app')?.run ?? '';
+        const start = steps.find((s) => s.name === 'Start app + worker (background)')?.run ?? '';
+        expect(build).toMatch(/^\s*npm run build:worker\s*$/m);
+        expect(start).toMatch(/^\s*node dist\/worker\.mjs > \/tmp\/worker\.log 2>&1 &$/m);
+        expect(steps.map((s) => s.run ?? '').join('\n')).not.toMatch(/scripts\/worker\.ts/);
+        expect(read('deploy/docker-compose.prod.yml')).toContain('node dist/worker.mjs');
+    });
+
     it('is reachable only by schedule and dispatch', () => {
         expect(Object.keys(WORKFLOW.on).sort()).toEqual(['schedule', 'workflow_dispatch']);
     });

@@ -18,6 +18,72 @@ import {
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
 import { _resetKeyCache } from '@/lib/security/encryption';
 
+/**
+ * A ROTATION THAT WOULD BREAK EVERY SIGN-IN REFUSES TO BOOT (#5071).
+ *
+ * `hashForLookup` is an index: `User.emailHash` IS the lookup key, and unlike
+ * a ciphertext it has no previous-key fallback. While it derived from
+ * DATA_ENCRYPTION_KEY, the documented master-KEK rotation made every
+ * email-based sign-in, SSO/OAuth account match and invite redemption miss from
+ * the first request, uniformly and silently.
+ */
+describe('checkProductionEncryptionKey — a KEK rotation needs the lookup key pinned', () => {
+    const REAL = 'r'.repeat(48);
+    const PREV = 'p'.repeat(48);
+
+    it('refuses to boot when a rotation is in progress and LOOKUP_HASH_KEY is unset', () => {
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: REAL,
+            DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
+        } as NodeJS.ProcessEnv);
+        expect(out.ok).toBe(false);
+        // The refusal must name the variable AND the value to use, or an
+        // operator mid-rotation has a dead deployment and no next step.
+        expect(out.ok === false && out.reason).toContain('LOOKUP_HASH_KEY');
+        expect(out.ok === false && out.reason).toContain('DATA_ENCRYPTION_KEY_PREVIOUS');
+    });
+
+    it('boots when the rotation has LOOKUP_HASH_KEY pinned', () => {
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: REAL,
+            DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
+            LOOKUP_HASH_KEY: PREV,
+        } as NodeJS.ProcessEnv);
+        expect(out).toEqual({ ok: true });
+    });
+
+    it('boots with no rotation in progress and no LOOKUP_HASH_KEY', () => {
+        // The positive control, and the state of every deployment today: this
+        // check must not turn an untouched production deployment red.
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: REAL,
+        } as NodeJS.ProcessEnv);
+        expect(out).toEqual({ ok: true });
+    });
+
+    it('refuses a LOOKUP_HASH_KEY too short to be a key', () => {
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: REAL,
+            DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
+            LOOKUP_HASH_KEY: 'a'.repeat(31),
+        } as NodeJS.ProcessEnv);
+        expect(out.ok).toBe(false);
+    });
+
+    it('says nothing outside production', () => {
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'development',
+            DATA_ENCRYPTION_KEY: REAL,
+            DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
+        } as NodeJS.ProcessEnv);
+        expect(out).toEqual({ ok: true });
+    });
+});
+
 describe('checkProductionEncryptionKey — config validation', () => {
     it('returns ok=true for NODE_ENV=development regardless of key state', () => {
         expect(checkProductionEncryptionKey({ NODE_ENV: 'development' })).toEqual({

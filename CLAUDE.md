@@ -386,9 +386,20 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
 
-Master-KEK rotation: set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
-the new primary. `decryptField` falls back transparently. Admins
-trigger the v1→v2 re-encryption sweep via
+Master-KEK rotation: **set `LOOKUP_HASH_KEY` to the CURRENT
+(outgoing) `DATA_ENCRYPTION_KEY` value and deploy that FIRST**
+(#5071), then set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
+the new primary, under which `decryptField` falls back
+transparently. The deterministic lookup hashes (`hashForLookup` —
+`User.emailHash` and friends) get no such fallback: they are an
+INDEX, not a ciphertext, so the stored hash IS the lookup key and a
+miss reads as "no such row". While they derived from the KEK, a
+rotation broke every email-based sign-in, SSO/OAuth account match
+and invite redemption from the first request. Unset,
+`LOOKUP_HASH_KEY` reproduces the old derivation exactly, so no
+stored hash moves and no backfill is needed; a production boot with
+`DATA_ENCRYPTION_KEY_PREVIOUS` set and it unset REFUSES to start.
+Admins trigger the v1→v2 re-encryption sweep via
 `POST /api/t/{slug}/admin/key-rotation`, which enqueues the
 background job in `src/app-layer/jobs/key-rotation.ts`. The job
 re-encrypts every `v1:` ciphertext under the new primary KEK and
@@ -1887,7 +1898,7 @@ fails the strict re-read is UNREADABLE. Write NULL as `Prisma.DbNull`, never as
 **The harness ingest** (`usecases/agent-harness-scans.ts`, since #3665) is the
 only writer of `AgentHarnessScan`, `DiscoveredAgent` and `AgentHarnessScanItem`;
 the key, acceptance and estate usecases are the only writers of theirs, and
-`tests/guards/agent-harness-single-write-seam.test.ts` holds all seven. Four
+`tests/guards/agent-harness-single-write-seam.test.ts` holds all seven. Five
 rules in it are easy to undo:
 
 - **Whose reports count is the register's decision, never the scanner's.**
@@ -1931,6 +1942,25 @@ rules in it are easy to undo:
 - **The scanner's findings are written through `FindingRepository`, not
   `createFinding`**, because the principal is a key that holds the ingest
   permission and nothing else. Every write is still sanitised and audited.
+- **An unlinked principal with no sign of a model is an unregistered identity,
+  not a shadow agent** (owner decisions, 2026-11-13). The signs are the five in
+  `MODEL_SIGNS` (found via `code`, `runtime` or `mcp`; lists a tool; lists a
+  model endpoint), the planner's `modelSignsOf` decides, and the standalone
+  scanner applies the same rule under the same names. Such a principal gets ONE
+  finding, `UNREGISTERED_IDENTITY` (MEDIUM), in place of `SHADOW_AGENT`, and no
+  `HARNESS_SHORTFALL`: it is held to no bar. It keeps its row, level and
+  verdicts, is registrable through the intake exactly as a shadow agent is
+  (`registrableFindingOf`), and has a section of its own on the harness tab.
+  Two points are easy to undo. **The name of a credential is not a sign**: do
+  not add a sixth. **A missing sign on an incomplete scan closes nothing**: a
+  sign counts on any scan, its absence only on a complete one, and on an
+  incomplete scan a principal on record as an agent
+  (`PriorHarnessState.onRecordAsAgent`, an open `SHADOW_AGENT` or
+  `HARNESS_SHORTFALL` finding) is still treated as one. The class ON RECORD is
+  the open finding, never the stored scan rows, which every scan overwrites;
+  every reader (the matrix, the shortfall acceptance and its expiry sweep, the
+  evidence tally) asks `unregisteredIdentitiesOnRecord` and no page re-derives
+  it.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing
@@ -2105,7 +2135,8 @@ that:
   classify request schemas are `.strict()`, so a `riskTier` in a body is a 400.
 
 **The registration intake** (`usecases/agent-registration-intake.ts`, since
-#3669) turns a `SHADOW_AGENT` finding into a `DRAFT` register row through a
+#3669) turns a `SHADOW_AGENT` finding (or an `UNREGISTERED_IDENTITY` one,
+which registers the same way) into a `DRAFT` register row through a
 provisional entry, in one transaction, at `POST …/admin/agents/intake`. These
 rules are each one careless edit from being undone:
 

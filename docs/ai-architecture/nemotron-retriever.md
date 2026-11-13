@@ -20,7 +20,7 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 | Wave | 1 for the CPU embedding and rerank arms (Phases 0–2, zero-GPU). The GPU arm (Phase 3) is optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phases 0–2; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 3 |
 | Unblocks | [`weaviate.md`](./weaviate.md) Phase 2 (nothing to index without a vector), [`ragas.md`](./ragas.md) |
-| Owner decisions | **D-L4-3** (**decided 2026-11-11**, owner: benchmark the Nemotron 1B embed and rerank models against a small open model on CPU and keep the smaller unless recall@10 drops by more than an agreed margin; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last). The margin itself is proposed in the Phase 0 note and not yet agreed |
+| Owner decisions | **D-L4-3** (**decided 2026-11-11, amended 2026-11-13**, owner: Layer 4 compares small open models only, English and multilingual, on CPU, and keeps the smallest unless recall@10 drops by more than the margin overall or on the Bulgarian slice; Nemotron is not a Layer 4 candidate and stays only in Phase 3, optional Layer 5; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last), **D-L4-10** (decided 2026-11-12: the margin is 0.05 absolute recall@10; the latency budgets are open) |
 | Complete at | Phase 2: embeddings and rerank on CPU, in the deployment. Phase 3 is optional Layer 5 work |
 
 ## At a glance
@@ -29,11 +29,11 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 
 ```mermaid
 flowchart LR
-  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>seed recall, then CPU latency<br/>D-L4-3 small vs Nemotron"}}:::gate
+  P0{{"Phase 0 · verify<br/>weights, licence, engine<br/>seed recall, then CPU latency<br/>D-L4-3 small models, EN and BG"}}:::gate
   P1["Phase 1 · embedding seam, CPU<br/>tei-embed service<br/>EmbeddingProvider by residency<br/>builds nothing external"]:::todo
   P2["Phase 2 · reranker<br/>RerankProvider on TEI<br/>hydrate under RLS, then rerank<br/>new revision key"]:::todo
   P3["Phase 3 · GPU arm<br/>on the Layer 5 VM<br/>CPU and GPU parity"]:::optional
-  SEED["Seed set, 200 pairs<br/>recall at 10"]:::eval
+  SEED["Seed set, 250 cases<br/>200 EN, 50 BG, recall at 10"]:::eval
   MOD["Layer 5<br/>optional, after completion"]:::optional
   WV["weaviate P2<br/>index pipeline"]:::ext
   P0 --> P1 --> P2
@@ -90,15 +90,25 @@ flowchart LR
 
 ## Fit, and what is deliberately not adopted
 
-**Adopted (D-L4-3, decided 2026-11-11).** Open-weight retriever models served
-by an open engine on CPU in the deployment — Hugging Face **Text Embeddings
-Inference** (TEI, Apache-2.0) wherever it serves the chosen model — and a GPU arm
-only as optional Layer 5 work. Which models is a measurement, not a preference:
-the current Nemotron 1B models (*Nemotron 3 Embed 1B* for embedding,
-*Llama Nemotron Rerank 1B v2* for reranking, as of 2026-11-11) are benchmarked
-against small open multilingual models (BGE / E5 / GTE class, MIT or
-Apache-2.0), and **the smaller is kept unless its recall@10 is lower by more than
-an agreed margin**. Vectors go to **pgvector** in the existing Postgres, under RLS
+**Adopted (D-L4-3, decided 2026-11-11, amended 2026-11-13).** Open-weight
+retriever models served by an open engine on CPU in the deployment — Hugging
+Face **Text Embeddings Inference** (TEI, Apache-2.0) — and a GPU arm only as
+optional Layer 5 work. Which models is a measurement, not a preference: small
+open models (BGE / E5 class, MIT or Apache-2.0), English-only and multilingual,
+are benchmarked against each other, and **the smallest is kept unless its
+recall@10 is lower by more than the margin (0.05, D-L4-10), overall or on the
+Bulgarian slice**. The candidates are `bge-small-en-v1.5`, `e5-small-v2` and
+`multilingual-e5-small` for embedding, and `bge-reranker-base` and
+`bge-reranker-v2-m3` for reranking (`scripts/retriever-benchmark/candidates.ts`).
+
+The amendment (owner, 2026-11-13) took the Nemotron 1B models out of Layer 4.
+They run on no CPU engine the deployment has, a 1B model costs about ten times
+a small one's memory and CPU on the VM, and the per-tenant corpora are small
+and reranked, which is where a small model is usually enough. Nemotron stays
+only in Phase 3, the optional Layer 5 GPU arm. The same amendment found that
+both small candidates the benchmark carried were English-only, while D-L4-3
+asked for a multilingual one and the product serves Bulgarian; the candidate
+list and the seed set were corrected in the same pull request. Vectors go to **pgvector** in the existing Postgres, under RLS
 (D-L4-1). A single `EmbeddingProvider` seam in `src/lib/ai/embeddings/` that is
 residency-routed exactly like `model-selection.ts`.
 
@@ -106,9 +116,8 @@ Phase 0's desk research
 ([`2026-11-11-retriever-phase0-facts.md`](../implementation-notes/2026-11-11-retriever-phase0-facts.md))
 found that TEI's native CPU backend refuses Llama- and Mistral-family models at
 start-up, so no current Nemotron retriever model runs on TEI's CPU build without
-an ONNX export (untested); the small candidates run on it natively. That is why
-the benchmark measures quality first and asks the engine question for a Nemotron
-model only if it wins on quality.
+an ONNX export (untested); the small candidates run on it natively. That finding
+is one of the reasons for the 2026-11-13 amendment.
 
 **Not adopted, with the reason.**
 
@@ -141,29 +150,34 @@ the measurements are still to run.
       permitted) and Llama Nemotron Rerank 1B v2, the only current 1B Nemotron
       reranker. The Llama-based models carry the Llama 3.2 terms, including a
       "Built with Llama" display obligation.
-- [ ] 0.1b Read the licence files in the model repositories themselves before
-      any weights enter `deploy/` (G5). Hugging Face was unreachable from the
-      session, so Llama Nemotron Rerank 1B v2's own licence is unverified and
-      Nemotron 3 Embed's is quoted from NVIDIA's GitHub, not the model card.
+- [ ] 0.1b Read the licence files in the kept models' repositories before any
+      weights enter `deploy/` (G5). Since the 2026-11-13 amendment these are the
+      small candidates' (MIT or Apache-2.0 on their model cards); the Nemotron
+      licences matter only if Phase 3 is taken up.
 - [x] 0.2 Which engine serves which model on CPU. Done 2026-11-11 from TEI's
       source: TEI's native CPU backend refuses Llama- and Mistral-family models,
       so no current Nemotron retriever model runs on TEI's CPU build without an
       ONNX export (untested); the small multilingual candidates (E5, Arctic
       Embed v2 / GTE, BGE-M3, BGE and GTE rerankers) run on it natively, fp32.
-- [ ] 0.3 Quality (Q1, engine-independent, in CI): recall@10 and nDCG@10 for
-      each embedder alone, then each reranker on a fixed top-50 pool, against
-      the 200-pair seed set, with a paired bootstrap interval. The decision rule
-      is D-L4-3's; **the margin is proposed, not agreed**: 0.03 absolute
-      overall and 0.05 on the Bulgarian slice. Nemotron displaces a small model
-      only when the interval's lower bound clears the margin; a suggestive but
-      unproven drop grows the set once, to 400, and that verdict is final. The
-      record states the smallest drop the set could have shown.
-- [ ] 0.4 The 200-pair seed set: seeded questionnaire questions and authored
-      questions → chunks of the content the product ships (policy templates,
-      control and framework texts), 150 EN, 25 BG → BG, 25 BG → EN; seed data
-      only, committed under `tests/fixtures/rag/` with a content hash.
+- [ ] 0.3 Quality (Q1, engine-independent, in CI): recall@10 for each
+      embedder alone, then each reranker on a fixed top-50 pool, against the
+      seed set, overall and on its Bulgarian slice
+      (`.github/workflows/retriever-benchmark.yml`, dispatch-only). The rule is
+      D-L4-3's as amended: the smallest pipeline within 0.05 recall@10 of the
+      best (D-L4-10), overall AND on the Bulgarian slice, so an English-only
+      model that falls behind on Bulgarian questions is not kept. On 50
+      Bulgarian cases that margin is about one standard error; growing the
+      slice is open under D-L4-10.
+- [x] 0.4 The seed set, `tests/fixtures/rag/retriever-seed-set.json` with a
+      content hash: 200 English questions over 372 chunks of the seed's policy
+      text, and since 2026-11-13 a 50-case Bulgarian slice. Each Bulgarian case
+      translates one English case and keeps its labels, so the slice measures
+      Bulgarian questions over English text (BG → EN). The planned BG → BG
+      cases are not possible while the seed carries no Bulgarian policy text.
+      The translations are the assistant's and are for review by a Bulgarian
+      speaker.
 - [ ] 0.5 CPU latency and memory (Q2) on the production VM for the candidates
-      Q1 keeps — a Nemotron model only if it won Q1 — through a dispatch-only
+      Q1 keeps, through a dispatch-only
       workflow modelled on `VM capacity`: a temporary TEI container at 1.0 CPU,
       p50/p95 for a 20-token query, 32 × 512-token passages and a 1 × 50
       rerank, plus `memory.peak` and the host CPU's flags. Proposed budgets
@@ -180,9 +194,10 @@ the measurements are still to run.
 Context: no embedding model exists. Model routing is residency-based in
 src/lib/agentic/flue/model-selection.ts (inflect-external / inflect-local; LOCAL_ONLY
 tenants never reach an external route). Runtime images are digest-pinned
-(docs/dependency-governance.md). D-L4-3 (decided 2026-11-11): benchmark the Nemotron 1B
-embed and rerank models against small open multilingual models on CPU and keep the
-smaller unless recall@10 drops by more than the agreed margin. D-L4-1: pgvector first.
+(docs/dependency-governance.md). D-L4-3 (decided 2026-11-11, amended 2026-11-13):
+compare small open models, English and multilingual, on CPU, and keep the smallest
+unless recall@10 drops by more than 0.05 (D-L4-10) overall or on the Bulgarian slice;
+Nemotron is optional Layer 5 only. D-L4-1: pgvector first.
 docs/implementation-notes/2026-11-11-retriever-phase0-facts.md holds the models,
 licences, engine facts and the protocol.
 
@@ -208,9 +223,9 @@ a content hash.
 seed set is authored now, tied by content hash, so Phase 1 ships with its
 evaluation set rather than promising one).
 
-**Done when.** The measurements are on `main` with numbers, the owner has agreed
-the margin, and the D-L4-3 rule has picked the embedder and the reranker.
-D-L4-3 itself was initialled on 2026-11-11.
+**Done when.** The measurements are on `main` with numbers and the D-L4-3 rule
+has picked the embedder and the reranker. D-L4-3 was initialled on 2026-11-11
+and amended on 2026-11-13; the margin was agreed under D-L4-10 on 2026-11-12.
 
 ### Phase 1 — The embedding seam, CPU-local
 
@@ -370,6 +385,11 @@ deployment that takes Layer 5 up after every other roadmap is complete.
 - [ ] 3.4 Same model, same dimensions, same revision key: a vector produced on
       CPU and on GPU must be interchangeable, proven by a test that embeds the
       seed set on both and compares cosine ≥ 0.999.
+- [ ] 3.5 Only here, a Nemotron retriever (the 1B embed and rerank models,
+      Llama-based, which TEI serves on GPU) may be measured against the Layer 4
+      winner on the same seed set, by the same rule (D-L4-3 as amended
+      2026-11-13). A different model is a new revision key and a re-embedding,
+      never a silent swap.
 
 **Prompt.**
 ```text
@@ -404,7 +424,7 @@ without it is byte-identical to Phase 2.
 
 | What | How | Record |
 | --- | --- | --- |
-| Retrieval quality | recall@10 on the 200-pair seed set, with and without rerank (Phase 0, re-run per revision) | evaluation record (G11) consumed by the `search_knowledge` mount gate |
+| Retrieval quality | recall@10 on the seed set (200 English cases, 50 Bulgarian), with and without rerank (Phase 0, re-run per revision) | evaluation record (G11) consumed by the `search_knowledge` mount gate |
 | Cross-arm parity | CPU vs GPU cosine ≥ 0.999 on the seed set (Phase 3, optional) | CI, when the GPU arm is configured |
 | Latency | p50/p95 per provider | `embeddings.requests` histogram |
 | Residency | "LOCAL_ONLY never reaches an external provider" | unit + guard, every phase |

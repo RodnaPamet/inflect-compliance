@@ -130,6 +130,7 @@ const matrixRow = (over: Partial<MatrixRow> = {}): MatrixRow => ({
     discoveredId: 'entra:sp:one',
     discoveredVia: ['entra-sp'],
     registered: { agentId: 'agt_1', name: 'Reconciler' },
+    unregisteredIdentity: false,
     level: 'H2',
     reach: 'WRITE_OR_EXTERNAL',
     belowBar: true,
@@ -171,6 +172,7 @@ const view = (over: Partial<HarnessMatrixView> = {}): HarnessMatrixView => {
         scannersNotShown: 0,
         scannersWithoutScan: { rows: [], truncated: false },
         shadow: { rows: [], truncated: false, basis: 'EVIDENCED', basisAsOf: '2026-10-15T03:00:00.000Z' },
+        unregisteredIdentities: { rows: [], truncated: false, basis: 'EVIDENCED', basisAsOf: '2026-10-15T03:00:00.000Z' },
         acceptances: { rows: [], truncated: false },
         ...over,
     };
@@ -462,6 +464,7 @@ describe('an empty population renders as a finding, not as "no agents"', () => {
                 shadow: {
                     rows: [
                         {
+                            kind: 'SHADOW_AGENT',
                             discoveredAgentId: 'da_s',
                             discoveredId: 'entra:sp:shadow-1',
                             discoveredVia: ['entra-sp', 'vault'],
@@ -839,6 +842,7 @@ describe('nothing the server held back disappears silently', () => {
                 shadow: {
                     rows: [
                         {
+                            kind: 'SHADOW_AGENT',
                             discoveredAgentId: 'da_s',
                             discoveredId: 'entra:sp:shadow-1',
                             discoveredVia: ['entra-sp'],
@@ -887,6 +891,7 @@ describe('a source is named, not shown by its stable id', () => {
                 shadow: {
                     rows: [
                         {
+                            kind: 'SHADOW_AGENT',
                             discoveredAgentId: 'da_s',
                             discoveredId: 'entra:sp:shadow-1',
                             discoveredVia: ['entra-sp', 'vault'],
@@ -922,5 +927,110 @@ describe('a source is named, not shown by its stable id', () => {
         const sources = screen.getByTestId('harness-scan-sources-scan_latest').textContent ?? '';
         expect(sources).toContain('later-source');
         expect(sources).not.toContain('estates.form.kind');
+    });
+});
+
+// ─── Unregistered identities (owner decisions, 2026-11-13) ──────────────────
+
+describe('an unregistered identity has a section of its own, and is not called a shadow agent', () => {
+    const identityRow = (over: Partial<HarnessMatrixView['unregisteredIdentities']['rows'][number]> = {}) => ({
+        kind: 'UNREGISTERED_IDENTITY' as const,
+        discoveredAgentId: 'da_i',
+        discoveredId: 'gcp:sa:build-1',
+        discoveredVia: ['gcp-sa'],
+        firstSeenAt: '2026-10-01T00:00:00.000Z',
+        lastSeenAt: '2026-10-15T00:00:00.000Z',
+        lastLevel: 'H0' as const,
+        reason: 'UNREGISTERED' as const,
+        findingId: 'fnd_i',
+        intake: null,
+        suggestion: null,
+        ...over,
+    });
+    const identities = (
+        over: Partial<HarnessMatrixView['unregisteredIdentities']> = {},
+    ): HarnessMatrixView['unregisteredIdentities'] => ({
+        rows: [],
+        truncated: false,
+        basis: 'EVIDENCED',
+        basisAsOf: '2026-10-15T03:00:00.000Z',
+        ...over,
+    });
+
+    it('the section renders beside the shadow list, under its own heading and intro', () => {
+        renderHarness(view());
+        const card = screen.getByTestId('harness-identity');
+        expect(within(card).getByRole('heading').textContent).toBe(H.identityHeading);
+        expect(card.textContent).toContain(H.identityIntro);
+        // Two sections, not one renamed.
+        expect(within(screen.getByTestId('harness-shadow')).getByRole('heading').textContent).toBe(H.shadowHeading);
+    });
+
+    it('an empty list with every scanner\'s complete scan behind it is "none", as of that scan', () => {
+        renderHarness(view());
+        expect(screen.getByTestId('harness-identity-none').textContent).toContain('No unregistered identity');
+        expect(screen.queryByTestId('harness-identity-unstated')).not.toBeInTheDocument();
+    });
+
+    it('an empty list with no complete scan behind it is UNSTATED, not none', () => {
+        renderHarness(view({ unregisteredIdentities: identities({ basis: 'NOT_EVIDENCED', basisAsOf: null }) }));
+        expect(screen.getByTestId('harness-identity-unstated').textContent).toBe(H.identityUnstated);
+        expect(screen.queryByTestId('harness-identity-none')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('harness-identity-table')).not.toBeInTheDocument();
+        // The shadow list's own answer is its own: this one did not borrow it.
+        expect(screen.getByTestId('harness-shadow-none')).toBeInTheDocument();
+    });
+
+    it('its rows are listed there and not on the shadow list, and a list that may be short says so', () => {
+        renderHarness(
+            view({
+                unregisteredIdentities: identities({ rows: [identityRow()], basis: 'NOT_EVIDENCED', basisAsOf: null, truncated: true }),
+            }),
+        );
+        const table = screen.getByTestId('harness-identity-table');
+        expect(within(table).getByText('gcp:sa:build-1')).toBeInTheDocument();
+        expect(within(table).getByText(KIND['gcp-sa'])).toBeInTheDocument();
+        expect(screen.getByTestId('harness-identity-may-be-incomplete').textContent).toBe(H.identityMayBeIncomplete);
+        expect(screen.getByTestId('harness-identity-truncated').textContent).toBe(
+            'Only the 1 most recently seen unregistered identities are listed.',
+        );
+        expect(screen.queryByTestId('harness-shadow-table')).not.toBeInTheDocument();
+    });
+
+    it('in the matrix it carries the identity badge and "not held to a bar", never the shadow badge or a shortfall note', () => {
+        renderHarness(
+            view({
+                sections: [
+                    section({
+                        latest: scanRow({ agentCount: 2 }),
+                        rows: [
+                            matrixRow({
+                                discoveredAgentId: 'da_i',
+                                discoveredId: 'gcp:sa:build-1',
+                                registered: null,
+                                unregisteredIdentity: true,
+                                level: 'H0',
+                                belowBar: false,
+                                acceptAffordance: 'NONE',
+                            }),
+                            matrixRow({ discoveredAgentId: 'da_shadow', registered: null, acceptAffordance: 'REGISTER_FIRST' }),
+                        ],
+                    }),
+                ],
+            }),
+        );
+        expect(screen.getByTestId('harness-identity-badge-scan_latest-da_i').textContent).toBe(H.identityBadge);
+        expect(screen.getByTestId('harness-no-bar-scan_latest-da_i').textContent).toBe(H.identityNoBar);
+        expect(screen.queryByTestId('harness-shadow-badge-scan_latest-da_i')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('harness-accept-note-scan_latest-da_i')).not.toBeInTheDocument();
+        // It keeps its level, and is not marked below a bar.
+        const level = screen.getByTestId('harness-level-scan_latest-da_i');
+        expect(level.textContent).toContain((EN.harness as unknown as { level: Record<string, string> }).level.H0);
+        expect(level.textContent).not.toContain('Below the bar');
+        // The shadow agent beside it is unchanged: the pair proves the flag decides.
+        expect(screen.getByTestId('harness-shadow-badge-scan_latest-da_shadow')).toBeInTheDocument();
+        expect(screen.queryByTestId('harness-identity-badge-scan_latest-da_shadow')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('harness-no-bar-scan_latest-da_shadow')).not.toBeInTheDocument();
+        expect(screen.getByTestId('harness-accept-note-scan_latest-da_shadow').textContent).toBe(H.registerFirst);
     });
 });

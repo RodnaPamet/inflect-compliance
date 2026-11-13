@@ -25,8 +25,8 @@
  * A STAGE THAT CANNOT RUN IS A FAILURE FILE, NEVER A RECORD
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * A candidate TEI CPU refuses by its own source (`teiCpuRefusal`: the
- * Llama-based Nemotron models, unless their repository carries ONNX) is
+ * A candidate TEI CPU refuses by its own source (`teiCpuRefusal`: Llama,
+ * Mistral and Qwen2 models, unless their repository carries ONNX) is
  * refused BEFORE a container starts, with code `ENGINE_REFUSES_ON_CPU`; the
  * summary reports its comparison BLOCKED rather than spending runner hours to
  * learn it. Any other candidate that does not load writes a `STAGE_FAILED`
@@ -430,6 +430,7 @@ export interface Summary {
         readonly problems: readonly string[];
         readonly pipeline: string;
         readonly recallAt10: number | null;
+        readonly bgRecallAt10: number | null;
         readonly mrrAt10: number | null;
         readonly embedP50: number | null;
         readonly embedP95: number | null;
@@ -455,6 +456,7 @@ export function summarise(
                 rerankModel: record.pipeline.rerank?.model ?? null,
                 parametersM: record.pipeline.embed.parametersM + (record.pipeline.rerank?.parametersM ?? 0),
                 recallAt10: a.recallAt10,
+                bgRecallAt10: a.byLocale.bg?.recallAt10 ?? null,
             });
         }
         return {
@@ -463,6 +465,7 @@ export function summarise(
             problems: scored.problems.map((p) => `${p.code}: ${p.detail}`),
             pipeline: name,
             recallAt10: a?.recallAt10 ?? null,
+            bgRecallAt10: a?.byLocale.bg?.recallAt10 ?? null,
             mrrAt10: a?.mrrAt10 ?? null,
             embedP50: a?.embedMs.p50 ?? null,
             embedP95: a?.embedMs.p95 ?? null,
@@ -487,17 +490,17 @@ export function summaryMarkdown(s: Summary): string {
         ``,
         `Set \`${s.set.id}\` \`${s.set.contentHash}\`. Figures recomputed from each record's raw answers.`,
         ``,
-        `| pipeline | ok | recall@10 | MRR@10 | embed p50 ms | embed p95 ms | rerank p50 ms | rerank p95 ms |`,
-        `| --- | --- | --- | --- | --- | --- | --- | --- |`,
+        `| pipeline | ok | recall@10 | recall@10 (bg) | MRR@10 | embed p50 ms | embed p95 ms | rerank p50 ms | rerank p95 ms |`,
+        `| --- | --- | --- | --- | --- | --- | --- | --- | --- |`,
         ...s.records.map((r) =>
-            `| ${r.pipeline} | ${r.ok ? 'yes' : `no: ${r.problems[0] ?? ''}`} | ${f(r.recallAt10)} | ${f(r.mrrAt10)} | ${f(r.embedP50, 1)} | ${f(r.embedP95, 1)} | ${f(r.rerankP50, 1)} | ${f(r.rerankP95, 1)} |`,
+            `| ${r.pipeline} | ${r.ok ? 'yes' : `no: ${r.problems[0] ?? ''}`} | ${f(r.recallAt10)} | ${f(r.bgRecallAt10)} | ${f(r.mrrAt10)} | ${f(r.embedP50, 1)} | ${f(r.embedP95, 1)} | ${f(r.rerankP50, 1)} | ${f(r.rerankP95, 1)} |`,
         ),
         ``,
-        `### Decision rule: the smallest pipeline within ${s.decisions[0]?.margin ?? D_L4_3_RECALL_MARGIN} recall@10 of the best`,
+        `### Decision rule: the smallest pipeline within ${s.decisions[0]?.margin ?? D_L4_3_RECALL_MARGIN} recall@10 of the best, overall and on the Bulgarian slice`,
         ``,
         ...s.decisions.map((d) =>
             `- reranker ${d.rerankModel ?? 'none'}: **${d.status}**` +
-            (d.chosen ? ` — choose ${d.chosen.embedModel} (${f(d.chosen.recallAt10)}); best ${d.best?.embedModel} (${f(d.best?.recallAt10 ?? null)})` : '') +
+            (d.chosen ? ` — choose ${d.chosen.embedModel} (${f(d.chosen.recallAt10)}, bg ${f(d.chosen.bgRecallAt10)}); best ${d.best?.embedModel} (${f(d.best?.recallAt10 ?? null)}), best bg ${f(d.bestBg)}` : '') +
             (d.missing.length ? `; no scored record for ${d.missing.join(', ')}` : '') +
             (d.blockedBy.length ? `; the engine refuses ${d.blockedBy.join(', ')} on CPU, so this comparison needs another engine` : ''),
         ),

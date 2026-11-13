@@ -10,7 +10,9 @@
  *
  * The order is the usecase's and is load-bearing: a shadow agent is refused
  * for being shadow before anyone asks whose it is, and a non-owner is refused
- * before being told whether there is anything to accept.
+ * before being told whether there is anything to accept. An unregistered
+ * automated identity is refused as that, in the shadow agent's place: it is
+ * held to no bar, so it has no shortfall, and gets no action and no note.
  *
  * CLIENT-SAFE: it imports the findings planner, whose own imports are the
  * ladder, the contract's hash-free rules (`harness-contract-rules.ts`) and a
@@ -36,16 +38,28 @@ export interface AcceptanceSubject {
         readonly ownerUserId: string | null;
         readonly deletedAt: Date | string | null;
     } | null;
+    /**
+     * On record as an UNREGISTERED AUTOMATED IDENTITY
+     * (`unregisteredIdentitiesOnRecord` in `harness-findings.ts`, read by the
+     * caller — this module reads no finding). Asked only of a principal with
+     * no live register row; absent reads as false, a shadow agent.
+     */
+    readonly unregisteredIdentity?: boolean;
 }
 
-export type ShortfallAcceptanceRefusal = 'SHADOW' | 'NOT_OWNER' | 'NO_SHORTFALL';
+export type ShortfallAcceptanceRefusal = 'UNREGISTERED_IDENTITY' | 'SHADOW' | 'NOT_OWNER' | 'NO_SHORTFALL';
 
 /** Why `userId` may not accept this agent's shortfall, or `null` when they may. */
 export function shortfallAcceptanceRefusal(
     agent: AcceptanceSubject,
     userId: string,
 ): ShortfallAcceptanceRefusal | null {
-    if (agent.registeredAgent === null || agent.registeredAgent.deletedAt !== null) return 'SHADOW';
+    if (agent.registeredAgent === null || agent.registeredAgent.deletedAt !== null) {
+        // An unregistered identity is held to no bar (owner decision,
+        // 2026-11-13): there is no shortfall to accept, so it is refused as
+        // that and not told to register "first".
+        return agent.unregisteredIdentity === true ? 'UNREGISTERED_IDENTITY' : 'SHADOW';
+    }
     if (agent.registeredAgent.ownerUserId !== userId) return 'NOT_OWNER';
     if (!isHarnessShortfall(agent.lastLevel, agent.lastReach)) return 'NO_SHORTFALL';
     return null;
@@ -65,6 +79,8 @@ export function acceptAffordanceFor(
 ): AcceptAffordance {
     const refusal = shortfallAcceptanceRefusal(agent, userId);
     if (refusal === null) return acceptanceInForce ? 'RENEW' : 'ACCEPT';
+    // Held to no bar: nothing to accept, and no note saying to register first.
+    if (refusal === 'UNREGISTERED_IDENTITY') return 'NONE';
     if (!isHarnessShortfall(agent.lastLevel, agent.lastReach)) return 'NONE';
     return refusal === 'SHADOW' ? 'REGISTER_FIRST' : 'OWNER_ONLY';
 }

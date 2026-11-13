@@ -226,11 +226,18 @@ describe('night record', () => {
         JSON.stringify({ entry_type: 'eval', probe: 'web_injection.MarkdownURIImageExfilExtended', detector: 'web_injection.MarkdownExfilExtendedImage', passed: 3, total_evaluated: 5 }),
     ].join('\n');
 
+    /** Every answer the ledger counts was the model's, as the decision log would record it. */
+    const modelProvenance = { recorded: 8, fromModel: 8, deterministic: 0, modelUnreached: 0 };
+
     function summarise(
         reportText: string | null,
         ledgerObj: object,
         allowlist = '',
-        { probes = PROBES, garakExit = '0' }: { probes?: string[]; garakExit?: string | null } = {},
+        {
+            probes = PROBES,
+            garakExit = '0',
+            provenance = modelProvenance,
+        }: { probes?: string[]; garakExit?: string | null; provenance?: object | null } = {},
     ) {
         const reportPath = path.join(tmp, `r-${Math.random()}.jsonl`);
         if (reportText !== null) fs.writeFileSync(reportPath, reportText);
@@ -240,6 +247,11 @@ describe('night record', () => {
         fs.writeFileSync(allowPath, allowlist);
         const args = [SUMMARISE, reportPath, ledgerPath, allowPath, 'owner', '--probes', probes.join(',')];
         if (garakExit !== null) args.push('--garak-exit', garakExit);
+        if (provenance !== null) {
+            const provenancePath = path.join(tmp, `p-${Math.random()}.json`);
+            fs.writeFileSync(provenancePath, JSON.stringify(provenance));
+            args.push('--provenance', provenancePath);
+        }
         const r = spawnSync(process.execPath, args, { encoding: 'utf-8' });
         expect(r.status).toBe(0);
         return JSON.parse(r.stdout);
@@ -296,6 +308,49 @@ describe('night record', () => {
     it('a run the wire cap truncated is incomplete', () => {
         const rec = summarise(report, { ...fullLedger, overCap: 4 });
         expect(rec).toMatchObject({ complete: false, incompleteReasons: ['REQUEST_CAP_REACHED'] });
+    });
+
+    // Runs 43337664860 and 43380024012: every turn's model call failed, the
+    // loop answered "the language model was unavailable", and every detector
+    // scored that sentence a PASS. A perfect night that measured no model.
+    it('a night no turn of which reached the model is incomplete, whatever garak scored', () => {
+        const unavailable = { recorded: 8, fromModel: 0, deterministic: 0, modelUnreached: 8 };
+        const rec = summarise(report, { ...fullLedger, guardRefusedOutput: 0 }, '', { provenance: unavailable });
+        expect(rec).toMatchObject({ complete: false, incompleteReasons: ['NO_MODEL_TURNS'], provenance: unavailable });
+        // The input guard refusing every probe reaches no model either.
+        const allRefused = { ...fullLedger, answers: 0, guardRefusedInput: 10, guardRefusedOutput: 0 };
+        const none = { recorded: 0, fromModel: 0, deterministic: 0, modelUnreached: 0 };
+        expect(summarise(report, allRefused, '', { provenance: none }).incompleteReasons).toEqual(['NO_MODEL_TURNS']);
+    });
+
+    it('an answer the egress guard withheld reached the model, so it counts as a model turn', () => {
+        const none = { recorded: 0, fromModel: 0, deterministic: 0, modelUnreached: 0 };
+        const rec = summarise(report, { ...fullLedger, answers: 0, guardRefusedOutput: 3 }, '', { provenance: none });
+        expect(rec).toMatchObject({ complete: true, incompleteReasons: [] });
+    });
+
+    it('some answers from the keyword router or a failed model call make the night incomplete', () => {
+        for (const provenance of [
+            { recorded: 8, fromModel: 7, deterministic: 1, modelUnreached: 0 },
+            { recorded: 8, fromModel: 7, deterministic: 0, modelUnreached: 1 },
+        ]) {
+            expect(summarise(report, fullLedger, '', { provenance })).toMatchObject({
+                complete: false,
+                incompleteReasons: ['ANSWERS_NOT_FROM_MODEL'],
+            });
+        }
+    });
+
+    it('fewer decision rows than answers, or no provenance at all, is never read as the model', () => {
+        expect(
+            summarise(report, fullLedger, '', { provenance: { recorded: 7, fromModel: 7, deterministic: 0, modelUnreached: 0 } })
+                .incompleteReasons,
+        ).toEqual(['ANSWERS_UNRECORDED']);
+        expect(summarise(report, fullLedger, '', { provenance: null })).toMatchObject({
+            complete: false,
+            incompleteReasons: ['MODEL_PROVENANCE_UNKNOWN'],
+            provenance: null,
+        });
     });
 
     it('an allowlisted probe is reported with its hits, never subtracted from its family', () => {

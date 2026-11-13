@@ -24,10 +24,17 @@
  *      garak can reach only the local proxy.
  *   5. The allowlist's semantics warning is at the top of the file and every
  *      entry carries a reason.
+ *   6. The night proves the MODEL answered (runs 43337664860 and 43380024012
+ *      scored a model that was never reached): the app is given the workspace
+ *      header the fallback key needs, each role's answers are counted by how
+ *      the decision log says they were produced, the app's own reason for a
+ *      turn that missed the model reaches the job log, and a role no turn of
+ *      which reached the model fails the summary step.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const WORKFLOW = '.github/workflows/garak.yml';
@@ -36,6 +43,8 @@ const BUDGET = '.garak/budget.json';
 const DOCKERFILE = '.garak/Dockerfile';
 const ALLOWLIST = '.garak/allowlist.tsv';
 const PROXY = '.garak/target-proxy.mjs';
+const PROVENANCE_SQL = '.garak/provenance.sql';
+const ASSISTANT = 'src/app-layer/usecases/assistant.ts';
 
 /**
  * The garak version CAP_HONOURING_PROBES was read against. A version bump
@@ -63,6 +72,9 @@ const CAP_HONOURING_PROBES: Record<string, string> = {
 };
 
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+/** Comments blanked, so a note naming a log event or a provider cannot stand in for the code. */
+const readCode = (rel: string) => codeOf(read(rel));
+const readSql = (rel: string) => sqlCodeOf(read(rel));
 
 /** A real date only; the `<YYYY-MM-DD>` placeholder in prose does not match. */
 const DEFERRAL_RE = /GARAK-NON-BLOCKING-UNTIL:\s*(\d{4}-\d{2}-\d{2})/g;
@@ -311,6 +323,49 @@ describe('garak never aborts on a status it cannot score, and never scores one i
         expect(scan).toContain('sudo chown -R "$(id -u):$(id -g)" "garak-out/${role}"');
         const summarise = steps.find((s) => s.name === 'Summarise per role (record + job summary)');
         expect(summarise?.run).toContain('--probes "$spec" --garak-exit');
+    });
+});
+
+describe('garak proves the model answered, not just that garak scored', () => {
+    const start = steps.find((s) => s.name === 'Start app (background)');
+    const summarise = steps.find((s) => s.name === 'Summarise per role (record + job summary)');
+    const scan = () => scanSteps[0].run ?? '';
+
+    it('the fallback (organisation-level) key is sent with its workspace; the dedicated key without one', () => {
+        expect(start?.env?.ANTHROPIC_WORKSPACE_ID).toBe(
+            "${{ secrets.GARAK_CI_ANTHROPIC_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}",
+        );
+        // The job log names which key and whether the header went; never a value.
+        expect(start?.env?.KEY_SOURCE).toBe(
+            "${{ secrets.GARAK_CI_ANTHROPIC_KEY != '' && 'GARAK_CI_ANTHROPIC_KEY' || 'ANTHROPIC_API_KEY' }}",
+        );
+        expect(start?.run).not.toMatch(/\$\{?ANTHROPIC_API_KEY/);
+    });
+
+    it("each role's answer provenance is read before and after it, from the decision log, and reaches the record", () => {
+        expect(scan().split('-f .garak/provenance.sql').length - 1).toBe(2);
+        expect(scan()).toContain('> "garak-out/${role}/provenance.json"');
+        expect(summarise?.run).toContain('--provenance "garak-out/${role}/provenance.json"');
+    });
+
+    it("the query's 'no model' provider is the one the usecase records for the keyword router", () => {
+        const sql = readSql(PROVENANCE_SQL);
+        expect(sql.split("provider = 'deterministic'").length - 1).toBe(1);
+        expect(readCode(ASSISTANT)).toContain("provider: 'deterministic',");
+    });
+
+    it("the app's own reason for a turn that missed the model reaches the job log", () => {
+        const src = readCode(ASSISTANT);
+        expect(src).toContain("logger.warn('assistant.provider_error'");
+        expect(src).toContain("logger.info('assistant.model_not_configured'");
+        expect(scan()).toContain("grep -E 'assistant\\.(provider_error|model_not_configured)' /tmp/app.log");
+    });
+
+    it('a role no turn of which reached the model fails the summary step, after the records are written', () => {
+        const run = summarise?.run ?? '';
+        expect(run).toContain('r.incompleteReasons.includes("NO_MODEL_TURNS")');
+        expect(run.indexOf('NO_MODEL_TURNS')).toBeGreaterThan(run.indexOf('node .garak/summarise.mjs'));
+        expect(run.trimEnd()).toMatch(/exit 1\n\s*fi$/);
     });
 });
 
