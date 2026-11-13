@@ -16,6 +16,14 @@ from typing import Any, Dict, Iterable, List, Optional
 ENGINE_SUPPLIED_TOOLS = {"task", "activate_skill"}
 _CAP_SENTENCE = re.compile(r"^Run halted at its ([A-Z_]+) cap of \d+(?:ms)? \(set by the ([A-Z_]+)\)")
 _CODE_PREFIX = re.compile(r"^([a-z0-9_.-]{1,96}):")
+# An engine's catch-all failure whose cause is the model provider's own 5xx:
+# the Anthropic SDK's error message is ``<status> status code (no body)`` or
+# ``<status> {<the provider's JSON>}``, and Flue wraps it in the submission it
+# failed (``dispatch(sub_…) failed: …``). Flue has already retried it (three
+# transient retries, with backoff) and the Tool Runner's client twice, so a run
+# carrying it is one the provider refused to serve, not one the product ran.
+MODEL_PROVIDER_UNAVAILABLE = "model_provider_unavailable"
+_PROVIDER_5XX = re.compile(r"^(?:flue|tool_runner)_run_failed: (?:dispatch\([^)\s]*\) failed: )?5\d\d (?:status code \(no body\)|\{)")
 
 
 def error_code(message: Optional[str]) -> Optional[str]:
@@ -25,6 +33,8 @@ def error_code(message: Optional[str]) -> Optional[str]:
     cap = _CAP_SENTENCE.match(message)
     if cap:
         return f"cap_halt:{cap.group(1)}:{cap.group(2)}"
+    if _PROVIDER_5XX.match(message):
+        return MODEL_PROVIDER_UNAVAILABLE
     prefix = _CODE_PREFIX.match(message)
     return prefix.group(1) if prefix else "unclassified"
 

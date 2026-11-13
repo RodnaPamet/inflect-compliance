@@ -57,6 +57,19 @@ def test_error_code_reduces_the_cap_sentence_and_never_keeps_text():
     assert ledger.error_code(None) is None
 
 
+def test_a_provider_5xx_is_its_own_code_and_nothing_else_is():
+    # Run 43429583015: three Flue submissions failed on the provider's bodiless 503.
+    unavailable = ledger.MODEL_PROVIDER_UNAVAILABLE
+    assert ledger.error_code("flue_run_failed: dispatch(sub_01M7AGEM3G2TPTM3SGSTS9WECG) failed: 503 status code (no body)") == unavailable
+    assert ledger.error_code('flue_run_failed: dispatch(sub_1) failed: 529 {"type":"error","error":{"type":"overloaded_error"}}') == unavailable
+    assert ledger.error_code("tool_runner_run_failed: 500 status code (no body)") == unavailable
+    # A 4xx is the request's fault, and anything else the engine threw is the product's.
+    assert ledger.error_code("flue_run_failed: dispatch(sub_1) failed: 400 status code (no body)") == "flue_run_failed"
+    assert ledger.error_code("tool_runner_run_failed: TypeError: x is undefined (503 status code)") == "tool_runner_run_failed"
+    assert ledger.error_code("skill_not_mountable: 503 status code (no body)") == "skill_not_mountable"
+    assert verdicts.MODEL_PROVIDER_UNAVAILABLE == unavailable
+
+
 class FakeClock(Clock):
     def __init__(self):
         self.t = 1_000

@@ -20,8 +20,10 @@
  *   - execution row writes (AutomationExecutionRepository is the
  *     writer; the dispatcher decides when to invoke it)
  *
- * The bus is a module-level singleton. Tests use `resetAutomationBus()`
- * between runs; production code should never need to reset it.
+ * The bus is a process-wide singleton held on `globalThis` (see
+ * `getAutomationBus` for why not a module-level one). Tests use
+ * `resetAutomationBus()` between runs; production code should never need
+ * to reset it.
  */
 
 import { log } from '@/lib/observability';
@@ -158,13 +160,34 @@ function createAutomationBus(): AutomationBus {
     };
 }
 
-// ─── Module-level singleton ────────────────────────────────────────────
+// ─── Process-wide singleton ────────────────────────────────────────────
+//
+// ON `globalThis`, NOT in a module-level `let`. Next.js bundles
+// `instrumentation.ts` and the route handlers into DIFFERENT module
+// instances of this file, so a module-level singleton gave the startup hook
+// (which installs the BullMQ dispatcher) one bus and every route handler
+// another, whose dispatcher was still the no-op default. Every automation
+// event emitted from a web request — a task created on the Tasks page, a
+// risk created through the API — was handed to that no-op and enqueued
+// nothing: no `AutomationExecution` row, no rule ever fired. The worker was
+// unaffected (esbuild bundles it as one graph). Found by the Inspect harness,
+// whose Tool Runner samples start from a TASK_CREATED rule and waited for an
+// execution that never came (run 43429583015). Same defect, same cause, as the
+// provider registry (docs/implementation-notes/2026-07-08-provider-registry-request-path-fix.md);
+// `globalThis` is the process, which both instances share, as the BullMQ
+// queue in `jobs/queue.ts` already relies on.
+//
+// A Jest test file runs in its own global, so tests stay isolated.
 
-let busSingleton: AutomationBus | null = null;
+const globalForBus = globalThis as unknown as {
+    __inflectAutomationBus?: AutomationBus;
+};
 
 export function getAutomationBus(): AutomationBus {
-    if (!busSingleton) busSingleton = createAutomationBus();
-    return busSingleton;
+    if (!globalForBus.__inflectAutomationBus) {
+        globalForBus.__inflectAutomationBus = createAutomationBus();
+    }
+    return globalForBus.__inflectAutomationBus;
 }
 
 /**
@@ -173,7 +196,7 @@ export function getAutomationBus(): AutomationBus {
  * "resetting" at runtime would drop legitimate subscribers.
  */
 export function resetAutomationBus(): void {
-    if (busSingleton) busSingleton.reset();
+    globalForBus.__inflectAutomationBus?.reset();
 }
 
 /**
