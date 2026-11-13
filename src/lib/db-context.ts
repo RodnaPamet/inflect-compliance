@@ -2,7 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import { prisma, prismaRead } from './prisma';
 import type { RequestContext } from '@/app-layer/types';
-import { runWithAuditContext, type PriorStateReader } from './audit-context';
+import {
+    runWithAuditContext,
+    type PriorStateReader,
+    type SoftDeleteWriter,
+} from './audit-context';
 import { KEK_BYPASS_SOURCES, isKekBypassSource } from './db/kek-bypass-sources';
 
 export type PrismaTx = Omit<
@@ -34,6 +38,41 @@ export type PrismaTx = Omit<
  * each becomes "no prior state", which the extension then reports honestly
  * instead of recording as "nothing changed".
  */
+/**
+ * The soft delete, performed on `tx` — #5287.
+ *
+ * Built here for the reason the block above gives in full: `tx` is the only
+ * client both inside this transaction and under the RLS posture the caller
+ * established, and a Prisma query extension is handed no client at all
+ * (measured: `this` in a query handler is the arguments, and
+ * `getExtensionContext` yields nothing usable there).
+ *
+ * DOES NOT SWALLOW. `priorStateReaderFor` fails to null because a prior-state
+ * read only decorates an audit row; this IS the write the caller asked for, so
+ * a failure must reach them.
+ */
+function softDeleteWriterFor(tx: PrismaTx): SoftDeleteWriter {
+    return async (model, args, many) => {
+        const delegate = (tx as unknown as Record<string, unknown>)[
+            model.charAt(0).toLowerCase() + model.slice(1)
+        ] as {
+            update?: (a: unknown) => Promise<unknown>;
+            updateMany?: (a: unknown) => Promise<unknown>;
+        } | undefined;
+        const op = many ? delegate?.updateMany : delegate?.update;
+        if (!op) {
+            // The transaction client cannot reach this model, so the delete
+            // cannot be honoured inside it. Refusing beats writing somewhere
+            // else, which is the defect being fixed.
+            throw new Error(
+                `softDeleteWriter: transaction client carries no `
+                    + `${many ? 'updateMany' : 'update'} for ${model}`,
+            );
+        }
+        return op(args);
+    };
+}
+
 function priorStateReaderFor(tx: PrismaTx): PriorStateReader {
     return async (model, where) => {
         try {
@@ -82,7 +121,12 @@ export async function withTenantDb<T>(
             // can only come from inside it. Nesting SHADOWS rather than merges,
             // so every field is restated.
             return runWithAuditContext(
-                { tenantId, source: 'api', readPriorState: priorStateReaderFor(tx) },
+                {
+                    tenantId,
+                    source: 'api',
+                    readPriorState: priorStateReaderFor(tx),
+                    softDeleteWrite: softDeleteWriterFor(tx),
+                },
                 () => callback(tx),
             );
         }, TENANT_TX_OPTIONS)
@@ -146,6 +190,7 @@ export async function runInTenantContext<T>(
                         requestId: ctx.requestId,
                         source: 'api',
                         readPriorState: priorStateReaderFor(tx),
+                        softDeleteWrite: softDeleteWriterFor(tx),
                     },
                     () => callback(tx),
                 );
@@ -324,6 +369,7 @@ export async function runInTenantJobContext<T>(
                         requestId,
                         source: job.source,
                         readPriorState: priorStateReaderFor(tx),
+                        softDeleteWrite: softDeleteWriterFor(tx),
                     },
                     () => callback(tx),
                 );
