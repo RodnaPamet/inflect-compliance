@@ -57,7 +57,7 @@ model Tenant {
   /// physical per-region storage is the documented follow-up. Only values
   /// in OPERATIONALLY_PROVISIONED_REGIONS (src/lib/regions.ts) are accepted
   /// at provision time.
-  region                            TenantRegion                       @default(US_EAST_1)
+  region                            TenantRegion                       @default(EUROPE_WEST1)
   /// Soft-delete (org admin panel "remove tenant"). When set, the
   /// tenant is filtered out of tenant resolution (getTenantContext →
   /// 404), the org portfolio list, the tenant picker, and the JWT

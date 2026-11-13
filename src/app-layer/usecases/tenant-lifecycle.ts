@@ -43,7 +43,7 @@ export interface CreateTenantWithOwnerInput {
     /** Correlation id for audit entries; platform-admin has no user session. */
     requestId: string;
     /**
-     * Data-residency region. Optional; defaults to US_EAST_1 (the only
+     * Data-residency region. Optional; defaults to EUROPE_WEST1 (the only
      * operationally-provisioned region today). A value outside
      * OPERATIONALLY_PROVISIONED_REGIONS is refused with a ValidationError
      * — never silently defaulted. See docs/data-residency.md.
@@ -73,10 +73,10 @@ export async function createTenantWithOwner(
 ): Promise<CreateTenantWithOwnerResult> {
     const email = input.ownerEmail.trim().toLowerCase();
 
-    // Residency region — default to US_EAST_1 (the only provisioned region
+    // Residency region — default to EUROPE_WEST1 (the only provisioned region
     // today) and REFUSE any region without live infrastructure. A clear
     // error, never a silent default. See docs/data-residency.md.
-    const region: TenantRegion = input.region ?? 'US_EAST_1';
+    const region: TenantRegion = input.region ?? 'EUROPE_WEST1';
     assertProvisionedRegion(region);
 
     // 1. Find-or-create the User row outside the main transaction so

@@ -85,11 +85,17 @@ describe('getPrivacyPosture — capability flags stay honest', () => {
     });
 
     it('marks residency as declarative even for a provisioned region', async () => {
-        seed({ tenant: { region: 'US_EAST_1', encryptedDek: 'w', previousEncryptedDek: null } });
+        seed({ tenant: { region: 'EUROPE_WEST1', encryptedDek: 'w', previousEncryptedDek: null } });
         const res = await getPrivacyPosture(makeRequestContext('ADMIN'));
         expect(res.residency.provisioned).toBe(true);
         // Provisioned infrastructure still does not mean residency is enforced.
         expect(res.residency.declarativeOnly).toBe(true);
+    });
+
+    it('reports US_EAST_1, the old default, as not provisioned (#5288)', async () => {
+        seed({ tenant: { region: 'US_EAST_1', encryptedDek: 'w', previousEncryptedDek: null } });
+        const res = await getPrivacyPosture(makeRequestContext('ADMIN'));
+        expect(res.residency.provisioned).toBe(false);
     });
 
     it('flags a declared-but-unprovisioned region as not provisioned', async () => {
@@ -137,7 +143,7 @@ describe('getPrivacyPosture — observed state', () => {
     it('falls back to the default region when the tenant row is missing', async () => {
         seed({ tenant: null });
         const res = await getPrivacyPosture(makeRequestContext('ADMIN'));
-        expect(res.residency.region).toBe('US_EAST_1');
+        expect(res.residency.region).toBe('EUROPE_WEST1');
         expect(res.encryption.perTenantDek).toBe(false);
     });
 });

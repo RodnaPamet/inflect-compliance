@@ -11,35 +11,41 @@ architectural shift, not a column.
 
 ## What residency means today vs. tomorrow
 
-**Today — single-region, declarative.** Production runs in one region
-(`US_EAST_1`). Every tenant rides the same RDS / S3 / KMS. The new
-`Tenant.region` attribute is **declarative**: it records the customer's residency
-commitment and gates provisioning, but the data physically lives wherever
-production is deployed. This is the foundation; physical per-region storage is the
+**Today — single-region, declarative.** Production runs in one region: one GCP
+VM in `europe-west1` (Belgium), recorded as `EUROPE_WEST1`. Every tenant shares
+its database, storage and keys. `Tenant.region` is **declarative**: it records
+the customer's residency commitment and gates provisioning, and the data lives
+wherever production is deployed. Until #5288 every tenant read `US_EAST_1`
+("United States (East)"), the column default, although production has never run
+there; the default and every stored row moved to `EUROPE_WEST1` (migrations
+`20261113090000` and `20261113120000`). This is the foundation; physical per-region storage is the
 deferred work below.
 
-**The EU_WEST_1 path (deferred target state).** When the EU region is
-operationally provisioned, "EU residency" means:
+**A second region (deferred target state).** With one region, "residency" is
+where production runs, and today that is the EU. A commitment to keep a tenant's
+data in a region OTHER than the one production runs in needs per-region
+infrastructure, and then means:
 
-- Tenant data (`Risk`, `Control`, `Evidence`, `AuditLog`, …) is stored in an
-  EU_WEST_1 RDS / S3 / KMS.
-- Auth (login + JWT minting) happens in EU_WEST_1.
+- Tenant data (`Risk`, `Control`, `Evidence`, `AuditLog`, …) is stored in that
+  region's own database, storage and keys.
+- Auth (login + JWT minting) happens in that region.
 - Cross-region API calls are blocked by middleware; an authenticated user lands
   in the region that owns their tenant.
-- Sub-processors (Stripe, Sentry, SMTP) that lack an EU-only option are called out
-  as exceptions in the sub-processor list.
+- Sub-processors (Stripe, Sentry, SMTP) that lack a region-only option are
+  called out as exceptions in the sub-processor list.
 
 ## What's in this PR (foundation)
 
-- **Schema** — a `TenantRegion` enum (`US_EAST_1` / `EU_WEST_1` / `AP_SOUTHEAST_1`)
-  and a `Tenant.region` column (default `US_EAST_1`, indexed for per-region
-  operational scans). Migration `20260626120000_add_tenant_region`.
+- **Schema** — a `TenantRegion` enum (`US_EAST_1` / `EU_WEST_1` /
+  `AP_SOUTHEAST_1` / `EUROPE_WEST1`) and a `Tenant.region` column (default
+  `EUROPE_WEST1`, indexed for per-region operational scans). Migration
+  `20260626120000_add_tenant_region`; `EUROPE_WEST1` and its default since #5288.
 - **Provisioning** — `createTenantWithOwner` threads `region` and validates it
   against `OPERATIONALLY_PROVISIONED_REGIONS` (`src/lib/regions.ts`). A request for
   a region without live infrastructure is **refused** with a clear
   `region_not_provisioned` validation error — never silently defaulted.
 - **`src/lib/regions.ts`** — the source of truth for which enum values are
-  actually provisioned (today: `['US_EAST_1']`) and the planned ones with their
+  actually provisioned (today: `['EUROPE_WEST1']`) and the planned ones with their
   gating work.
 - **Audit trail** — every tenant's region at creation is recorded in the
   `AuditLog` as `TENANT_REGION_SET` (category `access`): the durable artifact a
@@ -73,9 +79,9 @@ Decisions for compliance / legal, not engineering. Listed honestly as unresolved
   requires an adequacy / transfer mechanism, a different question.)
 - When a customer requests a cross-region migration, what contractual notice
   period applies?
-- Backups: when a `US_EAST_1` RDS snapshot is copied cross-region for DR (see
+- Backups: when a production database backup is copied cross-region for DR (see
   `docs/multi-region.md`), does that copy create a residency violation for an EU
   tenant? This intersects the DR design directly.
 
-Until each is decided, the operating default is: every tenant is `US_EAST_1`
+Until each is decided, the operating default is: every tenant is `EUROPE_WEST1`
 (the only provisioned region), and a request for any other region is refused.
