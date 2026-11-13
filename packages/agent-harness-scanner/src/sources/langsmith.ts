@@ -79,7 +79,7 @@
  */
 import { createHash } from 'crypto';
 
-import { looksLikeSecret } from '@/lib/agentic/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 
 import {
     assertResolvesReachable,

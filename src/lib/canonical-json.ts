@@ -1,33 +1,22 @@
 /**
- * The ONE canonical-JSON form in this repo.
+ * `canonicalJson`: the one form a report signature, a receipt signature and an
+ * evidence hash are made over (keys sorted, no whitespace).
  *
- * Recursively sorts object keys and emits no whitespace; arrays keep their order
- * because order is semantic. `undefined` collapses to `null`, which does NOT make
- * a present-but-undefined key hash the same as an absent one — `{a: undefined}`
- * canonicalises to `{"a":null}` and `{}` to `{}`, and this comment claimed the
- * opposite until somebody checked. The collapse only guarantees the output is
- * JSON; it says nothing about key presence. The only way to
- * make the form total over the values JSON can hold.
+ * THIS MODULE LIVES IN `@rodnapamet/scanent-contract`. The scanner report
+ * contract (the strict report schemas, the ladder, the findings planner and the
+ * signature, canonical-JSON, CIDR, receipt and redaction rules a report is
+ * verified by) is the standalone scanent product's, published from
+ * https://github.com/RodnaPamet/scanent (packages/contract) and installed here
+ * from its release file at one exact version (package.json). This file
+ * re-exports it unchanged so every importer keeps its `@/` path; it holds no
+ * code of its own. A change to the contract is a change in scanent and a
+ * version bump here, never an edit to this file. See
+ * docs/implementation-notes/2026-11-13-scanent-contract-dependency.md.
  *
- * Two callers depend on it and they must agree byte-for-byte:
- *   • `mcp/receipt-verification.ts` — the message an Ed25519 receipt signature is
- *     verified against, `SHA-256(canonical JSON of action_record)`.
- *   • `mcp/tool-manifest.ts` — the schema half of a pinned tool manifest.
- *
- * They agree because there is one function, not two that look alike. A second
- * copy would drift on the first edit and the drift would present as a signature
- * that stops verifying, or a tool manifest that alarms on a key reordering
- * nobody made.
+ * The package is compiled CommonJS. Only the modules that import no Node
+ * built-in (`harness-ladder`, `harness-contract-rules`, `harness-findings`,
+ * `harness-matrix-model`, `canonical-json`, `cidr`) may be reached from a
+ * `'use client'` file; tests/guards/client-reachable-modules-import-no-node-builtins.test.ts
+ * walks into the package to hold that.
  */
-export function canonicalJson(value: unknown): string {
-    if (value === null || typeof value !== 'object') {
-        return JSON.stringify(value ?? null);
-    }
-    if (Array.isArray(value)) {
-        return `[${value.map((v) => canonicalJson(v)).join(',')}]`;
-    }
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
-    const entries = keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`);
-    return `{${entries.join(',')}}`;
-}
+export * from '@rodnapamet/scanent-contract/canonical-json';

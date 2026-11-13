@@ -54,7 +54,7 @@
  *
  * Pure: reads the IR, never the code's behaviour.
  */
-import type { PaymentClientLibrary, PaymentProtocol } from '@/lib/agentic/harness-contract';
+import type { PaymentClientLibrary, PaymentProtocol } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { CallExpr, CodeLocation, Expr, FileFacts } from './ir';
 

@@ -1861,6 +1861,21 @@ Six use cases that extend IAM controls to autonomous agents, in five phases.
 step issues under #3654 are the work, one pull request each. Rules that bind
 every step are listed at the end of that document.
 
+**The contract's code is the scanent package's** (scanent #26). The report
+contract, the ladder, the findings planner and their helpers are
+`@rodnapamet/scanent-contract`, the standalone scanent product's package,
+installed from its GitHub release file at one exact version (`package.json`;
+Dependabot does not move it, so a version is taken by hand, on purpose).
+`src/lib/agentic/harness-{contract,contract-rules,findings,ladder}.ts`,
+`src/lib/canonical-json.ts`, `src/lib/security/cidr.ts`,
+`src/lib/mcp/receipt-verification.ts` and `src/lib/audit-redact.ts` are
+one-line re-exports of it, so importers keep their paths; a change to the
+contract is a scanent release and a version bump here, never an edit to those
+files, and `tests/guardrails/harness-scanner-contract-import-closure.test.ts`
+refuses code beside the re-export. The client import-graph guards walk into
+the package's compiled modules, so a client reaching one that requires
+`crypto` still fails. The rules below hold in the package.
+
 **The harness ladder** (`src/lib/agentic/harness-ladder.ts`, H0–H5) has three
 properties that are each one careless edit from being undone:
 
@@ -2046,9 +2061,9 @@ today; Entra, MCP, the register and the container are #3686.
   reference.
 - **It imports the contract, never a copy.** It checks its report with the
   ingest's schema and `firstSecretShapedMember` before it signs, through
-  `harnessSignedMessage`. `eslint.config.mjs` allows `harness-contract`,
-  `harness-findings`, `harness-ladder` and `canonical-json` from `@/` and refuses
-  every other `@/`, `@prisma/*`, `next` and `@inflect/ui` import.
+  `harnessSignedMessage`. It takes them from `@rodnapamet/scanent-contract`,
+  which its image installs, and `eslint.config.mjs` refuses every `@/`,
+  `@prisma/*`, `next` and `@inflect/ui` import.
 - **No register link from the estate's own labels.** `registeredAgentId` is
   `null` from these sources: an Okta profile or a vault tag is written by the
   estate's administrator, who could use it to hide a shadow agent.
@@ -3130,7 +3145,11 @@ the guarded call live there, and `eslint.config.mjs` refuses any import of
 tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
 the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
-before the move.
+before the move. The guarded call scans a READ result for injection and every
+result for secrets, but a PROPOSE result only for secrets (#5548): that text is
+Inflect's own (`PROPOSE_RESULT_FIELDS`, pinned by test), and its `"quarantined"`
+key matched the injection rules, so every engine propose call was held for review.
+Never add a field to it that can carry tenant- or model-authored text.
 
 **Every model call is preceded by the kill switch and the caps** (#4196). A kill
 engaged mid-run used to refuse only the tool calls: the model was called again

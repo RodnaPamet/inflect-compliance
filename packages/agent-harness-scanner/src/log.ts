@@ -6,7 +6,7 @@
  * an error message that quoted a header — costs a `[redacted]`, not a token in
  * somebody's log pipeline.
  */
-import { looksLikeSecret } from '@/lib/agentic/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 
 export type LogFields = Readonly<Record<string, string | number | boolean | null>>;
 

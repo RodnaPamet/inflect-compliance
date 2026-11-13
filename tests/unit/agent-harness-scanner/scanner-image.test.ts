@@ -2,15 +2,17 @@
  * The harness scanner's image ships exactly what the scanner runs (#3686).
  *
  * `packages/agent-harness-scanner/Dockerfile` copies the scanner's source and,
- * file by file, the application modules the scanner imports: the wire contract
- * and what the contract itself imports. `Dockerfile.dockerignore` lets those
- * same files into the build context and nothing else. So the image carries two
- * hand-kept copies of one fact, the scanner's import closure, and each can go
- * wrong in a way nothing else sees in time:
+ * file by file, any application module the scanner imports. Since the wire
+ * contract moved to `@rodnapamet/scanent-contract` (scanent #26), which the
+ * scanner imports directly and the image installs, that list is empty.
+ * `Dockerfile.dockerignore` lets the same files into the build context and
+ * nothing else. So the image carries two hand-kept copies of one fact, the
+ * scanner's import closure, and each can go wrong in a way nothing else sees
+ * in time:
  *
- *   • a contract module gains an import the lists do not name: the image
- *     builds, and fails at its first start in a client's estate (the CI smoke
- *     test sees it too, but only in the job that builds the image);
+ *   • the scanner gains an application import the lists do not name: the
+ *     image builds, and fails at its first start in a client's estate (the CI
+ *     smoke test sees it too, but only in the job that builds the image);
  *   • a list names more than the closure: the client's image carries
  *     application code the scanner never runs, which is surface, and a
  *     disclosure, for nothing.
@@ -35,6 +37,12 @@ import { build } from 'esbuild';
 import { REPO_ROOT } from '../../helpers/repo-files';
 
 const PACKAGE = 'packages/agent-harness-scanner';
+const CONTRACT_PACKAGE = '@rodnapamet/scanent-contract';
+/**
+ * The contract package is installed from its release file on GitHub, not a
+ * registry: the URL names one release and one version, which is an exact pin.
+ */
+const CONTRACT_RELEASE = /^https:\/\/github\.com\/RodnaPamet\/scanent\/releases\/download\/v(\d+\.\d+\.\d+)\/rodnapamet-scanent-contract-\1\.tgz$/;
 const ENTRY = `${PACKAGE}/src/cli.ts`;
 
 const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -103,8 +111,14 @@ const appModules = (): string[] => closure.files.filter((f) => f.startsWith('src
 describe('the scanner image ships its import closure, and nothing else of the application', () => {
     it('computes a closure at all', () => {
         // The denominator. An empty bundle would make every equality below hold.
-        expect(closure.files).toEqual(expect.arrayContaining([ENTRY, 'src/lib/agentic/harness-contract.ts']));
-        expect(appModules().length).toBeGreaterThanOrEqual(5);
+        expect(closure.files).toEqual(expect.arrayContaining([ENTRY, `${PACKAGE}/src/report.ts`]));
+        expect(closure.files.length).toBeGreaterThanOrEqual(20);
+        // The contract comes from its package, which the closure reaches.
+        expect(closure.packages).toEqual(expect.arrayContaining([CONTRACT_PACKAGE, 'zod']));
+    });
+
+    it('imports no application module: the contract is the package\'s', () => {
+        expect(appModules()).toEqual([]);
     });
 
     it('reads nothing of its own package outside the source directory the image copies whole', () => {
@@ -141,7 +155,7 @@ describe("the scanner image's packages and base are pinned", () => {
         devDependencies?: Record<string, string>;
     };
     const lock = JSON.parse(read(`${PACKAGE}/container/package-lock.json`)) as {
-        packages: Record<string, { version?: string; dependencies?: Record<string, string> }>;
+        packages: Record<string, { version?: string; resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
     };
 
     it('installs each package the closure imports, plus tsx to run it, and nothing else', () => {
@@ -150,7 +164,16 @@ describe("the scanner image's packages and base are pinned", () => {
     });
 
     it('pins each to an exact version, and its lockfile resolves that version', () => {
-        for (const [name, version] of Object.entries(manifest.dependencies)) {
+        for (const [name, spec] of Object.entries(manifest.dependencies)) {
+            // The contract: one release file, its version in the URL twice, and
+            // the lockfile resolving that file with an integrity hash.
+            const release = name === CONTRACT_PACKAGE ? CONTRACT_RELEASE.exec(spec) : null;
+            const version = release ? release[1] : spec;
+            if (release) {
+                const entry = lock.packages[`node_modules/${name}`];
+                expect(entry?.resolved).toBe(spec);
+                expect(entry?.integrity).toMatch(/^sha512-/);
+            }
             expect(`${name}@${version}`).toMatch(/@\d+\.\d+\.\d+$/);
             expect(`${name}@${lock.packages[`node_modules/${name}`]?.version}`).toBe(`${name}@${version}`);
         }

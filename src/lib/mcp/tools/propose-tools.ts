@@ -39,6 +39,28 @@ import { z } from 'zod';
 import { badRequest } from '@/lib/errors/types';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import { proposalKindNoun } from '@/lib/agentic/proposal-labels';
+
+/**
+ * EVERY FIELD a propose result carries, and nothing else (#5548).
+ *
+ * The engines' guarded call does not run the injection scan on a propose
+ * result, because this text is built entirely here — counts, proposal ids, the
+ * proposal kind and a fixed sentence — and holds no tenant- or model-authored
+ * text to steer the model with. That exemption is only safe while it stays
+ * true, so the result is built from this list and a test pins it: a field
+ * added here is a field somebody must show is ours before the scan's absence
+ * covers it. Never put item content, a rationale or a refusal reason in it.
+ */
+export const PROPOSE_RESULT_FIELDS = [
+    'proposed',
+    'quarantined',
+    'kind',
+    'proposalIds',
+    'quarantinedProposalIds',
+    'message',
+] as const;
+
+type ProposeResultBody = { [K in (typeof PROPOSE_RESULT_FIELDS)[number]]: number | string | string[] };
 import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
 import {
     createAgentProposal,
@@ -379,6 +401,8 @@ export async function runProposeTool(
                 type: 'text',
                 text: JSON.stringify(
                     {
+                        // Typed by PROPOSE_RESULT_FIELDS: a key outside it is a
+                        // compile error (#5548).
                         proposed: queued.length,
                         quarantined: quarantined.length,
                         kind: tool.kind,
@@ -404,7 +428,7 @@ export async function runProposeTool(
                         // instead of a confident wrong value, which is the
                         // trade the metric reporters make for the same reason.
                         message,
-                    },
+                    } satisfies ProposeResultBody,
                     null,
                     2,
                 ),

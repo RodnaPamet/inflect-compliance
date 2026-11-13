@@ -40,7 +40,10 @@
  * `import type` and all-`type` specifier lists are erased at compile time and
  * are not edges. `@/` and `@inflect/ui/` resolve to source; any other bare
  * specifier is a package and is not walked (its built-ins are its bundler
- * configuration's business, not this repo's source).
+ * configuration's business, not this repo's source) — except
+ * `@rodnapamet/scanent-contract`, which holds the harness contract the clients
+ * reach through `@/` re-exports, and whose compiled modules are walked
+ * (tests/helpers/client-import-graph.ts).
  */
 import { builtinModules } from 'node:module';
 import * as path from 'node:path';
@@ -49,6 +52,8 @@ import {
     bundledSpecifiers,
     clientRoots,
     reachFrom,
+    resolveWalkedPackageModule,
+    WALKED_PACKAGE,
 } from '../helpers/client-import-graph';
 import { REPO_ROOT, repoRelative } from '../helpers/repo-files';
 
@@ -156,6 +161,26 @@ describe('a module a client component can reach imports no Node built-in', () =>
         ]) {
             expect(fromClientFiles).not.toContain(serverOnly);
         }
+        // The contract package is WALKED, not skipped: the clients reach its
+        // pure compiled modules through the `@/` re-exports, and a module of
+        // it that requires `crypto` would be reported like any other.
+        const pkgModule = (name: string): string => {
+            const file = resolveWalkedPackageModule(`${WALKED_PACKAGE}/${name}`);
+            if (file === null) throw new Error(`${WALKED_PACKAGE}/${name} is not installed`);
+            return repoRelative(file);
+        };
+        expect(fromClientFiles).toEqual(expect.arrayContaining(
+            ['harness-ladder', 'harness-contract-rules', 'harness-findings'].map(pkgModule),
+        ));
+        for (const serverOnly of ['harness-contract', 'receipt-verification', 'audit-redact']) {
+            expect(fromClientFiles).not.toContain(pkgModule(serverOnly));
+        }
+        // …and the walk would see its built-ins: the server-only module, walked
+        // as a root, reports `crypto`.
+        const fromContract = walk([path.join(REPO_ROOT, 'src/lib/agentic/harness-contract.ts')]).builtins;
+        expect(fromContract.map((b) => `${b.module} imports ${b.spec}`)).toEqual(
+            expect.arrayContaining([`${pkgModule('harness-contract')} imports crypto`]),
+        );
     });
 
     it('the detector sees every bundling edge and ignores type-only ones', () => {

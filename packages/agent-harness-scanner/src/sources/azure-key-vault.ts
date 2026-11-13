@@ -37,7 +37,7 @@
  * because the contract lists each kind once; the source is COMPLETE only when
  * every vault was read to its end.
  */
-import { MAX_AGENTS } from '@/lib/agentic/harness-contract';
+import { MAX_AGENTS } from '@rodnapamet/scanent-contract/harness-contract';
 
 import {
     ageInDays,

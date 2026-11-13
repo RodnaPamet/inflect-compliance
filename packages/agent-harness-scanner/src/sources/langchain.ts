@@ -81,7 +81,7 @@ import { markersFor, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { recognizePaymentCalls, type DetectedPaymentCall } from './code/payment';
 import { PythonReadError, readPython } from './code/python';
-import { agentSdkOptionVerdicts } from '@/lib/agentic/harness-findings';
+import { agentSdkOptionVerdicts } from '@rodnapamet/scanent-contract/harness-findings';
 
 import { codeLocator, recognizeAgents, type DetectedAgent } from './code/recognize';
 
