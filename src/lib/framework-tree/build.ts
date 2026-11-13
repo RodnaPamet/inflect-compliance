@@ -63,6 +63,15 @@ export interface BuildableRequirement {
  * code-prefix derivation. Empty strings are treated as missing
  * (real seed data has both `null` and `""` in the wild).
  */
+/**
+ * The section a requirement belongs to, as the tree groups it. A section is
+ * derived from the framework's own fields, so a tenant's reorder can move a
+ * requirement within its section but never into another (#5231).
+ */
+export function sectionKeyOf(req: Pick<BuildableRequirement, 'code' | 'section' | 'theme' | 'category'>): string {
+    return deriveSectionKey({ ...req, id: '', title: '', description: null, themeNumber: null, sortOrder: 0 }).key;
+}
+
 function deriveSectionKey(req: BuildableRequirement): {
     key: string;
     label: string;

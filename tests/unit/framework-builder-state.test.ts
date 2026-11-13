@@ -79,18 +79,15 @@ describe('moveRequirement', () => {
         ]);
     });
 
-    it('moves a requirement across sections', () => {
+    it('refuses to move a requirement into another section (#5231)', () => {
+        // A requirement's section comes from the framework, and the saved
+        // order records positions only: the move came back undone on reload.
         const after = moveRequirement(
             fixture(),
             { sectionId: 's-org', requirementId: 'r-5.1' },
             { sectionId: 's-people', index: 0 },
         );
-        expect(after[0].requirements.map((r) => r.id)).toEqual(['r-5.2', 'r-5.3']);
-        expect(after[1].requirements.map((r) => r.id)).toEqual([
-            'r-5.1',
-            'r-6.1',
-            'r-6.2',
-        ]);
+        expect(after).toEqual(fixture());
     });
 
     it('does not mutate the input', () => {
@@ -218,13 +215,22 @@ describe('isModelDirty', () => {
         expect(isModelDirty(next, fixture())).toBe(true);
     });
 
-    it('returns true when a requirement moved across sections', () => {
+    it('returns true when a requirement moved within its section', () => {
+        const next = moveRequirement(
+            fixture(),
+            { sectionId: 's-org', requirementId: 'r-5.1' },
+            { sectionId: 's-org', index: 3 },
+        );
+        expect(isModelDirty(next, fixture())).toBe(true);
+    });
+
+    it('a refused cross-section drop leaves the model clean', () => {
         const next = moveRequirement(
             fixture(),
             { sectionId: 's-org', requirementId: 'r-5.1' },
             { sectionId: 's-people', index: 0 },
         );
-        expect(isModelDirty(next, fixture())).toBe(true);
+        expect(isModelDirty(next, fixture())).toBe(false);
     });
 
     // The section-count short-circuit. Without it the loop below would

@@ -99,8 +99,21 @@ export async function gatherPostureSignals(ctx: RequestContext): Promise<Posture
 
     // Per-framework coverage — one tenant-scoped read of the control ⇄
     // requirement links, then grouped in memory (no per-framework query loop).
+    // The denominator counts LIVE requirements only (#5261), as the numerator's
+    // link read below does. `_count.requirements` includes deprecated ones, so a
+    // framework whose re-imported library dropped requirements could never
+    // reach 100%. One grouped read of the (global) requirement table.
+    const liveTotals = new Map(
+        (await runInTenantContext(ctx, (tdb) =>
+            tdb.frameworkRequirement.groupBy({
+                by: ['frameworkId'],
+                where: { frameworkId: { in: frameworks.map((f) => f.id) }, deprecatedAt: null },
+                _count: { _all: true },
+            }),
+        )).map((g) => [g.frameworkId, g._count._all]),
+    );
     const frameworkById = new Map(
-        frameworks.map((f) => [f.id, { key: f.key, name: f.name, total: f._count.requirements }]),
+        frameworks.map((f) => [f.id, { key: f.key, name: f.name, total: liveTotals.get(f.id) ?? 0 }]),
     );
 
     const now = new Date();

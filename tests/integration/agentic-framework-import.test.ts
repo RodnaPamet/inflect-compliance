@@ -49,6 +49,14 @@ async function wipe() {
     for (const key of [ASI_KEY, MGF_KEY]) {
         const fw = await prisma.framework.findFirst({ where: { key } });
         if (!fw) continue;
+        // A crosswalk naming this framework holds mappings onto its
+        // requirements. Since #5114 a set whose entries were unresolved
+        // imports again on the next sync, so another suite's sync can leave
+        // such mappings here. Deleting the set cascades them; a later sync
+        // recreates a set that is missing.
+        await prisma.requirementMappingSet.deleteMany({
+            where: { OR: [{ sourceFrameworkId: fw.id }, { targetFrameworkId: fw.id }] },
+        });
         await prisma.frameworkRequirement.deleteMany({ where: { frameworkId: fw.id } });
         await prisma.framework.delete({ where: { id: fw.id } });
     }
