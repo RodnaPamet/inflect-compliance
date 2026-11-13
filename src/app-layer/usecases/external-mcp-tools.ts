@@ -223,7 +223,7 @@ export async function listExternalMcpTools(
     // Measured 2026-09-26 against Microsoft's Entra MCP server: Test ok at
     // 11:51:25, this function 401 at 11:55:12, Test ok again at 11:59:46 —
     // same connection, same refresh token, the path as the only variable.
-    const { tools: advertised, refusedNames } = await readCatalogueOrExplain(async () => {
+    const { tools: advertised, refusedNames, truncated: catalogueTruncated } = await readCatalogueOrExplain(async () => {
         const authorization = await authorizationFor(
             connection.id,
             (connection.configJson ?? {}) as Record<string, unknown>,
@@ -287,7 +287,13 @@ export async function listExternalMcpTools(
         connectionId,
         tools,
         advertised: advertised.length,
-        truncated: advertised.length > considered.length,
+        // EITHER cause: our own cap cut the list, or the server kept offering
+        // pages past the client's bound and some of its tools were never read
+        // (#5311). Both mean the same thing to an operator — what you see is a
+        // prefix — and the one thing that must never happen is presenting a
+        // partial catalogue as complete, because a tool nobody can see cannot
+        // be granted.
+        truncated: advertised.length > considered.length || catalogueTruncated,
         refusedNames,
     };
 }
@@ -354,8 +360,15 @@ export async function approveExternalToolManifest(
         // "approve something that is gone" call for different actions.
         throw notFound(
             truncated
-                ? `"${toolName}" is not among the first ${MAX_EXTERNAL_TOOLS} tools this ` +
-                  'server advertises, so it cannot be reviewed or approved here.'
+                // Reworded for #5311: `truncated` now also means the server
+                // paginated past the client's page bound, so the tool may be
+                // within the first MAX_EXTERNAL_TOOLS and still unread. Naming
+                // the cap would have sent an operator looking for a limit that
+                // was not the one they hit. The distinction this message exists
+                // to draw — "cannot see" versus "gone" — is unchanged.
+                ? `"${toolName}" is not in the part of this server's catalogue we could read ` +
+                  `(at most ${MAX_EXTERNAL_TOOLS} tools, and only the pages the server returned ` +
+                  'within its cursor bound), so it cannot be reviewed or approved here.'
                 : `The server no longer advertises a tool named "${toolName}"`,
         );
     }

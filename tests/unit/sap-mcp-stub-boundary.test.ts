@@ -336,7 +336,7 @@ describe('the two failure flags, which are different failures', () => {
         // "The agent had nothing to call" is not "the agent failed" — M2 gave
         // the first its own WorkflowRunStatus for exactly this reason, so the
         // stub has to be able to produce it without looking broken.
-        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0 });
+        await expect(listTools(OPTS)).resolves.toEqual({ tools: [], refusedNames: 0, truncated: false });
     });
 
     it('--fail-mode returns a tool ERROR, not a transport failure', async () => {
