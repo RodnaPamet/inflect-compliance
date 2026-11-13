@@ -53,6 +53,12 @@ const VERSION_PREFIX = VERSION_PREFIX_V1;
 // HKDF info strings — distinct per purpose to ensure key separation
 const ENCRYPT_INFO = 'inflect-data-encryption';
 const HMAC_INFO = 'inflect-data-lookup-hash';
+/**
+ * HKDF info for lookup hashes under the DEDICATED `LOOKUP_HASH_KEY` (#5071).
+ * Distinct from `HMAC_INFO` so a deploy that set the same string for both
+ * variables still gets two unrelated keys.
+ */
+const LOOKUP_HASH_INFO = 'inflect-lookup-hash-v1';
 
 // ─── Key Management ─────────────────────────────────────────────────
 
@@ -208,6 +214,47 @@ export function deriveSubkey(purpose: string): Buffer {
 /**
  * Gets the HMAC key for deterministic lookup hashes.
  */
+let _cachedLookupKey: Buffer | null = null;
+let _lastLookupKeySource: string | null = null;
+
+/**
+ * The dedicated lookup-hash key material, or null when the deploy has not set
+ * one (#5071). Read from `process.env` as `DATA_ENCRYPTION_KEY` is, because
+ * this module is loaded below the env module's consumers; the schema in
+ * `src/env.ts` validates the same variable.
+ */
+function dedicatedLookupKeyMaterial(): string | null {
+    const raw = process.env.LOOKUP_HASH_KEY;
+    return raw && raw.length >= 32 ? raw : null;
+}
+
+/**
+ * Whether lookup hashes are computed under the dedicated, non-rotating
+ * `LOOKUP_HASH_KEY` rather than the master key. The container start recomputes
+ * the stored hashes only when this is true.
+ */
+export function lookupHashKeyIsDedicated(): boolean {
+    return dedicatedLookupKeyMaterial() !== null;
+}
+
+/**
+ * The key `hashForLookup` uses (#5071).
+ *
+ * The dedicated `LOOKUP_HASH_KEY` when set, so rotating `DATA_ENCRYPTION_KEY`
+ * leaves every stored lookup hash valid. Without it, the master-derived HMAC
+ * key exactly as before, so a deploy that has not set the variable is
+ * unchanged — and a master-key rotation there still re-keys every hash, which
+ * is why the variable must be set first.
+ */
+function getLookupHashKey(): Buffer {
+    const dedicated = dedicatedLookupKeyMaterial();
+    if (dedicated === null) return getHmacKey();
+    if (_cachedLookupKey && _lastLookupKeySource === dedicated) return _cachedLookupKey;
+    _cachedLookupKey = deriveKey(dedicated, LOOKUP_HASH_INFO);
+    _lastLookupKeySource = dedicated;
+    return _cachedLookupKey;
+}
+
 function getHmacKey(): Buffer {
     const raw = getRawKeyMaterial();
     if (_cachedHmacKey && _lastKeySource === raw) {
@@ -353,7 +400,7 @@ export function hashForLookup(value: string): string {
     }
 
     const normalised = value.toLowerCase().trim();
-    const key = getHmacKey();
+    const key = getLookupHashKey();
     return crypto.createHmac('sha256', key)
         .update(normalised, 'utf8')
         .digest('hex');
@@ -567,4 +614,6 @@ export function _resetKeyCache(): void {
     _lastKeySource = null;
     _cachedPreviousEncryptKey = null;
     _lastPreviousKeySource = undefined;
+    _cachedLookupKey = null;
+    _lastLookupKeySource = null;
 }

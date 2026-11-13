@@ -246,6 +246,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     JWT_SECRET: 'internal JWT signing secret',
     DATA_ENCRYPTION_KEY: 'app master KEK (env-provided, not an external endpoint)',
     DATA_ENCRYPTION_KEY_PREVIOUS: 'previous master KEK for rotation',
+    LOOKUP_HASH_KEY: 'email lookup-hash key (env-provided, not an external endpoint) (#5071)',
     AV_WEBHOOK_SECRET: 'internal HMAC secret for the AV webhook',
     // Operator config / URLs.
     APP_URL: 'deployment URL config',

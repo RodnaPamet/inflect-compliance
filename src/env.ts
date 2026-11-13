@@ -277,6 +277,14 @@ export const env = createEnv({
         // remaining v1 rows under the previous key.
         DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
 
+        // #5071 — the key email lookup hashes (`User.emailHash` and its
+        // siblings) are computed under, kept apart from DATA_ENCRYPTION_KEY so
+        // a master-key rotation does not change every hash and break sign-in.
+        // NEVER rotated: changing it means recomputing every hash, which the
+        // container start does (`scripts/recompute-lookup-hashes.ts`). Unset,
+        // the hashes stay on the master-derived key exactly as before.
+        LOOKUP_HASH_KEY: emptyToUndefined(z.string().min(32, 'LOOKUP_HASH_KEY must be at least 32 characters').optional()),
+
         // Web Bot Auth (docs/ai-architecture/web-bot-auth.md Phase 1, D-L1-5):
         // ONE Ed25519 signing seed for the DEPLOYMENT, never per tenant — a
         // monitored vendor must not learn which customer monitors it. Both are
@@ -920,6 +928,7 @@ export const env = createEnv({
         PIPELOCK_STRICT_MODE: process.env.PIPELOCK_STRICT_MODE,
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,
+        LOOKUP_HASH_KEY: process.env.LOOKUP_HASH_KEY,
         DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
         WEB_BOT_AUTH_SIGNING_KEY: process.env.WEB_BOT_AUTH_SIGNING_KEY,
         WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY: process.env.WEB_BOT_AUTH_PREVIOUS_SIGNING_KEY,

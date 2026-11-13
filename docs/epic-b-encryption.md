@@ -45,6 +45,7 @@
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | **REQUIRED** in production (≥32 chars). Dev: dev-fallback + WARN log. Test: dev-fallback (silent). | — | Production boot exits 1 if missing, too short, or equal to the dev-fallback string. Three independent checks — zod schema (`src/env.ts`), startup hook (`src/instrumentation.ts` + `scripts/worker.ts` + `scripts/scheduler.ts`), and Compose `:?error` syntax — each refuses to start the process. Set once in every prod environment, identical across replicas, distinct between staging and prod. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Optional (≥32 chars) | unset | Set ONLY during a master-key rotation. When set, `decryptField` tries primary, then falls back to previous on auth-tag failure. **Remove after the rotation job reports zero remaining v1 rows.** |
+| `LOOKUP_HASH_KEY` | Optional (≥32 chars); set it before any master-key rotation | unset (lookup hashes use the master-derived key) | The key email lookup hashes (`User.emailHash`, `AuditorAccount.emailHash`, `UserIdentityLink.emailAtLinkTimeHash`, `VendorContact.emailHash`) are computed under, kept apart from `DATA_ENCRYPTION_KEY` so rotating the master key does not change every hash and break sign-in (#5071). **Set once and never change it.** The first app container start that sees it recomputes every stored hash (`scripts/recompute-lookup-hashes.ts`, a fatal entrypoint step); later starts rewrite nothing. Pass it to both the app and the worker service. |
 | `ENCRYPTION_DECRYPT_FAIL_CLOSED` | Optional | unset (fail CLOSED) | Set to `0` ONLY as an incident lever. The read path throws on a genuine decrypt failure (a DEK resolved, AES-GCM still rejected); `0` reverts it to passing the ciphertext through. Use when one corrupt row is 500ing a page and you need the page back before you can fix the row — then unset it. |
 
 `AUTH_TEST_MODE` / `RATE_LIMIT_ENABLED` don't affect the encryption layer directly — they gate the Epic A middleware this system integrates with.
@@ -211,6 +212,7 @@ SELECT COUNT(*) FROM "Tenant" WHERE "encryptedDek" IS NULL;
 ### Rotating keys safely
 
 Pre-flight:
+- [ ] `LOOKUP_HASH_KEY` is set, and an app start since then logged `Lookup hashes match the lookup-hash key`. Without it, the email lookup hashes derive from the master key, and rotating the master key makes every sign-in by email miss its account (#5071).
 - [ ] New `DATA_ENCRYPTION_KEY` generated (`openssl rand -base64 48`).
 - [ ] Both replicas have the new key deployed in env AND the old key as `DATA_ENCRYPTION_KEY_PREVIOUS`.
 - [ ] Rolling restart completed; smoke-test reads/writes still work.

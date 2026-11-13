@@ -44,6 +44,16 @@ echo "→ Applying database migrations..."
 ./node_modules/.bin/prisma migrate deploy --schema=./prisma/schema
 echo "✓ Migrations applied"
 
+# ── 1a. Lookup hashes (#5071) ──
+#
+# FATAL, unlike the seeds below: with LOOKUP_HASH_KEY set and the stored email
+# hashes still on the old key, no sign-in by email can find its account, so
+# serving would be worse than not starting. Does nothing when LOOKUP_HASH_KEY
+# is unset, and nothing on a start where every hash already matches.
+echo ""
+echo "→ Checking lookup hashes..."
+node dist/recompute-lookup-hashes.mjs
+
 # ── 1b. Seed self-assessment library content (idempotent) ──
 #
 # The NIS2 gap-assessment + AI-governance question sets live in global

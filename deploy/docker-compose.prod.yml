@@ -309,6 +309,11 @@ services:
       # container start before the app process is spawned, so the
       # operator gets a single clear error instead of a crash loop.
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
+      # #5071 — the non-rotating key email lookup hashes use, apart from the
+      # master key. Optional: unset, hashes stay on the master-derived key. Set
+      # it ONCE (openssl rand -base64 48) and never change it; the app's
+      # container start recomputes every stored hash the first time it sees it.
+      LOOKUP_HASH_KEY: "${LOOKUP_HASH_KEY:-}"
       # Capacity budget C1 — the V8 heap ceiling, stated, because `mem_limit`
       # moves it. With no flag Node sizes its default old space from the
       # cgroup limit (`uv_get_constrained_memory`): measured, 2096 MiB with
@@ -395,6 +400,11 @@ services:
       - ./.env.prod
     environment:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
+      # #5071 — the non-rotating key email lookup hashes use, apart from the
+      # master key. Optional: unset, hashes stay on the master-derived key. Set
+      # it ONCE (openssl rand -base64 48) and never change it; the app's
+      # container start recomputes every stored hash the first time it sees it.
+      LOOKUP_HASH_KEY: "${LOOKUP_HASH_KEY:-}"
       # As `app`: the heap ceiling stated, sized below `mem_limit`.
       NODE_OPTIONS: "--max-old-space-size=1024"
       # Step 6d — where the LOCAL_ONLY adjudication model lives. A
