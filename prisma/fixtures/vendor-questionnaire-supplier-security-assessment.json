@@ -4,6 +4,7 @@
   "description": "A broader supplier security assessment covering company details, data exchanged, onward sharing, operational security controls, and third-party certifications.",
   "scoringConfig": {
     "mode": "WEIGHTED_AVERAGE",
+    "thresholdScale": "PERCENT",
     "ratingThresholds": [
       {
         "rating": "LOW",
