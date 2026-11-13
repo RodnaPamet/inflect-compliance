@@ -12,6 +12,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getPermissionsForRole, PERMISSION_SCHEMA } from '@/lib/permissions';
+import { repoRelativeFiles } from '../helpers/repo-files';
 import { matchRoutes, parseApiRoute, type ApiRoute } from '../../scripts/docs-reference/api-routes';
 import { areaOf, isRedirectOnly, sidebarSections } from '../../scripts/docs-reference/inventory';
 import { cell, linkLabel, repoHref } from '../../scripts/docs-reference/markdown';
@@ -88,6 +89,32 @@ describe('the API route table', () => {
         );
         expect(r.url).toBe('/api/t/[tenantSlug]/risks');
         expect(r.methods).toEqual({ GET: ['risks.view'], POST: ['risks.create', 'risks.edit'], DELETE: [], PATCH: [] });
+    });
+
+    it('reads the keys of the { keys, mode } form too (#5135)', () => {
+        // Read as no keys, these routes were published as "checked in the use case".
+        const r = route(
+            'src/app/api/t/[tenantSlug]/admin/mcp/quarantine/route.ts',
+            [
+                'export const GET = withApiErrorHandling(',
+                "    requirePermission({ keys: ['admin.agent_registry_view', 'admin.agent_registry'], mode: 'any' }, async () => ok()),",
+                ');',
+            ].join('\n'),
+        );
+        expect(r.methods).toEqual({ GET: ['admin.agent_registry_view', 'admin.agent_registry'] });
+    });
+
+    it('the real routes using the { keys, mode } form all publish their keys (#5135)', () => {
+        const files = repoRelativeFiles()
+            .filter((f) => f.startsWith('src/app/api/') && f.endsWith('/route.ts'))
+            .filter((f) => /requirePermission\(\s*\{\s*keys:/.test(fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8')));
+        expect(files.length).toBeGreaterThan(0);
+        const unpublished = files.filter((f) => {
+            const parsed = route(f, fs.readFileSync(path.resolve(__dirname, '../..', f), 'utf8'));
+            return Object.values(parsed.methods).some((keys) => keys !== undefined && keys.length === 0)
+                && !Object.values(parsed.methods).some((keys) => (keys ?? []).length > 0);
+        });
+        expect(unpublished).toEqual([]);
     });
 
     it('drops route groups from the URL', () => {

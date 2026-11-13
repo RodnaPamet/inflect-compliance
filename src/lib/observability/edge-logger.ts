@@ -33,6 +33,13 @@ function emit(level: EdgeLogLevel, msg: string, fields?: EdgeLogFields): void {
         time: Date.now(),
         msg,
         ...fields,
+        // ALWAYS present, as the Node logger's is (#5131). The production Ops
+        // Agent ships a container line to Cloud Logging only when its text
+        // contains both `requestId` and `msg` (deploy/ops-agent-config.yaml),
+        // so a line without one never left the container: every middleware
+        // document_load / soft_navigation line and every edge warning. A
+        // caller's own id wins; 'unknown' otherwise, the Node logger's value.
+        requestId: typeof fields?.requestId === 'string' && fields.requestId ? fields.requestId : 'unknown',
     };
 
     const json = JSON.stringify(entry);

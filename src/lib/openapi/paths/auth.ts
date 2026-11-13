@@ -4,13 +4,14 @@
  */
 import { z } from '@/lib/openapi/zod';
 import { registry } from '@/lib/openapi/registry';
-import { AuthRegisterSchema } from '@/lib/schemas';
+import { AuthActionSchema } from '@/lib/schemas';
 import {
     AuthChangePasswordRequestSchema,
     AuthForgotPasswordRequestSchema,
     AuthResetPasswordRequestSchema,
     AuthOkResponseSchema,
     AuthMeResponseSchema,
+    AuthRegisterResponseSchema,
 } from '@/lib/dto/api-extra.dto';
 import { responses, jsonBody } from './_shared';
 
@@ -20,10 +21,13 @@ registry.registerPath({
     summary: 'Self-service signup',
     tags: ['auth'],
     'x-auth': 'public',
-    'x-rate-limit': 'API_MUTATION_LIMIT',
-    request: { body: jsonBody(AuthRegisterSchema, 'Signup payload (gated by AUTH_TEST_MODE in non-prod). Password is HIBP-screened before persistence.') },
+    // As the route is wired (#5132): `TENANT_CREATE_LIMIT`, the body under its
+    // `action: 'register'` discriminator, and the account/workspace it
+    // returns. There is no AUTH_TEST_MODE gate on this route.
+    'x-rate-limit': 'TENANT_CREATE_LIMIT',
+    request: { body: jsonBody(AuthActionSchema, 'Signup payload with `action: "register"`. Open in every environment; rate-limited per IP. Password is HIBP-screened before persistence.') },
     responses: responses(
-        { status: 200, schema: AuthOkResponseSchema, description: 'Account created; email verification initiated server-side.' },
+        { status: 200, schema: AuthRegisterResponseSchema, description: 'Account created (with its workspace when `orgName` was given); email verification initiated server-side.' },
         ['400', '409', '429'],
     ),
 });

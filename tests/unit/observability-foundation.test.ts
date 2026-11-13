@@ -198,6 +198,28 @@ describe('edge logger', () => {
         logSpy.mockRestore();
     });
 
+    it('every line carries a requestId, so production ships it (#5131)', () => {
+        // The Ops Agent keeps a container line only when its text contains
+        // both `requestId` and `msg` (deploy/ops-agent-config.yaml); without
+        // one, every middleware denominator line and edge warning was dropped.
+        const { edgeLogger } = require('../../src/lib/observability/edge-logger');
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+        edgeLogger.info('document_load', { route: '/t/[tenant]/dashboard', requestId: 'req-42' });
+        edgeLogger.warn('consent callback rejected', { component: 'test' });
+
+        const withId = JSON.parse(logSpy.mock.calls[0][0]);
+        expect(withId.requestId).toBe('req-42');
+        const without = warnSpy.mock.calls[0][0] as string;
+        expect(JSON.parse(without).requestId).toBe('unknown');
+        expect(without).toContain('requestId');
+        expect(without).toContain('msg');
+
+        logSpy.mockRestore();
+        warnSpy.mockRestore();
+    });
+
     it('should use console.error for error level', () => {
         const { edgeLogger } = require('../../src/lib/observability/edge-logger');
 

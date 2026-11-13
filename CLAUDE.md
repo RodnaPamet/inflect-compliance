@@ -4333,7 +4333,7 @@ Register shortcuts via `useKeyboardShortcut` — never
 ### Epic 58 — Date Pickers
 
 Use `<DatePicker>` for single dates and `<DateRangePicker>` for
-ranges. Use `formatDate` / `formatDateTime` from `@/lib/format-date`
+ranges. Use `formatDate` / `formatDateTime` from `@inflect/ui/lib/format-date`
 for display. Never use `<input type="date">` or raw
 `toLocaleDateString`. See `docs/date-picker.md`.
 
