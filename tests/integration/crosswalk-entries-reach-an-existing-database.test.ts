@@ -11,11 +11,13 @@
  * and 34, which is the whole breach-notification path from ISO 27001 to GDPR.
  *
  * Making the clause assessable is half the fix. A database that already
- * imported `iso27701-to-gdpr` holds the set with those two entries missing,
- * and the importer skips a set whose content hash matches the stored one. The
- * set's entries did not change, so without its version bump that database
- * would never import it again and the two entries would never arrive. This
- * runs that database through the upgrade, with the bump and without it.
+ * imported `iso27701-to-gdpr` holds the set with those two entries missing.
+ * The importer skips a set whose content hash matches the stored one, and it
+ * used to store the hash even when entries failed to resolve, so without the
+ * set's version bump that database would never have imported it again. Since
+ * #5114 the hash is stored only for a clean import, so the entries arrive
+ * either way. This runs that database through the upgrade, with the bump and
+ * without it.
  *
  * The files are written from the shipped ones, so the "after" state is the
  * shipped data and the "before" state differs only where the history says it
@@ -156,9 +158,14 @@ describeFn('a crosswalk entry naming a former heading reaches a database that al
         expect(JSON.parse(diff.removedCodesJson)).toEqual([]);
     });
 
-    it('without the version bump, a set whose entries did not change is skipped and its entries never arrive', () => {
-        expect(withoutBump.mappingSets.results.every((r) => r.skippedDuplicate)).toBe(true);
-        expect(rowsAfter.withoutBump).toEqual([]);
+    it('even without the version bump, a set that left entries unresolved imports again and they arrive (#5114)', () => {
+        // Version 1 dropped entries, so the importer did not store the set's
+        // hash. It used to store it anyway, and this database then skipped the
+        // unchanged set for ever: the entries arrived only because the shipped
+        // files also bumped the version.
+        expect(withoutBump.mappingSets.results.every((r) => !r.skippedDuplicate)).toBe(true);
+        expect(droppedEntries(withoutBump)).toEqual([]);
+        expect(rowsAfter.withoutBump).toEqual(['Art.33', 'Art.34']);
     });
 
     it('with it, both sets import again and every entry resolves', () => {

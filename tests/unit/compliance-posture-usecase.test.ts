@@ -14,6 +14,7 @@ const mockListFrameworks = jest.fn();
 const mockProviderGenerate = jest.fn();
 const mockUpsert = jest.fn().mockResolvedValue({});
 const mockLinkFindMany = jest.fn();
+const mockReqGroupBy = jest.fn();
 
 jest.mock('@/app-layer/usecases/dashboard', () => ({
     getExecutiveDashboard: (...a: unknown[]) => mockGetExecutiveDashboard(...a),
@@ -29,6 +30,7 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({
             controlRequirementLink: { findMany: (...a: unknown[]) => mockLinkFindMany(...a) },
+            frameworkRequirement: { groupBy: (...a: unknown[]) => mockReqGroupBy(...a) },
             compliancePostureSummary: { upsert: (...a: unknown[]) => mockUpsert(...a) },
         }),
 }));
@@ -59,6 +61,11 @@ beforeEach(() => {
     mockListFrameworks.mockResolvedValue([
         { id: 'fw-iso', key: 'ISO27001', name: 'ISO/IEC 27001', _count: { requirements: 93 } },
         { id: 'fw-soc', key: 'SOC2', name: 'SOC 2', _count: { requirements: 60 } },
+    ]);
+    // LIVE requirement counts, the denominator (#5261).
+    mockReqGroupBy.mockResolvedValue([
+        { frameworkId: 'fw-iso', _count: { _all: 93 } },
+        { frameworkId: 'fw-soc', _count: { _all: 60 } },
     ]);
     /**
      * Each link now carries its CONTROL, because the signal reports two different
@@ -112,6 +119,23 @@ describe('gatherPostureSignals', () => {
         expect(signals.tasks).toEqual({ open: 8, overdue: 1 });
         expect(signals.policies.overdueReview).toBe(2);
         expect(signals.vendors.overdueReview).toBe(1);
+    });
+
+    it('divides by LIVE requirements, not every requirement ever imported (#5261)', async () => {
+        // ISO's library dropped 43 requirements: `_count` still says 93, but
+        // only 50 are live, and all 50 are mapped. The numerator already
+        // skipped deprecated ones, so the old denominator capped it at 54%.
+        mockReqGroupBy.mockResolvedValue([
+            { frameworkId: 'fw-iso', _count: { _all: 50 } },
+            { frameworkId: 'fw-soc', _count: { _all: 60 } },
+        ]);
+        const signals = await gatherPostureSignals(makeRequestContext('ADMIN'));
+        const iso = signals.frameworks.find((f) => f.key === 'ISO27001');
+        expect(iso?.total).toBe(50);
+        expect(iso?.requirementsMappedPercent).toBe(100);
+        expect(mockReqGroupBy).toHaveBeenCalledWith(expect.objectContaining({
+            where: { frameworkId: { in: ['fw-iso', 'fw-soc'] }, deprecatedAt: null },
+        }));
     });
 
     it('computes distinct per-framework coverage, weakest first', async () => {

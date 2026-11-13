@@ -12,8 +12,10 @@
  * scoped tightly to MVP:
  *
  *   ✓ Reorder requirements within a section
- *   ✓ Reorder requirements across sections
  *   ✓ Reorder sections themselves
+ *   ✗ No moving a requirement into another section — its section is
+ *     derived from the framework, and the saved order cannot change it
+ *     (#5231; refused in `moveRequirement` and by the server)
  *   ✓ Save / discard with optimistic local state
  *   ✗ No add / edit / delete  (deferred to a phase-3 builder)
  *   ✗ No section rename       (deferred — section labels are
