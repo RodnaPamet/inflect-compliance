@@ -209,6 +209,12 @@ describe('the run shape', () => {
         expect(read('deploy/docker-compose.prod.yml')).toContain('node dist/worker.mjs');
     });
 
+    it('lets the web process dispatch automation events, which the Tool Runner samples start from', () => {
+        // A Tool Runner sample's run starts from a TASK_CREATED rule, and the
+        // task is created over HTTP: a web-tier event, held back by default.
+        expect(WORKFLOW.jobs.inspect.env.AUTOMATION_WEB_EVENTS_ENABLED).toBe('1');
+    });
+
     it('prints the automation dispatch lines at every level, so a rule that never fired shows', () => {
         // Run 43429583015: a Tool Runner sample's rule never acted, and a
         // warnings-only filter could not say whether a dispatch job had run.

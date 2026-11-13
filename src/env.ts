@@ -646,6 +646,15 @@ export const env = createEnv({
         // this says, and a named tenant stays open past `AGENT_PROFILES=0`.
         // Read through `agentProfilesDecisionFor`.
         AGENT_PROFILES_TENANTS: z.string().optional(),
+        // AUTOMATION RULES FROM WEB EVENTS (owner decision 2026-11-13) — opt-in.
+        // Until #5541 no automation event emitted in the web process ever
+        // reached the queue, so no rule fired from a task, risk or control
+        // created through the UI or the API; worker-emitted events fired all
+        // along. '1'/'true' dispatch web events; unset or anything else keeps
+        // holding them back. Turning it on wakes every ENABLED rule for new web
+        // events, with no replay. The worker never reads it. Read through
+        // `automationWebEventsEnabled` (app-layer/automation/web-events-switch.ts).
+        AUTOMATION_WEB_EVENTS_ENABLED: z.string().optional(),
         // The organization settings page's "Evaluations" card (owner decisions
         // 2026-11-12): every organization shows it to its org admins by
         // default; this is the OPT-OUT list, comma-separated organization slugs
@@ -993,6 +1002,7 @@ export const env = createEnv({
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
+        AUTOMATION_WEB_EVENTS_ENABLED: process.env.AUTOMATION_WEB_EVENTS_ENABLED,
         EVALS_CARD_HIDDEN_ORG_SLUGS: process.env.EVALS_CARD_HIDDEN_ORG_SLUGS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AGENT_FLUE_WORKER_MODEL: process.env.AGENT_FLUE_WORKER_MODEL,

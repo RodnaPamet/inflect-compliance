@@ -4,7 +4,7 @@
 #
 # Runs ON the VM, as root, from `vm.sh`, which the dispatch-only `VM check`
 # workflow runs (.github/workflows/vm-check.yml). Read-only: it changes nothing
-# on the VM, and its one database query runs in a read-only transaction.
+# on the VM, and its database queries run in read-only transactions.
 #
 #   remote.sh <check>
 #
@@ -18,6 +18,9 @@
 #                        that ends before it starts, counted per scope (#4390)
 #   bcrypt               whether the app's native bcrypt module loads and
 #                        verifies a hash (#4340)
+#   automation-rules     ENABLED automation rules, counted in all, per trigger
+#                        event and per action type, and the tenants holding
+#                        one: what AUTOMATION_WEB_EVENTS_ENABLED would wake
 #
 # THE WORKFLOW'S LOGS ARE PUBLIC, because the repository is. So this prints
 # names, states, versions and counts, and never a log line, a row, an
@@ -126,6 +129,28 @@ bcrypt)
     echo
     docker exec "$(need app)" node -e \
         'const b = require("bcrypt"); const h = b.hashSync("vm-check", 4); console.log(b.compareSync("vm-check", h) && !b.compareSync("other", h) ? "loads and verifies: yes" : "loads, but verification is WRONG")'
+    ;;
+
+automation-rules)
+    # What turning AUTOMATION_WEB_EVENTS_ENABLED on would wake (#5541): every
+    # ENABLED rule starts acting on new events the web process emits. Counts
+    # only. A trigger event is printed only when it is an event-name literal;
+    # anything else in the column is counted as (other), never printed.
+    echo "## Enabled automation rules (what AUTOMATION_WEB_EVENTS_ENABLED would wake)"
+    echo
+    echo "Rules on events the worker emits (scheduled sweeps, jobs) fire today whatever the switch says."
+    echo
+    docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$(need postgres)" \
+        sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -P footer=off' <<'SQL'
+SELECT count(*) AS enabled_rules,
+  count(DISTINCT "tenantId") AS tenants_with_an_enabled_rule
+FROM "AutomationRule" WHERE status = 'ENABLED' AND "deletedAt" IS NULL;
+SELECT CASE WHEN "triggerEvent" ~ '^[A-Z][A-Z0-9_]{0,63}$' THEN "triggerEvent" ELSE '(other)' END AS trigger_event,
+  count(*) AS enabled_rules
+FROM "AutomationRule" WHERE status = 'ENABLED' AND "deletedAt" IS NULL GROUP BY 1 ORDER BY 1;
+SELECT "actionType" AS action_type, count(*) AS enabled_rules
+FROM "AutomationRule" WHERE status = 'ENABLED' AND "deletedAt" IS NULL GROUP BY 1 ORDER BY 1;
+SQL
     ;;
 
 *)

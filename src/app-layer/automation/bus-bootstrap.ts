@@ -1,10 +1,17 @@
 /**
  * Bus ↔ BullMQ wiring.
  *
- * Call `installAutomationBusDispatcher()` once at process startup
- * (web server boot, worker boot) to swap the bus's default no-op
- * dispatcher for one that enqueues an `automation-event-dispatch`
- * job per emitted event.
+ * Call `installAutomationBusDispatcher(tier)` once at process startup
+ * (`'web'` from `instrumentation.ts`, `'worker'` from `scripts/worker.ts`)
+ * to swap the bus's default no-op dispatcher for one that enqueues an
+ * `automation-event-dispatch` job per emitted event.
+ *
+ * THE TIER IS THE GATE POINT for `AUTOMATION_WEB_EVENTS_ENABLED`
+ * (`web-events-switch.ts`). The web tier's dispatcher holds every event back
+ * while the switch is off, as the web tier did before the bus was shared; the
+ * worker's dispatcher never reads the switch, so a worker-tier event fires
+ * exactly as it always has. Each process installs one dispatcher on its own
+ * bus, so the two never meet.
  *
  * Deliberately kept out of `automation-bus.ts` so that file has no
  * dependency on the BullMQ queue — the bus itself is Edge-safe; the
@@ -20,6 +27,7 @@ import { logger } from '@/lib/observability/logger';
 import { enqueue } from '../jobs/queue';
 import type { AutomationEventDispatchPayload } from '../jobs/types';
 import { getAutomationBus } from './automation-bus';
+import { AUTOMATION_WEB_EVENTS_SWITCH, automationWebEventsEnabled } from './web-events-switch';
 import type { AutomationDispatcher } from './automation-bus';
 import type { AutomationDomainEvent } from './event-contracts';
 
@@ -70,6 +78,32 @@ export const bullmqAutomationDispatcher: AutomationDispatcher = async (
     }
 };
 
+let heldLogged = false;
+
+/**
+ * The WEB tier's dispatcher: the BullMQ one, behind the switch. With the switch
+ * off the event is dropped, as every web event was before the bus was shared;
+ * the first one dropped is logged once per process, so an operator can see
+ * that the switch is holding events back.
+ */
+export const webAutomationDispatcher: AutomationDispatcher = async (event) => {
+    if (!automationWebEventsEnabled()) {
+        if (!heldLogged) {
+            heldLogged = true;
+            logger.info('automation-bus.web_events_held', {
+                component: 'bus-bootstrap',
+                switch: AUTOMATION_WEB_EVENTS_SWITCH,
+                event: event.event,
+                note: 'automation events emitted in the web process are not dispatched while the switch is off; logged once per process',
+            });
+        }
+        return;
+    }
+    await bullmqAutomationDispatcher(event);
+};
+
+export type AutomationBusTier = 'web' | 'worker';
+
 let installed = false;
 
 /**
@@ -77,14 +111,17 @@ let installed = false;
  * emission. Safe to call multiple times — the bus's
  * `setDispatcher()` is last-write-wins and there's no in-flight
  * state to leak. The `installed` flag only gates the one-time
- * startup log line.
+ * startup log line. The tier is required, so no caller can forget
+ * which side of the switch it is on.
  */
-export function installAutomationBusDispatcher(): void {
-    getAutomationBus().setDispatcher(bullmqAutomationDispatcher);
+export function installAutomationBusDispatcher(tier: AutomationBusTier): void {
+    getAutomationBus().setDispatcher(tier === 'web' ? webAutomationDispatcher : bullmqAutomationDispatcher);
     if (!installed) {
         logger.info('automation-bus.dispatcher_installed', {
             component: 'bus-bootstrap',
             backend: 'bullmq',
+            tier,
+            ...(tier === 'web' ? { webEventsEnabled: automationWebEventsEnabled() } : {}),
         });
         installed = true;
     }

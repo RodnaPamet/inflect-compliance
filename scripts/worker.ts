@@ -138,7 +138,8 @@ log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@
         '../src/lib/db/rls-middleware'
     );
     const { prisma } = await import('../src/lib/prisma');
-    installAutomationBusDispatcher();
+    // 'worker': never gated by AUTOMATION_WEB_EVENTS_ENABLED (bus-bootstrap.ts).
+    installAutomationBusDispatcher('worker');
     installRlsTripwire(prisma);
     // Swap the mailer to SMTP when configured — the worker runs the
     // notification outbox + digests, which send email. Without this the

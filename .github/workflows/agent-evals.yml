@@ -106,6 +106,10 @@ jobs:
       AGENT_DRIVER_FLUE: '1'
       AGENT_DRIVER_TOOL_RUNNER: '1'
       AGENT_PROFILES: '1'
+      # The Tool Runner samples start from a TASK_CREATED rule fired by the
+      # harness's POST /tasks, an event the WEB process emits: held back
+      # unless this is on (owner decision 2026-11-13; docs/deployment.md).
+      AUTOMATION_WEB_EVENTS_ENABLED: '1'
       # D-EV-6: the model both engines run on for this job, every variable an
       # engine reads one from. The pinning guard holds each equal to the
       # budget's model, so the spend breaker prices what actually ran.

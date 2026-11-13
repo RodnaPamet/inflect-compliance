@@ -196,6 +196,7 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AGENT_BEHAVIOUR_DETECTOR: 'operator switch for the nightly agent behaviour fingerprint (Morpheus Phase 1) — an in-worker computation over this deployment\'s own ledger, no external endpoint, not a sub-processor',
     AGENT_BEHAVIOUR_DETECTOR_LATCH: 'operator switch letting that detector latch the existing circuit breaker — in-process, no external endpoint, not a sub-processor',
     AGENT_BEHAVIOUR_DETECTOR_TENANTS: 'operator allowlist of tenant slugs the behaviour fingerprint scores — this deployment\'s own tenants, not an external endpoint, not a sub-processor',
+    AUTOMATION_WEB_EVENTS_ENABLED: 'operator switch letting automation events emitted in the web process reach this deployment\'s own job queue — no external endpoint and not a sub-processor; the rules it wakes act through the existing WEBHOOK, NOTIFY and agent paths, whose destinations are triaged on their own',
     AGENT_PROFILES_TENANTS: 'operator allowlist of tenant slugs that opens the same agent profile surface to named tenants only — a list of this deployment\'s own tenants, not an external endpoint, and not a sub-processor',
     EVALS_CARD_HIDDEN_ORG_SLUGS: 'operator opt-out list of organization slugs whose org admins do not see the static Evaluations card on the org settings page — this deployment\'s own organizations, read by no request to anywhere, not an external endpoint, and not a sub-processor',
     // Step 2a (#4148). The Tool Runner engine's two model pins and the SDK's
