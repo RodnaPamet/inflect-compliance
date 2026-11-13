@@ -154,6 +154,12 @@ jest.mock('@/lib/agentic/drivers/run-settlement', () => {
     };
 });
 
+// No run here was parked on a deferred call (Step 2f): every segment opens afresh.
+jest.mock('@/lib/agentic/drivers/deferral-store', () => ({
+    readDecidedDeferral: jest.fn(async () => null),
+    readDeferredProposal: jest.fn(async () => null),
+    markDeferralResumedInTx: jest.fn(() => async () => undefined),
+}));
 jest.mock('@/lib/agentic/drivers/run-store', () => ({
     getRunRow: jest.fn(async () => ({
         costTokens: mockState.alreadyTokens,

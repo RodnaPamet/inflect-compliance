@@ -38,6 +38,24 @@ import type { RecordedRunDriver } from '@/lib/agentic/agent-driver';
  */
 export type RunStepRow = RunStepFeedRow;
 
+/**
+ * The run's latest DEFERRED CALL (Step 2f), as the server projected it, or
+ * null for a run that never deferred one. Never the transcript.
+ */
+export interface RunDeferral {
+    status: string;
+    decision: string | null;
+    proposalId: string;
+    proposalKind: string | null;
+    toolCalled: string;
+    /** The deferred call's TOOL_CALL seq; its checkpoint is the next step. */
+    stepSeq: number;
+    parkedAt: string;
+    deadline: string | null;
+    decidedAt: string | null;
+    decidedByUserId: string | null;
+}
+
 export interface RunHeader {
     id: string;
     workflowKey: string;
@@ -306,11 +324,14 @@ export function AgentRunDetailClient({
     tenantSlug,
     run,
     steps,
+    deferral = null,
     canOperate = false,
 }: {
     tenantSlug: string;
     run: RunHeader;
     steps: RunStepRow[];
+    /** The run's latest deferred call (Step 2f), or null. */
+    deferral?: RunDeferral | null;
     /**
      * The role-tier `canWrite`: resume and abort open with `assertCanWrite`.
      * As on the runs list, the controls are shown DISABLED with the reason to
@@ -370,6 +391,13 @@ export function AgentRunDetailClient({
     // Absent reads as "not recorded", the same as NULL: a header built before
     // the field existed must not render as "mounted nothing".
     const pinnedSkills = run.mountedSkills ?? null;
+    // A run WAITING on a proposal (Step 2f) is continued by the decision on it,
+    // never by Resume, which the server refuses (`RUN_WAITS_ON_A_PROPOSAL`): the
+    // page offers the proposal in its place.
+    const waitsOnProposal = deferral?.status === 'WAITING' && run.status === 'AWAITING_APPROVAL';
+    const proposalHref = deferral ? `${tenantHref('/agents/proposals')}#proposal-${deferral.proposalId}` : '';
+    // The checkpoint the deferral parked at: the step after the deferred call.
+    const deferralCheckpointSeq = deferral ? deferral.stepSeq + 1 : null;
 
     return (
         <EntityDetailLayout
@@ -386,7 +414,16 @@ export function AgentRunDetailClient({
             actions={
                 RESUMABLE.has(run.status) || ABORTABLE.has(run.status) ? (
                     <div className="flex items-center gap-tight">
-                        {RESUMABLE.has(run.status) && (
+                        {waitsOnProposal && (
+                            <a
+                                className="text-sm font-medium text-content-info hover:underline"
+                                data-testid="run-detail-open-proposal"
+                                href={proposalHref}
+                            >
+                                {t('runs.openProposal')}
+                            </a>
+                        )}
+                        {RESUMABLE.has(run.status) && !waitsOnProposal && (
                             <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
                                 <Button
                                     variant="secondary"
@@ -471,6 +508,33 @@ export function AgentRunDetailClient({
                         {actionError}
                     </InlineNotice>
                 )}
+                {/* A DEFERRED CALL (Step 2f). Waiting: the proposal's kind, its
+                    deadline (the wait's one clock) and a link to it, where a
+                    person decides it. Decided: who and when. */}
+                {deferral && waitsOnProposal ? (
+                    <InlineNotice variant="warning" data-testid="run-deferral-waiting">
+                        {t('runs.detail.deferral.waiting', {
+                            kind: deferral.proposalKind
+                                ? label(proposalKindLabelKey(deferral.proposalKind), deferral.proposalKind)
+                                : deferral.toolCalled,
+                        })}{' '}
+                        {deferral.deadline
+                            ? t('runs.detail.deferral.deadline', { deadline: formatDateTime(deferral.deadline) })
+                            : null}{' '}
+                        <a className="underline" data-testid="run-deferral-proposal-link" href={proposalHref}>
+                            {t('runs.detail.deferral.openProposal')}
+                        </a>
+                    </InlineNotice>
+                ) : deferral && deferral.decidedAt ? (
+                    <p className="text-sm text-content-muted" data-testid="run-deferral-decided">
+                        {t(deferral.decision === 'REJECTED'
+                            ? 'runs.detail.deferral.decidedRejected'
+                            : 'runs.detail.deferral.decidedApproved', {
+                            who: deferral.decidedByUserId ?? '',
+                            when: formatDateTime(deferral.decidedAt),
+                        })}
+                    </p>
+                ) : null}
                 {/* `!== null`, not truthiness: a run a directly fired rule
                     started before the lineage fix recorded `''` — a rule DID
                     cause it, only the execution was lost — and reading that as
@@ -695,7 +759,9 @@ export function AgentRunDetailClient({
                                     <span className="text-sm font-medium text-content-emphasis">
                                         {s.compaction !== null
                                             ? t('runs.detail.compaction.label')
-                                            : t(`runs.detail.kind.${s.kind}`)}
+                                            : s.kind === 'HUMAN_CHECKPOINT' && s.seq === deferralCheckpointSeq
+                                              ? t('runs.detail.deferral.checkpoint')
+                                              : t(`runs.detail.kind.${s.kind}`)}
                                     </span>
                                     {/* A COMPACTION (Step 2g): the sizes of the
                                         request before and after, estimated. */}

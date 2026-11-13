@@ -46,6 +46,11 @@
  * preview refuse it on an engine whose `runsSubagents` entry is false
  * (`PROFILE_SUBAGENTS_NOT_RUNNABLE`): never run as though it had none.
  *
+ * A version naming DEFERRED TOOLS (Step 2f) is compiled with them, read back
+ * strictly, and refused the same way on an engine whose `runsDeferrals` entry
+ * is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`): never run as though its calls
+ * did not wait for a person.
+ *
  * THE WORKER does not resolve by approval: it executes what admission PINNED.
  * `resolvePinnedRunDefinition` rebuilds the definition from the run's own
  * `profileVersionId` and checks the instructions still hash to
@@ -66,7 +71,9 @@ import {
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    parseStoredDeferredToolNames,
     parseStoredProfileSubagents,
+    runsDeferrals,
     runsFlows,
     runsProfiles,
     runsSubagents,
@@ -89,6 +96,7 @@ export type ProfileRunRefusal =
     | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
     | 'PROFILE_FLOW_NOT_RUNNABLE'
     | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+    | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
     | 'PROFILE_TRIGGER_REQUIRED'
     | 'PROFILE_TRIGGER_NOT_ALLOWED';
@@ -144,6 +152,7 @@ const VERSION_SELECT = {
     effort: true,
     maxTurns: true,
     compactionThresholdTokens: true,
+    deferredToolNames: true,
     outputKind: true,
     allowedTriggers: true,
     profile: { select: { id: true, agentId: true, currentApprovedVersion: true } },
@@ -163,6 +172,7 @@ interface VersionRow {
     effort: string;
     maxTurns: number;
     compactionThresholdTokens: number | null;
+    deferredToolNames: string[];
     outputKind: string;
     allowedTriggers: string[];
     profile: { id: string; agentId: string; currentApprovedVersion: number | null };
@@ -209,6 +219,14 @@ function compileProfileDefinition(
         if (!parsed) return null;
         subagents = parsed;
     }
+    // The deferred tools (Step 2f), read back as strictly: a list this build
+    // would not have written (unsorted, a tool the version lacks, a read tool,
+    // one a sub-agent names) compiles to nothing, never to different waits.
+    const deferredToolNames = parseStoredDeferredToolNames(row.deferredToolNames, {
+        toolNames: row.toolNames,
+        ...(subagents ? { subagents } : {}),
+    });
+    if (!deferredToolNames) return null;
 
     const profile: ProfileRunSpec = {
         profileId: row.profile.id,
@@ -230,6 +248,9 @@ function compileProfileDefinition(
         // engine's, 0 turns it off. The engine takes the lowest, so a value
         // here can only lower the engine's threshold.
         ...(row.compactionThresholdTokens !== null ? { compactionThresholdTokens: row.compactionThresholdTokens } : {}),
+        // The calls that wait for a person (Step 2f): absent for a version that
+        // defers nothing, so such a version compiles exactly as it did before.
+        ...(deferredToolNames.length > 0 ? { deferredToolNames } : {}),
     };
 
     return {
@@ -377,6 +398,10 @@ export async function resolvePinnedRunDefinition(
     // admitted by a build that did, resumed by one that does not, continues as
     // nothing rather than half-delegated.
     if (def.profile?.subagents && !runsSubagents(def.driver ?? 'static')) return undefined;
+    // Nor a version with deferred tools on an engine that does not park on
+    // them (Step 2f): a run admitted by a build that did continues as nothing
+    // rather than as though its calls did not wait.
+    if (def.profile?.deferredToolNames && !runsDeferrals(def.driver ?? 'static')) return undefined;
     return def;
 }
 
@@ -420,6 +445,15 @@ export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRu
                 'than run without its sub-agents.',
         );
     }
+    // A version naming deferred tools runs only on an engine that parks on
+    // them (Step 2f): never as though its calls did not wait for a person.
+    if (profile.deferredToolNames && profile.deferredToolNames.length > 0 && !runsDeferrals(driver)) {
+        throw refuse(
+            'PROFILE_DEFERRALS_NOT_RUNNABLE',
+            `This version waits for a person on ${profile.deferredToolNames.join(', ')}, and the ${driver} engine ` +
+                'does not park a run on a deferred call. It is refused rather than run without the wait.',
+        );
+    }
 }
 
 // ─── The preview (Phase 4 of `docs/ai-architecture/langflow.md`) ────
@@ -439,6 +473,7 @@ export type ProfileRunPreview =
           readonly runRefused:
               | 'PROFILE_FLOW_NOT_RUNNABLE'
               | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+              | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
               | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
               | null;
           /** The run message, from `runMessage`, the function the engines call. */
@@ -501,7 +536,12 @@ export async function previewProfileRunMessage(
  */
 function refusedOnEveryEngine(
     profile: ProfileRunSpec,
-): 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_SUBAGENTS_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null {
+):
+    | 'PROFILE_FLOW_NOT_RUNNABLE'
+    | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+    | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
+    | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
+    | null {
     const someEngineRuns = AGENT_DRIVERS.some((driver) => {
         try {
             assertEngineRunsProfiles(driver, profile);
@@ -515,6 +555,9 @@ function refusedOnEveryEngine(
     if (profile.flow) return 'PROFILE_FLOW_NOT_RUNNABLE';
     if (profile.subagents && profile.subagents.length > 0 && !AGENT_DRIVERS.some(runsSubagents)) {
         return 'PROFILE_SUBAGENTS_NOT_RUNNABLE';
+    }
+    if (profile.deferredToolNames && profile.deferredToolNames.length > 0 && !AGENT_DRIVERS.some(runsDeferrals)) {
+        return 'PROFILE_DEFERRALS_NOT_RUNNABLE';
     }
     return 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }

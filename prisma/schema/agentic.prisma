@@ -601,6 +601,9 @@ model WorkflowRun {
   /// The owner suggestion a `discovered-agent-review` run's answer parsed into
   /// (#3728) — at most one, and only for that workflow.
   reviewAttributions DiscoveredAgentAttribution[]
+  /// The tool calls this run deferred to a person (Step 2f, #5530): one row per
+  /// deferral, the proposal it waits for and the transcript it resumes from.
+  deferrals          WorkflowRunDeferral[]
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])
@@ -2884,6 +2887,73 @@ model AgentServicePrincipalConfirmation {
 /// reason only on UNMATCHED, an owner reference only on SUGGESTED).
 /// Operational: derived, replaced by the next review, and cascades with its run
 /// and its agent.
+/// ONE TOOL CALL A RUN DEFERRED TO A PERSON (Step 2f of
+/// `docs/claude-tool-runner-design.md`, #5530).
+///
+/// A Tool Runner run that calls a propose tool its profile version names in
+/// `deferredToolNames` PARKS: the proposal goes to the ordinary queue, the run
+/// moves to `AWAITING_APPROVAL`, and this row keeps the conversation the run
+/// resumes from once a person decides the proposal there. The row, not the
+/// status, is what tells a deferral apart from a guard flag or a checkpoint.
+///
+/// ## Held below the usecase
+///
+/// Written only by `src/lib/agentic/drivers/deferral-store.ts` and
+/// `usecases/workflow-run-deferrals.ts`
+/// (`tests/guards/workflow-run-deferral-single-write-seam.test.ts`). `status`
+/// and `decision` are TEXT with CHECKs, not Prisma enums, so widening one is a
+/// CHECK change rather than an `ALTER TYPE` that fails still-running
+/// containers. A trigger moves `status` one way (WAITING → DECIDED → RESUMED,
+/// and any open status → SETTLED), writes `decision` and every stamp once,
+/// freezes every other column, and lets `transcriptJson` change only to NULL
+/// (the clear, when the row moves to RESUMED or SETTLED) or from ciphertext to
+/// `v2:` ciphertext (the key-rotation sweeps' re-wrap). `app_user` holds no
+/// DELETE: the row goes with its run or its tenant, by cascade.
+model WorkflowRunDeferral {
+  id              String    @id @default(cuid())
+  tenantId        String
+  runId           String
+  /// The seq of the deferred call's `TOOL_CALL` step.
+  stepSeq         Int
+  /// The model's `tool_use` id, whose result the transcript leaves open.
+  toolUseId       String
+  /// The tool the model called, a propose tool the version named.
+  toolCalled      String
+  /// The one proposal waited for; unique with `tenantId`, so it is waited for once.
+  proposalId      String
+  /// `WAITING`, `DECIDED`, `RESUMED` or `SETTLED` (CHECK; one way, trigger).
+  status          String    @default("WAITING")
+  /// `ACCEPTED`, `EDITED`, `REJECTED`, `EXPIRED` or `NOT_RESUMED` (CHECK), set once.
+  decision        String?
+  /// The request the run would send next, with the deferred call's result left
+  /// open: exact API bytes, never sanitised or re-serialised (a thinking
+  /// block's signature binds them). Encrypted at rest (Epic B). NULL once the
+  /// row is RESUMED or SETTLED: the transcript is working state, and the step
+  /// ledger and the Art 12 rows are the record (owner decision 3, 2026-11-13).
+  transcriptJson  String?
+  /// Hex SHA-256 of the plaintext transcript. Kept after the clear, so what was
+  /// resumed stays provable. A digest, so not encrypted.
+  transcriptHash  String
+  /// The model id the transcript was produced on, pinned for the resume.
+  model           String
+  /// The unattended milliseconds the run had spent when it parked: the resumed
+  /// segment's wall clock starts here, so the wait is never charged.
+  elapsedMsAtPark Int
+  parkedAt        DateTime  @default(now())
+  decidedAt       DateTime?
+  /// The person whose decision moved the row to DECIDED. A plain String with no
+  /// FK: the record must survive the decider's account.
+  decidedByUserId String?
+  resumedAt       DateTime?
+  settledAt       DateTime?
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    WorkflowRun @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, proposalId])
+  @@index([tenantId, runId])
+}
+
 model DiscoveredAgentAttribution {
   id                String   @id @default(cuid())
   tenantId          String
@@ -3308,6 +3378,15 @@ model AgentProfileVersion {
   /// not in the content hash, so an older worker that does not read it does
   /// not compact, which is the behaviour before it existed.
   compactionThresholdTokens Int?
+  /// The propose tools whose calls WAIT FOR A PERSON (Step 2f of
+  /// `docs/claude-tool-runner-design.md`): a sorted, deduplicated subset of
+  /// `toolNames`, each a propose tool, and never named by a sub-agent. A call to
+  /// one parks the run until the proposal it queued is decided in the proposal
+  /// queue. Empty for a version that defers nothing. Frozen with the rest of the
+  /// version (trigger); not in the content hash, as `toolNames` is not. Tool
+  /// names are not secret, so no encrypted-fields entry. A version naming any is
+  /// refused at admission on an engine whose `RUNS_DEFERRALS` entry is false.
+  deferredToolNames String[] @default([])
   outputKind       AgentProfileOutputKind
   /// `PROFILE_TRIGGERS`: ASK, AUTOMATION, TEST_RUN; CHECK, non-empty.
   allowedTriggers  String[]

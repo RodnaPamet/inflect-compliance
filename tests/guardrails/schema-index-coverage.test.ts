@@ -780,6 +780,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.
     AuditWorkpaperNarrative:
         'the period read\'s narrated flag and the capture read narratives by (tenantId, workpaperId IN …) — exactly the @@unique([tenantId, workpaperId]); no order; bounded take by the ids asked about (≤50 shown workpapers, ≤6 narratives an answer carries), one row per workpaper.',
+    // A run's deferred tool calls (Step 2f, #5530) — a handful per run, one per proposal.
+    WorkflowRunDeferral:
+        'the runs list reads by (tenantId, runId IN …, status), the proposals page and the expiry heal by (tenantId, proposalId IN …, status) and the retirement cascade by (tenantId, status, run.agentId) — the first is the @@index([tenantId, runId]) prefix, the second the @@unique([tenantId, proposalId]); bounded take by the page or batch size; a run defers a handful of calls in its life, so status is a filter over very few rows.',
     // A review run's stored owner suggestion (#3728) — at most one per discovered agent.
     DiscoveredAgentAttribution:
         'the harness matrix\'s shadow list reads suggestions by (tenantId, discoveredAgentId IN …) and the intake and the capture by (tenantId, discoveredAgentId) — exactly the @@unique([tenantId, discoveredAgentId]); no order; bounded take by the shown shadow rows (≤200), one row per agent.',

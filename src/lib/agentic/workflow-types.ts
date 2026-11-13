@@ -319,6 +319,15 @@ export interface ProfileRunSpec {
      * older worker that does not read it does not compact, today's behaviour.
      */
     readonly compactionThresholdTokens?: number;
+    /**
+     * The propose tools whose calls WAIT FOR A PERSON (Step 2f of
+     * `docs/claude-tool-runner-design.md`): a sorted subset of `toolNames`,
+     * each a propose tool, never named by a sub-agent. ABSENT for a version
+     * that defers nothing. Only an engine whose `runsDeferrals` entry is true
+     * is admitted to run a version that names any, so a version is never run
+     * as though it had none.
+     */
+    readonly deferredToolNames?: readonly string[];
 }
 
 /**

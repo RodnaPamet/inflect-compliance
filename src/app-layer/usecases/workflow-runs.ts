@@ -111,6 +111,12 @@ import {
     recordAgentRunSettled,
 } from '@/lib/observability/metrics';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
+import {
+    readWaitingDeferral,
+    readWaitingDeferralsForRuns,
+    settleOpenDeferrals,
+    settleOpenDeferralsInTx,
+} from '@/lib/agentic/drivers/deferral-store';
 import { recordDecisionOutcome, recordRunDecisionsUnreviewed } from '@/app-layer/ai/decision-log';
 import { logger } from '@/lib/observability/logger';
 import { captureReviewAttributionAfterRun } from './agent-harness-attribution';
@@ -755,6 +761,24 @@ export async function resumeWorkflowRun(
         throw badRequest(`Run is ${run.status}, cannot resume`);
     }
 
+    // ── A RUN THAT WAITS ON A PROPOSAL IS CONTINUED BY ITS DECISION (Step 2f) ──
+    //
+    // A deferred tool call parks the run at AWAITING_APPROVAL on a WAITING
+    // `WorkflowRunDeferral`. What continues it is the decision on that
+    // proposal, taken in the proposal queue with the kind's key, the
+    // signatures and the window (`settleDeferralForProposal`). The generic
+    // Resume would continue it with no decision at all, and the conversation
+    // it resumes from would have nothing to tell the model. So it is refused,
+    // naming the proposal, before anything is claimed or dispatched.
+    const waitingOn = await readWaitingDeferral(ctx, runId);
+    if (waitingOn) {
+        throw badRequest(
+            `RUN_WAITS_ON_A_PROPOSAL: this run is waiting for a decision on proposal ${waitingOn.proposalId}. ` +
+                'Decide the proposal in the proposal queue; the decision continues the run.',
+            { reason: 'RUN_WAITS_ON_A_PROPOSAL', proposalId: waitingOn.proposalId },
+        );
+    }
+
     // ── THE HUMAN'S WINDOW, CHECKED BEFORE ANYTHING IS DISPATCHED ──────────
     //
     // A checkpoint pins `approvalExpiresAt` when the run parks, from that
@@ -1060,6 +1084,10 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
             // reading — the human accepted what the run had done at the checkpoint,
             // and then refused what it did next.
             await recordDecisionOutcome(db, ctx, runId, 'REJECTED');
+            // A run parked on a deferred call (Step 2f): its deferral settles
+            // NOT_RESUMED and its transcript is cleared, in this transaction.
+            // The proposal stays in the queue as an ordinary proposal.
+            await settleOpenDeferralsInTx(db, ctx, runId);
         });
     } catch (err) {
         // No row matched: the run settled after the read above. Say which way,
@@ -1181,7 +1209,15 @@ export async function listWorkflowRuns(
         });
         // ONE text read for the page, not one per row.
         const driverOf = await readRecordedRunDrivers(db, ctx.tenantId, runs.map((r) => r.id));
-        return runs.map((r) => ({ ...r, driver: driverOf(r.id) }));
+        // WHICH PARKED RUNS WAIT ON A PROPOSAL (Step 2f): the list offers "Open
+        // proposal" for them in place of Resume, which would be refused. One
+        // bounded read for the page, over its parked runs only.
+        const waitingOn = await readWaitingDeferralsForRuns(
+            db,
+            ctx,
+            runs.filter((r) => r.status === 'AWAITING_APPROVAL').map((r) => r.id),
+        );
+        return runs.map((r) => ({ ...r, driver: driverOf(r.id), waitingOnProposalId: waitingOn.get(r.id) ?? null }));
     });
 }
 
@@ -1312,6 +1348,10 @@ async function executeFrom(
         // row, and its own write did not land on the ABORTED.
         const outcome = await yieldToOperatorAbort(runCtx, runId, await run(runCtx, runId, def, fromSeq, runStartMs));
         await recordRunSettlementMetrics(runCtx, runId, driverLabel, outcome.status);
+        // A run that ended without resuming from an open deferral (a kill or a
+        // suspension found at the resume, a refused transcript, any settlement
+        // that is not a park) settles it and clears its transcript (Step 2f).
+        await settleDeferralsAfterRun(runCtx, runId, outcome.status);
         // A FINISHED run's unreviewed model calls are stamped "no human
         // review" here (#4896), at the one seam that sees every settlement.
         await settleRunDecisionLog(runCtx, runId, outcome.status);
@@ -1335,6 +1375,7 @@ async function executeFrom(
         // does not land on it, and what the run did after the abort is refused
         // rather than stamped unreviewed (#5366).
         const settled = await yieldToOperatorAbort(runCtx, runId, { status: 'FAILED', stepFailures: 0 });
+        await settleDeferralsAfterRun(runCtx, runId, 'FAILED');
         recordAgentRunSettled({ driver: driverLabel, outcome: settled.status === 'ABORTED' ? 'aborted' : 'failed' });
         // The caller fails the run; nobody reviews what it did before the throw.
         await settleRunDecisionLog(runCtx, runId, 'FAILED');
@@ -1342,6 +1383,26 @@ async function executeFrom(
     } finally {
         untrackInFlightRun(runId);
     }
+}
+
+/** The run statuses that are not a settlement: a run in one still holds its open deferral. */
+const NOT_SETTLED_RUN_STATUSES = new Set(['RUNNING', 'AWAITING_APPROVAL', 'PAUSED']);
+
+/**
+ * Settle a run's OPEN deferral once the run has ended without resuming from it
+ * (Step 2f). A park (AWAITING_APPROVAL) keeps its WAITING row, and a SIGTERM
+ * pause (PAUSED) keeps a DECIDED one, so the retry resumes from it; any other
+ * outcome settles the row and clears its transcript. NEVER THROWS: the run has
+ * settled already, and a row left open is settled by the next touch.
+ */
+async function settleDeferralsAfterRun(ctx: RequestContext, runId: string, status: string): Promise<void> {
+    if (NOT_SETTLED_RUN_STATUSES.has(status)) return;
+    await settleOpenDeferrals(ctx, runId).catch(() => {
+        logger.warn('workflow run: open deferral not settled after the run ended', {
+            component: 'workflow-runs',
+            tenantId: ctx.tenantId,
+        });
+    });
 }
 
 /**
@@ -1855,6 +1916,7 @@ export async function executeQueuedWorkflowRun(
             'run_agent_no_longer_in_service: the registered agent this run was started by ' +
                 'is no longer ACTIVE, so the run does not resume on its behalf.',
         );
+        await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext, runId, 'FAILED');
         return { skipped: 'AGENT_NOT_ACTIVE' };
     }
 
@@ -1866,6 +1928,7 @@ export async function executeQueuedWorkflowRun(
             'run_principal_no_longer_authorised: the principal that started this run ' +
                 'no longer holds an active membership in this workspace.',
         );
+        await settleDeferralsAfterRun({ tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext, runId, 'FAILED');
         return { skipped: 'PRINCIPAL_REVOKED' };
     }
 
@@ -1878,6 +1941,7 @@ export async function executeQueuedWorkflowRun(
                 'profile_version_unavailable: the agent profile version this run pinned can no longer be ' +
                     'read as it was pinned, so the run does not continue.',
             );
+            await settleDeferralsAfterRun(ctx, runId, 'FAILED');
             return { skipped: 'NO_DEFINITION' };
         }
     }

@@ -82,6 +82,12 @@ export interface ProposalRow {
     runId: string | null;
     stepSeq: number | null;
     /**
+     * A run is WAITING on this proposal (Step 2f): it deferred a tool call to a
+     * person and parked until this decision. Deciding it continues the run.
+     * Absent reads as false, for a row built before the field existed.
+     */
+    runWaits?: boolean;
+    /**
      * The agentic output guard's verdict on this proposal's content.
      *
      * NOT NULLABLE — the column is `AgentGuardVerdict NOT NULL DEFAULT 'CLEAN'`,
@@ -760,6 +766,18 @@ export function AgentProposalsClient({
                               has no step, and a disabled control would imply a
                               run existed and was unreachable.
                             */}
+                            {p.runWaits && p.runId && (
+                                <InlineNotice variant="info" data-testid={`proposal-run-waits-${p.id}`}>
+                                    {t('proposals.runWaits')}{' '}
+                                    <a
+                                        className="underline"
+                                        data-testid={`proposal-run-waits-link-${p.id}`}
+                                        href={tenantHref(`/agents/runs/${p.runId}`)}
+                                    >
+                                        {t('proposals.runWaitsLink')}
+                                    </a>
+                                </InlineNotice>
+                            )}
                             {p.runId && (
                                 <p className="text-xs text-content-subtle">
                                     <a

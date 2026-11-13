@@ -79,6 +79,12 @@ function makeDb(
             updateMany: jest.fn(async () => ({ count: 0 })),
         },
         agentPolicyCard: { findUnique: jest.fn(async () => null) },
+        // Runs parked on a deferred call (Step 2f): none here.
+        workflowRunDeferral: {
+            findMany: jest.fn(async () => []),
+            updateMany: jest.fn(async () => ({ count: 0 })),
+        },
+        workflowRun: { updateMany: jest.fn(async () => ({ count: 0 })) },
         agentOwnershipTransfer: {
             findFirst: jest.fn(async () => opts.transfer ?? null),
             updateMany: jest.fn(async () => ({ count: opts.transfer ? 1 : 0 })),

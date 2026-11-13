@@ -56,6 +56,22 @@
  * fails is discarded, the run carries on uncompacted, and compaction is off
  * for the rest of the segment. The ledger keeps every original step.
  *
+ * ── A SEGMENT RESUMED FROM A DEFERRAL (Step 2f, #5530) ─────────────────────
+ *
+ * A run parked on a deferred call continues, once a person decided the
+ * proposal in the queue, from the transcript it parked on, never from its
+ * opening message. Before anything is sent: the kill switch and the skill pins
+ * (as for every segment), then the transcript's seal, its envelope and the
+ * decision as the PROPOSAL ROW records it (`openResume`); a failure halts the
+ * run, and nothing is repaired. The offer is re-resolved; the request sends the
+ * stored `system`, `tools` and `model` (`lockedParams`' `resume` option), each
+ * stored tool taking its runnable from the new offer (`resumedToolsFor`: a
+ * withdrawn tool refuses, a newly granted one is not added). The wall clock
+ * starts at `elapsedMsAtPark`. The first MODEL_CALL step moves the deferral to
+ * RESUMED and clears its transcript in its own transaction. The API refusing
+ * the resumed conversation settles the run by name
+ * (`tool_runner_resume_transcript_refused`); nothing is stripped and retried.
+ *
  * The body runs BEFORE the runner reads the stop reason and runs the turn's
  * tools, so every `break` in 1-7 happens before any tool of that turn.
  *
@@ -100,6 +116,11 @@ import {
     updateRun,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
+import {
+    markDeferralResumedInTx,
+    readDecidedDeferral,
+    readDeferredProposal,
+} from '@/lib/agentic/drivers/deferral-store';
 import { getRunRow, proposedItemsSoFar, readCompactionRecord } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
@@ -120,6 +141,7 @@ import {
 import { createRunBudget, resolveRunCaps, type RunBudget, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
 import { estimateTokens, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import type { PrismaTx } from '@/lib/db-context';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
@@ -138,8 +160,15 @@ import { recordToolRunnerDecision } from './model-decision';
 import { compactionParams, DEFAULT_TIER, lockedParams } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
 import {
+    decisionResult,
+    openTranscript,
+    resumedMessages,
+    type DeferralTranscript,
+} from './transcript';
+import {
     SerialQueue,
     TOOL_RUNNER_GUARD_SOURCE,
+    resumedToolsFor,
     TurnCallCounter,
     subagentGuardSource,
     subagentOf,
@@ -185,6 +214,39 @@ export const BREAKER_UNREADABLE_MESSAGE =
 /** A compaction found an activated skill whose text no longer matches its pin (Step 2g). */
 export const SKILL_PIN_MISMATCH_MESSAGE =
     'tool_runner_skill_pin_mismatch: a skill this run activated no longer matches the version the run was pinned to, so the run stopped rather than re-teach it.';
+
+/** A deferral's transcript no longer hashes to its seal (Step 2f): nothing is repaired. */
+export const DEFERRAL_TRANSCRIPT_UNSEALED_MESSAGE =
+    'tool_runner_deferral_transcript_unsealed: the conversation this run parked on no longer matches the hash ' +
+    'written beside it, so the run stopped rather than resume from it. Nothing was repaired.';
+
+/** A DECIDED deferral that cannot be resumed from as it was written (Step 2f). */
+export const DEFERRAL_UNREADABLE_MESSAGE =
+    'tool_runner_deferral_unreadable: the deferral this run was to resume from could not be read as it was ' +
+    'written, so the run did not continue. The decision stands on its proposal.';
+
+/**
+ * The model API refused the resumed conversation (Step 2f): a thinking block
+ * bound to another conversation, organisation or model, for example. Never
+ * repaired by stripping blocks and never retried with
+ * `prefix_mismatch_behavior: 'drop_block'`: a silent degrade is what global
+ * rule 4 forbids.
+ */
+export function resumeTranscriptRefusedMessage(apiErrorType: string | null): string {
+    return (
+        'tool_runner_resume_transcript_refused: the model API refused the conversation this run resumed from ' +
+        `(${apiErrorType ?? 'no error type given'}). Nothing was stripped or retried.`
+    );
+}
+
+/** The status and error type of a model API refusal, when the thrown value carries them. */
+function apiRefusalOf(err: unknown): { status: number | null; type: string | null } {
+    if (!err || typeof err !== 'object') return { status: null, type: null };
+    const status = (err as { status?: unknown }).status;
+    const body = (err as { error?: { error?: { type?: unknown }; type?: unknown } }).error;
+    const type = body?.error?.type ?? body?.type;
+    return { status: typeof status === 'number' ? status : null, type: typeof type === 'string' ? type : null };
+}
 
 /** The text a model call produced, from its text blocks only. */
 export function textOf(message: Pick<BetaMessage, 'content'>): string {
@@ -235,6 +297,12 @@ interface LoopRuntime {
     noteCompactionFailed(): void;
     /** Latch the skill-pin stop a compaction found, and abort the request in flight. */
     stopAtPinMismatch(): void;
+    /**
+     * A RESUMED segment's mark (Step 2f), taken ONCE, by the first MODEL_CALL
+     * step the segment records: it moves the deferral to RESUMED and clears
+     * its transcript in that step's own transaction. `undefined` otherwise.
+     */
+    takeResumeMark(): ((db: PrismaTx) => Promise<void>) | undefined;
 }
 
 /** One loop: the parent's (no sub-agent) or a delegated sub-agent's. */
@@ -529,7 +597,10 @@ async function compactHistory(
  * THE ONE LOOP BODY (Step 2e). The parent and every sub-agent run this, with
  * the sub-agent's name as a parameter. See the module header for its order.
  */
-async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopResult & { namedStop: NamedStopReason | null }> {
+async function runModelLoop(
+    rt: LoopRuntime,
+    spec: LoopSpec,
+): Promise<ChildLoopResult & { namedStop: NamedStopReason | null; failureApi: { status: number | null; type: string | null } | null }> {
     const { ctx, runId, def, client, budget } = rt;
     const label = spec.subagent === null ? {} : { subagent: spec.subagent };
     const outputSource = spec.subagent === null ? TOOL_RUNNER_GUARD_SOURCE : subagentGuardSource(spec.subagent);
@@ -537,13 +608,14 @@ async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopR
     let namedStop: NamedStopReason | null = null;
     let lastStopReason: string | null = null;
     let failure: string | null = null;
+    let failureApi: { status: number | null; type: string | null } | null = null;
     let lastText = '';
     // Where this loop's own ledger starts: its run-state block reads from here.
     const loopFromSeq = rt.seq();
     // The turn whose end was compacted, so the next turn does not compact again.
     let compactedAtCall = -1;
 
-    if (await stoppedBeforeModelCall(rt)) return { calls, namedStop, lastStopReason, failure, lastText };
+    if (await stoppedBeforeModelCall(rt)) return { calls, namedStop, lastStopReason, failure, lastText, failureApi };
 
     rt.markActivity();
     const runner = client.beta.messages.toolRunner(spec.params, { signal: spec.signal });
@@ -583,7 +655,7 @@ async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopR
                         : null,
                 },
                 ...label,
-            });
+            }, undefined, rt.takeResumeMark());
             await recordToolRunnerDecision(
                 ctx,
                 runId,
@@ -697,9 +769,53 @@ async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopR
         // else is a failure.
         if (rt.binding.stopped() === null) {
             failure = err instanceof Error ? err.message : String(err);
+            failureApi = apiRefusalOf(err);
         }
     }
-    return { calls, namedStop, lastStopReason, failure, lastText };
+    return { calls, namedStop, lastStopReason, failure, lastText, failureApi };
+}
+
+/** A DECIDED deferral, opened for the resume: its transcript, and the result its open slot takes. */
+interface OpenedResume {
+    readonly ok: true;
+    readonly deferralId: string;
+    readonly transcript: DeferralTranscript;
+    readonly result: { content: string; isError: boolean };
+    readonly elapsedMsAtPark: number;
+}
+
+/**
+ * The run's DECIDED deferral, opened, or null when it has none (the segment
+ * opens as every segment does). The seal first, then the envelope, then the
+ * proposal row: the deferred call's result is written from the queue's own
+ * record of the decision, never from anything the transcript says.
+ */
+async function openResume(
+    ctx: RequestContext,
+    runId: string,
+): Promise<OpenedResume | { ok: false; message: string } | null> {
+    const deferral = await readDecidedDeferral(ctx, runId);
+    if (deferral === null) return null;
+    if (deferral === 'UNREADABLE') return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    const opened = openTranscript(deferral.transcriptJson, deferral.transcriptHash);
+    if (!opened.ok) {
+        return {
+            ok: false,
+            message: opened.reason === 'UNSEALED' ? DEFERRAL_TRANSCRIPT_UNSEALED_MESSAGE : DEFERRAL_UNREADABLE_MESSAGE,
+        };
+    }
+    if (opened.transcript.model !== deferral.model || opened.transcript.toolUseId !== deferral.toolUseId) {
+        return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    }
+    const proposal = await readDeferredProposal(ctx, deferral.proposalId);
+    if (!proposal || proposal.status !== deferral.decision) return { ok: false, message: DEFERRAL_UNREADABLE_MESSAGE };
+    return {
+        ok: true,
+        deferralId: deferral.id,
+        transcript: opened.transcript,
+        result: decisionResult(proposal),
+        elapsedMsAtPark: deferral.elapsedMsAtPark,
+    };
 }
 
 export async function executeToolRunnerRun(
@@ -766,12 +882,31 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
+    // ── A SEGMENT RESUMED FROM A DEFERRAL (Step 2f, #5530) ──────────────────
+    // A run parked on a deferred call continues from the transcript it parked
+    // on, once a person decided the proposal in the queue. Asked AFTER the kill
+    // switch and the skill pins (and, in the worker, the agent's status and the
+    // profile pin), and BEFORE the invocation is re-resolved: the transcript's
+    // seal, then its envelope, then the decision as the PROPOSAL ROW records
+    // it. A transcript that fails any of them halts the run; nothing is
+    // repaired, and the conversation is never started afresh in its place.
+    const resume = await openResume(ctx, runId);
+    if (resume && !resume.ok) {
+        const status = await failRun(ctx, runId, resume.message);
+        return { status, stepFailures: 0 };
+    }
+
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
     const caps = resolveRunCaps(invocation.policyCard?.inForce.value ?? null);
     const budget = createRunBudget({
         caps,
         now: () => Date.now(),
-        startedAtMs: runStartMs,
+        // THE WALL CLOCK DOES NOT RUN WHILE THE RUN WAITS (Step 2f): a resumed
+        // segment starts at the unattended time the run had spent when it
+        // parked, so a person's deliberation is never charged to RUNTIME_MS.
+        // The worker's `runStartMs` is not used for it: it is the run's start,
+        // or the decision's clock base, and either would charge the queue.
+        startedAtMs: resume ? Date.now() - resume.elapsedMsAtPark : runStartMs,
         spent: {
             STEPS: fromSeq,
             TOOL_CALLS: fromSeq,
@@ -950,6 +1085,8 @@ export async function executeToolRunnerRun(
         admitToolCall: () => turnCalls.admit('parent', parentCalls),
     };
 
+    // Taken by the first MODEL_CALL step of a resumed segment, and only by it.
+    let resumeMark = resume ? markDeferralResumedInTx(ctx, resume.deferralId) : undefined;
     const rt: LoopRuntime = {
         ctx,
         runId,
@@ -982,6 +1119,11 @@ export async function executeToolRunnerRun(
         stopAtPinMismatch: () => {
             state.pinMismatch = true;
             controller.abort();
+        },
+        takeResumeMark: () => {
+            const mark = resumeMark;
+            resumeMark = undefined;
+            return mark;
         },
     };
 
@@ -1084,14 +1226,27 @@ export async function executeToolRunnerRun(
         },
         queue,
     );
+    const runTools = [...offered.tools, ...(skillTool ? [skillTool] : []), ...(delegation ? [delegation] : [])];
     const params = lockedParams({
         def,
-        tools: [...offered.tools, ...(skillTool ? [skillTool] : []), ...(delegation ? [delegation] : [])],
+        // A resumed segment sends the transcript's tool definitions, each with
+        // its runnable from THIS segment's offer, a withdrawn one refusing and a
+        // newly granted one not added (Step 2f): authority only narrows.
+        tools: resume ? resumedToolsFor(resume.transcript.tools, runTools, binding, queue) : runTools,
         message,
         caps,
         fromSeq,
         skillCatalogue: skillCatalogueText(skills.documents),
         toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
+        ...(resume
+            ? {
+                  resume: {
+                      model: resume.transcript.model,
+                      system: resume.transcript.system,
+                      messages: resumedMessages(resume.transcript, resume.result),
+                  },
+              }
+            : {}),
     });
     logger.info('tool-runner: dispatching', {
         component: 'agentic',
@@ -1105,6 +1260,7 @@ export async function executeToolRunnerRun(
         toolCallsPerTurn: turnCaps.toolCallsPerTurn.value,
         toolCallsPerTurnBasis: turnCaps.toolCallsPerTurn.basis,
         delegationsPerTurn: turnCaps.delegationsPerTurn.value,
+        resumedFromDeferral: resume ? resume.deferralId : null,
     });
 
     const parent = await runModelLoop(rt, {
@@ -1163,7 +1319,17 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: stepFailures + 1 };
     }
     if (parent.failure !== null) {
-        const status = await failRun(ctx, runId, `tool_runner_run_failed: ${parent.failure}`);
+        // THE API REFUSED THE RESUMED CONVERSATION (Step 2f): its first request,
+        // answered 400. Settled by name with the API's error type, never
+        // repaired by stripping thinking blocks and trying again.
+        const refusedResume = resume !== null && parent.calls === 0 && parent.failureApi?.status === 400;
+        const status = await failRun(
+            ctx,
+            runId,
+            refusedResume
+                ? resumeTranscriptRefusedMessage(parent.failureApi?.type ?? null)
+                : `tool_runner_run_failed: ${parent.failure}`,
+        );
         return { status, stepFailures: stepFailures + 1 };
     }
     if (parent.namedStop) {

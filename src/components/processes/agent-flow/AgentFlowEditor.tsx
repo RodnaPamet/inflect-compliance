@@ -81,6 +81,7 @@ export type FlowRunPreview =
           runRefused:
               | 'PROFILE_FLOW_NOT_RUNNABLE'
               | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+              | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
               | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
               | null;
           message: string;

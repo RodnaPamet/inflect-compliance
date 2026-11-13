@@ -81,6 +81,7 @@ import {
 } from '@/app-layer/usecases/process-map-proposal';
 import { assertMayApproveRecordProposal } from '@/app-layer/usecases/proposal-kind-approval';
 import type { RequestContext } from '@/app-layer/types';
+import { settleDeferralForProposal } from '@/app-layer/usecases/workflow-run-deferrals';
 
 /**
  * The reason both PROCESS_MAP refusals carry in `details.reason` (#5053), so the
@@ -2086,6 +2087,14 @@ export async function approveAgentProposal(
         );
     }
 
+    // ═══ A RUN WAITING ON THIS PROPOSAL CONTINUES (Step 2f) ═══
+    //
+    // After the decision has committed, and only on this exit: a signature
+    // short of the requirement is not a decision. A no-op for a proposal no
+    // run waits on, and it never throws: the approval above stands whatever
+    // the hook does.
+    await settleDeferralForProposal(ctx, id);
+
     return { proposalId: id, kind, operation, createdEntityId, status };
 }
 
@@ -2153,6 +2162,8 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         requestId: ctx.requestId,
         detailsJson: { category: 'access' },
     }).catch(() => undefined);
+    // A run waiting on this proposal continues with the rejection (Step 2f).
+    await settleDeferralForProposal(ctx, id);
 }
 
 /** Why a proposal named in a bulk reject was not rejected. */
@@ -2354,6 +2365,10 @@ export async function bulkRejectAgentProposals(
             }).catch(() => undefined),
         ),
     );
+
+    // Each run waiting on one of them continues with the rejection (Step 2f),
+    // one hook per moved row, as the single-row path calls it.
+    for (const id of rejected) await settleDeferralForProposal(ctx, id);
 
     return { rejected, skipped };
 }

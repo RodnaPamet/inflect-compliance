@@ -48,6 +48,8 @@ import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { UNCARDED_PROPOSAL_WINDOW_DAYS } from '@/lib/agentic/proposal-expiry';
 import { recordRunsDecisionsUnreviewed } from '@/app-layer/ai/decision-log';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { settleDeferralForProposal } from '@/app-layer/usecases/workflow-run-deferrals';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -86,6 +88,12 @@ export interface AgentProposalExpiryResult {
     raced: number;
     /** Decision-log rows stamped "no human review" for runs whose last proposal expired (#4896). */
     runsSettled: number;
+    /**
+     * Runs PARKED on a deferred call whose proposal this pass expired, settled
+     * FAILED (Step 2f, owner decision 4a), plus deferrals left WAITING behind a
+     * proposal already decided, handed to the decision hook again (the heal).
+     */
+    deferralsSettled: number;
 }
 
 export async function runAgentProposalExpiry(
@@ -123,7 +131,7 @@ export async function runAgentProposalExpiry(
     let expired = 0;
     let raced = 0;
     /** The runs whose proposals expired here, for the decision log (#4896). */
-    const expiredFromRuns: { tenantId: string; runId: string }[] = [];
+    const expiredFromRuns: { tenantId: string; runId: string; proposalId: string }[] = [];
 
     for (const proposal of due) {
         // Conditional claim, exactly as `approveAgentProposal` does it: the
@@ -139,7 +147,9 @@ export async function runAgentProposalExpiry(
             continue;
         }
         expired += 1;
-        if (proposal.runId) expiredFromRuns.push({ tenantId: proposal.tenantId, runId: proposal.runId });
+        if (proposal.runId) {
+            expiredFromRuns.push({ tenantId: proposal.tenantId, runId: proposal.runId, proposalId: proposal.id });
+        }
 
         await appendAuditEntry({
             tenantId: proposal.tenantId,
@@ -161,6 +171,23 @@ export async function runAgentProposalExpiry(
         }).catch(() => undefined);
     }
 
+    // ── 3a. The runs PARKED on those proposals (Step 2f). ──
+    // Nobody decided, so a run that waited on one does not continue: it settles
+    // FAILED with a named reason and its transcript is cleared (owner decision
+    // 4a). Before step 3, so a run settled here is a finished run there. Then
+    // the HEAL: a deferral still WAITING behind a proposal somebody already
+    // decided (the hook failed after the decision committed) is handed to the
+    // hook again, which resumes it under the decider the queue recorded.
+    let deferralsSettled = 0;
+    for (const p of expiredFromRuns) {
+        const outcome = await settleDeferralForProposal(
+            buildSystemContext({ tenantId: p.tenantId, job: 'agent-proposal-expiry', discriminator: p.proposalId }),
+            p.proposalId,
+        );
+        if (outcome === 'SETTLED_EXPIRED') deferralsSettled += 1;
+    }
+    deferralsSettled += await healDecidedDeferrals(db, tenantScope);
+
     // ── 3. The runs those proposals came from (#4896). ──
     // A finished run whose last pending proposal expired undecided was never
     // reviewed, so its model calls are stamped "no human review" rather than
@@ -181,7 +208,37 @@ export async function runAgentProposalExpiry(
         raced,
     });
 
-    return { scanned: due.length, expired, backfilled: backfill.count, raced, runsSettled };
+    return { scanned: due.length, expired, backfilled: backfill.count, raced, runsSettled, deferralsSettled };
+}
+
+/**
+ * Deferrals still WAITING whose proposal is no longer PENDING: the decision
+ * hook failed after the decision committed. Two bounded reads, then the hook
+ * per row, which re-reads both under the tenant and claims conditionally, so a
+ * heal racing a live hook resumes the run once.
+ */
+async function healDecidedDeferrals(db: PrismaClient, tenantScope: { tenantId?: string }): Promise<number> {
+    const waiting = await db.workflowRunDeferral.findMany({
+        where: { ...tenantScope, status: 'WAITING' },
+        select: { tenantId: true, proposalId: true },
+        orderBy: { parkedAt: 'asc' },
+        take: EXPIRY_BATCH_LIMIT,
+    });
+    if (waiting.length === 0) return 0;
+    const decided = await db.agentProposal.findMany({
+        where: { id: { in: waiting.map((w) => w.proposalId) }, status: { not: 'PENDING' } },
+        select: { id: true, tenantId: true },
+        take: waiting.length,
+    });
+    let healed = 0;
+    for (const p of decided) {
+        const outcome = await settleDeferralForProposal(
+            buildSystemContext({ tenantId: p.tenantId, job: 'agent-proposal-expiry', discriminator: p.id }),
+            p.id,
+        );
+        if (outcome === 'RESUMING' || outcome === 'SETTLED_EXPIRED') healed += 1;
+    }
+    return healed;
 }
 
 /**

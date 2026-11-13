@@ -114,6 +114,12 @@ jest.mock('@/app-layer/usecases/workflow-run-provenance', () => ({
     readWorkflowRunProvenance: async () => ({ startedBy: null, ruleName: null }),
 }));
 
+// The run's deferred call (Step 2f): a database read too. None here.
+jest.mock('@/app-layer/usecases/workflow-run-deferral-views', () => ({
+    __esModule: true,
+    readRunDeferralView: async () => null,
+}));
+
 jest.mock('next-intl/server', () => ({
     __esModule: true,
     getTranslations: async () => (key: string) => key,

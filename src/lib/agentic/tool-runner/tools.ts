@@ -35,6 +35,7 @@
  * `@anthropic-ai/*` package (`local/anthropic-client-single-seam`).
  */
 import type { BetaRunnableTool, BetaToolRunContext } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
+import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 
 import type { RequestContext } from '@/app-layer/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
@@ -313,6 +314,64 @@ async function ledgeredCall(
         // run here, before the runner sends the next model call.
         await binding.checkKill();
     }
+}
+
+/** A tool the transcript names that the run no longer holds at its resume (Step 2f). */
+export const TOOL_WITHDRAWN_DURING_WAIT = 'TOOL_WITHDRAWN_DURING_WAIT';
+
+/** What the model reads when it calls a tool withdrawn while the run waited for a person. */
+export const TOOL_WITHDRAWN_DURING_WAIT_MESSAGE =
+    'This tool was withdrawn from this agent while the run waited for a person, so the call was refused.';
+
+/**
+ * THE TOOLS OF A RESUMED SEGMENT (Step 2f, "4. Who decides", step 4).
+ *
+ * The request sends the transcript's tool DEFINITIONS as stored, so the prefix a
+ * thinking block's signature binds is unchanged; each takes its runnable from
+ * the offer just re-resolved for this segment, by name. A name the new offer no
+ * longer carries gets a runnable that REFUSES (`TOOL_WITHDRAWN_DURING_WAIT`, a
+ * FAILED TOOL_CALL step, charged one STEPS as every recorded step is), and a
+ * tool the new offer adds is not added: the list is the stored one. Authority
+ * only narrows across the wait.
+ */
+export function resumedToolsFor(
+    stored: readonly BetaToolUnion[],
+    offered: readonly BetaRunnableTool[],
+    binding: ToolRunBinding,
+    queue: SerialQueue,
+): BetaRunnableTool[] {
+    const byName = new Map(offered.map((t) => [t.name, t]));
+    return stored.map((definition) => {
+        const name = (definition as { name?: unknown }).name;
+        const runnable = typeof name === 'string' ? byName.get(name) : undefined;
+        // The stored definition's own fields, in their stored order, and the
+        // functions beside them: `JSON.stringify` sends exactly the stored bytes.
+        if (runnable) {
+            return { ...definition, parse: runnable.parse, run: runnable.run } as unknown as BetaRunnableTool;
+        }
+        const label = typeof name === 'string' ? name : 'unnamed-tool';
+        return {
+            ...definition,
+            parse: (content: unknown) => asToolArgs(content),
+            run: () =>
+                queue.run(async () => {
+                    const halt = binding.budget.charge('STEPS', 1);
+                    if (halt) {
+                        binding.stopAtCap(halt);
+                        throw new Error(halt.message);
+                    }
+                    binding.onFailure();
+                    await recordStep(binding.ctx, binding.runId, binding.nextSeq(), 'TOOL_CALL', {
+                        toolCalled: label,
+                        status: 'FAILED',
+                        label,
+                        output: { refused: TOOL_WITHDRAWN_DURING_WAIT },
+                        ...subagentOf(binding),
+                    });
+                    throw new Error(TOOL_WITHDRAWN_DURING_WAIT_MESSAGE);
+                }),
+        } as unknown as BetaRunnableTool;
+    });
 }
 
 /** Runs one task at a time, in the order they were queued. */

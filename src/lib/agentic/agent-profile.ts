@@ -513,3 +513,57 @@ const RUNS_SUBAGENTS: Readonly<Record<AgentDriver, boolean>> = {
 export function runsSubagents(driver: AgentDriver): boolean {
     return RUNS_SUBAGENTS[driver];
 }
+
+/**
+ * DOES THIS ENGINE RUN A VERSION'S DEFERRED TOOLS (Step 2f of
+ * `docs/claude-tool-runner-design.md`, #5530): park the run on its own
+ * transcript when it calls one, and continue it once a person decides the
+ * proposal in the queue?
+ *
+ * Admission refuses a version naming deferred tools on an engine whose entry
+ * is false (`PROFILE_DEFERRALS_NOT_RUNNABLE`), before the run row exists, so a
+ * version is never run as though it had no deferrals: its calls would queue
+ * and move on, and the person approving it was told the agent waits.
+ *
+ * FALSE FOR EVERY ENGINE in deploy 1 of Step 2f: this deploy teaches every
+ * reader what a parked run means (the refusals, the settlements, the resume
+ * branch) and writes no deferral. Deploy 2 adds the parking path and turns the
+ * Tool Runner's entry on, in a commit of its own.
+ *
+ * A `Record<AgentDriver, boolean>`, as `RUNS_SUBAGENTS` is, so a new driver is a
+ * compile error until it is classified here.
+ */
+/** Is this tool name one of the propose surface's? The catalogue's own list. */
+export function isProfileProposeTool(name: string): boolean {
+    return (MCP_PROPOSE_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+const RUNS_DEFERRALS: Readonly<Record<AgentDriver, boolean>> = {
+    static: false,
+    flue: false,
+    'tool-runner': false,
+};
+
+export function runsDeferrals(driver: AgentDriver): boolean {
+    return RUNS_DEFERRALS[driver];
+}
+
+/**
+ * A STORED `deferredToolNames`, read back strictly: a sorted, deduplicated
+ * subset of the version's `toolNames`, each a propose tool, none named by a
+ * sub-agent. `null` for a list this build would not have written, so a version
+ * carrying one compiles to nothing rather than running with different waits.
+ * `[]` for a version that defers nothing.
+ */
+export function parseStoredDeferredToolNames(
+    stored: readonly string[],
+    version: { readonly toolNames: readonly string[]; readonly subagents?: readonly ProfileSubagent[] },
+): readonly string[] | null {
+    const canonical = [...new Set(stored)].sort();
+    if (canonical.length !== stored.length || canonical.some((n, i) => n !== stored[i])) return null;
+    const subagentTools = new Set((version.subagents ?? []).flatMap((s) => s.toolNames));
+    for (const name of stored) {
+        if (!version.toolNames.includes(name) || !isProfileProposeTool(name) || subagentTools.has(name)) return null;
+    }
+    return stored;
+}

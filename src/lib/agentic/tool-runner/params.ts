@@ -58,6 +58,12 @@
  * middleware refuses one) and no `max_iterations`. The SDK's own compaction
  * (`compactBeforeNextTurn()`, the `compact-2026-09-04` beta) is never used
  * (owner decision 3 of 2026-11-13).
+ *
+ * A RESUMED SEGMENT (Step 2f, #5530) is shaped here too, through the `resume`
+ * option: the parent's runner continuing from a deferral's transcript sends the
+ * stored `system`, `model` and messages, and the stored tool definitions (its
+ * runnables carry them), with every other value this function's own. The
+ * locked-params guard pins that a resume sends exactly those.
  */
 import type {
     BetaMessageParam,
@@ -130,7 +136,7 @@ export const COMPACTION_INSTRUCTION = [
  * so the summary request's `tools` are byte for byte the run's own and the
  * cached prefix holds.
  */
-function toolDefinitionOf(tool: BetaToolRunnerParams['tools'][number]): BetaToolUnion {
+export function toolDefinitionOf(tool: BetaToolRunnerParams['tools'][number]): BetaToolUnion {
     const fields = Object.entries(tool as unknown as Record<string, unknown>).filter(
         ([, value]) => typeof value !== 'function',
     );
@@ -303,22 +309,44 @@ export function lockedParams(input: {
         readonly maxTurns: number;
         readonly task: string;
     };
+    /**
+     * A RESUMED segment (Step 2f, #5530): the parent's runner continuing from a
+     * deferral's transcript. The request sends the transcript's `system` and
+     * `model` as stored, so the prefix a thinking block's signature binds is
+     * unchanged, and `messages` are the stored ones with the decision in the
+     * open slot (`resumedMessages`). `tools` are then runnables whose API fields
+     * ARE the stored definitions (`resumedToolsFor` in `execute.ts`), so the
+     * definitions sent are the stored ones too. `message` and `skillCatalogue`
+     * are ignored: they are in the stored request already. Every other value
+     * is this function's own, as for every segment. Never with `subagent`: a
+     * sub-agent cannot defer.
+     */
+    readonly resume?: {
+        readonly model: string;
+        readonly system: BetaToolRunnerParams['system'];
+        readonly messages: readonly BetaMessageParam[];
+    };
 }): BetaToolRunnerParams & { stream: false } {
     const tier = input.def.profile?.modelTier ?? DEFAULT_TIER;
     const effort = input.def.profile?.effort ?? DEFAULT_EFFORT;
     const sub = input.subagent;
+    const resume = sub ? undefined : input.resume;
     return {
         stream: false,
         thread: false,
-        model: toolRunnerModelFor(tier),
+        model: resume ? resume.model : toolRunnerModelFor(tier),
         max_tokens: MAX_TOKENS_PER_TIER[tier],
         max_iterations: sub
             ? Math.min(sub.maxTurns, Math.max(input.caps.STEPS.limit - input.fromSeq, 0))
             : maxIterationsFor(input.def, input.caps, input.fromSeq),
-        system: sub
-            ? subagentSystemBlocks(sub, input.skillCatalogue ?? null)
-            : systemBlocksFor(input.def, input.skillCatalogue ?? null),
-        messages: [{ role: 'user', content: sub ? delegatedTaskMessage(sub.task) : input.message }],
+        system: resume
+            ? resume.system
+            : sub
+              ? subagentSystemBlocks(sub, input.skillCatalogue ?? null)
+              : systemBlocksFor(input.def, input.skillCatalogue ?? null),
+        messages: resume
+            ? [...resume.messages]
+            : [{ role: 'user', content: sub ? delegatedTaskMessage(sub.task) : input.message }],
         tools: [...input.tools],
         tool_choice: toolChoiceFor(input.toolCallsPerTurn),
         thinking: { type: 'adaptive', display: 'summarized' },
