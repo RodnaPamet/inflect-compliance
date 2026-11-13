@@ -45,6 +45,7 @@ import {
 import {
     RECORD_SCHEMA,
     computeAggregates,
+    caseLocale,
     chooseSmallest,
     decideD_L4_3,
     percentile,
@@ -78,10 +79,10 @@ describe('the retriever seed set is seed data, hashed', () => {
         expect(setContentHash({ ...body, cases: body.cases.slice(1) })).not.toBe(contentHash);
     });
 
-    it('holds 200 cases with unique ids and questions, each answered by chunks the corpus holds', () => {
-        expect(set.cases).toHaveLength(200);
-        expect(new Set(set.cases.map((c) => c.id)).size).toBe(200);
-        expect(new Set(set.cases.map((c) => c.question)).size).toBe(200);
+    it('holds 250 cases with unique ids and questions, each answered by chunks the corpus holds', () => {
+        expect(set.cases).toHaveLength(250);
+        expect(new Set(set.cases.map((c) => c.id)).size).toBe(250);
+        expect(new Set(set.cases.map((c) => c.question)).size).toBe(250);
         const ids = new Set(set.corpus.map((c) => c.id));
         expect(ids.size).toBe(set.corpus.length);
         for (const c of set.cases) {
@@ -89,6 +90,29 @@ describe('the retriever seed set is seed data, hashed', () => {
             expect(c.relevant.length).toBeGreaterThan(0);
             for (const r of c.relevant) expect(ids.has(r)).toBe(true);
         }
+    });
+
+    it('holds a 50-case Bulgarian slice, each a translation that keeps its English case\'s labels', () => {
+        // D-L4-3 as amended 2026-11-13: the product serves Bulgarian, so the
+        // margin is applied to this slice too. The corpus stays English, so a
+        // Bulgarian case measures cross-lingual retrieval.
+        const english = set.cases.filter((c) => caseLocale(c) === 'en');
+        const bulgarian = set.cases.filter((c) => caseLocale(c) === 'bg');
+        expect(english).toHaveLength(200);
+        expect(bulgarian).toHaveLength(50);
+        const byId = new Map(set.cases.map((c) => [c.id, c]));
+        const sources = new Set<string>();
+        for (const c of bulgarian) {
+            expect(c.question).toMatch(/[\u0400-\u04FF]/);
+            const src = byId.get(c.translationOf ?? '');
+            expect(src).toBeDefined();
+            expect(caseLocale(src!)).toBe('en');
+            expect(c.relevant).toEqual(src!.relevant);
+            sources.add(src!.id);
+        }
+        // Fifty different English cases, not one translated many times.
+        expect(sources.size).toBe(50);
+        for (const c of english) expect(c.translationOf).toBeUndefined();
     });
 
     it('holds distractors that answer no case, so recall@10 is not a corpus of answers', () => {
@@ -283,15 +307,15 @@ describe('scoreRecord: a complete record is scored, anything else is refused', (
 });
 
 describe('the D-L4-3 rule: the smallest pipeline within the margin of the best', () => {
-    const big = { embedModel: 'nvidia/big', rerankModel: null, parametersM: 1236, recallAt10: 0.85 };
-    const small = { embedModel: 'baai/small', rerankModel: null, parametersM: 33 };
-    const expected = ['nvidia/big', 'baai/small'];
+    const big = { embedModel: 'org/big', rerankModel: null, parametersM: 1236, recallAt10: 0.85, bgRecallAt10: null };
+    const small = { embedModel: 'baai/small', rerankModel: null, parametersM: 33, bgRecallAt10: null };
+    const expected = ['org/big', 'baai/small'];
 
     it('keeps the smaller model when its recall is within the margin', () => {
         const [d] = decideD_L4_3([big, { ...small, recallAt10: 0.81 }], expected, [null], 0.05);
         expect(d.status).toBe('DECIDED');
         expect(d.chosen?.embedModel).toBe('baai/small');
-        expect(d.best?.embedModel).toBe('nvidia/big');
+        expect(d.best?.embedModel).toBe('org/big');
     });
 
     it('keeps it at a drop of exactly the margin, floating point notwithstanding', () => {
@@ -304,28 +328,28 @@ describe('the D-L4-3 rule: the smallest pipeline within the margin of the best',
 
     it('takes the larger model when the smaller drops past the margin', () => {
         const [d] = decideD_L4_3([big, { ...small, recallAt10: 0.79 }], expected, [null], 0.05);
-        expect(d.chosen?.embedModel).toBe('nvidia/big');
+        expect(d.chosen?.embedModel).toBe('org/big');
     });
 
     it('is INCOMPLETE, naming the gap, when a candidate has no scored record', () => {
         const [d] = decideD_L4_3([{ ...small, recallAt10: 0.8 }], expected, [null], 0.05);
         expect(d.status).toBe('INCOMPLETE');
-        expect(d.missing).toEqual(['nvidia/big']);
+        expect(d.missing).toEqual(['org/big']);
     });
 
     it('between two eligible models of the same size, chooses the higher recall whatever the input order', () => {
-        const nemotron = { embedModel: 'nvidia/llama-nemotron-embed-1b-v2', rerankModel: null, parametersM: 1236, recallAt10: 0.85 };
-        const bge = { embedModel: 'BAAI/bge-small-en-v1.5', rerankModel: null, parametersM: 33, recallAt10: 0.8 };
-        const e5 = { embedModel: 'intfloat/e5-small-v2', rerankModel: null, parametersM: 33, recallAt10: 0.84 };
-        const models = [nemotron.embedModel, bge.embedModel, e5.embedModel];
-        for (const order of [[bge, e5, nemotron], [e5, bge, nemotron], [nemotron, bge, e5]]) {
+        const multi = { embedModel: 'intfloat/multilingual-e5-small', rerankModel: null, parametersM: 118, recallAt10: 0.85, bgRecallAt10: null };
+        const bge = { embedModel: 'BAAI/bge-small-en-v1.5', rerankModel: null, parametersM: 33, recallAt10: 0.8, bgRecallAt10: null };
+        const e5 = { embedModel: 'intfloat/e5-small-v2', rerankModel: null, parametersM: 33, recallAt10: 0.84, bgRecallAt10: null };
+        const models = [multi.embedModel, bge.embedModel, e5.embedModel];
+        for (const order of [[bge, e5, multi], [e5, bge, multi], [multi, bge, e5]]) {
             const [d] = decideD_L4_3(order, models, [null], 0.05);
             expect(d.chosen?.embedModel).toBe('intfloat/e5-small-v2');
         }
     });
 
     it('breaks an exact tie of size and recall by model id, so a rerun proposes the same model', () => {
-        const a = { embedModel: 'a/m', rerankModel: null, parametersM: 33, recallAt10: 0.8 };
+        const a = { embedModel: 'a/m', rerankModel: null, parametersM: 33, recallAt10: 0.8, bgRecallAt10: null };
         const b = { ...a, embedModel: 'b/m' };
         expect(chooseSmallest([b, a]).embedModel).toBe('a/m');
         expect(chooseSmallest([a, b]).embedModel).toBe('a/m');
@@ -333,18 +357,38 @@ describe('the D-L4-3 rule: the smallest pipeline within the margin of the best',
     });
 
     it('is BLOCKED, naming the refused model, when the engine refused a missing candidate', () => {
-        const refused = new Set(['nvidia/big']);
+        const refused = new Set(['org/big']);
         const [d] = decideD_L4_3([{ ...small, recallAt10: 0.8 }], expected, [null], 0.05, refused);
         expect(d.status).toBe('BLOCKED');
-        expect(d.blockedBy).toEqual(['nvidia/big']);
+        expect(d.blockedBy).toEqual(['org/big']);
         // A refused reranker blocks its whole group, even with no embed record missing for its own reason.
-        const [r] = decideD_L4_3([], expected, ['nvidia/rerank'], 0.05, new Set(['nvidia/rerank']));
+        const [r] = decideD_L4_3([], expected, ['org/rerank'], 0.05, new Set(['org/rerank']));
         expect(r.status).toBe('BLOCKED');
-        expect(r.blockedBy).toEqual(['nvidia/rerank']);
+        expect(r.blockedBy).toEqual(['org/rerank']);
         // A missing candidate the engine did NOT refuse leaves it INCOMPLETE.
         const [i] = decideD_L4_3([{ ...small, recallAt10: 0.8 }], expected, [null], 0.05, new Set(['other/model']));
         expect(i.status).toBe('INCOMPLETE');
         expect(i.blockedBy).toEqual([]);
+    });
+
+    it('refuses a model within the margin overall but past it on the Bulgarian slice', () => {
+        // An English-only model can keep up on the English cases and fail the
+        // Bulgarian ones; it must not be kept as "the smaller" for a product
+        // that serves both (D-L4-3, amended 2026-11-13).
+        const multi = { embedModel: 'org/multi', rerankModel: null, parametersM: 118, recallAt10: 0.85, bgRecallAt10: 0.8 };
+        const english = { embedModel: 'org/english', rerankModel: null, parametersM: 33, recallAt10: 0.83, bgRecallAt10: 0.4 };
+        const [d] = decideD_L4_3([english, multi], ['org/multi', 'org/english'], [null], 0.05);
+        expect(d.bestBg).toBe(0.8);
+        expect(d.chosen?.embedModel).toBe('org/multi');
+        // Within the margin on both, the smaller is kept as before.
+        const [k] = decideD_L4_3([{ ...english, bgRecallAt10: 0.76 }, multi], ['org/multi', 'org/english'], [null], 0.05);
+        expect(k.chosen?.embedModel).toBe('org/english');
+    });
+
+    it('applies the overall margin alone when no pipeline has a Bulgarian figure', () => {
+        const [d] = decideD_L4_3([big, { ...small, recallAt10: 0.81 }], expected, [null], 0.05);
+        expect(d.bestBg).toBeNull();
+        expect(d.chosen?.embedModel).toBe('baai/small');
     });
 
     it('decides each reranker separately and never mixes their records', () => {
@@ -392,7 +436,7 @@ describe('the runner sends benchmark text to the loopback engine only', () => {
         const set = tinySet();
         const refusal: StageFailure = {
             stage: 'embed',
-            model: 'nvidia/llama-nemotron-embed-1b-v2',
+            model: 'intfloat/multilingual-e5-small',
             code: 'ENGINE_REFUSES_ON_CPU',
             reason: 'TEI CPU refuses it',
             engineLog: null,
@@ -474,13 +518,16 @@ describe('the benchmark compares what D-L4-3 names, on a pinned engine', () => {
         expect(TEI_CPU_IMAGE).toMatch(/^ghcr\.io\/huggingface\/text-embeddings-inference@sha256:[0-9a-f]{64}$/);
     });
 
-    it('compares a Nemotron model with a smaller open one, for embedding and for reranking', () => {
+    it('compares small open models, a multilingual one among them, for embedding and for reranking', () => {
+        // D-L4-3 as amended 2026-11-13: Nemotron is optional Layer 5 work only,
+        // and the product serves Bulgarian, so each list carries at least one
+        // multilingual model and no Nemotron model.
         for (const list of [EMBED_CANDIDATES, RERANK_CANDIDATES]) {
-            const nemotron = list.filter((c) => c.nemotron);
-            const open = list.filter((c) => !c.nemotron);
-            expect(nemotron.length).toBe(1);
-            expect(open.length).toBeGreaterThan(0);
-            for (const o of open) expect(o.parametersM).toBeLessThan(nemotron[0].parametersM);
+            expect(list.some((c) => c.multilingual)).toBe(true);
+            for (const c of list) {
+                expect(c.model.toLowerCase()).not.toContain('nemotron');
+                expect(c.parametersM).toBeLessThan(1000);
+            }
         }
     });
 

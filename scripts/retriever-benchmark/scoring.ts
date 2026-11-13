@@ -33,13 +33,28 @@ export const RECORD_SCHEMA = 'inflect-retriever-benchmark/1';
 /** recall@K — the figure the master roadmap and D-L4-3 name. */
 export const RECALL_K = 10;
 
+/**
+ * The languages a case's QUESTION is written in. The corpus is the seed's
+ * English policy text, so a `bg` case measures cross-lingual retrieval: a
+ * Bulgarian question that must find an English chunk. Absent means `en`.
+ */
+export type CaseLocale = 'en' | 'bg';
+export const CASE_LOCALES: readonly CaseLocale[] = ['en', 'bg'];
+
 export interface SeedCase {
     readonly id: string;
     /** Retrieval has one case kind: a question and the chunks that answer it. */
     readonly kind: 'task';
+    readonly locale?: CaseLocale;
     readonly question: string;
     /** Corpus chunk ids, at least one. Recall is the share of these found. */
     readonly relevant: readonly string[];
+    /** For a translated case, the case it translates; its labels are that case's. */
+    readonly translationOf?: string;
+}
+
+export function caseLocale(c: SeedCase): CaseLocale {
+    return c.locale ?? 'en';
 }
 
 export interface RetrieverSeedSet {
@@ -85,6 +100,12 @@ export interface LatencyProbe {
 export interface Aggregates {
     readonly cases: number;
     readonly recallAt10: number;
+    /**
+     * recall@10 per question language, over that slice's cases only. A locale
+     * with no cases in the set is absent, never 0: a slice of nothing has no
+     * recall.
+     */
+    readonly byLocale: Readonly<Partial<Record<CaseLocale, { readonly cases: number; readonly recallAt10: number }>>>;
     readonly mrrAt10: number;
     readonly embedMs: { readonly p50: number; readonly p95: number };
     readonly rerankMs: { readonly p50: number; readonly p95: number } | null;
@@ -182,13 +203,19 @@ export function computeAggregates(set: RetrieverSeedSet, record: BenchmarkRecord
     const byCase = new Map(set.cases.map((c) => [c.id, c]));
     let recall = 0;
     let mrr = 0;
+    const slice: Partial<Record<CaseLocale, { n: number; recall: number }>> = {};
     const embedMs: number[] = [];
     const rerankMs: number[] = [];
     for (const a of record.answers) {
         const c = byCase.get(a.caseId);
         if (!c) continue;
-        recall += recallAtK(a.ranked, c.relevant, RECALL_K);
+        const caseRecall = recallAtK(a.ranked, c.relevant, RECALL_K);
+        recall += caseRecall;
         mrr += reciprocalRankAtK(a.ranked, c.relevant, RECALL_K);
+        const loc = caseLocale(c);
+        const acc = (slice[loc] ??= { n: 0, recall: 0 });
+        acc.n += 1;
+        acc.recall += caseRecall;
         embedMs.push(a.stageMs.embed);
         if (a.stageMs.rerank !== undefined) rerankMs.push(a.stageMs.rerank);
     }
@@ -197,9 +224,15 @@ export function computeAggregates(set: RetrieverSeedSet, record: BenchmarkRecord
     for (const p of record.probes) {
         probes[p.name] = { p50: percentile(p.samplesMs, 50), p95: percentile(p.samplesMs, 95), samples: p.samplesMs.length };
     }
+    const byLocale: Partial<Record<CaseLocale, { cases: number; recallAt10: number }>> = {};
+    for (const loc of CASE_LOCALES) {
+        const acc = slice[loc];
+        if (acc && acc.n > 0) byLocale[loc] = { cases: acc.n, recallAt10: round(acc.recall / acc.n) };
+    }
     return {
         cases: n,
         recallAt10: round(recall / n),
+        byLocale,
         mrrAt10: round(mrr / n),
         embedMs: { p50: percentile(embedMs, 50), p95: percentile(embedMs, 95) },
         rerankMs: rerankMs.length > 0 ? { p50: percentile(rerankMs, 50), p95: percentile(rerankMs, 95) } : null,
@@ -275,6 +308,8 @@ export interface ScoredPipeline {
     readonly rerankModel: string | null;
     readonly parametersM: number;
     readonly recallAt10: number;
+    /** recall@10 on the Bulgarian slice; null when the set has none. */
+    readonly bgRecallAt10: number | null;
 }
 
 export interface D_L4_3_Decision {
@@ -290,6 +325,8 @@ export interface D_L4_3_Decision {
     /** The refused models (embed, or this group's reranker) behind a BLOCKED status. */
     readonly blockedBy: readonly string[];
     readonly best: ScoredPipeline | null;
+    /** The best recall@10 on the Bulgarian slice in this group, null without one. */
+    readonly bestBg: number | null;
     readonly chosen: ScoredPipeline | null;
     readonly margin: number;
 }
@@ -297,7 +334,10 @@ export interface D_L4_3_Decision {
 /**
  * D-L4-3: "keep the smaller unless recall@10 drops past a margin". For each
  * reranker (and for no reranker), the chosen pipeline is the SMALLEST whose
- * recall@10 is within `margin` of the best. An expected candidate with no
+ * recall@10 is within `margin` of the best, overall AND on the Bulgarian
+ * slice (amended 2026-11-13, owner): a model that keeps up in English and
+ * falls past the margin on Bulgarian questions is not eligible, because the
+ * product serves both languages. An expected candidate with no
  * scored record makes the comparison INCOMPLETE (or BLOCKED, when the engine
  * refused it) — a decision that never saw one of the candidates is not the
  * decision the owner asked for.
@@ -331,13 +371,22 @@ export function decideD_L4_3(
             : [...missing.filter((m) => engineRefused.has(m)), ...(rerankModel !== null && engineRefused.has(rerankModel) ? [rerankModel] : [])];
         const gap = blockedBy.length > 0 ? 'BLOCKED' : 'INCOMPLETE';
         if (group.length === 0) {
-            return { rerankModel, status: gap, missing, blockedBy, best: null, chosen: null, margin };
+            return { rerankModel, status: gap, missing, blockedBy, best: null, bestBg: null, chosen: null, margin };
         }
         const best = group.reduce((a, b) => (b.recallAt10 > a.recallAt10 ? b : a));
+        const bgOf = (p: ScoredPipeline): number | null => (typeof p.bgRecallAt10 === 'number' ? p.bgRecallAt10 : null);
+        const bgScores = group.map(bgOf).filter((x): x is number => x !== null);
+        const bestBg = bgScores.length > 0 ? Math.max(...bgScores) : null;
         // The epsilon keeps a drop of exactly `margin` inside it: 0.2 - 0.05
         // is 0.15000000000000002 in binary floating point, above 0.15.
-        const eligible = group.filter((p) => p.recallAt10 + 1e-9 >= best.recallAt10 - margin);
+        const within = (x: number, top: number) => x + 1e-9 >= top - margin;
+        const eligible = group.filter(
+            (p) => {
+                const bg = bgOf(p);
+                return within(p.recallAt10, best.recallAt10) && (bestBg === null || (bg !== null && within(bg, bestBg)));
+            },
+        );
         const chosen = chooseSmallest(eligible);
-        return { rerankModel, status: missing.length > 0 ? gap : 'DECIDED', missing, blockedBy, best, chosen, margin };
+        return { rerankModel, status: missing.length > 0 ? gap : 'DECIDED', missing, blockedBy, best, bestBg, chosen, margin };
     });
 }
