@@ -3,6 +3,7 @@
  *
  *   npx tsx scripts/retriever-benchmark/run.ts bench --embed <candidate-id> --out <dir> --failures <dir>
  *   npx tsx scripts/retriever-benchmark/run.ts summarize --records <dir> --out <file>
+ *   npx tsx scripts/retriever-benchmark/run.ts log-view --summary <file> --records <dir>
  *
  * Meant for `.github/workflows/retriever-benchmark.yml` on a GitHub-hosted
  * runner, never on the production VM (capacity rule: no new container there
@@ -510,6 +511,53 @@ export function summaryMarkdown(s: Summary): string {
     return `${lines.join('\n')}\n`;
 }
 
+/**
+ * The summary's figures as one compact JSON document for the JOB LOG (owner
+ * decision 2026-11-13: tooling that reads job logs cannot read a step summary
+ * or an artifact). Per pipeline: recall@10 overall and on the Bulgarian slice,
+ * latency, the declared size the decision compares, and the runner's memory as
+ * the record states it; per reranker group: the pipeline D-L4-3 keeps.
+ *
+ * No figure is new: every value is the summary's or a record's own. Memory is
+ * the RUNNER's total RAM (`environment.memoryGb`); no record measures a
+ * pipeline's footprint, so none is reported. A record file that is absent or
+ * unreadable leaves its size and runner null rather than failing the log.
+ */
+export function summaryLogView(
+    s: Summary,
+    recordsByFile: Readonly<Record<string, Pick<BenchmarkRecord, 'pipeline' | 'environment'> | null | undefined>>,
+) {
+    const name = (embedModel: string, rerankModel: string | null) => `${embedModel}${rerankModel ? ` + ${rerankModel}` : ''}`;
+    return {
+        set: s.set,
+        pipelines: s.records.map((r) => {
+            const rec = recordsByFile[r.file] ?? null;
+            return {
+                pipeline: r.pipeline,
+                ok: r.ok,
+                ...(r.ok ? {} : { problem: r.problems[0] ?? null }),
+                recallAt10: r.recallAt10,
+                bgRecallAt10: r.bgRecallAt10,
+                embedMs: { p50: r.embedP50, p95: r.embedP95 },
+                rerankMs: r.rerankP50 === null && r.rerankP95 === null ? null : { p50: r.rerankP50, p95: r.rerankP95 },
+                parametersM: rec ? rec.pipeline.embed.parametersM + (rec.pipeline.rerank?.parametersM ?? 0) : null,
+                runner: rec ? { cpuModel: rec.environment.cpuModel, cpus: rec.environment.cpus, memoryGb: rec.environment.memoryGb } : null,
+            };
+        }),
+        kept: s.decisions.map((d) => ({
+            reranker: d.rerankModel ?? 'none',
+            status: d.status,
+            kept: d.chosen ? name(d.chosen.embedModel, d.chosen.rerankModel) : null,
+            recallAt10: d.chosen?.recallAt10 ?? null,
+            bgRecallAt10: d.chosen?.bgRecallAt10 ?? null,
+            best: d.best ? name(d.best.embedModel, d.best.rerankModel) : null,
+            margin: d.margin,
+            missing: d.missing,
+            blockedBy: d.blockedBy,
+        })),
+    };
+}
+
 function arg(name: string): string {
     const i = process.argv.indexOf(`--${name}`);
     const v = i >= 0 ? process.argv[i + 1] : undefined;
@@ -544,7 +592,26 @@ async function main(): Promise<void> {
         process.stdout.write(summaryMarkdown(summary));
         return;
     }
-    throw new Error('usage: run.ts bench --embed <id> --out <dir> --failures <dir> | summarize --records <dir> [--failures <dir>] --out <file>');
+    if (cmd === 'log-view') {
+        const summary = JSON.parse(fs.readFileSync(arg('summary'), 'utf-8')) as Summary;
+        const dir = arg('records');
+        const recordsByFile: Record<string, BenchmarkRecord | null> = {};
+        for (const r of summary.records) {
+            try {
+                recordsByFile[r.file] = JSON.parse(fs.readFileSync(path.join(dir, r.file), 'utf-8')) as BenchmarkRecord;
+            } catch {
+                recordsByFile[r.file] = null;
+            }
+        }
+        // Valid JSON, one pipeline and one kept pipeline per line.
+        const v = summaryLogView(summary, recordsByFile);
+        const J = (x: unknown) => JSON.stringify(x);
+        process.stdout.write(
+            `{"set": ${J(v.set)},\n"pipelines": [\n${v.pipelines.map(J).join(',\n')}\n],\n"kept": [\n${v.kept.map(J).join(',\n')}\n]}\n`,
+        );
+        return;
+    }
+    throw new Error('usage: run.ts bench --embed <id> --out <dir> --failures <dir> | summarize --records <dir> [--failures <dir>] --out <file> | log-view --summary <file> --records <dir>');
 }
 
 if (require.main === module) {
