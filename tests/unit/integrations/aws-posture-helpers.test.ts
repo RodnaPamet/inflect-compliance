@@ -394,6 +394,36 @@ describe('summariseBenchmark', () => {
     });
 });
 
+/**
+ * Run `body` with these env vars set, then RESTORE whatever was there before.
+ *
+ * NOT `delete` in a finally, which is what this replaced and what broke
+ * `Test (shard 7/7)`: `DATA_ENCRYPTION_KEY` IS set in CI (ci.yml), so deleting
+ * it stripped the master KEK from every later test in the same worker. A
+ * variable that was unset before is removed again; one that was set is put
+ * back to its own value.
+ *
+ * `async` and awaited, because a sync `try/finally` around a function that
+ * returns a promise restores BEFORE the body has run.
+ */
+async function withAmbientEnv(
+    vars: Record<string, string>,
+    body: () => Promise<void> | void,
+): Promise<void> {
+    const saved = new Map<string, string | undefined>(
+        Object.keys(vars).map((k) => [k, process.env[k]]),
+    );
+    Object.assign(process.env, vars);
+    try {
+        await body();
+    } finally {
+        for (const [k, v] of saved) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+    }
+}
+
 describe('buildCredentialEnv', () => {
     it('passes each supplied credential through the environment', () => {
         const env = buildCredentialEnv(
@@ -409,9 +439,14 @@ describe('buildCredentialEnv', () => {
         expect(env.AWS_ACCESS_KEY_ID).toBe('AKIA_X');
         expect(env.AWS_SECRET_ACCESS_KEY).toBe('SECRET_X');
         expect(env.AWS_SESSION_TOKEN).toBe('TOKEN_X');
-        expect(env.AWS_ROLE_ARN).toBe('arn:aws:iam::1:role/R');
-        expect(env.AWS_EXTERNAL_ID).toBe('EXT_X');
         expect(env.AWS_REGION).toBe('eu-west-1');
+        // The role ARN and external id are supplied above and deliberately do
+        // NOT travel (#5253): the SDK reads AWS_ROLE_ARN only together with
+        // AWS_WEB_IDENTITY_TOKEN_FILE, AWS_EXTERNAL_ID is not an SDK variable,
+        // and nothing in this repo has ever read either. Exporting them read as
+        // assume-role support where there was none.
+        expect(env.AWS_ROLE_ARN).toBeUndefined();
+        expect(env.AWS_EXTERNAL_ID).toBeUndefined();
     });
 
     it('omits every key that was not supplied', () => {
@@ -423,9 +458,28 @@ describe('buildCredentialEnv', () => {
         expect(env.AWS_EXTERNAL_ID).toBeUndefined();
     });
 
-    it('inherits the parent environment', () => {
+    it('carries PATH, because execFile needs it to find the binary', () => {
         const env = buildCredentialEnv({}, {});
         expect(env.PATH).toBe(process.env.PATH);
+    });
+
+    it('does NOT inherit the parent environment wholesale (#5253)', async () => {
+        // This test used to be called "inherits the parent environment", and it
+        // was accurate: the env was `{ ...process.env }`. That handed the master
+        // KEK and the database password to a third-party CLI, and let an ambient
+        // AWS credential authenticate a scan whose connection had none — so the
+        // benchmark ran against the PLATFORM's account and was filed as the
+        // tenant's evidence.
+        await withAmbientEnv(
+            { DATA_ENCRYPTION_KEY: 'kek-must-not-travel', AWS_ACCESS_KEY_ID: 'AKIA_AMBIENT' },
+            () => {
+                const env = buildCredentialEnv({}, {});
+                expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
+                // The ambient key must not stand in for a credential the
+                // connection did not supply.
+                expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+            },
+        );
     });
 
     it('does not mutate process.env', () => {

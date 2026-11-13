@@ -79,15 +79,38 @@ describe('File Security Guardrails', () => {
         expect(violations).toEqual([]);
     });
 
+    // ── WHY THESE TWO LOOKUPS ARE ANCHORED TO AN EXACT PATH ─────────────────
+    //
+    // They used to be `endsWith('env.ts')` and `endsWith('storage.ts')` with a
+    // `.find`, which returns the FIRST match in `readdirSync` order — so each
+    // silently graded whichever file happened to sort first, not the one it
+    // names. Both were already ambiguous:
+    //
+    //   • `endsWith('env.ts')` also matches
+    //     `src/app-layer/integrations/collector-child-env.ts`, which sorts
+    //     BEFORE `src/env.ts`. So the env assertion ran against that file and
+    //     failed on a correct tree — that is what surfaced this.
+    //   • `endsWith('storage.ts')` also matches `src/lib/ui-storage.ts`, which
+    //     exists today and sorts AFTER `src/lib/storage.ts`. That one grades
+    //     the right file purely by alphabetical luck, and a rename on either
+    //     side would move it onto the wrong file with no test going red.
+    //
+    // A `.find` whose predicate can match two files is a guard that grades the
+    // wrong thing, so both now name the file they mean.
+    const fileAt = (...rel: string[]) => {
+        const want = path.join(SRC_ROOT, ...rel);
+        return allFiles.find(f => f.path === want);
+    };
+
     test('FILE_STORAGE_ROOT is validated via env.ts', () => {
-        const envFile = allFiles.find(f => f.path.endsWith('env.ts'));
+        const envFile = fileAt('env.ts');
         expect(envFile).toBeDefined();
         // Should reference FILE_STORAGE_ROOT or UPLOAD_DIR
         expect(envFile!.content).toMatch(/UPLOAD_DIR|FILE_STORAGE_ROOT/);
     });
 
     test('storage driver does not use raw process.env in src/', () => {
-        const storageFile = allFiles.find(f => f.path.endsWith('storage.ts'));
+        const storageFile = fileAt('lib', 'storage.ts');
         expect(storageFile).toBeDefined();
         // Should NOT contain process.env for storage config (should use @/env)
         const lines = storageFile!.content.split('\n');

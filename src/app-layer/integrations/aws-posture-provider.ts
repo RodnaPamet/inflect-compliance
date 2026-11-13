@@ -41,6 +41,7 @@ import type {
     CheckResult,
     EvidencePayload,
 } from './types';
+import { baseCollectorEnv } from './collector-child-env';
 
 // ─── Pure helpers (unit-tested directly) ─────────────────────────────
 
@@ -317,17 +318,31 @@ export interface AwsPostureConfig {
     accountId?: string;
 }
 
-/** Env for the CLI child — creds via env, NEVER argv. */
+/**
+ * Env for the CLI child — creds via env, NEVER argv.
+ *
+ * Built from `baseCollectorEnv()`, an ALLOWLIST, and not from `process.env`
+ * (#5253). Two reasons, in `collector-child-env.ts`: the worker's secrets have
+ * no business reaching a benchmark binary, and — the sharp one — an inherited
+ * ambient `AWS_*` or instance profile meant a connection that supplied no key
+ * pair authenticated as the PLATFORM and filed our own account's posture as the
+ * tenant's evidence.
+ *
+ * `AWS_ROLE_ARN` and `AWS_EXTERNAL_ID` are deliberately NOT set here any more.
+ * They never did anything: the SDK reads `AWS_ROLE_ARN` only together with
+ * `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_EXTERNAL_ID` is not an SDK variable at
+ * all, and no wrapper, profile or `.spc` in this repo has ever read either —
+ * the 2026-09-19 research record says so in as many words. Setting them read as
+ * assume-role support and there was none, so a reader could reasonably conclude
+ * the role was being assumed. `validateConnection` now refuses a role-ARN-only
+ * connection outright rather than accepting one that cannot authenticate.
+ */
 export function buildCredentialEnv(secrets: AwsPostureSecrets, config: AwsPostureConfig): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = baseCollectorEnv();
     if (secrets.accessKeyId) env.AWS_ACCESS_KEY_ID = secrets.accessKeyId;
     if (secrets.secretAccessKey) env.AWS_SECRET_ACCESS_KEY = secrets.secretAccessKey;
     if (secrets.sessionToken) env.AWS_SESSION_TOKEN = secrets.sessionToken;
     if (config.region) env.AWS_REGION = config.region;
-    // Assume-role config travels via env too (a Steampipe aws connection or an
-    // AWS_ROLE_ARN/AWS_EXTERNAL_ID the wrapper reads) — never on the command line.
-    if (secrets.roleArn) env.AWS_ROLE_ARN = secrets.roleArn;
-    if (secrets.externalId) env.AWS_EXTERNAL_ID = secrets.externalId;
     return env;
 }
 
@@ -528,8 +543,34 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         secrets: Record<string, unknown>,
     ): Promise<ConnectionValidationResult> {
         const s = secrets as AwsPostureSecrets;
-        if (!s.roleArn && !(s.accessKeyId && s.secretAccessKey)) {
-            return { valid: false, error: 'Provide a read-only role ARN or an access-key pair.' };
+        // ── ASSUME-ROLE IS REFUSED, NOT ACCEPTED-AND-IGNORED (#5253) ────────
+        //
+        // This used to accept a role ARN alone. Nothing ever assumed the role —
+        // `AWS_ROLE_ARN` needs a web-identity token file the collector does not
+        // write, `AWS_EXTERNAL_ID` is not an SDK variable, and no profile or
+        // wrapper in this repo reads either — so such a connection reached the
+        // CLI with NO AWS credential. Where the host had none either it simply
+        // failed; where the host had an instance profile or ambient `AWS_*` it
+        // silently scanned the PLATFORM's account and stored that as this
+        // tenant's evidence. The env allowlist now stops the second case, which
+        // leaves a connection that cannot authenticate at all — so say so here,
+        // at configuration time, instead of letting it fail every night.
+        //
+        // Checked BEFORE the generic branch so the operator gets the specific
+        // sentence rather than "provide one or the other" about a form they did
+        // provide.
+        const hasKeyPair = Boolean(s.accessKeyId && s.secretAccessKey);
+        if (s.roleArn && !hasKeyPair) {
+            return {
+                valid: false,
+                error:
+                    'Assume-role is not yet supported by this collector: the role is never actually '
+                    + 'assumed, so the scan would have no AWS credential. Provide a read-only '
+                    + 'access-key pair instead — see docs/aws-posture-connector.md (#5542).',
+            };
+        }
+        if (!hasKeyPair) {
+            return { valid: false, error: 'Provide a read-only access-key pair.' };
         }
         const env = buildCredentialEnv(s, config as AwsPostureConfig);
         // Cheap read-only identity check. `aws` CLI absence is not a hard fail at
