@@ -14,7 +14,7 @@
 # What this file pins:
 #   - `name`             one canonical config identifier, helps GH
 #                        match runs to config
-#   - `paths`            scan all src + tests
+#   - `paths`            scan src, tests, scripts and packages
 #   - `paths-ignore`     bypass generated / vendored / declarative
 #                        directories that produce false positives
 #                        and slow analysis without value
@@ -42,6 +42,11 @@ paths:
     - src
     - tests
     - scripts
+    # The workspace packages (#5086). `packages/agent-harness-scanner` runs in
+    # a client's estate holding a signing key and credentials, and
+    # `packages/ui` is imported by every page; neither was scanned, so the
+    # merge-queue SAST gate (#4047) saw no alert in them whatever they held.
+    - packages
 
 paths-ignore:
     # Build artifacts + generated code.
