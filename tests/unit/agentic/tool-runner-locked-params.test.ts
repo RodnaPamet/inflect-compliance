@@ -24,6 +24,8 @@ import {
     OPERATOR_INSTRUCTIONS_OPEN,
     SERVER_SIDE_FALLBACK_BETA,
     TOOL_RUNNER_PREAMBLE,
+    DELEGATED_TASK_OPEN,
+    subagentInstructionsOpen,
 } from '@/lib/agentic/tool-runner/params';
 import { repoFiles } from '../../helpers/repo-files';
 import { codeOf } from '../../helpers/source-blocks';
@@ -151,6 +153,54 @@ describe('the Tool Runner engine\'s locked parameters', () => {
         expect(p.model).toBe('claude-opus-5-5');
         expect(p.output_config).toEqual({ effort: 'high' });
         expect(p.max_iterations).toBe(7);
+    });
+});
+
+describe('a sub-agent\'s runner is shaped by the same function (Step 2e, #4594)', () => {
+    const tools = [tool('list_risks')];
+    const caps = resolveRunCaps(null);
+    const SUB = { name: 'risk_reader', instructions: 'Read the risks and list them.', maxTurns: 3, task: 'List the open risks.' };
+
+    it('a version with no sub-agents gets exactly the parameters it got before: no delegate, no sub-agent text', () => {
+        const before = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
+        const [block] = before.system as Array<{ text: string }>;
+        expect(block.text).not.toContain('sub-agent');
+        expect(before.tools.map((t) => (t as { name: string }).name)).toEqual(['list_risks']);
+        expect(before.messages).toEqual([{ role: 'user', content: 'Go.' }]);
+        expect(before.max_iterations).toBe(7);
+    });
+
+    it('pins the child\'s values: no thread, the parent\'s tier, effort, thinking, tool choice and fallbacks', () => {
+        const parent = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
+        const child = lockedParams({ def: PROFILE_DEF, tools, message: '', caps, fromSeq: 0, toolCallsPerTurn: 1, subagent: SUB });
+        expect(Object.keys(child).sort()).toEqual(Object.keys(parent).sort());
+        for (const key of ['thread', 'stream', 'model', 'max_tokens', 'tool_choice', 'thinking', 'output_config', 'fallbacks', 'betas'] as const) {
+            expect({ key, value: child[key] }).toEqual({ key, value: parent[key] });
+        }
+    });
+
+    it('runs the sub-agent\'s own instructions, fenced and named, and the task as its one message', () => {
+        const child = lockedParams({ def: PROFILE_DEF, tools, message: 'the parent message', caps, fromSeq: 0, toolCallsPerTurn: 1, subagent: SUB });
+        const [block] = child.system as Array<{ text: string }>;
+        expect(block.text.startsWith(TOOL_RUNNER_PREAMBLE)).toBe(true);
+        expect(block.text).toContain(subagentInstructionsOpen('risk_reader'));
+        expect(block.text).toContain('Read the risks and list them.');
+        expect(block.text).toContain('You cannot delegate.');
+        // The parent's instructions are not the child's.
+        expect(block.text).not.toContain('Summarise the open risks.');
+        expect(child.messages).toHaveLength(1);
+        const content = String(child.messages[0].content);
+        expect(content).toContain(DELEGATED_TASK_OPEN);
+        expect(content).toContain('List the open risks.');
+        expect(content).not.toContain('the parent message');
+    });
+
+    it('bounds the child\'s iterations by the lower of its turns and the steps the run has left', () => {
+        expect(lockedParams({ def: PROFILE_DEF, tools, message: '', caps, fromSeq: 0, toolCallsPerTurn: 1, subagent: SUB }).max_iterations).toBe(3);
+        const nearlySpent = caps.STEPS.limit - 2;
+        expect(
+            lockedParams({ def: PROFILE_DEF, tools, message: '', caps, fromSeq: nearlySpent, toolCallsPerTurn: 1, subagent: SUB }).max_iterations,
+        ).toBe(2);
     });
 });
 

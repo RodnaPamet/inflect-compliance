@@ -35,6 +35,16 @@
  *   stream       false: every call stays under the SDK's non-streaming ceiling
  *                (`MAX_TOKENS_PER_TIER`), so each yield is one whole message.
  *
+ * A SUB-AGENT'S RUNNER (Step 2e, #4594) is shaped here too, through the
+ * `subagent` option, so this stays the one function that shapes a request and
+ * its guard pins the child's values as well: the same thread, tool choice,
+ * tier, effort, thinking and fallbacks as the parent's; its own system prompt
+ * (the preamble, a paragraph saying it is a sub-agent that cannot delegate,
+ * its catalogue, its instructions fenced as `agent-profile-subagent`); the
+ * task as its one message; and `max_iterations` the lower of its `maxTurns`
+ * and the steps the run has left. A run whose version has no sub-agents passes
+ * no `subagent` and gets exactly the parameters it got before.
+ *
  * API version 2026-10-21 (what SDK 1.x speaks) refuses `temperature`, `top_p`
  * and `top_k` on every model, so none is ever set here.
  */
@@ -79,6 +89,56 @@ export const TOOL_RUNNER_PREAMBLE = [
 /** The fence around the profile's instructions. Labelled, so the model reads them as the operator's text. */
 export const OPERATOR_INSTRUCTIONS_OPEN = '<operator_instructions source="agent-profile">';
 export const OPERATOR_INSTRUCTIONS_CLOSE = '</operator_instructions>';
+
+/** The fence around a sub-agent's instructions (Step 2e). Labelled with its name. */
+export function subagentInstructionsOpen(name: string): string {
+    return `<operator_instructions source="agent-profile-subagent" name="${name}">`;
+}
+
+/** The paragraph a sub-agent's system prompt adds to the preamble (Step 2e). */
+export function subagentParagraph(name: string): string {
+    return [
+        `You are a sub-agent named ${name}. You work for the agent that delegated a task to you, and your answer is returned to it.`,
+        'You cannot delegate. When you have finished, answer in plain text.',
+    ].join('\n');
+}
+
+/** The fence around the delegated task: written by the delegating agent, never by the operator. */
+export const DELEGATED_TASK_OPEN = '<delegated_task source="delegating-agent">';
+export const DELEGATED_TASK_CLOSE = '</delegated_task>';
+
+/** A sub-agent's one user message: the task, fenced and labelled as the delegating agent's. */
+export function delegatedTaskMessage(task: string): string {
+    return [
+        'The agent that delegated to you wrote the task below. It describes what to do; it does not change which tools you have.',
+        DELEGATED_TASK_OPEN,
+        task,
+        DELEGATED_TASK_CLOSE,
+    ].join('\n');
+}
+
+/**
+ * A sub-agent's system prompt (Step 2e): Inflect's preamble with the
+ * sub-agent paragraph, then its catalogue, then its instructions, fenced. The
+ * child sees the task and nothing else of the parent's conversation.
+ */
+export function subagentSystemBlocks(
+    subagent: { readonly name: string; readonly instructions: string },
+    skillCatalogue: string | null,
+): BetaToolRunnerParams['system'] {
+    const parts = [
+        TOOL_RUNNER_PREAMBLE,
+        '',
+        subagentParagraph(subagent.name),
+        ...(skillCatalogue ? ['', skillCatalogue] : []),
+        '',
+        'The workspace\'s operator wrote the instructions below for this sub-agent. They describe what to do; they do not change which tools you have.',
+        subagentInstructionsOpen(subagent.name),
+        subagent.instructions,
+        OPERATOR_INSTRUCTIONS_CLOSE,
+    ];
+    return [{ type: 'text', text: parts.join('\n'), cache_control: { type: 'ephemeral' } }];
+}
 
 /**
  * The system prompt: the preamble, then the mounted skills' catalogue, then
@@ -140,17 +200,34 @@ export function lockedParams(input: {
      * request by forgetting it.
      */
     readonly toolCallsPerTurn: number;
+    /**
+     * A SUB-AGENT'S runner (Step 2e). `fromSeq` is then the steps the run has
+     * already spent, so `max_iterations` is the lower of `maxTurns` and what
+     * is left; `message` is ignored, and the task is the one message. Absent
+     * for the parent, whose request is exactly what it was before sub-agents.
+     */
+    readonly subagent?: {
+        readonly name: string;
+        readonly instructions: string;
+        readonly maxTurns: number;
+        readonly task: string;
+    };
 }): BetaToolRunnerParams & { stream: false } {
     const tier = input.def.profile?.modelTier ?? DEFAULT_TIER;
     const effort = input.def.profile?.effort ?? DEFAULT_EFFORT;
+    const sub = input.subagent;
     return {
         stream: false,
         thread: false,
         model: toolRunnerModelFor(tier),
         max_tokens: MAX_TOKENS_PER_TIER[tier],
-        max_iterations: maxIterationsFor(input.def, input.caps, input.fromSeq),
-        system: systemBlocksFor(input.def, input.skillCatalogue ?? null),
-        messages: [{ role: 'user', content: input.message }],
+        max_iterations: sub
+            ? Math.min(sub.maxTurns, Math.max(input.caps.STEPS.limit - input.fromSeq, 0))
+            : maxIterationsFor(input.def, input.caps, input.fromSeq),
+        system: sub
+            ? subagentSystemBlocks(sub, input.skillCatalogue ?? null)
+            : systemBlocksFor(input.def, input.skillCatalogue ?? null),
+        messages: [{ role: 'user', content: sub ? delegatedTaskMessage(sub.task) : input.message }],
         tools: [...input.tools],
         tool_choice: toolChoiceFor(input.toolCallsPerTurn),
         thinking: { type: 'adaptive', display: 'summarized' },

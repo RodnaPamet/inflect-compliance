@@ -26,6 +26,13 @@
  * tab did not show them. A flow version does not run before Phase 5, so its
  * Test run is disabled and says so.
  *
+ * A version's inline sub-agents (Step 2e, #4594) are covered by the same hash,
+ * so every one is shown as text (`describeSubagentsForReview`: name, tools,
+ * skills, turn limit and every word of its instructions) and diffed against
+ * the version in force, and the history counts them. A version with
+ * sub-agents on an engine that does not run them has its Test run disabled,
+ * saying so, as admission refuses it (`PROFILE_SUBAGENTS_NOT_RUNNABLE`).
+ *
  * The four-eyes affordance is the server's (`canDecide`: a SUBMITTED version,
  * a signed-in person, never its author), and the usecase refuses the author
  * again if a request is crafted by hand. Approve sends the hash on screen, so
@@ -56,7 +63,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { describeFlowForReview } from '@/lib/agentic/agent-flow';
-import { profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
+import { describeSubagentsForReview, profileNamesNoReadTool, runsSubagents } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 
@@ -168,7 +175,11 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                 : t(`testRun.reason.${state.reason}`)
             : v.flow !== null
               ? t('testRun.reason.FLOW_NOT_RUNNABLE')
-              : !v.allowedTriggers.includes('TEST_RUN')
+              : // A Test run is available only on the Tool Runner engine, so
+                // that is the engine whose entry is asked.
+                v.subagents.length > 0 && !runsSubagents('tool-runner')
+                ? t('testRun.reason.SUBAGENTS_NOT_RUNNABLE')
+                : !v.allowedTriggers.includes('TEST_RUN')
                 ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
                 : // A Test run is read-only: a version naming only propose
                   // tools would be offered nothing (#5374). The start refuses
@@ -286,12 +297,32 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                     />
                                 </>
                             ) : null}
+                            {inForce.subagents.length > 0 || open.subagents.length > 0 ? (
+                                <>
+                                    <p className="text-xs text-content-muted">
+                                        {t('review.subagentsDiffIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    <VersionDiff
+                                        versions={[
+                                            { id: inForce.id, versionNumber: inForce.version, text: subagentsText(inForce) },
+                                            { id: open.id, versionNumber: open.version, text: subagentsText(open) },
+                                        ]}
+                                        fromVersionId={inForce.id}
+                                        toVersionId={open.id}
+                                        data-testid="behaviour-review-subagents-diff"
+                                    />
+                                </>
+                            ) : null}
                         </div>
                     ) : null}
                     <VersionBody v={open} />
                     {open.status === 'SUBMITTED' && open.canDecide ? (
                         <p className="text-xs text-content-muted">
-                            {open.flow !== null ? t('review.hashNoteWithFlow') : t('review.hashNote')}{' '}
+                            {open.flow !== null
+                                ? t('review.hashNoteWithFlow')
+                                : open.subagents.length > 0
+                                  ? t('review.hashNoteWithSubagents')
+                                  : t('review.hashNote')}{' '}
                             <code className="break-all">{open.instructionsHash}</code>
                         </p>
                     ) : null}
@@ -377,6 +408,10 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                             </dd>
                                         </>
                                     ) : null}
+                                    <dt>{t('history.subagents')}</dt>
+                                    <dd data-testid={`behaviour-version-${v.version}-subagent-count`}>
+                                        {v.subagents.length > 0 ? v.subagents.length : t('none')}
+                                    </dd>
                                     <dt>{t('history.hash')}</dt>
                                     <dd>
                                         <code className="break-all" data-testid={`behaviour-version-${v.version}-hash`}>
@@ -434,6 +469,11 @@ function flowText(v: ProfileVersionView): string {
     return v.flow !== null ? describeFlowForReview(v.flow) : '';
 }
 
+/** A version's sub-agents as the reviewer reads them, or empty for a version with none. */
+function subagentsText(v: ProfileVersionView): string {
+    return v.subagents.length > 0 ? describeSubagentsForReview(v.subagents) : '';
+}
+
 /** One version's instructions and flow, as text, and the settings it runs with. */
 function VersionBody({ v }: { v: ProfileVersionView }) {
     const t = useTranslations('agents.behaviour');
@@ -454,6 +494,17 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
                         data-testid={`behaviour-version-${v.version}-flow`}
                     >
                         {flowText(v)}
+                    </pre>
+                </>
+            ) : null}
+            {v.subagents.length > 0 ? (
+                <>
+                    <p className="text-xs text-content-muted">{t('field.subagents')}</p>
+                    <pre
+                        className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle p-2 text-xs text-content-default"
+                        data-testid={`behaviour-version-${v.version}-subagents`}
+                    >
+                        {subagentsText(v)}
                     </pre>
                 </>
             ) : null}

@@ -37,7 +37,7 @@ import type { MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
 import type { ResolvedSkillDocument } from '@/lib/agentic/flue/skills/resolve';
 
 import { ACTIVATE_SKILL_TOOL_NAME } from './supplied-tools';
-import { refuseOverTurnCap, stoppedMessage, type SerialQueue, type ToolRunBinding } from './tools';
+import { refuseOverTurnCap, stoppedMessage, subagentOf, type SerialQueue, type ToolRunBinding } from './tools';
 
 /** What a run mounted, as the resolver returned it, with the pins its row recorded. */
 export interface RunSkills {
@@ -153,6 +153,7 @@ async function activate(binding: ToolRunBinding, skills: RunSkills, args: Record
             status: 'FAILED',
             label: ACTIVATE_SKILL_TOOL_NAME,
             output: { refused: selected.reason },
+            ...subagentOf(binding),
         });
         throw new SkillActivationRefused(selected.reason);
     }
@@ -161,6 +162,7 @@ async function activate(binding: ToolRunBinding, skills: RunSkills, args: Record
         status: 'DONE',
         label: ACTIVATE_SKILL_TOOL_NAME,
         input: { name: selected.pin.name, version: selected.pin.version, contentHash: selected.pin.contentHash },
+        ...subagentOf(binding),
     });
     return activatedSkillText(selected.document, selected.pin);
 }

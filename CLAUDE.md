@@ -3423,6 +3423,48 @@ from being undone:
     merges both engines' lists by name for the Tools tab. A tool the engine
     adds and the list omits fails `tests/unit/agentic/tool-runner-skills.test.ts`.
 
+**A profile version may define inline sub-agents, and the Tool Runner runs them
+through Inflect's own `delegate`** (Step 2e, #4594; design "Delegation" in
+`docs/claude-tool-runner-design.md`, owner decisions of 2026-11-13). Rules that
+are each one careless edit from being undone:
+
+  - **Subset only, refused by name.** A sub-agent is a name, instructions, tools,
+    skills and `maxTurns`, with NO description (decision 2). Its tools and skills
+    are subsets of the version's and its turns at most the version's; at most
+    `PROFILE_MAX_SUBAGENTS` (4); a version carries a flow or sub-agents, never
+    both (`SUBAGENTS_WITH_FLOW`). Every rule is a `SUBAGENT_*` 400 at save and
+    again at approval, never a silent drop. Each sub-agent's text is scanned with
+    `declaredTools` set to ITS tools.
+  - **The hash is versioned, never re-based.** `subagentsJson` (encrypted,
+    canonical, `NULL` never `[]`, frozen by the lifecycle trigger) enters
+    `profileContentHash` only under domain `inflect-agent-profile-content/2`, over
+    the STORED string. A version with none takes its old form byte for byte, so
+    no existing hash or run pin moves. Do not fold the sub-agents into the
+    domain-1 form.
+  - **Depth 1 by construction.** `delegate` is offered to the PARENT only, beside
+    its resolved set. A child's tools are `offerToolSet` over the parent's
+    invocation with the sub-agent's names, the parent's `readOnly` and THE
+    PARENT'S LATCH, then intersected by name with the parent's offered set, which
+    never holds an engine-supplied tool. A child request naming `delegate` (or
+    any tool outside its set) is a FAILED step, `SUBAGENT_TOOL_NOT_OFFERED`.
+  - **One loop body.** `runModelLoop` in `tool-runner/execute.ts` is the parent's
+    loop and every child's, with the sub-agent's name as a parameter. Before EVERY
+    model call in both loops it reads the kill switch and the breaker and charges
+    one `STEPS` (decision 4), placed after the turn's tools via
+    `runner.generateToolResponse()`, which the SDK caches. Do not give a child a
+    copy of the loop.
+  - **A sub-agent is not a principal.** Every child call is `runGuardedTool` on
+    the parent's invocation under the guard source
+    `tool-runner-subagent.<name>`; it shares the parent's budget, ledger counter,
+    stops, client and both turn caps (`delegate` counts against both). Every
+    child step carries `WorkflowStep.subagentName`, and the `delegate` marker
+    (Flue's marker shape, never the task or the answer) closes the span.
+  - **`RUNS_SUBAGENTS` is the brake.** A `Record<AgentDriver, boolean>` in
+    `agent-profile.ts`; admission refuses a version with sub-agents on an engine
+    whose entry is false (`PROFILE_SUBAGENTS_NOT_RUNNABLE`), and so do resume and
+    the preview. Only the Tool Runner's is true, flipped in a commit of its own
+    so reverting it is the rollback; Flue's and the static engine's stay false.
+
 **The engine choice has one control: the "Agent engines" section on Admin → AI
 features** (Step 0c, #4181; two owner decisions of 2026-10-25 on #4139).
 `GET /admin/agent-driver` is `admin.view`, so every admin reads the gate, and

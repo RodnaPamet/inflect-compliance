@@ -654,6 +654,13 @@ model WorkflowStep {
   /// the cap still reads it; this is the per-step breakdown an incident
   /// review wants, which the run total cannot give.
   costTokens  Int?
+  /// The inline sub-agent this step belongs to (Step 2e of
+  /// `docs/claude-tool-runner-design.md`), set on every MODEL_CALL and
+  /// TOOL_CALL a sub-agent produces and NULL on every parent step. A column,
+  /// not a key in `inputJson`: a TOOL_CALL's input is the model's arguments,
+  /// and a key added to them could not be told from an argument of that name.
+  /// CHECK: NULL or the name pattern `^[a-z][a-z0-9_]{1,39}$`.
+  subagentName String?
   status      WorkflowStepStatus @default(PENDING)
   at          DateTime           @default(now())
   actorUserId String?
@@ -3276,6 +3283,14 @@ model AgentProfileVersion {
   /// with the rest of the version (trigger), covered by the content hash, and
   /// encrypted at rest (Epic B): its labels are the tenant's own words.
   flowJson         String?
+  /// The version's inline sub-agents (Step 2e of
+  /// `docs/claude-tool-runner-design.md`): canonical JSON of a checked list
+  /// (`src/lib/agentic/agent-profile.ts`), at most four, each a name, its own
+  /// instructions, a subset of `toolNames` and `skillRefs`, and a turn limit,
+  /// or NULL for a version with none (never `[]`; CHECK). Frozen with the rest
+  /// of the version (trigger), covered by the content hash, and encrypted at
+  /// rest (Epic B): the instructions are the tenant's own words.
+  subagentsJson    String?
   /// The skills the profile mounts, as a JSON array of `{ origin, name }`.
   skillRefs        Json
   /// A deployment tier, never a model id (`PROFILE_MODEL_TIERS`; CHECK).

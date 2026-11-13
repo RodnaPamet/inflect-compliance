@@ -234,6 +234,7 @@ function runStep(over: Partial<RunStepRow> = {}): RunStepRow {
         // #3473 part 3 — null for every step that is not a delegation, which
         // is every step in these fixtures.
         delegation: null,
+        subagent: null,
         proposals: [],
         ...over,
     };

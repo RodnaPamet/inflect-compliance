@@ -660,6 +660,10 @@ export function AgentRunDetailClient({
                                 data-delegates={
                                     delegatesClaiming(spans, s).join(',') || undefined
                                 }
+                                // WHOSE STEP, read from its own column where an
+                                // engine labels it (Step 2e): exact even when the
+                                // span that would have claimed it was never closed.
+                                data-subagent={s.subagent ?? undefined}
                             >
                                 <div className="flex flex-wrap items-center gap-tight">
                                     <span className="text-xs tabular-nums text-content-subtle">
@@ -670,7 +674,11 @@ export function AgentRunDetailClient({
                                         hold the span boundaries in their head.
                                         Quiet: the step's own status and kind are
                                         the louder signals. */}
-                                    {delegatesClaiming(spans, s).length > 0 && (
+                                    {s.subagent !== null ? (
+                                        <span className="text-xs text-content-subtle" data-testid={`step-${s.seq}-subagent`}>
+                                            {t('runs.detail.delegation.subagentBadge', { name: s.subagent })}
+                                        </span>
+                                    ) : delegatesClaiming(spans, s).length > 0 && (
                                         <span className="text-xs text-content-subtle">
                                             {t('runs.detail.delegation.stepBadge', {
                                                 agents: delegatesClaiming(spans, s).join(', '),

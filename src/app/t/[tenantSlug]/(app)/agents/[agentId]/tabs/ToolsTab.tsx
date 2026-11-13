@@ -103,7 +103,7 @@ interface AgentToolsPayload {
      */
     runtimeProvided?: Array<{
         name: string;
-        appearsWhen: 'always' | 'when-skills-mounted';
+        appearsWhen: 'always' | 'when-skills-mounted' | 'when-subagents-defined';
         boundedBy: string;
     }>;
     /**
@@ -811,7 +811,9 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                     <span className="text-content-subtle text-xs">
                                         {rt.appearsWhen === 'always'
                                             ? t('agentDetail.tools.runtimeAlways')
-                                            : t('agentDetail.tools.runtimeWhenSkills')}
+                                            : rt.appearsWhen === 'when-subagents-defined'
+                                              ? t('agentDetail.tools.runtimeWhenSubagents')
+                                              : t('agentDetail.tools.runtimeWhenSkills')}
                                     </span>
                                 </div>
                                 {/* WHY IT IS NOT A HOLE, in the terms the

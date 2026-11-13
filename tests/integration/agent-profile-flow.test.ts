@@ -218,7 +218,7 @@ describeFn('the flow inside the profile version (real DB)', () => {
         const view = await getAgentProfile(authorA(), AGENTS.flow);
         const stored = view.versions[0].flow;
         expect(stored?.nodes.map((n) => n.label)).toEqual(['Gather the open risks', 'Gather the controls', 'Summarise by owner']);
-        expect(row.instructionsHash).toBe(profileContentHash(INSTRUCTIONS, serializeAgentFlow(stored!)));
+        expect(row.instructionsHash).toBe(profileContentHash(INSTRUCTIONS, serializeAgentFlow(stored!), null));
 
         const key = profileRunKey(created.profileId, 1);
         const { def } = await resolveRunDefinition(authorA({ agentId: AGENTS.flow }), key, { trigger: 'ASK' });
