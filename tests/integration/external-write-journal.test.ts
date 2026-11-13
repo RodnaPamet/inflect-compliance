@@ -215,3 +215,54 @@ describe('settleWrite', () => {
         await expect(settleWrite(ctx, 'cmnotarealid0000', 'APPLIED')).resolves.toBeUndefined();
     });
 });
+
+describe('the claim — exactly one pass may send a row (#5256)', () => {
+    /**
+     * The dispatch's claim, verbatim. It runs under `runInTenantContext` there;
+     * here it goes through the test client, because the property under test is
+     * PostgreSQL's — that this predicate admits exactly one winner — and RLS on
+     * this table is proven by `external-write-journal-rls.test.ts`.
+     */
+    const claim = (journalId: string) =>
+        prisma.externalWriteJournal.updateMany({
+            where: { id: journalId, tenantId: T, outcome: 'PENDING', claimedAt: null },
+            data: { claimedAt: new Date() },
+        });
+
+    it('the first claim wins and the second finds nothing', async () => {
+        const { journalId } = await beginWrite(ctx, attempt());
+        expect((await claim(journalId)).count).toBe(1);
+        // The second pass. count 0 is what makes it skip the row instead of
+        // calling the far end's write tool a second time.
+        expect((await claim(journalId)).count).toBe(0);
+    });
+
+    it('two CONCURRENT claims yield exactly one winner', async () => {
+        // The finding's Case 1, as a race rather than a sequence. Under READ
+        // COMMITTED the loser blocks on the row lock, then RE-EVALUATES
+        // `claimedAt IS NULL` against the committed value and matches nothing.
+        // That re-evaluation is the whole guarantee; a read-then-write in
+        // application code would not have it.
+        const { journalId } = await beginWrite(ctx, attempt());
+        const counts = (await Promise.all([claim(journalId), claim(journalId)])).map((r) => r.count);
+        expect(counts.filter((c) => c === 1)).toHaveLength(1);
+        expect(counts.reduce((a, b) => a + b, 0)).toBe(1);
+    });
+
+    it('a settled row cannot be claimed at all', async () => {
+        // Belt and braces with `outcome: 'PENDING'`: a row somebody already
+        // settled is not re-sendable even though its claimedAt is still null.
+        const { journalId } = await beginWrite(ctx, attempt());
+        await settleWrite(ctx, journalId, 'APPLIED');
+        expect((await claim(journalId)).count).toBe(0);
+        const row = await prisma.externalWriteJournal.findUniqueOrThrow({ where: { id: journalId } });
+        expect(row.claimedAt).toBeNull();
+    });
+
+    it('a fresh row opens UNCLAIMED, so nothing predating this column is stranded', async () => {
+        const { journalId } = await beginWrite(ctx, attempt());
+        const row = await prisma.externalWriteJournal.findUniqueOrThrow({ where: { id: journalId } });
+        expect(row.claimedAt).toBeNull();
+        expect(row.outcome).toBe('PENDING');
+    });
+});
