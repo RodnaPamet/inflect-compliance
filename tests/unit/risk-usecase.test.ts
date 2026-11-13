@@ -34,6 +34,9 @@
 
 const mockDb = {
     tenant: { findUnique: jest.fn() },
+    // The CONFIGURED grid the scoring path now reads (#5080). It replaced
+    // `tenant.maxRiskScale`, which nothing in src/ ever wrote.
+    riskMatrixConfig: { findUnique: jest.fn() },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
     // create/updateRisk + bulkAssignRisk verify a supplied ownerUserId is an
@@ -247,29 +250,32 @@ describe('getRisk', () => {
 // ─── createRisk ────────────────────────────────────────────────────
 
 describe('createRisk', () => {
-    it('uses tenant.maxRiskScale for the score, defaulting to 5', async () => {
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: null });
+    it('scores against the configured grid, defaulting when there is no config row', async () => {
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue(null);
         (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X' });
 
         await createRisk(editorCtx, { title: 'X', impact: 4, likelihood: 2 });
 
-        expect(calculateRiskScore).toHaveBeenCalledWith(2, 4, 5); // default scale = 5
+        expect(calculateRiskScore).toHaveBeenCalledWith(2, 4, 5, 5); // default grid = 5x5
         const createArgs = (RiskRepository.create as jest.Mock).mock.calls[0][2];
         // mock formula: l*i*(m/5) = 2*4*1 = 8
         expect(createArgs.inherentScore).toBe(8);
     });
 
     it('defaults impact/likelihood to 3 each when not supplied', async () => {
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 10 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 10, impactLevels: 10 });
         (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X' });
 
         await createRisk(editorCtx, { title: 'X' });
 
-        expect(calculateRiskScore).toHaveBeenCalledWith(3, 3, 10);
+        expect(calculateRiskScore).toHaveBeenCalledWith(3, 3, 10, 10);
     });
 
     it('sanitises every free-text column', async () => {
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
         (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X' });
 
         await createRisk(editorCtx, {
@@ -310,7 +316,8 @@ describe('createRiskFromTemplate', () => {
             id: 't-1', title: 'Tmpl', description: 'Tmpl desc', category: 'OPS',
             defaultLikelihood: 4, defaultImpact: 3,
         });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
         (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'SAN::Tmpl' });
 
         await createRiskFromTemplate(editorCtx, 't-1');
@@ -326,7 +333,8 @@ describe('createRiskFromTemplate', () => {
             id: 't-1', title: 'Tmpl', description: null, category: 'OPS',
             defaultLikelihood: 4, defaultImpact: 3,
         });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
         (RiskRepository.create as jest.Mock).mockResolvedValue({ id: 'r-1' });
 
         await createRiskFromTemplate(editorCtx, 't-1', { title: 'Custom', impact: 5, likelihood: 5 });
@@ -344,7 +352,8 @@ describe('updateRisk — three-state field semantics', () => {
     it('passes undefined through for fields not in the patch', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { title: 'New' });
 
@@ -357,7 +366,8 @@ describe('updateRisk — three-state field semantics', () => {
     it('clears free-text when null supplied (SET NULL)', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { description: null, category: null });
 
@@ -369,7 +379,8 @@ describe('updateRisk — three-state field semantics', () => {
     it('clears ownerUserId when empty string supplied (treated as falsy)', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: null });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { ownerUserId: '' });
 
@@ -380,7 +391,8 @@ describe('updateRisk — three-state field semantics', () => {
     it('throws notFound when the risk does not exist', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue(null);
         (RiskRepository.update as jest.Mock).mockResolvedValue(null);
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
         await expect(updateRisk(editorCtx, 'missing', { title: 'X' })).rejects.toThrow(/Risk not found/i);
     });
 });
@@ -389,7 +401,8 @@ describe('updateRisk — RISK_ASSIGNED notification', () => {
     it('fires the notification only on owner change to a real user', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X', key: 'RISK-1', ownerUserId: 'u-new' });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { ownerUserId: 'u-new' });
 
@@ -402,7 +415,8 @@ describe('updateRisk — RISK_ASSIGNED notification', () => {
     it('does NOT fire when owner is unchanged', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-same' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X', ownerUserId: 'u-same' });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { title: 'New' });
 
@@ -412,7 +426,8 @@ describe('updateRisk — RISK_ASSIGNED notification', () => {
     it('does NOT fire when owner is cleared (no new assignee)', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: 'u-prev' });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X', ownerUserId: null });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
 
         await updateRisk(editorCtx, 'r-1', { ownerUserId: null });
 
@@ -422,7 +437,8 @@ describe('updateRisk — RISK_ASSIGNED notification', () => {
     it('does not surface notification errors (fire-and-forget)', async () => {
         (RiskRepository.getById as jest.Mock).mockResolvedValue({ id: 'r-1', ownerUserId: null });
         (RiskRepository.update as jest.Mock).mockResolvedValue({ id: 'r-1', title: 'X', ownerUserId: 'u-new' });
-        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+        (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+        (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({ likelihoodLevels: 5, impactLevels: 5 });
         (createAssignmentNotification as jest.Mock).mockRejectedValue(new Error('Redis down'));
 
         await expect(updateRisk(editorCtx, 'r-1', { ownerUserId: 'u-new' })).resolves.toMatchObject({ id: 'r-1' });

@@ -7,6 +7,7 @@ import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.polic
 import { logEvent } from '../events/audit';
 import { notFound, badRequest } from '@/lib/errors/types';
 import { calculateRiskScore } from '@/lib/risk-scoring';
+import { readRiskMatrixScale } from '@/lib/risk-matrix/scale';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
 import { normalizeLinddunCodes, petHintsForCodes, type LinddunCode } from '@/lib/privacy/linddun';
@@ -227,10 +228,19 @@ export async function createRisk(ctx: RequestContext, data: {
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
-        const inherentScore = calculateRiskScore(data.likelihood ?? 3, data.impact ?? 3, maxScale);
+        // THE CONFIGURED GRID, PER AXIS (#5080). This read was
+        // `tenant.maxRiskScale`, which nothing in src/ has ever written — only
+        // a staging seed, hardcoded 5 — so a tenant on a 6x6 matrix had its
+        // scores silently clamped to 5x5 while the UI previewed the unclamped
+        // product. The config is also RLS-scoped, where the Tenant read was
+        // global.
+        const scale = await readRiskMatrixScale(db, ctx.tenantId);
+        const inherentScore = calculateRiskScore(
+            data.likelihood ?? 3,
+            data.impact ?? 3,
+            scale.likelihoodLevels,
+            scale.impactLevels,
+        );
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise free-text before persistence.
@@ -312,11 +322,15 @@ export async function createRiskFromTemplate(ctx: RequestContext, templateId: st
     if (!template) throw notFound('Risk template not found');
 
     const created = await runInTenantContext(ctx, async (db) => {
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        const scale = await readRiskMatrixScale(db, ctx.tenantId);
         const likelihood = overrides.likelihood ?? template.defaultLikelihood;
         const impact = overrides.impact ?? template.defaultImpact;
-        const score = calculateRiskScore(likelihood, impact, maxScale);
+        const score = calculateRiskScore(
+            likelihood,
+            impact,
+            scale.likelihoodLevels,
+            scale.impactLevels,
+        );
 
         const risk = await RiskRepository.create(db, ctx, {
             // Epic D.2 — sanitise the merged value (override OR template),
@@ -437,11 +451,15 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     assertCanUpdateRisk(ctx);
 
     const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
-        // Tenant lookup is global (Tenant table has no RLS)
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale || 5;
+        // THE CONFIGURED GRID, PER AXIS (#5080) — see createRisk.
+        const scale = await readRiskMatrixScale(db, ctx.tenantId);
         const inherentScore = data.likelihood && data.impact
-            ? calculateRiskScore(data.likelihood, data.impact, maxScale)
+            ? calculateRiskScore(
+                  data.likelihood,
+                  data.impact,
+                  scale.likelihoodLevels,
+                  scale.impactLevels,
+              )
             : undefined;
 
         // RQ2-1 — residual decomposition: both-or-neither, derived
@@ -454,7 +472,12 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
         }
         const residualScore =
             data.residualLikelihood !== undefined && data.residualImpact !== undefined
-                ? calculateRiskScore(data.residualLikelihood, data.residualImpact, maxScale)
+                ? calculateRiskScore(
+                      data.residualLikelihood,
+                      data.residualImpact,
+                      scale.likelihoodLevels,
+                      scale.impactLevels,
+                  )
                 : undefined;
 
         // A newly-supplied owner must be an active member; `undefined` leaves

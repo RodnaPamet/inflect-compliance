@@ -23,10 +23,23 @@
 export function calculateRiskScore(
     likelihood: number,
     impact: number,
-    maxScale: number = 5
+    maxLikelihood: number = 5,
+    /**
+     * PER AXIS, defaulting to the likelihood cap — #5080.
+     *
+     * One scalar cannot clamp a non-square matrix: a 6x4 grid with a single
+     * cap either admits impact 6 (above its four levels) or clamps likelihood
+     * to 4. `RiskMatrixConfig` carries `likelihoodLevels` and `impactLevels`
+     * separately and allows 2..10 each, so the server reads both.
+     *
+     * Defaulted rather than required so every existing two- and three-argument
+     * call keeps its exact previous behaviour: with one cap the two axes share
+     * it, which is what this function always did.
+     */
+    maxImpact: number = maxLikelihood
 ): number {
-    const clampedL = Math.max(1, Math.min(maxScale, likelihood));
-    const clampedI = Math.max(1, Math.min(maxScale, impact));
+    const clampedL = Math.max(1, Math.min(maxLikelihood, likelihood));
+    const clampedI = Math.max(1, Math.min(maxImpact, impact));
     return clampedL * clampedI;
 }
 

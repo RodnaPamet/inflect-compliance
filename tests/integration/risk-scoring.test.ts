@@ -218,6 +218,8 @@ describe('Risk Scoring — Integration with usecase', () => {
         ));
         // updateRisk has conditional recalculation
         expect(content).toContain('data.likelihood && data.impact');
-        expect(content).toContain('calculateRiskScore(data.likelihood, data.impact');
+        // Per axis since #5080, and the call is wrapped, so this asserts the
+        // SEAM and the inputs rather than a single-line spelling.
+        expect(content).toMatch(/calculateRiskScore\(\s*data\.likelihood,\s*data\.impact,/);
     });
 });

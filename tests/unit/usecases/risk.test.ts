@@ -92,10 +92,23 @@ beforeEach(() => {
     mockUpdate.mockResolvedValue({ id: 'r1' } as never);
 });
 
-function dbWithTenant(maxRiskScale: number | null = 5) {
+/**
+ * A db double carrying the tenant's CONFIGURED grid (#5080).
+ *
+ * The scoring path no longer reads `Tenant.maxRiskScale` — nothing in src/
+ * ever wrote it, so every tenant's scores were clamped to 5x5 whatever their
+ * matrix said. `null` means the tenant has no config row, which falls back to
+ * the documented default grid.
+ */
+function dbWithMatrix(
+    likelihoodLevels: number | null = 5,
+    impactLevels: number = likelihoodLevels ?? 5,
+) {
     return {
-        tenant: {
-            findUnique: jest.fn().mockResolvedValue({ maxRiskScale }),
+        riskMatrixConfig: {
+            findUnique: jest.fn().mockResolvedValue(
+                likelihoodLevels === null ? null : { likelihoodLevels, impactLevels },
+            ),
         },
         // RQ2-1 — every score-changing write appends a ledger event.
         riskScoreEvent: {
@@ -119,7 +132,7 @@ describe('createRisk', () => {
     });
 
     it('sanitises every free-text field before persistence (Epic D.2)', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
@@ -146,28 +159,55 @@ describe('createRisk', () => {
         expect(repoArgs.treatmentNotes).toBe('SANITISED(notes)');
     });
 
-    it('uses tenant.maxRiskScale when computing inherentScore', async () => {
-        const fakeDb = dbWithTenant(10);
+    it('scores against the CONFIGURED grid, per axis', async () => {
+        const fakeDb = dbWithMatrix(10, 10);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), {
             title: 't', likelihood: 4, impact: 5,
         });
 
-        expect(mockScore).toHaveBeenCalledWith(4, 5, 10);
+        expect(mockScore).toHaveBeenCalledWith(4, 5, 10, 10);
     });
 
-    it('falls back to maxScale=5 when tenant.maxRiskScale is null', async () => {
-        const fakeDb = dbWithTenant(null);
+    it('does NOT clamp a 6x6 matrix to 5x5 — the #5080 regression', async () => {
+        // The defect itself: the server read a column that is 5 for every
+        // tenant because nothing writes it, so L6xI6 stored 25 while the UI
+        // previewed 36.
+        const fakeDb = dbWithMatrix(6, 6);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), {
+            title: 't', likelihood: 6, impact: 6,
+        });
+
+        expect(mockScore).toHaveBeenCalledWith(6, 6, 6, 6);
+    });
+
+    it('passes each axis its OWN ceiling on a non-square grid', async () => {
+        // What a single scalar cannot express: a 6x4 grid either admits an
+        // impact of 6 or clamps likelihood to 4.
+        const fakeDb = dbWithMatrix(6, 4);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), {
+            title: 't', likelihood: 6, impact: 4,
+        });
+
+        expect(mockScore).toHaveBeenCalledWith(6, 4, 6, 4);
+    });
+
+    it('falls back to the default grid when the tenant has no config row', async () => {
+        const fakeDb = dbWithMatrix(null);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
 
-        expect(mockScore).toHaveBeenCalledWith(3, 3, 5);
+        expect(mockScore).toHaveBeenCalledWith(3, 3, 5, 5);
     });
 
     it('emits a CREATE audit row', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRisk(makeRequestContext('EDITOR'), { title: 't' });
@@ -209,7 +249,7 @@ describe('createRiskFromTemplate', () => {
             defaultLikelihood: 3,
             defaultImpact: 4,
         } as never);
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await createRiskFromTemplate(makeRequestContext('EDITOR'), 'tpl-1', {
@@ -227,7 +267,7 @@ describe('createRiskFromTemplate', () => {
 
 describe('updateRisk — sanitizeOptional three-state', () => {
     it('preserves "untouched" semantics: undefined fields are NOT written', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -246,7 +286,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 
     it('preserves "explicit-clear" semantics: null fields write SET NULL', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
 
         await updateRisk(makeRequestContext('EDITOR'), 'r1', {
@@ -262,7 +302,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     // #5212 — clearing a date was collapsed to "leave it alone", so a cleared
     // review date came back after a reload behind a "saved" toast.
     it('clears nextReviewAt and targetDate on an explicit null, and leaves them on undefined', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         await updateRisk(makeRequestContext('EDITOR'), 'r1', { nextReviewAt: null, targetDate: null });
         const cleared = mockUpdate.mock.calls.at(-1)![3];
@@ -277,7 +317,7 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 
     it('throws notFound when repository returns null', async () => {
-        const fakeDb = dbWithTenant(5);
+        const fakeDb = dbWithMatrix(5);
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
         mockUpdate.mockResolvedValueOnce(null as never);
 

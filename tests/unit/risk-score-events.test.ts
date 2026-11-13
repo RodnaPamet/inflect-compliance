@@ -17,6 +17,8 @@
 
 const mockDb = {
     tenant: { findUnique: jest.fn() },
+    // The configured grid the scoring path reads since #5080.
+    riskMatrixConfig: { findUnique: jest.fn() },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
     riskScoreEvent: { create: jest.fn(), findMany: jest.fn() },
@@ -85,7 +87,11 @@ import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     jest.clearAllMocks();
-    (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1', maxRiskScale: 5 });
+    (mockDb.tenant.findUnique as jest.Mock).mockResolvedValue({ id: 'tenant-1' });
+    (mockDb.riskMatrixConfig.findUnique as jest.Mock).mockResolvedValue({
+        likelihoodLevels: 5,
+        impactLevels: 5,
+    });
     (mockDb.riskScoreEvent.create as jest.Mock).mockResolvedValue({ id: 'ev-1' });
 });
 

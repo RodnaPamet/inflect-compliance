@@ -57,7 +57,13 @@ describe('RQ2-1 — every score write is paired with a provenance event', () => 
 
     test('updateRisk derives residualScore via calculateRiskScore (never accepts a raw rollup)', () => {
         expect(riskUsecase).toMatch(
-            /calculateRiskScore\(data\.residualLikelihood,\s*data\.residualImpact,\s*maxScale\)/,
+            // The TEETH are unchanged: the residual rollup is derived from the
+            // residual inputs through the one scoring seam. Only the trailing
+            // arguments moved — the scale is now per axis from the tenant's
+            // configured grid (#5080) rather than one `maxScale` scalar — so
+            // the pattern stops at the inputs instead of pinning the old
+            // third argument, and tolerates the call being wrapped.
+            /calculateRiskScore\(\s*data\.residualLikelihood,\s*data\.residualImpact,/,
         );
         // The update payload type must NOT accept a caller-supplied
         // residualScore (derived-only contract).
@@ -144,6 +150,10 @@ describe('RQ2-2 — control-derived residual (divisors stay dead)', () => {
     });
 
     test('the derived rollup goes through calculateRiskScore (one scoring seam)', () => {
+        // `risk-residual.ts` still takes a single `maxScale` parameter from its
+        // caller, so this one is unchanged — the per-axis migration (#5080)
+        // covered the paths that WRITE a score; the suggestion helper's own
+        // scale parameter is a follow-up.
         expect(residualLib).toMatch(/calculateRiskScore\(residualLikelihood,\s*residualImpact,\s*maxScale\)/);
     });
 });

@@ -10,6 +10,8 @@
  * Audit: Every generate/apply/dismiss action is logged with full context.
  */
 import { runInTenantContext } from '@/lib/db-context';
+import { readRiskMatrixScale } from '@/lib/risk-matrix/scale';
+import { calculateRiskScore } from '@/lib/risk-scoring';
 import {
     RESIDENCY_SELECT,
     residencyTermsFrom,
@@ -459,8 +461,12 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
             throw forbidden('Session has been dismissed');
         }
 
-        const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId } });
-        const maxScale = tenant?.maxRiskScale ?? 5;
+        // PER AXIS, FROM THE CONFIGURED GRID (#5080). This read was
+        // `tenant.maxRiskScale`, which nothing in src/ writes, so on a 6x6
+        // matrix a reviewer's perfectly valid edit of 6 was REFUSED with
+        // "must be between 1 and 5" — the same root cause as the clamped
+        // score, surfacing as a refusal rather than silent data loss.
+        const scale = await readRiskMatrixScale(db, ctx.tenantId);
 
         const acceptedIds = new Set(input.acceptedItemIds);
         const createdRisks: string[] = [];
@@ -474,10 +480,17 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
         // item that is not accepted is ignored, as the item is not applied.
         const editsById = new Map((input.edits ?? []).map((e) => [e.itemId, e]));
         for (const edit of editsById.values()) {
-            for (const value of [edit.likelihood, edit.impact]) {
-                if (value !== undefined && value > maxScale) {
-                    throw badRequest(`Likelihood and impact must be between 1 and ${maxScale}`);
-                }
+            // Each axis against ITS OWN ceiling, and the message names which
+            // one: a non-square grid has two different answers, and "between
+            // 1 and 5" for an impact bounded at 4 sends somebody looking in
+            // the wrong place.
+            if (edit.likelihood !== undefined && edit.likelihood > scale.likelihoodLevels) {
+                throw badRequest(
+                    `Likelihood must be between 1 and ${scale.likelihoodLevels}`,
+                );
+            }
+            if (edit.impact !== undefined && edit.impact > scale.impactLevels) {
+                throw badRequest(`Impact must be between 1 and ${scale.impactLevels}`);
             }
         }
 
@@ -526,7 +539,19 @@ export async function applySession(ctx: RequestContext, sessionId: string, input
 
                 const likelihood = item.likelihoodSuggested ?? 3;
                 const impact = item.impactSuggested ?? 3;
-                const score = Math.round((likelihood / maxScale) * (impact / maxScale) * maxScale * maxScale);
+                // THROUGH THE ONE SCORING SEAM (#5080). This was
+                // `Math.round((l / maxScale) * (i / maxScale) * maxScale * maxScale)`,
+                // which reduces algebraically to `l * i` — an unclamped
+                // product computed the long way round, bypassing
+                // `calculateRiskScore` entirely. That is the very thing
+                // `tests/guardrails/risk-score-provenance.test.ts` exists to
+                // prevent, and it slipped in on the AI-suggestion path.
+                const score = calculateRiskScore(
+                    likelihood,
+                    impact,
+                    scale.likelihoodLevels,
+                    scale.impactLevels,
+                );
 
                 // Through the repository, NOT db.risk.create — the repo mints
                 // the per-tenant RSK-N key from the atomic counter. Creating
