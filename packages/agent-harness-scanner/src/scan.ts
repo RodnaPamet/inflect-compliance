@@ -73,7 +73,7 @@ export function buildSources(
     for (const s of config.sources) {
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
-            sources.push(langchainCodeSource({ roots: s.roots }));
+            sources.push(langchainCodeSource({ roots: s.roots, providerSdks: s.providerSdks }));
             continue;
         }
         if (s.kind === 'inflect-register') {
@@ -212,7 +212,13 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     for (const r of [...reads, ...unreadable]) {
         const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length, toolCalls: toolCallsOf(r) };
         if (r.status === 'COMPLETE') log.info('source read', fields);
-        else log.warn('source incomplete', { ...fields, reason: r.reason ?? null });
+        else {
+            log.warn('source incomplete', { ...fields, reason: r.reason ?? null });
+            // Where it stopped, for the operator: the log only, never the signed report.
+            for (const place of r.notRead ?? []) log.warn('not read', { source: r.kind, where: place.where, reason: place.reason });
+            const listed = (r.notRead ?? []).length;
+            if ((r.notReadTotal ?? 0) > listed) log.warn('not read: more places than are listed', { source: r.kind, listed, total: r.notReadTotal ?? 0 });
+        }
         // The listing hash is what an estate pins a server to: the log is where
         // the operator reads it. The label is the estate's own; the URL is not logged.
         for (const server of r.mcpServers ?? []) {

@@ -48,7 +48,7 @@ scanner signed it, so each estate has a scanner of its own.
 | `runtime` (LangSmith) | A LangSmith service key holding the workspace Viewer role | `api.smith.langchain.com` (US) or `eu.api.smith.langchain.com` (EU), or the estate's own self-hosted LangSmith |
 | `cicd` (GitHub Actions) | A fine-grained token limited to the listed repositories, holding the repository permissions Contents: read and Secrets: read | `api.github.com` |
 | `gcp-sa` (Google Cloud IAM) | The JSON key of a service account holding `roles/iam.serviceAccountViewer` on the listed projects | `iam.googleapis.com`, and the token from `oauth2.googleapis.com` |
-| `code` (LangChain, LangGraph and the Claude Agent SDK) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
+| `code` (LangChain, LangGraph, the Claude Agent SDK, and agents built directly on the Anthropic, OpenAI, Gemini or Bedrock SDK) | None: read access to the directories it is given, mounted into the scanner | None: it makes no request |
 | `runtime` (OpenShell) | A renewable client credential scoped to **`sandbox:read`** — and, only if the estate opts in to reading providers, `provider:read` as well | The estate's own OpenShell gateway, the host it names in its configuration |
 
 `Key Vault Reader` reads metadata and cannot read a secret's contents. Every
@@ -103,13 +103,27 @@ keeps the read read-only.
   internal name such as `langsmith.corp.internal` is accepted.
 
 The `code` source reads the repositories that define the estate's LangChain,
-LangGraph and Claude Agent SDK agents. Mount each one read-only into the scanner's container and name
+LangGraph and Claude Agent SDK agents, and the agents the estate builds
+directly on a model provider's SDK: Anthropic, OpenAI or Azure OpenAI, Google
+Gemini, or AWS Bedrock. On a provider's SDK an agent is **a model call that is
+given tools**; a model call that is given none is a completion and is not
+reported. Mount each repository read-only into the scanner's container and name
 it as a root with a label: the label, never the path, is what reports and
 findings carry. The source reads `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`,
-`.mts`, `.cts` and `.tsx` files that mention the framework; it does not enter
+`.mts`, `.cts` and `.tsx` files that mention a framework or a provider's SDK; it does not enter
 dependency or build directories (`node_modules`, virtual environments, `dist`,
 `build`), and it does not follow a symbolic link, which it reports as a location
 it could not read. It never imports or runs what it reads.
+
+An agent on a provider's SDK is named by the function its call is written in
+(`code:<label>/<path>#support_agent`). It reports its tools, the model it
+names, the endpoint and the key of the client when the file builds the client,
+and no ladder verdict. When the client is handed in from another file, the
+endpoint is the place of the call and no key is claimed.
+
+To turn this recognition off for an estate, set `"providerSdks": false` on
+the `code` source. The source then parses and reports what it did before it
+recognised a provider's SDK.
 
 Two consequences, both kept by the owner on 2026-10-19:
 
@@ -300,9 +314,24 @@ the source refused or that was not set, and `UNREACHABLE`, `RATE_LIMITED`,
 `UNPARSEABLE`: it read a file that does not parse, or an agent definition built
 from something it cannot resolve statically — a tool list returned by a
 function, a model passed in as a parameter, `**kwargs`. The agent is still
-reported with what did resolve, and the source line names the reason. The
-`cicd` source adds it for a workflow file that is not one YAML document with a
-`jobs` mapping, or that declares a `permissions:` value it does not know; the
+reported with what did resolve, and the source line names the reason. For a
+model call on a provider's SDK the rule is: tools the reader cannot follow
+make an agent with no tool listed, and the source is `UNPARSEABLE`; options
+the reader cannot see at all make an agent only for a tool loop
+(`toolRunner`, `tool_runner`, `runTools`), and for any other method the call
+is not reported as an agent, because most model calls are completions, and
+the source is `UNPARSEABLE` all the same. The report carries that status and
+its reason and nothing more. The scanner's own log names the places: after the
+`source incomplete` line for the `code` source it writes one `not read` line
+per file and line it did not read, as a `code://<root label>/<path>#L<line>`
+locator with the reason, for at most 25 places, and then the total when there
+are more. A path that has a secret's shape is written as a hash of itself. A
+source file over 1 MiB is not parsed: one that names no framework and no
+provider's SDK (a vendored or minified bundle) leaves the source complete, and
+one that names one is `BYTE_CAP` at that file, as is any file over 16 MiB. The
+`cicd` source adds `UNPARSEABLE` for a workflow file that is not one YAML
+document with a `jobs` mapping, or that declares a `permissions:` value it
+does not know; the
 repository's other workflows are still reported.
 
 A LangSmith source's rows are the deployments and projects it listed, so a

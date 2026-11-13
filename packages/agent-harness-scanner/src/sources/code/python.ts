@@ -21,6 +21,7 @@ import {
     type CallExpr,
     type Expr,
     type FileFacts,
+    type FunctionDefinition,
     type Qualified,
     type ToolDeclaration,
 } from './ir';
@@ -315,7 +316,7 @@ class LineParser {
         if (t.t === 'name') {
             if (KEYWORDS.has(t.v) && !SOFT_KEYWORDS.has(t.v)) {
                 this.next();
-                return { k: 'opaque', line };
+                return t.v === 'None' ? { k: 'opaque', line, absent: true } : { k: 'opaque', line };
             }
             this.next();
             return { k: 'ref', name: t.v, line };
@@ -555,15 +556,57 @@ function targetKey(toks: readonly Tok[]): string | null {
     return d.name;
 }
 
+/**
+ * How far each line is indented, by line number (1-based): a tab advances to
+ * the next multiple of eight, as Python counts it. Only the first line of a
+ * statement is ever asked for, so a line inside a string or a bracket, whose
+ * leading space means nothing, is never read as a block's.
+ */
+function indentations(src: string): number[] {
+    const out: number[] = [0];
+    let column = 0;
+    let leading = true;
+    for (let i = 0; i < src.length; i++) {
+        const c = src[i];
+        if (c === '\n') {
+            out.push(column);
+            column = 0;
+            leading = true;
+        } else if (leading && c === ' ') column += 1;
+        else if (leading && c === '\t') column += 8 - (column % 8);
+        else if (leading && c !== '\r' && c !== '\f') leading = false;
+    }
+    out.push(column);
+    return out;
+}
+
 /** Read one file's imports, bindings, tool declarations and calls. Throws `PythonReadError`. */
 export function readPython(src: string): FileFacts {
     const toks = tokenizePython(src);
     const imports = new Map<string, Qualified>();
+    const modules = new Set<string>();
     const bindings = new Map<string, Binding[]>();
     const toolDeclarations = new Map<string, ToolDeclaration>();
-    const calls: { call: CallExpr; boundTo: string | null }[] = [];
+    const functions = new Map<string, FunctionDefinition>();
+    const calls: { call: CallExpr; boundTo: string | null; within: string | null }[] = [];
     const starModules: string[] = [];
     let decorators: { expr: Expr; line: number }[] = [];
+    /**
+     * The `def`s and classes a statement is written in, innermost last, each
+     * with the indentation of its own header: a statement indented no further
+     * than a header is outside that block.
+     */
+    const indentOf = indentations(src);
+    const blocks: { indent: number; name: string; kind: 'def' | 'class' }[] = [];
+    /** The innermost function a statement is in: `run`, or `Agent.run` for a method. */
+    const withinNow = (): string | null => {
+        for (let b = blocks.length - 1; b >= 0; b--) {
+            if (blocks[b].kind !== 'def') continue;
+            const owner = b > 0 && blocks[b - 1].kind === 'class' ? blocks[b - 1].name : null;
+            return owner === null ? blocks[b].name : `${owner}.${blocks[b].name}`;
+        }
+        return null;
+    };
 
     const bind = (key: string, expr: Expr, line: number) => {
         const list = bindings.get(key) ?? [];
@@ -572,7 +615,8 @@ export function readPython(src: string): FileFacts {
     };
     const collect = (expr: Expr, boundTo: string | null) => {
         const found = callsWithin(expr);
-        found.forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && expr.k === 'call' ? boundTo : null }));
+        const within = withinNow();
+        found.forEach((c, i) => calls.push({ call: c, boundTo: i === 0 && expr.k === 'call' ? boundTo : null, within }));
     };
     /** Every expression on a line this reader has no statement rule for, read for its calls. */
     const scan = (lineToks: readonly Tok[]) => {
@@ -609,6 +653,9 @@ export function readPython(src: string): FileFacts {
     for (const lineToks of logicalLines(toks)) {
         const first = lineToks[0];
         const line = first.line;
+        // A statement indented no further than a block's header has left that block.
+        const indent = indentOf[line] ?? 0;
+        while (blocks.length > 0 && blocks[blocks.length - 1].indent >= indent) blocks.pop();
 
         if (first.t === 'op' && first.v === '@') {
             decorators.push({ expr: new LineParser(lineToks.slice(1)).expr(), line });
@@ -621,6 +668,7 @@ export function readPython(src: string): FileFacts {
             const d = dotted(lineToks, 1);
             if (d === null || !(lineToks[d.end]?.t === 'name' && (lineToks[d.end] as { v: string }).v === 'import')) continue;
             const moduleName = d.name;
+            modules.add(moduleName);
             let j = d.end + 1;
             while (j < lineToks.length) {
                 const t = lineToks[j];
@@ -642,6 +690,8 @@ export function readPython(src: string): FileFacts {
                     j += 1;
                 }
                 imports.set(local, { module: moduleName, path: [imported] });
+                // `from google import genai` imports the module `google.genai`.
+                modules.add(`${moduleName}.${imported}`);
             }
             continue;
         }
@@ -653,6 +703,7 @@ export function readPython(src: string): FileFacts {
                     j += 1;
                     continue;
                 }
+                modules.add(d.name);
                 const as = lineToks[d.end];
                 if (as?.t === 'name' && as.v === 'as' && lineToks[d.end + 1]?.t === 'name') {
                     imports.set((lineToks[d.end + 1] as { v: string }).v, { module: d.name, path: [] });
@@ -677,6 +728,9 @@ export function readPython(src: string): FileFacts {
                     const toolName = declared?.k === 'str' && !declared.template ? declared.value : nameTok.v;
                     toolDeclarations.set(nameTok.v, { line: nameTok.line, toolName });
                 }
+                if (!functions.has(nameTok.v)) functions.set(nameTok.v, { line: nameTok.line, decorators: pending.map((d) => d.expr) });
+                // A body written on the header's own line is in the function as well.
+                blocks.push({ indent, name: nameTok.v, kind: 'def' });
                 // Defaults in the signature can hold calls (`llm=ChatOpenAI()`).
                 scan(lineToks.slice(isAsync ? 3 : 2));
             }
@@ -694,6 +748,7 @@ export function readPython(src: string): FileFacts {
                 });
                 if (isTool) toolDeclarations.set(nameTok.v, { line: nameTok.line, toolName: nameTok.v });
             }
+            if (nameTok?.t === 'name') blocks.push({ indent, name: nameTok.v, kind: 'class' });
             continue;
         }
         if ((first.t === 'name' && first.v === 'for') || (isAsync && head?.t === 'name' && head.v === 'for')) {
@@ -792,5 +847,5 @@ export function readPython(src: string): FileFacts {
         }
     }
 
-    return { language: 'python', imports, bindings, toolDeclarations, calls };
+    return { language: 'python', imports, modules, bindings, toolDeclarations, functions, calls };
 }
