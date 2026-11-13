@@ -648,6 +648,43 @@ describe('the guard sandwich', () => {
         expect(order).toEqual(['egress', 'funnel', 'input', 'egress']);
     });
 
+    it('a PROPOSE result skips the injection scan and keeps the secret scan (#5548)', async () => {
+        // The propose result is Inflect's own structure — PROPOSE_RESULT_FIELDS
+        // — and its `"quarantined": 0` key matched the injection rule
+        // `refusal_vocabulary`, so under BALANCED every engine propose call
+        // tripped the review latch. The scan is skipped for it; the egress
+        // slices (args before the funnel, result after) still run.
+        const order: string[] = [];
+        mockGuardEgress.mockImplementation(async () => {
+            order.push('egress');
+            return CLEAN;
+        });
+        mockRunProposeTool.mockImplementation(async () => {
+            order.push('funnel');
+            return { content: [{ type: 'text', text: '{"proposed":1,"quarantined":0}' }] } as never;
+        });
+        mockGuardInput.mockImplementation(async () => {
+            order.push('input');
+            return FLAGGED;
+        });
+
+        const out = await runGuardedTool(invocation(), 'propose_risks', { items: [{ title: 'x' }] }, 'call-p');
+
+        expect(order).toEqual(['egress', 'funnel', 'egress']);
+        expect(mockGuardInput).not.toHaveBeenCalled();
+        expect(out).toBe('{"proposed":1,"quarantined":0}');
+    });
+
+    it('a READ result is still scanned for injection: the exemption is the propose surface only (#5548)', async () => {
+        mockRunReadTool.mockResolvedValue({ content: [{ type: 'text', text: 'tenant text' }] } as never);
+        mockGuardInput.mockResolvedValue(FLAGGED);
+
+        await expect(runGuardedTool(invocation(), 'list_risks', { limit: 5 }, 'call-r')).rejects.toThrow(
+            /ai_guard_review_required/,
+        );
+        expect(mockGuardInput).toHaveBeenCalledTimes(1);
+    });
+
     it('scans the RESULT for secrets, not only for injection', async () => {
         // The two questions are different. `guardUntrustedInput` asks whether
         // someone is steering the model with this text; `guardEgress` asks

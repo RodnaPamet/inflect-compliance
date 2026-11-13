@@ -3145,7 +3145,11 @@ the guarded call live there, and `eslint.config.mjs` refuses any import of
 tool shape (a `ToolBuilder`) and its guard source prefix; `runGuardedTool` takes
 the prefix with no default, so a new engine names its own audit rows. Flue's
 prefix is `'flue'`, which keeps every guard source byte-identical to what it was
-before the move.
+before the move. The guarded call scans a READ result for injection and every
+result for secrets, but a PROPOSE result only for secrets (#5548): that text is
+Inflect's own (`PROPOSE_RESULT_FIELDS`, pinned by test), and its `"quarantined"`
+key matched the injection rules, so every engine propose call was held for review.
+Never add a field to it that can carry tenant- or model-authored text.
 
 **Every model call is preceded by the kill switch and the caps** (#4196). A kill
 engaged mid-run used to refuse only the tool calls: the model was called again
