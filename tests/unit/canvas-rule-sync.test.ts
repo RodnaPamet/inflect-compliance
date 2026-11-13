@@ -126,6 +126,57 @@ describe('syncCanvasToRules', () => {
     });
 });
 
+describe('syncCanvasToRules — a deleted edge unlinks (#5116)', () => {
+    const nodes = [
+        { nodeKey: 'a1', nodeType: 'action', label: 'A', dataJson: { ruleId: 'r1' } },
+        { nodeKey: 'a2', nodeType: 'action', label: 'B', dataJson: { ruleId: 'r2' } },
+        { nodeKey: 'a3', nodeType: 'action', label: 'C', dataJson: { ruleId: 'r3' } },
+    ];
+
+    it('clears nextRuleId and elseRuleId when the canvas no longer draws those edges', async () => {
+        // r1 still points at r2 (pass) and r3 (fail) from an earlier save, but
+        // both edges were deleted. The sync only ever SET links, so the rule
+        // kept chaining to steps the canvas showed as disconnected.
+        const db = makeDb(nodes, []);
+        db.automationRule.findMany.mockResolvedValue([
+            { id: 'r1', nextRuleId: 'r2', elseRuleId: 'r3' },
+            { id: 'r2', nextRuleId: null, elseRuleId: null },
+            { id: 'r3', nextRuleId: null, elseRuleId: null },
+        ]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', {
+            nextRuleId: null,
+            nextRuleDelay: null,
+            elseRuleId: null,
+        });
+        expect(repo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a link the canvas still draws, and clears only the other branch', async () => {
+        const db = makeDb(nodes, [
+            { sourceKey: 'a1', targetKey: 'a2', edgeKind: 'condition-pass', dataJson: null },
+        ]);
+        db.automationRule.findMany.mockResolvedValue([{ id: 'r1', nextRuleId: 'r2', elseRuleId: 'r3' }]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', { nextRuleId: 'r2', nextRuleDelay: null });
+        expect(repo.update).toHaveBeenCalledWith(db, ctx, 'r1', { elseRuleId: null });
+        expect(repo.update).not.toHaveBeenCalledWith(db, ctx, 'r1', expect.objectContaining({ nextRuleId: null }));
+    });
+
+    it('leaves a link to a rule that is NOT on this canvas alone — it was set elsewhere', async () => {
+        const db = makeDb(nodes, []);
+        db.automationRule.findMany.mockResolvedValue([{ id: 'r1', nextRuleId: 'r-elsewhere', elseRuleId: null }]);
+
+        await syncCanvasToRules(db, ctx, 'map-1');
+
+        expect(repo.update).not.toHaveBeenCalled();
+    });
+});
+
 describe('hydrateCanvasFromRules', () => {
     it('merges live rule status/executionCount/subtitle into action nodes', async () => {
         const db = makeDb([], []);

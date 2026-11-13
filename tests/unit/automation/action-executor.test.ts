@@ -238,6 +238,17 @@ describe('CREATE_TASK', () => {
         createTaskUsecase.mockResolvedValue({ id: 'task-1', key: 'TSK-7' });
     });
 
+    it('refuses to be driven by TASK_CREATED, before any read or write (#5249)', async () => {
+        // The task it creates fires TASK_CREATED with a new entity id, so the
+        // per-entity dedupe never matches and the rule ran again on its own
+        // task, without end.
+        const res = await create({}, { event: 'TASK_CREATED', entityType: 'Task', entityId: 'task-0' });
+        expect(res.ok).toBe(false);
+        expect(res.summary).toMatch(/cannot be driven by TASK_CREATED/);
+        expect(createTaskUsecase).not.toHaveBeenCalled();
+        expect(db.tenantMembership.findUnique).not.toHaveBeenCalled();
+    });
+
     it('fails when there is no actor to own the task', async () => {
         const res = await run(
             {
@@ -881,6 +892,9 @@ describe('INVOKE_SUBFLOW', () => {
             parentExecutionId: 'exec-9',
             triggerEvent: 'risk.created',
             data: { __parentExecutionId: 'exec-9', foo: 'bar' },
+            // The invoking execution's entity rides along (#5248).
+            entityType: 'Risk',
+            entityId: 'e-1',
             // First hop — no `__subflowDepth` on the event, so depth starts at 1.
             depth: 1,
         });

@@ -9,14 +9,31 @@
  * despite the create-time DFS guard can't run forever). Each link executes its
  * action for real via `executeAction`, consistent with automation-event-dispatch.
  */
+import { Prisma } from '@prisma/client';
 import { runJob } from '@/lib/observability/job-runner';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/observability/logger';
 import type { JobRunResult, RuleChainDispatchPayload } from './types';
 import { executeAction } from '../automation/action-executor';
 import { matchesFilter } from '../automation/filters';
 import { readRulesWithTenantDek } from '../automation/tenant-dek-read';
 
 const MAX_CHAIN_DEPTH = 10;
+
+/**
+ * One chain step per (parent execution, rule) — the job's own identity.
+ *
+ * The step used to run the action and THEN write its execution, so a BullMQ
+ * retry after the action (a crash, a lost ack, a throw in the write) ran the
+ * real action a second time: a second task, a second webhook (#5103). The
+ * execution is now inserted first under this key, and a retry that finds it
+ * taken stops. The trade is the one automation-event-dispatch makes: a step
+ * that died between claim and action is left RUNNING for a person to see,
+ * rather than run twice.
+ */
+export function chainStepIdempotencyKey(parentExecutionId: string, ruleId: string): string {
+    return `chain:${parentExecutionId}:${ruleId}`;
+}
 
 export async function runRuleChainDispatch(
     payload: RuleChainDispatchPayload,
@@ -52,24 +69,69 @@ export async function runRuleChainDispatch(
                     rule.triggerFilterJson as Parameters<typeof matchesFilter>[1],
                 );
 
+                // CLAIM before acting (#5103). The insert is the claim: a retry
+                // of this same step meets the unique key and stops here.
+                let claimedId: string;
+                try {
+                    const claim = await prisma.automationExecution.create({
+                        data: {
+                            tenantId,
+                            ruleId: rule.id,
+                            triggerEvent,
+                            triggerPayloadJson: data as never,
+                            status: 'RUNNING',
+                            triggeredBy: 'chain',
+                            parentExecutionId,
+                            idempotencyKey: chainStepIdempotencyKey(parentExecutionId, rule.id),
+                            startedAt: new Date(),
+                        },
+                        select: { id: true },
+                    });
+                    claimedId = claim.id;
+                } catch (err) {
+                    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+                        logger.info('rule-chain-dispatch.already_claimed', {
+                            component: 'rule-chain-dispatch',
+                            tenantId,
+                            ruleId: rule.id,
+                            parentExecutionId,
+                        });
+                        const skipped: JobRunResult = {
+                            jobName: 'rule-chain-dispatch',
+                            jobRunId: crypto.randomUUID(),
+                            success: true,
+                            startedAt,
+                            completedAt: new Date().toISOString(),
+                            durationMs: Math.round(performance.now() - startMs),
+                            itemsScanned: 1,
+                            itemsActioned: 0,
+                            itemsSkipped: 1,
+                            details: { ruleId, depth, chained: false, skipped: 'already-claimed' },
+                        };
+                        return { result: skipped, executionId: null };
+                    }
+                    throw err;
+                }
+
                 const outcome = matched
                     ? await executeAction(prisma, rule, {
                           tenantId,
                           event: triggerEvent,
+                          // The entity the chain started from, so an action
+                          // that keys on it (CREATE_TASK's dedupe, a webhook's
+                          // body) sees the same entity at every link (#5248).
+                          entityType: payload.entityType,
+                          entityId: payload.entityId,
                           data: { ...data, __parentExecutionId: parentExecutionId },
                       })
                     : { ok: true, summary: 'Condition not met — took the else branch' };
 
                 const status = !matched ? 'SKIPPED' : outcome.ok ? 'SUCCEEDED' : 'FAILED';
-                const exec = await prisma.automationExecution.create({
+                // Settled from RUNNING only, so an operator's cancel stands.
+                await prisma.automationExecution.updateMany({
+                    where: { id: claimedId, tenantId, status: 'RUNNING' },
                     data: {
-                        tenantId,
-                        ruleId: rule.id,
-                        triggerEvent,
-                        triggerPayloadJson: data as never,
                         status,
-                        triggeredBy: 'chain',
-                        parentExecutionId,
                         errorMessage: !matched || outcome.ok ? null : outcome.summary,
                         outcomeJson: {
                             actionType: rule.actionType,
@@ -79,10 +141,10 @@ export async function runRuleChainDispatch(
                             ...(matched ? outcome.detail ?? {} : {}),
                         },
                         durationMs: Date.now() - actionStart,
-                        startedAt: new Date(),
                         completedAt: new Date(),
                     },
                 });
+                const exec = { id: claimedId };
                 executionId = exec.id;
 
                 if (matched) {
@@ -106,6 +168,8 @@ export async function runRuleChainDispatch(
                             triggerEvent,
                             data,
                             depth: depth + 1,
+                            entityType: payload.entityType,
+                            entityId: payload.entityId,
                         },
                         matched && rule.nextRuleDelay ? { delay: rule.nextRuleDelay * 60_000 } : undefined,
                     );
