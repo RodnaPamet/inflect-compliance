@@ -32,9 +32,27 @@ const mockTx = {
         findMany: jest.fn(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         update: jest.fn<any, any[]>(async () => ({})),
+        // The visit stamp (#5259).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updateMany: jest.fn<any, any[]>(async () => ({ count: 0 })),
     },
     integrationConnection: { findMany: jest.fn() },
 };
+// The escalation's task is written as the tenant's SYSTEM user (#5255);
+// creating that user is a DB write this suite does not exercise.
+const tenantSystemCtx = jest.fn();
+jest.mock('@/app-layer/context-system', () => {
+    const actual = jest.requireActual('@/app-layer/context-system');
+    return {
+        ...actual,
+        buildTenantSystemJobContext: (input: { tenantId: string; job: string }) => {
+            tenantSystemCtx(input);
+            return Promise.resolve(
+                actual.buildSystemContext({ ...input, principal: `sys_${input.tenantId}` }),
+            );
+        },
+    };
+});
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_c: unknown, fn: (db: unknown) => unknown) => fn(mockTx)),
 }));
@@ -257,5 +275,59 @@ describe('the two maps cannot drift apart', () => {
 
     it('a revoke is NOT swept for expiry, because it has no end date', () => {
         expect(GRANT_EXPIRY_ARGS.has('revoke_access_assignment')).toBe(false);
+    });
+});
+
+describe('the escalation is written as a real user, and one failure is one row\'s (#5255)', () => {
+    it('raises the task as the tenant\'s SYSTEM user, never as `system`', async () => {
+        // `createdByUserId` is a NOT NULL User key; `system` is no User, so
+        // every escalation failed at the insert.
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([row()]);
+        callToolMock.mockResolvedValue(envelope([assignment({ liveness: 'live' })]));
+
+        const r = await verifyGrantExpiry({ tenantId: T, now: NOW });
+
+        expect(r.raised).toBe(1);
+        const ctx = createTaskMock.mock.calls[0]![0] as { userId: string; tenantId: string };
+        expect(ctx.userId).toBe(`sys_${T}`);
+        expect(ctx.tenantId).toBe(T);
+        expect(tenantSystemCtx).toHaveBeenCalledWith(expect.objectContaining({ tenantId: T }));
+    });
+
+    it('a task that cannot be raised does not stop the pass, and is asked again', async () => {
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([row({ id: 'row-1' }), row({ id: 'row-2' })]);
+        callToolMock.mockResolvedValue(envelope([assignment({ liveness: 'live' })]));
+        createTaskMock.mockRejectedValueOnce(new Error('insert refused'));
+
+        const r = await verifyGrantExpiry({ tenantId: T, now: NOW });
+
+        expect(r).toMatchObject({ raised: 1, raiseFailed: 1 });
+        // The failed row is not marked raised, so the next pass tries again.
+        const raisedIds = mockTx.externalWriteJournal.update.mock.calls
+            .filter(([a]) => (a as { data: Record<string, unknown> }).data.expiryRaisedAt)
+            .map(([a]) => (a as { where: { id: string } }).where.id);
+        expect(raisedIds).toEqual(['row-2']);
+    });
+});
+
+describe('the sweep rotates through its population (#5259)', () => {
+    it('reads the least recently visited rows first and stamps every row it read', async () => {
+        // Not-yet-due, unreadable and already-raised rows never leave the
+        // population, and read oldest-first they held the batch for ever.
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([
+            row({ id: 'due-later', argumentsJson: JSON.stringify({ targetId: 'u-1', endDateTime: FUTURE }) }),
+            row({ id: 'unparseable', argumentsJson: JSON.stringify({ targetId: 'u-2', endDateTime: 'soon' }) }),
+        ]);
+
+        await verifyGrantExpiry({ tenantId: T, now: NOW });
+
+        expect(mockTx.externalWriteJournal.findMany.mock.calls[0][0].orderBy).toEqual([
+            { lastCheckedAt: { sort: 'asc', nulls: 'first' } },
+            { attemptedAt: 'asc' },
+        ]);
+        expect(mockTx.externalWriteJournal.updateMany).toHaveBeenCalledWith({
+            where: { tenantId: T, id: { in: ['due-later', 'unparseable'] } },
+            data: { lastCheckedAt: NOW },
+        });
     });
 });

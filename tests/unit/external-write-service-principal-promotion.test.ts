@@ -49,7 +49,8 @@ jest.mock('@/lib/security/encryption', () => ({
     decryptField: (s: string) => s,
 }));
 const mockTx = {
-    externalWriteJournal: { findMany: jest.fn() },
+    // `updateMany` is the visit stamp both passes write (#5259).
+    externalWriteJournal: { findMany: jest.fn(), updateMany: jest.fn(async () => ({ count: 0 })) },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
