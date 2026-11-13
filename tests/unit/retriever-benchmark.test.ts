@@ -37,6 +37,7 @@ import {
 import {
     revisionOf,
     summarise,
+    summaryLogView,
     teiArgs,
     teiUrl,
     topByCosine,
@@ -446,6 +447,41 @@ describe('the runner sends benchmark text to the loopback engine only', () => {
         expect(blocked.decisions.every((d) => d.status === 'BLOCKED')).toBe(true);
         const crashed = summarise(set, [], [{ ...refusal, code: 'STAGE_FAILED' }]);
         expect(crashed.decisions.every((d) => d.status === 'INCOMPLETE')).toBe(true);
+    });
+
+    it('prints the summary\'s own figures to the log: per pipeline, and the pipeline each group keeps', () => {
+        const set = tinySet();
+        const plain = validRecord(set);
+        const reranked = validRecord(set, true);
+        const s = summarise(set, [
+            { file: 'plain.json', record: plain },
+            { file: 'rr.json', record: reranked },
+            { file: 'bad.json', record: { ...validRecord(set), answers: [] } },
+        ]);
+        const view = summaryLogView(s, { 'plain.json': plain, 'rr.json': reranked, 'bad.json': null });
+        const [p, rr, bad] = view.pipelines;
+        expect(p).toEqual({
+            pipeline: 'm/embed',
+            ok: true,
+            recallAt10: s.records[0].recallAt10,
+            bgRecallAt10: null,
+            embedMs: { p50: s.records[0].embedP50, p95: s.records[0].embedP95 },
+            rerankMs: null,
+            parametersM: 33,
+            runner: { cpuModel: 'x', cpus: 4, memoryGb: 16 },
+        });
+        expect(rr.pipeline).toBe('m/embed + m/rerank');
+        expect(rr.parametersM).toBe(33 + 278);
+        expect(rr.rerankMs).toEqual({ p50: s.records[1].rerankP50, p95: s.records[1].rerankP95 });
+        // A refused record keeps its reason; an unreadable record file leaves
+        // size and runner unknown rather than failing the log.
+        expect(bad.ok).toBe(false);
+        expect((bad as { problem?: string }).problem).toMatch(/^NO_ANSWERS/);
+        expect(bad.runner).toBeNull();
+        expect(bad.parametersM).toBeNull();
+        const none = view.kept.find((k) => k.reranker === 'none');
+        expect(none).toMatchObject({ kept: 'm/embed', recallAt10: s.records[0].recallAt10, status: s.decisions[0].status });
+        expect(view.kept.map((k) => k.reranker)).toEqual(s.decisions.map((d) => d.rerankModel ?? 'none'));
     });
 });
 

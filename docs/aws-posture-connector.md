@@ -25,16 +25,32 @@ test reports "CLI not available" and a collection run records an `ERROR`
 
 ## Credentials — read-only only
 
-Configure the connection with **read-only** AWS access. Two forms are supported
-(assume-role is preferred):
+Configure the connection with **read-only** AWS access. One form is supported:
 
-- **Assume-role**: a role ARN + external id. The role's trust policy should
-  require the external id.
 - **Access key**: a read-only access-key pair (+ optional session token).
+
+**Assume-role is refused.** Saving a connection with a role ARN and no access-key
+pair is rejected, with a message naming the tracking issue. This section used to
+call assume-role the preferred form, and the collector never assumed the role:
+the AWS SDK reads `AWS_ROLE_ARN` only together with `AWS_WEB_IDENTITY_TOKEN_FILE`,
+which the collector does not write; `AWS_EXTERNAL_ID` is not an SDK variable at
+all; and no profile, `.spc` connection or wrapper in this repo reads either. Such
+a connection reached the CLI with no AWS credential — so on a host with none of
+its own it simply failed, and on a host carrying ambient AWS credentials it
+authenticated as the *platform* and recorded our own account's posture as the
+tenant's evidence. Implementing it properly needs a platform AWS principal to
+assume *from*, which is tracked in
+[#5542](https://github.com/RodnaPamet/inflect-compliance/issues/5542).
 
 Credentials are encrypted at rest (Epic B `encryptField`), passed to the CLI via
 **environment variables only** (never on the command line), and scrubbed from any
 captured stdout/stderr before results or errors are persisted.
+
+The child process receives an **allowlisted** environment — `PATH`, `HOME`,
+`TMPDIR` and locale, plus the connection's own credentials — and never the
+worker's environment. So no platform secret (the master KEK, the database
+password) reaches the CLI, and no ambient cloud credential can stand in for a
+credential the connection did not supply.
 
 ### Minimum read-only IAM policy
 

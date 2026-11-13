@@ -335,6 +335,9 @@ jobs:
           echo "::endgroup::"
           exit "$status"
 
+      # Every line written to the job summary is also written to the job log
+      # (owner decision 2026-11-13: tooling that reads job logs cannot read a
+      # step summary or an artifact). Only what the summary already shows.
       - name: Summarise per role (record + job summary)
         if: always() && steps.key.outputs.present == 'true'
         run: |
@@ -343,20 +346,20 @@ jobs:
           spec="$(node --input-type=module -e 'import { load } from "js-yaml"; import { readFileSync } from "node:fs"; process.stdout.write(load(readFileSync(".garak/config.yaml","utf8")).plugins.probe_spec)')"
           for role in owner editor; do
             if [ ! -f "garak-out/${role}/ledger.json" ]; then
-              echo "### garak — ${role}: not run" >> "$GITHUB_STEP_SUMMARY"; continue
+              echo "### garak — ${role}: not run" | tee -a "$GITHUB_STEP_SUMMARY"; continue
             fi
             report="$(find "garak-out/${role}" -name '*.report.jsonl' | head -n 1)"
             node .garak/summarise.mjs "${report:-/nonexistent}" "garak-out/${role}/ledger.json" .garak/allowlist.tsv "$role" \
               --probes "$spec" --garak-exit "$(cat "garak-out/${role}/garak-exit" 2>/dev/null || echo unknown)" \
               --provenance "garak-out/${role}/provenance.json" \
               --md "garak-records/${role}.md" > "garak-records/${role}.json"
-            cat "garak-records/${role}.md" >> "$GITHUB_STEP_SUMMARY"
+            tee -a "$GITHUB_STEP_SUMMARY" < "garak-records/${role}.md"
           done
-          echo "### garak — reader: not probed (feature gate: $(node -p 'require("./garak-out/reader.gate.json").featureGate' 2>/dev/null || echo 'not checked'))" >> "$GITHUB_STEP_SUMMARY"
+          echo "### garak — reader: not probed (feature gate: $(node -p 'require("./garak-out/reader.gate.json").featureGate' 2>/dev/null || echo 'not checked'))" | tee -a "$GITHUB_STEP_SUMMARY"
           read -r tin tout < <(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tA -F ' ' \
             -c 'SELECT COALESCE(SUM("tokensIn"),0), COALESCE(SUM("tokensOut"),0) FROM "AiDecisionLog" WHERE feature = '"'"'assistant'"'"'')
           usd="$(node .garak/spend.mjs usd "$tin" "$tout")"
-          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against garak's share of \$$(node .garak/spend.mjs cap) (evals/cost-meter/shares.json)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Measured recorded spend: \$${usd} (${tin} in / ${tout} out) against garak's share of \$$(node .garak/spend.mjs cap) (evals/cost-meter/shares.json)" | tee -a "$GITHUB_STEP_SUMMARY"
 
           # A role no turn of which reached the model measured the guard and
           # the fallbacks, never the model: its PASSes are not findings about

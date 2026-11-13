@@ -15122,6 +15122,9 @@
     "returnToDashboard": "Return to Dashboard"
   },
   "noTenant": {
+    "refreshAccess": "I was just given access — check again",
+    "refreshingAccess": "Checking…",
+    "refreshStale": "Your session was opened before this access was granted, so it is not visible yet. Check again to pick it up without signing out.",
     "title": "No access yet",
     "titleOtherWorkspace": "You don't have access to this workspace",
     "signedInAs": "You are signed in as <b>{email}</b>.",

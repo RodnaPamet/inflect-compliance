@@ -173,6 +173,30 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // No configuration is being read here -- it is a build-mode
             // constant, which is the distinction this guard exists to police.
             if (file.endsWith('hooks/use-keyboard-shortcut.tsx')) continue;
+            // The posture collectors' child-environment ALLOWLIST (#5253). This
+            // file exists to STOP environment values propagating: all three
+            // posture providers used to build their CLI child as
+            // `{ ...process.env }`, which handed a third-party binary the master
+            // KEK and the database password, and let an ambient cloud credential
+            // authenticate a scan whose connection supplied none — so the
+            // benchmark ran against the PLATFORM's account and was filed as the
+            // tenant's evidence.
+            //
+            // It reads the ambient environment by KEY, through
+            // `process.env[key]` over a reviewed allowlist, which this guard's
+            // dotted pattern does not match and should not: those keys are
+            // `PATH`, `HOME`, `TMPDIR` and locale — the OS environment a child
+            // process needs to run at all, not application configuration, and
+            // not things `env.ts` could validate or should carry.
+            //
+            // The ONE dotted read is `process.env.NODE_ENV`, and it reads no
+            // configuration either: `NodeJS.ProcessEnv` — the type
+            // `execFile`'s `env` option takes — declares NODE_ENV required and
+            // readonly (`next/types/global.d.ts`), so an object without it does
+            // not typecheck. Same distinction `use-keyboard-shortcut.tsx` above
+            // draws: a build-mode constant, not configuration, which is what
+            // this guard exists to police.
+            if (file.endsWith('integrations/collector-child-env.ts')) continue;
 
             const content = fs.readFileSync(file, 'utf8');
 

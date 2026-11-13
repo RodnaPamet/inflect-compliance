@@ -4,6 +4,7 @@
   "description": "A due-diligence questionnaire covering supplier company details, the data to be exchanged, onward data sharing to third parties, and third-party certifications.",
   "scoringConfig": {
     "mode": "WEIGHTED_AVERAGE",
+    "thresholdScale": "PERCENT",
     "ratingThresholds": [
       {
         "rating": "LOW",

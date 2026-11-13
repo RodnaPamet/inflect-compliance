@@ -14,10 +14,16 @@ class RedirectSignal extends Error {
         super(`NEXT_REDIRECT ${to}`);
     }
 }
+const routerPush = jest.fn();
+const routerRefresh = jest.fn();
 jest.mock('next/navigation', () => ({
     redirect: (to: string) => {
         throw new RedirectSignal(to);
     },
+    // /no-tenant renders a CLIENT component when the cookie is behind the
+    // database (#5246), and it takes the router to reach the picker. Without
+    // this the mock is incomplete for what the page now renders.
+    useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
 }));
 
 jest.mock('next-intl/server', () => {
@@ -71,7 +77,11 @@ async function redirectOf(page: () => Promise<unknown>): Promise<string> {
 
 beforeEach(() => {
     authMock.mockReset();
+    // No `memberships` on the session by default — the cookie lists nothing,
+    // which is what a brand-new grant looks like from the edge's side (#5246).
     authMock.mockResolvedValue({ user: { id: 'u-1', email: 'ana@example.com' } });
+    routerPush.mockReset();
+    routerRefresh.mockReset();
     activeRows.mockReset().mockResolvedValue([]);
     deactivatedRows.mockReset().mockResolvedValue([]);
     orgRows.mockReset().mockResolvedValue([]);
@@ -200,5 +210,68 @@ describe('/no-tenant', () => {
         const { container } = render(await NoTenantPage());
         expect(container.textContent).not.toContain('\u{1F512}');
         expect(container.querySelector('svg')).not.toBeNull();
+    });
+});
+
+
+// ─── The cookie can be behind the database (#5246) ─────────────────────────
+
+describe('/no-tenant — offering a session refresh', () => {
+    /**
+     * WHY THIS EXISTS. A membership added while the person is signed in never
+     * reaches the Edge gate: the jwt callback re-reads the claims, but in the
+     * App Router nothing writes the re-signed cookie back, and the middleware
+     * reads only the cookie. So `checkTenantAccess` keeps returning
+     * `cross_tenant` for the new workspace and keeps sending the person here.
+     *
+     * The page compares the DATABASE (its destinations) against the COOKIE
+     * (`session.user.memberships`) and offers the refresh only when the two
+     * disagree — because a "check again" that changes nothing teaches the
+     * person the product is broken rather than stale.
+     */
+    const sessionWith = (slugs: string[]) =>
+        authMock.mockResolvedValue({
+            user: { id: 'u-1', email: 'ana@example.com', memberships: slugs.map((slug) => ({ slug })) },
+        });
+
+    it('offers the refresh when the database holds a workspace the cookie does not', async () => {
+        activeRows.mockResolvedValue([workspace('acme', 'Acme')]);
+        sessionWith([]); // the cookie predates the grant
+        render(await NoTenantPage());
+
+        expect(screen.getByText(en.noTenant.refreshStale)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: en.noTenant.refreshAccess })).toBeInTheDocument();
+    });
+
+    it('does NOT offer it when the cookie already lists every workspace', async () => {
+        // A genuine cross-tenant attempt: the person asked for a workspace that
+        // is not theirs at all. Refreshing would change nothing, so the button
+        // must not appear — this is the assertion that keeps it honest.
+        activeRows.mockResolvedValue([workspace('acme', 'Acme')]);
+        sessionWith(['acme']);
+        render(await NoTenantPage());
+
+        expect(screen.queryByText(en.noTenant.refreshStale)).toBeNull();
+        expect(screen.queryByRole('button', { name: en.noTenant.refreshAccess })).toBeNull();
+    });
+
+    it('does NOT offer it to a person with no workspaces at all', async () => {
+        // Nothing to pick up: they need an invitation, which the page already
+        // says. Offering a refresh here would be a dead end.
+        activeRows.mockResolvedValue([]);
+        sessionWith([]);
+        render(await NoTenantPage());
+
+        expect(screen.queryByText(en.noTenant.refreshStale)).toBeNull();
+        expect(screen.getByText(en.noTenant.helpText)).toBeInTheDocument();
+    });
+
+    it('still offers the picker link beside it, so neither replaces the other', async () => {
+        activeRows.mockResolvedValue([workspace('acme', 'Acme')]);
+        sessionWith([]);
+        render(await NoTenantPage());
+
+        expect(screen.getByRole('button', { name: en.noTenant.refreshAccess })).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: en.noTenant.goToWorkspaces })).toHaveAttribute('href', '/tenants');
     });
 });

@@ -19,6 +19,7 @@ import type {
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
 import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
+import { baseCollectorEnv } from '../collector-child-env';
 
 export interface AzurePostureSecrets {
     clientId?: string;
@@ -63,7 +64,11 @@ const AZURE_CREDENTIAL_PATTERNS: RegExp[] = [
 ];
 
 function buildEnv(secrets: AzurePostureSecrets, config: AzurePostureConfig): NodeJS.ProcessEnv {
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    // An ALLOWLIST, not `process.env` (#5253) — see collector-child-env.ts. An
+    // inherited ambient AZURE_* would let a benchmark run as the platform and
+    // be stored as this tenant's evidence, and the worker's own secrets have no
+    // business reaching the CLI.
+    const env: NodeJS.ProcessEnv = baseCollectorEnv();
     if (config.tenantId) env.AZURE_TENANT_ID = config.tenantId;
     if (config.subscriptionId) env.AZURE_SUBSCRIPTION_ID = config.subscriptionId;
     if (secrets.clientId) env.AZURE_CLIENT_ID = secrets.clientId;
