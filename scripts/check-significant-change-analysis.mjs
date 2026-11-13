@@ -34,6 +34,7 @@
  *
  * Usage:
  *   node scripts/check-significant-change-analysis.mjs <body-file> <files-file> [--title "<pr title>"]
+ *        [--base-package <base package.json> --head-package <head package.json>]
  *   node scripts/check-significant-change-analysis.mjs --self-test
  */
 import { readFileSync } from 'node:fs';
@@ -47,15 +48,61 @@ import { readFileSync } from 'node:fs';
  * irreversible case — the policy's doctrine is that migrations are
  * non-rollback — so the directory that holds them cannot be the one left out.
  */
-const SIGNIFICANT_PATHS = [/^prisma\//, /^src\/middleware\.ts$/];
+const SIGNIFICANT_PATHS = [
+    /^prisma\//,
+    // Security-affecting middleware (#5245): the edge middleware and the
+    // security library it and every route wrapper stand on — permission
+    // middleware, rate limiting, sanitisation, encryption, SSRF egress.
+    /^src\/middleware\.ts$/,
+    /^src\/lib\/security\//,
+    // Infrastructure (#5245): the approval matrix gives `infra/` and `deploy/`
+    // a second approver, which is the SIGNIFICANT+ column.
+    /^infra\//,
+    /^deploy\//,
+];
+
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
+
+/**
+ * The major of a version range, or null when it names none (`*`, a URL, a
+ * workspace or git spec). `0.x` counts its minor as the major, because under
+ * semver a `0.a → 0.b` bump is the breaking one.
+ */
+function majorOf(range) {
+    const m = /^[\s^~>=v]*(\d+)(?:\.(\d+))?/.exec(String(range ?? ''));
+    if (!m) return null;
+    return m[1] === '0' && m[2] !== undefined ? `0.${m[2]}` : m[1];
+}
+
+/**
+ * Dependencies whose major moved between two `package.json` objects (#5245).
+ * The policy classes a dependency major bump as SIGNIFICANT, and a file list
+ * cannot show one: `package.json` changes on every minor bump too. A package
+ * added or removed is not a bump.
+ */
+export function majorBumps(basePkg, headPkg) {
+    const bumps = [];
+    for (const field of DEPENDENCY_FIELDS) {
+        const before = basePkg?.[field] ?? {};
+        const after = headPkg?.[field] ?? {};
+        for (const [name, range] of Object.entries(after)) {
+            if (!(name in before)) continue;
+            const from = majorOf(before[name]);
+            const to = majorOf(range);
+            if (from !== null && to !== null && from !== to) bumps.push(`${name} ${before[name]} → ${range}`);
+        }
+    }
+    return bumps;
+}
 
 /** A `!`-bang conventional commit declares a breaking change. */
 const BANG_TITLE = /^[a-z]+(\([^)]*\))?!:/;
 
-export function isSignificant({ files, title }) {
+export function isSignificant({ files, title, basePkg, headPkg }) {
     const byPath = (files ?? []).filter((f) => SIGNIFICANT_PATHS.some((re) => re.test(f)));
     const byTitle = BANG_TITLE.test(String(title ?? '').trim());
-    return { significant: byPath.length > 0 || byTitle, byPath, byTitle };
+    const byMajor = basePkg && headPkg ? majorBumps(basePkg, headPkg) : [];
+    return { significant: byPath.length > 0 || byTitle || byMajor.length > 0, byPath, byTitle, byMajor };
 }
 
 /**
@@ -88,6 +135,17 @@ if (process.argv.includes('--self-test')) {
         ['a plain feat is NOT significant', isSignificant({ files: ['src/app/page.tsx'], title: 'feat: add' }).significant, false],
         // `prisma/` must not be matched mid-path, or `docs/prisma/notes.md` gates.
         ['prisma under another dir is NOT significant', isSignificant({ files: ['docs/prisma/notes.md'] }).significant, false],
+        // #5245 — the rest of the policy's SIGNIFICANT list.
+        ['the security library is significant', isSignificant({ files: ['src/lib/security/rate-limit.ts'] }).significant, true],
+        ['infra/ is significant', isSignificant({ files: ['infra/alerts/rules.yml'] }).significant, true],
+        ['deploy/ is significant', isSignificant({ files: ['deploy/apply.sh'] }).significant, true],
+        ['a test ABOUT security is NOT significant', isSignificant({ files: ['tests/unit/security/x.test.ts'] }).significant, false],
+        ['a dependency major bump is significant', isSignificant({ files: ['package.json'], basePkg: { dependencies: { undici: '^7.2.0' } }, headPkg: { dependencies: { undici: '^8.0.0' } } }).significant, true],
+        ['a dev dependency major bump too', majorBumps({ devDependencies: { jest: '~29.7.0' } }, { devDependencies: { jest: '~30.0.0' } }).length, 1],
+        ['a 0.x minor bump is a major bump', majorBumps({ dependencies: { x: '^0.4.1' } }, { dependencies: { x: '^0.5.0' } }).length, 1],
+        ['a minor bump is NOT significant', isSignificant({ files: ['package.json'], basePkg: { dependencies: { undici: '^7.2.0' } }, headPkg: { dependencies: { undici: '^7.3.0' } } }).significant, false],
+        ['an added dependency is NOT a bump', majorBumps({ dependencies: {} }, { dependencies: { x: '^9.0.0' } }).length, 0],
+        ['an exact pin moving major is a bump', majorBumps({ dependencies: { 'next-auth': '4.24.15' } }, { dependencies: { 'next-auth': '5.0.0' } }).length, 1],
 
         ['both headings present → nothing missing', missingSections('## Rollback plan\nx\n## Risk assessment\ny').length, 0],
         ['heading at h3 counts', missingSections('### Risk assessment\n### Rollback plan').length, 0],
@@ -103,9 +161,16 @@ if (process.argv.includes('--self-test')) {
     process.exit(failed.length ? 1 : 0);
 }
 
-const [bodyFile, filesFile] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-const titleIx = process.argv.indexOf('--title');
-const title = titleIx >= 0 ? process.argv[titleIx + 1] : '';
+const flag = (name) => {
+    const ix = process.argv.indexOf(name);
+    return ix >= 0 ? process.argv[ix + 1] : undefined;
+};
+const VALUE_FLAGS = new Set(['--title', '--base-package', '--head-package']);
+const positional = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !VALUE_FLAGS.has(all[i - 1]));
+const [bodyFile, filesFile] = positional;
+const title = flag('--title') ?? '';
+const basePackageFile = flag('--base-package');
+const headPackageFile = flag('--head-package');
 
 if (!bodyFile || !filesFile) {
     console.error('usage: check-significant-change-analysis.mjs <body-file> <files-file> [--title "<t>"]');
@@ -114,16 +179,23 @@ if (!bodyFile || !filesFile) {
 
 // An unreadable input FAILS. A check that cannot read its subject has not
 // passed — it has not run, and absence reads as success otherwise.
-let body, files;
+let body, files, basePkg, headPkg;
 try {
     body = readFileSync(bodyFile, 'utf8');
     files = readFileSync(filesFile, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean);
+    // Both or neither. One without the other cannot show a bump, and a
+    // package.json the workflow was asked to fetch and could not read is a
+    // check that has not run.
+    if (basePackageFile || headPackageFile) {
+        basePkg = JSON.parse(readFileSync(basePackageFile, 'utf8'));
+        headPkg = JSON.parse(readFileSync(headPackageFile, 'utf8'));
+    }
 } catch (err) {
     console.error(`::error title=Change-class gate could not run::${err.message}`);
     process.exit(1);
 }
 
-const { significant, byPath, byTitle } = isSignificant({ files, title });
+const { significant, byPath, byTitle, byMajor } = isSignificant({ files, title, basePkg, headPkg });
 console.log(`Changed files: ${files.length}`);
 if (!significant) {
     console.log('Change class: STANDARD or below — no rollback analysis required by policy.');
@@ -133,6 +205,7 @@ if (!significant) {
 console.log('Change class: SIGNIFICANT');
 if (byPath.length) console.log(`  by path: ${byPath.slice(0, 10).join(', ')}${byPath.length > 10 ? ` (+${byPath.length - 10})` : ''}`);
 if (byTitle) console.log('  by title: a `!`-bang conventional commit declares a breaking change');
+if (byMajor.length) console.log(`  by dependency major bump: ${byMajor.slice(0, 10).join(', ')}${byMajor.length > 10 ? ` (+${byMajor.length - 10})` : ''}`);
 
 const missing = missingSections(body);
 if (missing.length === 0) {

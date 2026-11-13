@@ -41,11 +41,13 @@ const CANDIDATE_REF =
 /**
  * A jest failure line: `FAIL node tests/integration/x.test.ts`.
  *
- * The runner label is optional because the three projects print different ones
- * (`node`, `jsdom`, `flue`) and a shard prints none for a suite it could not
- * load.
+ * The runner label is optional because the projects print different ones
+ * (`node`, `jsdom`, `flue`, `scan`) and a shard prints none for a suite it
+ * could not load. Any single-word label is accepted, not a list of today's
+ * (#5092): the list predated the `scan` project, so a failing ratchet was
+ * never attributed, and a project added later is covered without an edit.
  */
-const FAIL_LINE = /\bFAIL\s+(?:node|jsdom|flue)?\s*(tests\/[^\s]+)/;
+const FAIL_LINE = /\bFAIL\s+(?:[A-Za-z][\w-]*\s+)?(tests\/[^\s]+)/;
 
 /** `{ base, pr, sha }`, or null when the ref is not a candidate ref. */
 function parseCandidateRef(ref) {

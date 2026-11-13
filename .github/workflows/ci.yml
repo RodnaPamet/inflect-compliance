@@ -413,6 +413,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
@@ -426,7 +428,17 @@ jobs:
           # TRUNCATED list — and a truncated list is how `prisma/` goes missing
           # from a big change and the gate passes it.
           gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename' > pr-files.txt
-          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE"
+          # A dependency major bump is SIGNIFICANT (#5245), and a file list
+          # cannot show one: package.json changes on every minor bump too. So
+          # when it changed, both versions go to the classifier. `set -e` makes
+          # a failed fetch fail the step rather than skip the comparison.
+          PKG_ARGS=()
+          if grep -qx 'package.json' pr-files.txt; then
+            gh api -H 'Accept: application/vnd.github.raw' "repos/${REPO}/contents/package.json?ref=${BASE_SHA}" > base-package.json
+            gh api -H 'Accept: application/vnd.github.raw' "repos/${REPO}/contents/package.json?ref=${HEAD_SHA}" > head-package.json
+            PKG_ARGS=(--base-package base-package.json --head-package head-package.json)
+          fi
+          node scripts/check-significant-change-analysis.mjs pr-body.txt pr-files.txt --title "$PR_TITLE" "${PKG_ARGS[@]}"
 
   lint:
     name: Lint
@@ -1076,7 +1088,12 @@ jobs:
     # the merge gate — a failing ratchet would have gone red on a check
     # that nothing required. Listing it here keeps the same ground under
     # the same check name, with no branch-protection edit.
-    needs: [test, ratchets]
+    #
+    # `flue` for the same reason (#5301). The Flue runtime suites run in a
+    # job of their own (they need --experimental-vm-modules), and nothing
+    # required read its result, so a PR that broke the agent loop merged
+    # green.
+    needs: [test, ratchets, flue]
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     # The sweep's other finding: this was the ONLY job in the workflow
@@ -1105,8 +1122,12 @@ jobs:
             echo "::error::Architectural ratchets failed (result=${{ needs.ratchets.result }})"
             failed=1
           fi
+          if [ "${{ needs.flue.result }}" != "success" ]; then
+            echo "::error::Flue runtime tests failed (result=${{ needs.flue.result }})"
+            failed=1
+          fi
           if [ "$failed" -ne 0 ]; then exit 1; fi
-          echo "All Test shards and the ratchet suite passed."
+          echo "All Test shards, the ratchet suite and the Flue runtime tests passed."
 
   # ═══════════════════════════════════════════════════════════════
   #  Job 4: Coverage gate — merge the shards, then enforce the floors
