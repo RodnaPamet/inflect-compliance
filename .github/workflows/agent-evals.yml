@@ -303,9 +303,14 @@ jobs:
               --seed-fixture-hash "$(node -p "require('./inspect-out/seed-manifest.json').seedFixtureHash")" \
               --out "/out/record-${engine}.json" || { status=1; continue; }
             npx tsx scripts/inspect-record-check.ts "inspect-out/record-${engine}.json" --md "inspect-out/summary-${engine}.md" > /dev/null || status=1
-            cat "inspect-out/summary-${engine}.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            # The record summary (verdicts) to the step summary AND the job
+            # log (owner decision 2026-11-13: tooling that reads job logs
+            # cannot read a step summary or an artifact).
+            if [ -f "inspect-out/summary-${engine}.md" ]; then
+              tee -a "$GITHUB_STEP_SUMMARY" < "inspect-out/summary-${engine}.md" || true
+            fi
           done
-          echo "Measured recorded spend: \$$(spent_usd) against a cap of \$$(node -p 'require("./evals/inspect/budget.json").nightlyCapUsd')" >> "$GITHUB_STEP_SUMMARY"
+          echo "Measured recorded spend: \$$(spent_usd) against a cap of \$$(node -p 'require("./evals/inspect/budget.json").nightlyCapUsd')" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
       # A run that never settles is decided in the worker, whose log no other
