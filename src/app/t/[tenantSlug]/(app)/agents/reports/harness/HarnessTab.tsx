@@ -73,7 +73,7 @@ export function HarnessTab({
     const acceptFromRow = useCallback((row: MatrixRow) => {
         setAccepting({
             discoveredAgentId: row.discoveredAgentId,
-            agentLabel: row.registered?.name ?? row.discoveredId,
+            agentLabel: row.registered?.name ?? row.matrix.discoveredId,
             renewing: row.acceptAffordance === 'RENEW',
             inForceUntil: row.acceptance?.expiresAt ?? null,
         });

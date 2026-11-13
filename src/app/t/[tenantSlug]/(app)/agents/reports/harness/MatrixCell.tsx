@@ -1,48 +1,57 @@
 'use client';
 
 /**
- * One (agent, criterion) cell. The state is the LADDER's rule —
- * `criterionState` over `collapseVerdicts` — never a re-implementation: a cell
- * read from `verdict.met` would show "Met" for a criterion reported met with no
- * evidence, which is exactly the answer the level refuses to count, and the
- * cells and the level would then disagree on the same row.
+ * One (agent, criterion) cell. The state is the SHARED TABLE MODEL's
+ * (`buildHarnessMatrix` in `@rodnapamet/scanent-contract`), computed on the
+ * server and never re-derived here: the model's cell is the ladder's rule —
+ * `criterionState` over `collapseVerdicts` — so a criterion reported met with
+ * no evidence reads as not met, and the cells and the level never disagree.
  *
- * Only EVIDENCED renders as met. The other three are named, because "reported
- * met with nothing behind it" is a different conversation with the scanner's
- * owner from "never reported".
+ * Only EVIDENCED and DECLARED render as met. The other five are named, because
+ * "reported met with nothing behind it" is a different conversation with the
+ * scanner's owner from "never reported". Inflect passes the model no
+ * declarations and no readers, so DECLARED, NOT_MET_DECLARED and NOT_READABLE
+ * do not occur on this tab today; the tables below still cover all seven, so a
+ * state the model adds fails `tsc` here rather than rendering as nothing.
  */
 import { useTranslations } from 'next-intl';
 
-import { StatusBadge } from '@/components/ui/status-badge';
-import { collapseVerdicts, criterionState, type HarnessCriterionId } from '@/lib/agentic/harness-ladder';
-import type { MatrixRow } from '@/lib/agentic/harness-read-model';
+import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
+import type { HarnessMatrixCell, HarnessMatrixCellState } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import { EvidenceRef } from './EvidenceRef';
 
+/** Every state the model can give a cell, and how it looks. A new state is a compile error here. */
+export const CELL_VARIANT: Readonly<Record<HarnessMatrixCellState, StatusBadgeVariant>> = {
+    EVIDENCED: 'success',
+    DECLARED: 'success',
+    MET_UNEVIDENCED: 'error',
+    NOT_MET: 'error',
+    NOT_MET_DECLARED: 'error',
+    UNANSWERED: 'error',
+    NOT_READABLE: 'neutral',
+};
+
 export function MatrixCell({
     scanId,
-    row,
-    criterion,
+    discoveredAgentId,
+    cell,
 }: {
     scanId: string;
-    row: MatrixRow;
-    criterion: HarnessCriterionId;
+    discoveredAgentId: string;
+    cell: HarnessMatrixCell;
 }) {
     const t = useTranslations('agents');
-    // Unreadable verdicts arrive as none, so every cell is UNANSWERED.
-    const verdict = collapseVerdicts(row.verdicts).get(criterion);
-    const state = criterionState(verdict);
-
     return (
         <div
             className="flex flex-col items-start gap-tight"
-            data-testid={`harness-cell-${scanId}-${row.discoveredAgentId}-${criterion}`}
-            data-state={state}
+            data-testid={`harness-cell-${scanId}-${discoveredAgentId}-${cell.criterion}`}
+            data-state={cell.state}
         >
-            <StatusBadge variant={state === 'EVIDENCED' ? 'success' : 'error'} size="sm">
-                {t(`harness.cell.${state}`)}
+            <StatusBadge variant={CELL_VARIANT[cell.state]} size="sm">
+                {t(`harness.cell.${cell.state}`)}
             </StatusBadge>
-            <EvidenceRef pointer={verdict?.evidence ?? null} />
+            <EvidenceRef pointer={cell.evidence} />
         </div>
     );
 }

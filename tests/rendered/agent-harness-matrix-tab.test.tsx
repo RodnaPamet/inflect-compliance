@@ -93,12 +93,21 @@ import type {
     HarnessScannerSection,
     MatrixRow,
 } from '@/lib/agentic/harness-read-model';
+import { matrixRowFixture, verdictsThrough, type MatrixRowFixture } from '../helpers/harness-matrix-row';
+import { CELL_VARIANT, MatrixCell } from '@/app/t/[tenantSlug]/(app)/agents/reports/harness/MatrixCell';
+import { HARNESS_MATRIX_CELL_STATES } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 const EN = (
     jest.requireActual('../../messages/en.json') as {
         agents: {
             reports: Record<string, string>;
-            harness: Record<string, string> & { cell: Record<string, string>; completeness: Record<string, string> };
+            harness: Record<string, string> & {
+                cell: Record<string, string>;
+                completeness: Record<string, string>;
+                level: Record<string, string>;
+                incompleteReason: Record<string, string>;
+                notJudged: Record<string, string> & { code: Record<string, string> };
+            };
         };
     }
 ).agents;
@@ -125,25 +134,8 @@ const scanRow = (over: Partial<HarnessScanRow> = {}): HarnessScanRow => ({
     ...over,
 });
 
-const matrixRow = (over: Partial<MatrixRow> = {}): MatrixRow => ({
-    discoveredAgentId: 'da_1',
-    discoveredId: 'entra:sp:one',
-    discoveredVia: ['entra-sp'],
-    registered: { agentId: 'agt_1', name: 'Reconciler' },
-    unregisteredIdentity: false,
-    level: 'H2',
-    reach: 'WRITE_OR_EXTERNAL',
-    belowBar: true,
-    bar: 'H3',
-    blockingNextRung: ['H3.manifests_pinned'],
-    verdicts: [],
-    verdictsUnreadable: false,
-    models: { state: 'NOT_REPORTED' },
-    latestIngestedLevel: null,
-    acceptance: null,
-    acceptAffordance: 'NONE',
-    ...over,
-});
+/** Every matrix row is built through the shared table model (`tests/helpers/harness-matrix-row.ts`). */
+const matrixRow = (over: MatrixRowFixture = {}): MatrixRow => matrixRowFixture(over);
 
 const section = (over: Partial<HarnessScannerSection> = {}): HarnessScannerSection => {
     const latest = over.latest ?? scanRow();
@@ -346,15 +338,104 @@ describe('a criterion reported with no evidence renders as NOT met', () => {
     });
 });
 
-describe('stored verdicts that could not be re-read', () => {
-    it('render every cell unanswered, and the row says why', () => {
-        renderHarness(
-            view({ sections: [section({ rows: [matrixRow({ verdicts: [], verdictsUnreadable: true })] })] }),
+describe('a cell renders every state the shared model can give it', () => {
+    const BG = (
+        jest.requireActual('../../messages/bg.json') as { agents: { harness: { cell: Record<string, string> } } }
+    ).agents.harness.cell;
+
+    it('has a look and a message, in both locales, for each of the seven — and no other', () => {
+        expect(Object.keys(CELL_VARIANT).sort()).toEqual([...HARNESS_MATRIX_CELL_STATES].sort());
+        expect(Object.keys(H.cell).sort()).toEqual([...HARNESS_MATRIX_CELL_STATES].sort());
+        expect(Object.keys(BG).sort()).toEqual([...HARNESS_MATRIX_CELL_STATES].sort());
+        // Only the two met states look met.
+        expect(HARNESS_MATRIX_CELL_STATES.filter((s) => CELL_VARIANT[s] === 'success')).toEqual(['EVIDENCED', 'DECLARED']);
+    });
+
+    it.each(HARNESS_MATRIX_CELL_STATES.map((s) => [s]))('%s renders its own words and data-state', (state) => {
+        render(
+            <MatrixCell
+                scanId="scan_x"
+                discoveredAgentId="da_x"
+                cell={{
+                    criterion: 'H1.owner',
+                    level: 'H1',
+                    state,
+                    verdictState: 'UNANSWERED',
+                    basis: null,
+                    evidence: null,
+                    readable: state !== 'NOT_READABLE',
+                }}
+            />,
         );
-        expect(screen.getByTestId('harness-verdicts-unreadable-scan_latest-da_1').textContent).toBe(H.verdictsUnreadable);
+        const c = screen.getByTestId('harness-cell-scan_x-da_x-H1.owner');
+        expect(c.getAttribute('data-state')).toBe(state);
+        expect(c.querySelector('span')?.textContent).toBe(H.cell[state]);
+    });
+});
+
+describe('stored verdicts that could not be re-read', () => {
+    it('render every cell unanswered, and the row states no level and says why', () => {
+        renderHarness(view({ sections: [section({ rows: [matrixRow({ verdicts: null })] })] }));
+        const level = screen.getByTestId('harness-level-scan_latest-da_1');
+        expect(level.getAttribute('data-judgement')).toBe('NOT_JUDGED');
+        expect(level.textContent).toContain(H.notJudged.badge);
+        const reasons = screen.getByTestId('harness-not-judged-reasons-scan_latest-da_1');
+        expect(reasons.querySelector('[data-code="VERDICTS_UNREADABLE"]')?.textContent).toContain(
+            H.notJudged.code.VERDICTS_UNREADABLE,
+        );
         for (const c of ALL_HARNESS_CRITERIA as readonly HarnessCriterionId[]) {
             expect(cell(c).getAttribute('data-state')).toBe('UNANSWERED');
         }
+    });
+});
+
+describe('an agent the shared model does not judge', () => {
+    it('states no level — not H0, not the level its verdicts would reach — and names each reason', () => {
+        renderHarness(
+            view({
+                sections: [
+                    section({
+                        latest: scanRow({ agentCount: 2, completeness: 'INCOMPLETE' }),
+                        rows: [
+                            // Every criterion evidenced, but found through a source not read in full.
+                            matrixRow({
+                                discoveredId: 'okta:app:one',
+                                discoveredVia: ['okta-app'],
+                                verdicts: verdictsThrough('H5'),
+                                sources: [
+                                    { kind: 'entra-sp', status: 'COMPLETE', reason: null },
+                                    { kind: 'okta-app', status: 'INCOMPLETE', reason: 'TIME_BOX' },
+                                    { kind: 'inflect-register', status: 'INCOMPLETE', reason: null },
+                                ],
+                            }),
+                            matrixRow({ discoveredAgentId: 'da_judged' }),
+                        ],
+                    }),
+                ],
+            }),
+        );
+        const level = screen.getByTestId('harness-level-scan_latest-da_1');
+        expect(level.getAttribute('data-judgement')).toBe('NOT_JUDGED');
+        expect(level.textContent).toContain(H.notJudged.badge);
+        expect(level.textContent).toContain(H.notJudged.levelUnstated.replace('{bar}', 'H3'));
+        for (const name of Object.values(H.level)) expect(level.textContent).not.toContain(name);
+        expect(level.textContent).not.toContain('Below the bar');
+        const reasons = within(screen.getByTestId('harness-not-judged-reasons-scan_latest-da_1'));
+        const items = reasons.getAllByRole('listitem');
+        expect(items.map((li) => li.getAttribute('data-code'))).toEqual([
+            'SOURCE_INCOMPLETE:okta-app:TIME_BOX',
+            'VERDICT_SOURCE_INCOMPLETE:inflect-register:UNKNOWN',
+        ]);
+        expect(items[0].textContent).toContain(KIND['okta-app']);
+        expect(items[0].textContent).toContain(H.incompleteReason.TIME_BOX);
+        expect(items[1].textContent).toContain(H.notJudged.reasonUnstated);
+        // Its cells still show what was reported: a cell is not a level.
+        expect(cell('H5.independent_audit').getAttribute('data-state')).toBe('EVIDENCED');
+        // The judged row beside it states its level: the pair proves the judgement decides.
+        const judged = screen.getByTestId('harness-level-scan_latest-da_judged');
+        expect(judged.getAttribute('data-judgement')).toBe('JUDGED');
+        expect(judged.textContent).toContain(H.level.H2);
+        expect(screen.queryByTestId('harness-not-judged-reasons-scan_latest-da_judged')).not.toBeInTheDocument();
     });
 });
 
@@ -676,7 +757,7 @@ describe('the acceptance is on the row', () => {
                             }),
                             matrixRow({ discoveredAgentId: 'da_theirs', acceptAffordance: 'OWNER_ONLY' }),
                             matrixRow({ discoveredAgentId: 'da_shadow', registered: null, acceptAffordance: 'REGISTER_FIRST' }),
-                            matrixRow({ discoveredAgentId: 'da_fine', belowBar: false, level: 'H3', acceptAffordance: 'NONE' }),
+                            matrixRow({ discoveredAgentId: 'da_fine', verdicts: verdictsThrough('H3'), acceptAffordance: 'NONE' }),
                         ],
                     }),
                 ],
@@ -714,7 +795,7 @@ describe('the acceptance is on the row', () => {
                             // follows OWNERSHIP, which only the server knows.
                             matrixRow({ discoveredAgentId: 'da_theirs', acceptAffordance: 'OWNER_ONLY' }),
                             matrixRow({ discoveredAgentId: 'da_shadow', registered: null, acceptAffordance: 'REGISTER_FIRST' }),
-                            matrixRow({ discoveredAgentId: 'da_fine', belowBar: false, level: 'H3', acceptAffordance: 'NONE' }),
+                            matrixRow({ discoveredAgentId: 'da_fine', verdicts: verdictsThrough('H3'), acceptAffordance: 'NONE' }),
                         ],
                     }),
                 ],
@@ -1009,8 +1090,9 @@ describe('an unregistered identity has a section of its own, and is not called a
                                 discoveredId: 'gcp:sa:build-1',
                                 registered: null,
                                 unregisteredIdentity: true,
-                                level: 'H0',
-                                belowBar: false,
+                                // Write reach and nothing evidenced: H0, far
+                                // below the bar its reach would carry.
+                                verdicts: [],
                                 acceptAffordance: 'NONE',
                             }),
                             matrixRow({ discoveredAgentId: 'da_shadow', registered: null, acceptAffordance: 'REGISTER_FIRST' }),
@@ -1025,7 +1107,7 @@ describe('an unregistered identity has a section of its own, and is not called a
         expect(screen.queryByTestId('harness-accept-note-scan_latest-da_i')).not.toBeInTheDocument();
         // It keeps its level, and is not marked below a bar.
         const level = screen.getByTestId('harness-level-scan_latest-da_i');
-        expect(level.textContent).toContain((EN.harness as unknown as { level: Record<string, string> }).level.H0);
+        expect(level.textContent).toContain(H.level.H0);
         expect(level.textContent).not.toContain('Below the bar');
         // The shadow agent beside it is unchanged: the pair proves the flag decides.
         expect(screen.getByTestId('harness-shadow-badge-scan_latest-da_shadow')).toBeInTheDocument();

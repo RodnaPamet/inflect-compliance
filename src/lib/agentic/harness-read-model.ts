@@ -23,15 +23,18 @@
  *     userinfo replaced by `***` (`redactPointerCredentials`), so a pointer
  *     that embedded a password is neither linked nor printed nor copied.
  *
+ * THE ROWS ARE THE SHARED TABLE MODEL'S (owner decision, 2026-11-13). A
+ * matrix row carries `buildHarnessMatrix`'s row from the contract package —
+ * cells, judgement, level, bar, and the order `compareHarnessMatrixRows` puts
+ * them in — and Inflect's own columns beside it (`MatrixRow`).
+ *
  * PURE: no clock, no I/O. Every import beside the ladder is a TYPE
- * (`OwnerSignalKind`, and the stored shapes the contract owns), erased at
- * build, so the tab's bundle gains nothing.
+ * (`OwnerSignalKind`, the model's row, and the stored shapes the contract
+ * owns), erased at build, so the tab's bundle gains nothing.
  */
-import {
-    rungOf,
-    type CriterionVerdict,
-    type HarnessLevel,
-} from './harness-ladder';
+import type { HarnessMatrixRow } from '@rodnapamet/scanent-contract/harness-matrix-model';
+
+import { rungOf, type HarnessLevel } from './harness-ladder';
 import type { OwnerSignalKind } from './iam-skill-outputs';
 
 // ─── View types: JSON-safe (ISO strings, no Date) ───────────────────────────
@@ -83,35 +86,40 @@ export interface HarnessDrift {
     readonly sourceDriftUnknown: boolean;
 }
 
+/**
+ * One agent of a scanner's latest scan, as the tab shows it: the SHARED TABLE
+ * MODEL's row (owner decision, 2026-11-13: "one shared table model"), joined by
+ * `discoveredId` to the columns that are Inflect's own.
+ *
+ * `matrix` is `buildHarnessMatrix`'s row from `@rodnapamet/scanent-contract`,
+ * the same one scanent's local results are built from, so the two surfaces
+ * cannot say different things about the same scan: the cells, whether the
+ * agent is judged, its level, its bar and where it stands against it, and the
+ * row order. The server builds it; no component re-derives any of it.
+ *
+ *   • A cell's state is `matrix.cells[i].state`. Inflect passes no readers and
+ *     no declarations, so only EVIDENCED, MET_UNEVIDENCED, NOT_MET and
+ *     UNANSWERED occur; the components are exhaustive over all seven anyway.
+ *   • `matrix.judgement` NOT_JUDGED states NO level (`level` is null, never
+ *     H0), with its reasons as codes. Stored verdicts that cannot be re-read
+ *     are the model's `VERDICTS_UNREADABLE`; stored sources that cannot be
+ *     re-read are its `SOURCES_UNREADABLE`.
+ *   • An UNREGISTERED AUTOMATED IDENTITY (`matrix.classification`) is held to
+ *     no bar: `heldToBar` and `countsAsShortfall` are false. The class is the
+ *     server's reading of the finding on record
+ *     (`unregisteredIdentitiesOnRecord`), handed to the model as its input,
+ *     never re-derived from the scan rows.
+ */
 export interface MatrixRow {
     readonly discoveredAgentId: string;
-    readonly discoveredId: string;
-    readonly discoveredVia: readonly string[];
+    /** The shared model's row. Its `discoveredId` is the join key for every member below. */
+    readonly matrix: HarnessMatrixRow;
     /**
      * `null` is NOT REGISTERED — including a register row deleted after the
-     * scan linked it: a shadow agent, or, when `unregisteredIdentity` is set,
-     * an unregistered automated identity.
+     * scan linked it: a shadow agent, or, when the model's class says so, an
+     * unregistered automated identity.
      */
     readonly registered: { readonly agentId: string; readonly name: string } | null;
-    /**
-     * On record as an UNREGISTERED AUTOMATED IDENTITY (owner decisions,
-     * 2026-11-13): not registered, and its UNREGISTERED_IDENTITY finding is the
-     * one open — the server's reading of the record
-     * (`unregisteredIdentitiesOnRecord`), never re-derived here. It keeps its
-     * level and its cells and is held to NO bar: `belowBar` is false and no
-     * shortfall action or note is offered. Always false for a registered row.
-     */
-    readonly unregisteredIdentity: boolean;
-    readonly level: HarnessLevel;
-    readonly reach: HarnessStoredReach;
-    /** Below the bar for its reach. Never true of an unregistered identity, which is held to none. */
-    readonly belowBar: boolean;
-    readonly bar: HarnessLevel;
-    readonly blockingNextRung: readonly string[];
-    /** Collapsed: one verdict per answered criterion, at most one per criterion. The client maps cells with `criterionState`. */
-    readonly verdicts: readonly CriterionVerdict[];
-    /** The stored verdicts failed re-validation: every cell renders unanswered (fail closed). */
-    readonly verdictsUnreadable: boolean;
     /** The model endpoints this scan reported for the agent. Rendered as text, never as links. */
     readonly models: HarnessAgentModels;
     /**
@@ -423,15 +431,4 @@ const POINTER_USERINFO = /\/\/[^/?#]*@/g;
 export function redactPointerCredentials(pointer: string): { readonly text: string; readonly redacted: boolean } {
     const text = pointer.replace(POINTER_USERINFO, '//***@');
     return { text, redacted: text !== pointer };
-}
-
-/** Matrix order: the worst rung first, then below its bar, then by discovered id. */
-export function compareMatrixRows(
-    a: { readonly level: HarnessLevel; readonly belowBar: boolean; readonly discoveredId: string },
-    b: { readonly level: HarnessLevel; readonly belowBar: boolean; readonly discoveredId: string },
-): number {
-    const rung = rungOf(a.level) - rungOf(b.level);
-    if (rung !== 0) return rung;
-    if (a.belowBar !== b.belowBar) return a.belowBar ? -1 : 1;
-    return byString(a.discoveredId, b.discoveredId);
 }

@@ -12696,14 +12696,31 @@
         "UNKNOWN": "Unknown (held to the higher bar)"
       },
       "belowBar": "Below the bar ({bar})",
-      "identityNoBar": "Not held to a bar",
+      "identityNoBar": "Held to no bar",
       "latestIngestedDiffers": "A scan received later reads this agent at {level}; acceptance follows that reading.",
-      "verdictsUnreadable": "The stored verdicts could not be re-read, so every criterion is shown as not met.",
+      "notJudged": {
+        "badge": "Not judged",
+        "levelUnstated": "No level is stated, so it is not compared with its bar ({bar}).",
+        "levelUnstatedNoBar": "No level is stated.",
+        "reasonUnstated": "no reason given",
+        "code": {
+          "SOURCE_INCOMPLETE": "A source it was found through, {kind}, was not read in full ({reason})",
+          "SOURCE_NOT_LISTED": "It was found through {kind}, which the scan does not list as a source",
+          "VERDICT_SOURCE_INCOMPLETE": "{kind}, which reports on agents other sources find, was not read in full ({reason})",
+          "OTHER_SOURCE_INCOMPLETE": "Another source, {kind}, was not read in full; it does not bear on this agent",
+          "SOURCES_UNREADABLE": "The scan’s stored sources could not be read back, so nothing is known to have been read in full",
+          "VERDICTS_UNREADABLE": "The agent’s stored verdicts could not be read back, so every criterion is shown as not reported",
+          "UNKNOWN": "See the code"
+        }
+      },
       "cell": {
         "EVIDENCED": "Met",
+        "DECLARED": "Met: declared by the operator, not observed",
         "MET_UNEVIDENCED": "Not met: reported met with no evidence",
         "NOT_MET": "Not met",
-        "UNANSWERED": "Not met: not reported"
+        "NOT_MET_DECLARED": "Not met: declared by the operator",
+        "UNANSWERED": "Not met: not reported",
+        "NOT_READABLE": "Not readable: nothing this scan read could report it"
       },
       "cellNoEvidence": "No evidence reference",
       "evidenceCopy": "Copy evidence reference",

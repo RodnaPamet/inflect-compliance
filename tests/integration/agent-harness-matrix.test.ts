@@ -25,6 +25,9 @@
  *  10. BOUNDS ARE STATED. Rows are the worst of a WHOLE latest scan or none;
  *      the previous scans' agents cannot crowd the latest ones out; hidden
  *      scanners and truncated lists are counted, never dropped silently.
+ *  11. THE ROWS ARE THE SHARED TABLE MODEL'S, in its order: not judged first,
+ *      then below the bar, then at it; within each the lowest level first;
+ *      then by id. A not-judged agent states no level, whatever it reported.
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
 
@@ -45,6 +48,7 @@ import {
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
 import {
+    ALL_HARNESS_CRITERIA,
     HARNESS_CRITERIA,
     HARNESS_LEVELS,
     rungOf,
@@ -64,7 +68,9 @@ const T2 = 'harness-matrix-two';
 const T3 = 'harness-matrix-three';
 /** Two trusted scanners, reporting in a sequence that walks the shadow basis. */
 const T4 = 'harness-matrix-four';
-const ALL_TENANTS = [T1, T2, T3, T4];
+/** One scan whose rows walk the shared table model's order (owner decision, 2026-11-13). */
+const T5 = 'harness-matrix-five';
+const ALL_TENANTS = [T1, T2, T3, T4, T5];
 
 // Canaries: each must reach its source row and never the client payload.
 const OWNER_REF_CANARY = 'usr_canary_owner_ref_3687';
@@ -213,7 +219,7 @@ const sectionOf = (view: HarnessMatrixView, scannerAgentId: string): HarnessScan
     return s;
 };
 const rowOf = (section: HarnessScannerSection, discoveredId: string) => {
-    const r = section.rows.find((x) => x.discoveredId === discoveredId);
+    const r = section.rows.find((x) => x.matrix.discoveredId === discoveredId);
     if (!r) throw new Error(`no row for ${discoveredId}`);
     return r;
 };
@@ -333,8 +339,8 @@ describe('latest, previous and drift — per scanner, by asOf', () => {
         const view = await getHarnessMatrix(ownerCtx(T1));
         const a = sectionOf(view, A);
         expect(a.drift?.newlySeen.map((n) => n.discoveredId)).not.toContain('entra:sp:only-b');
-        expect(a.rows.map((r) => r.discoveredId)).not.toContain('entra:sp:only-b');
-        expect(sectionOf(view, B).rows.map((r) => r.discoveredId)).toEqual(['entra:sp:only-b']);
+        expect(a.rows.map((r) => r.matrix.discoveredId)).not.toContain('entra:sp:only-b');
+        expect(sectionOf(view, B).rows.map((r) => r.matrix.discoveredId)).toEqual(['entra:sp:only-b']);
     });
 
     it('a window too small to hold the baseline says so, rather than calling it a first scan', async () => {
@@ -358,38 +364,50 @@ describe('latest, previous and drift — per scanner, by asOf', () => {
         expect(view.scannersWithoutScan.rows).toEqual([]);
     });
 
-    it('rows are worst rung first, and carry the collapsed verdicts — one per criterion, the least favourable', async () => {
+    it('rows are the shared model\'s order, and its cells are the least favourable answer per criterion', async () => {
         const a = sectionOf(await getHarnessMatrix(ownerCtx(T1)), A);
-        // H0 before H2; within a rung, below-bar first (all are here: the
-        // read-only ones have UNKNOWN reach because mcp was not read in full),
-        // then by discovered id.
-        expect(a.rows.map((r) => r.discoveredId)).toEqual([
+        // All four are judged (mcp, the incomplete source, bears on none of
+        // them) and all below their bar (the read-only ones have UNKNOWN reach
+        // because mcp was not read in full): lowest level first, then id.
+        expect(a.rows.map((r) => r.matrix.discoveredId)).toEqual([
             'entra:sp:new-1',
             'entra:sp:shadow-1',
             'entra:sp:doomed',
             'entra:sp:target',
         ]);
+        expect(a.rows.map((r) => r.matrix.judgement)).toEqual(
+            a.rows.map(() => ({ kind: 'JUDGED', caveats: ['OTHER_SOURCE_INCOMPLETE:mcp'] })),
+        );
         const newcomer = rowOf(a, 'entra:sp:new-1');
-        const registered = newcomer.verdicts.filter((v) => v.criterion === 'H1.registered');
-        expect(registered).toEqual([{ criterion: 'H1.registered', met: false, evidence: null }]);
-        expect(newcomer.verdicts).toHaveLength(HARNESS_CRITERIA.H1.length);
-        // ...and the level the ingest stored agrees: the contradiction cost H1.
-        expect(newcomer.level).toBe('H0');
-        expect(newcomer.verdictsUnreadable).toBe(false);
+        const registered = newcomer.matrix.cells.find((c) => c.criterion === 'H1.registered');
+        expect(registered).toMatchObject({ state: 'NOT_MET', basis: 'OBSERVED', evidence: null, readable: true });
+        expect(newcomer.matrix.cells).toHaveLength(ALL_HARNESS_CRITERIA.length);
+        // No readers are passed, so no cell is ever NOT_READABLE.
+        expect(a.rows.flatMap((r) => r.matrix.cells).filter((c) => c.state === 'NOT_READABLE')).toEqual([]);
+        // ...and the level the model states agrees: the contradiction cost H1.
+        expect(newcomer.matrix.level).toBe('H0');
     });
 
-    it('a row carries the scan item\'s reading, its bar and whether it is short of it', async () => {
+    it('a row carries the model\'s level, its bar and whether it is short of it', async () => {
         const a = sectionOf(await getHarnessMatrix(ownerCtx(T1)), A);
         const target = rowOf(a, 'entra:sp:target');
-        expect(target).toMatchObject({
+        expect(target.matrix).toMatchObject({
             level: 'H2',
             reach: 'WRITE_OR_EXTERNAL',
             bar: 'H3',
-            belowBar: true,
+            barStatus: 'BELOW_BAR',
+            heldToBar: true,
+            countsAsShortfall: true,
+            classification: 'REGISTERED',
+            registration: { ref: seeded[T1].targetAgentId, basis: null },
+            paymentCapabilities: null,
+        });
+        expect(target).toMatchObject({
             registered: { agentId: seeded[T1].targetAgentId, name: `Reporting agent ${T1}` },
             latestIngestedLevel: null,
         });
         expect(rowOf(a, 'entra:sp:shadow-1').registered).toBeNull();
+        expect(rowOf(a, 'entra:sp:shadow-1').matrix.classification).toBe('SHADOW_AGENT');
     });
 
     it('the view crosses the server/client boundary unchanged', async () => {
@@ -407,7 +425,7 @@ describe('latest, previous and drift — per scanner, by asOf', () => {
         expect(a.latest.scanRef).toBe('t1-a2');
         expect(a.previous?.scanRef).toBe('t1-a3-backfill');
         const target = rowOf(a, 'entra:sp:target');
-        expect(target.level).toBe('H2');
+        expect(target.matrix.level).toBe('H2');
         // The acceptance usecase reads the latest INGESTED level; the row names it.
         expect(target.latestIngestedLevel).toBe('H4');
         expect(target.acceptAffordance).toBe('NONE');
@@ -432,7 +450,7 @@ describe('stored JSON that does not re-validate fails CLOSED', () => {
         }
     });
 
-    it('unreadable verdicts render every criterion unanswered', async () => {
+    it('unreadable verdicts render every criterion unanswered, and the agent NOT JUDGED with no level', async () => {
         const scan = await prisma.agentHarnessScan.findFirstOrThrow({ where: { tenantId: T1, scanRef: 't1-b1' } });
         const item = await prisma.agentHarnessScanItem.findFirstOrThrow({ where: { tenantId: T1, scanId: scan.id } });
         await prisma.agentHarnessScanItem.update({
@@ -442,8 +460,9 @@ describe('stored JSON that does not re-validate fails CLOSED', () => {
         try {
             const b = sectionOf(await getHarnessMatrix(ownerCtx(T1)), seeded[T1].scannerB.agentId);
             const row = rowOf(b, 'entra:sp:only-b');
-            expect(row.verdictsUnreadable).toBe(true);
-            expect(row.verdicts).toEqual([]);
+            expect(row.matrix.judgement).toEqual({ kind: 'NOT_JUDGED', reasons: ['VERDICTS_UNREADABLE'] });
+            expect(row.matrix).toMatchObject({ level: null, observedLevel: null, blockingNextRung: null, barStatus: 'NOT_JUDGED', countsAsShortfall: false });
+            expect(new Set(row.matrix.cells.map((c) => c.state))).toEqual(new Set(['UNANSWERED']));
         } finally {
             await prisma.agentHarnessScanItem.update({ where: { id: item.id }, data: { verdictsJson: item.verdictsJson ?? [] } });
         }
@@ -848,7 +867,7 @@ describe('every bound is stated, and rows are the worst of a WHOLE scan', () => 
         const a = sectionOf(view, A());
         expect(a.rowsUnread).toBe(false);
         expect(a.rowsTruncated).toBe(false);
-        expect(a.rows.map((r) => r.discoveredId)).toEqual([
+        expect(a.rows.map((r) => r.matrix.discoveredId)).toEqual([
             'entra:sp:new-1',
             'entra:sp:shadow-1',
             'entra:sp:doomed',
@@ -894,7 +913,7 @@ describe('every bound is stated, and rows are the worst of a WHOLE scan', () => 
         const a = sectionOf(await getHarnessMatrix(ownerCtx(T1), { limits: { rows: 2 } }), A());
         expect(a.rowsUnread).toBe(false);
         expect(a.rowsTruncated).toBe(true);
-        expect(a.rows.map((r) => r.discoveredId)).toEqual(['entra:sp:new-1', 'entra:sp:shadow-1']);
+        expect(a.rows.map((r) => r.matrix.discoveredId)).toEqual(['entra:sp:new-1', 'entra:sp:shadow-1']);
     });
 
     it('counts the scanners it does not show, rather than dropping them', async () => {
@@ -943,5 +962,64 @@ describe('every bound is stated, and rows are the worst of a WHOLE scan', () => 
         } finally {
             await prisma.agentHarnessAcceptance.deleteMany({ where: { id: { in: written.map((w) => w.id) } } });
         }
+    });
+});
+
+describe('the rows are the shared table model\'s, in its order', () => {
+    // okta-app was not read in full, so every agent found through it is NOT
+    // JUDGED — even one whose verdicts would reach H5. The old order (rung
+    // first) would have put the H1 and H2 agents above them and, under a cap
+    // of two rows, shown neither of them.
+    beforeAll(async () => {
+        const A = seeded[T5].scannerA.agentId;
+        const viaOkta = (id: string, level: HarnessLevel): HarnessReportAgentV2 => ({
+            ...reportAgent(id, level, { write: true }),
+            discoveredVia: ['okta-app'],
+        });
+        await ingest(T5, 'A', body(A, 't5-a1', '2026-10-12T03:00:00.000Z', [
+            reportAgent('entra:sp:at-bar', 'H3', { write: true }),
+            reportAgent('entra:sp:below-h2', 'H2', { write: true }),
+            reportAgent('entra:sp:below-h1', 'H1', { write: true }),
+            viaOkta('okta:app:high', 'H5'),
+            viaOkta('okta:app:low', 'H1'),
+        ], [
+            { kind: 'entra-sp', status: 'COMPLETE', rows: 3 },
+            { kind: 'okta-app', status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 2 },
+            { kind: 'mcp', status: 'COMPLETE', rows: 5 },
+        ]));
+    });
+
+    it('not judged first, then below the bar, then at it; within each the lowest level first; then id', async () => {
+        const a = sectionOf(await getHarnessMatrix(ownerCtx(T5)), seeded[T5].scannerA.agentId);
+        expect(a.rows.map((r) => [r.matrix.discoveredId, r.matrix.barStatus, r.matrix.level])).toEqual([
+            ['okta:app:high', 'NOT_JUDGED', null],
+            ['okta:app:low', 'NOT_JUDGED', null],
+            ['entra:sp:below-h1', 'BELOW_BAR', 'H1'],
+            ['entra:sp:below-h2', 'BELOW_BAR', 'H2'],
+            ['entra:sp:at-bar', 'AT_BAR', 'H3'],
+        ]);
+    });
+
+    it('a not-judged agent states no level and names why, and is never a shortfall', async () => {
+        const a = sectionOf(await getHarnessMatrix(ownerCtx(T5)), seeded[T5].scannerA.agentId);
+        const high = rowOf(a, 'okta:app:high');
+        expect(high.matrix.judgement).toEqual({ kind: 'NOT_JUDGED', reasons: ['SOURCE_INCOMPLETE:okta-app:TIME_BOX'] });
+        expect(high.matrix).toMatchObject({ level: null, observedLevel: null, blockingNextRung: null, countsAsShortfall: false });
+        // Its cells still show what was reported: they are not a level.
+        expect(high.matrix.cells.every((c) => c.state === 'EVIDENCED')).toBe(true);
+        // The entra agents beside it are judged; okta-app does not bear on them.
+        expect(rowOf(a, 'entra:sp:at-bar').matrix.judgement).toEqual({
+            kind: 'JUDGED',
+            caveats: ['OTHER_SOURCE_INCOMPLETE:okta-app'],
+        });
+    });
+
+    it('under a row cap, the rows kept are the first in that order, from the whole scan', async () => {
+        const a = sectionOf(
+            await getHarnessMatrix(ownerCtx(T5), { limits: { rows: 2 } }),
+            seeded[T5].scannerA.agentId,
+        );
+        expect(a.rowsTruncated).toBe(true);
+        expect(a.rows.map((r) => r.matrix.discoveredId)).toEqual(['okta:app:high', 'okta:app:low']);
     });
 });
