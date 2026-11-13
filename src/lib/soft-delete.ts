@@ -115,22 +115,46 @@ export function withSoftDeleteExtension<T extends object>(
                     if (!SOFT_DELETE_MODELS.has(model)) return query(args);
                     const ctx = getAuditContext();
                     const deletedByUserId = ctx?.actorUserId || null;
-                    // Transform delete → update — switch to the
-                    // sibling client method since `query` is bound
-                    // to the original `delete` operation.
-                    return modelOps(model).update({
-                        where: args.where,
-                        data: { deletedAt: new Date(), deletedByUserId },
-                    });
+                    const data = { deletedAt: new Date(), deletedByUserId };
+                    // ── THE CALLER'S TRANSACTION, WHEN THERE IS ONE (#5287) ──
+                    //
+                    // `query` is bound to the `delete` operation, so it cannot
+                    // carry out the rewritten `update`. That part of the old
+                    // comment was right. What it missed is that
+                    // `modelOps(model)` is the client this extension was BUILT
+                    // on — so the write went out on another pooled connection:
+                    // it committed immediately (a later failure in the
+                    // caller's transaction rolled back the audit rows and left
+                    // the row deleted) and it ran as the OWNING role, where
+                    // `superuser_bypass` matches and RLS no longer applies.
+                    //
+                    // `softDeleteWrite` is the transaction-bound writer
+                    // `db-context.ts` threads through the audit context, the
+                    // same remedy `readPriorState` uses for the audit
+                    // extension's prior-state read and for the same reason.
+                    //
+                    // Absent means there is NO tenant transaction in scope — a
+                    // job on the global client, a seed — and there this
+                    // extension's own client IS the caller's client, so
+                    // dispatching to it is correct rather than a fallback.
+                    // Measured: 14 of the 16 soft-delete call sites are
+                    // transactional; `jobs/evidence-import.ts` and
+                    // `services/evidence-blob-purge.ts` are not.
+                    if (ctx?.softDeleteWrite) {
+                        return ctx.softDeleteWrite(model, { where: args.where, data }, false);
+                    }
+                    return modelOps(model).update({ where: args.where, data });
                 },
                 async deleteMany({ model, args, query }: { model: string; args: { where?: Record<string, unknown> }; query: (a: unknown) => Promise<unknown> }) {
                     if (!SOFT_DELETE_MODELS.has(model)) return query(args);
                     const ctx = getAuditContext();
                     const deletedByUserId = ctx?.actorUserId || null;
-                    return modelOps(model).updateMany({
-                        where: args.where,
-                        data: { deletedAt: new Date(), deletedByUserId },
-                    });
+                    const data = { deletedAt: new Date(), deletedByUserId };
+                    // Same reasoning as `delete` above (#5287).
+                    if (ctx?.softDeleteWrite) {
+                        return ctx.softDeleteWrite(model, { where: args.where, data }, true);
+                    }
+                    return modelOps(model).updateMany({ where: args.where, data });
                 },
                 async findUnique({ model, args, query }: { model: string; args: Record<string, unknown>; query: (a: unknown) => Promise<unknown> }) {
                     return runRead(model, args, query);

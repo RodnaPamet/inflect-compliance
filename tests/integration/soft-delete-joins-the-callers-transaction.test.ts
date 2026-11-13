@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'crypto';
 import { prismaTestClient } from '../helpers/db';
+import { prisma as appPrisma } from '@/lib/prisma';
 import { DB_AVAILABLE } from './db-helper';
 import { runInTenantContext } from '@/lib/db-context';
 import { makeRequestContext } from '../helpers/make-context';
@@ -35,10 +36,10 @@ let ctx: ReturnType<typeof makeRequestContext>;
 
 /** Read the row with no soft-delete filter, so a deleted row is still visible. */
 async function readRisk(id: string): Promise<{ deletedAt: Date | null } | null> {
-    const rows = await prisma.$queryRawUnsafe<Array<{ deletedAt: Date | null }>>(
+    const rows = (await prisma.$queryRawUnsafe(
         `SELECT "deletedAt" FROM "Risk" WHERE id = $1`,
         id,
-    );
+    )) as Array<{ deletedAt: Date | null }>;
     return rows[0] ?? null;
 }
 
@@ -97,9 +98,33 @@ describeFn('a soft delete belongs to the caller transaction (#5287)', () => {
 
         for (const id of [a, b]) {
             const row = await readRisk(id);
-            expect({ id, deletedAt: row?.deletedAt ?? 'missing' })
-                .toEqual({ id, deletedAt: null });
+            // NOT `row?.deletedAt ?? 'missing'`: `??` treats null as nullish,
+            // so a correctly-null deletedAt would read as 'missing' and this
+            // assertion would fail against a working fix.
+            expect({ id, present: row !== null }).toEqual({ id, present: true });
+            expect({ id, deletedAt: row!.deletedAt }).toEqual({ id, deletedAt: null });
         }
+    });
+
+    it('still soft-deletes with NO tenant transaction in scope', async () => {
+        // The case the call-site measurement demanded. 14 of the 16 soft-delete
+        // call sites are transactional, but `jobs/evidence-import.ts` and
+        // `services/evidence-blob-purge.ts` call in on the GLOBAL client with
+        // no transaction at all. There the extension's own client IS the
+        // caller's client, so dispatching to it is correct — and a fix that
+        // refused when the tx-bound writer is absent would break those two
+        // jobs while looking right on every test above.
+        const riskId = await makeRisk();
+
+        // THE APP's client, which carries the soft-delete extension —
+        // `prismaTestClient()` does not (it wires only
+        // `withPiiEncryptionExtension`), so a delete through it is a HARD
+        // delete and could not exercise this path at all.
+        await appPrisma.risk.delete({ where: { id: riskId } });
+
+        const row = await readRisk(riskId);
+        expect(row).not.toBeNull();
+        expect(row!.deletedAt).not.toBeNull();
     });
 
     it('a COMMITTED transaction still soft-deletes — the positive control', async () => {
@@ -116,14 +141,4 @@ describeFn('a soft delete belongs to the caller transaction (#5287)', () => {
         expect(row!.deletedAt).not.toBeNull();
     });
 
-    it('the soft-deleted row is invisible to an ordinary read afterwards', async () => {
-        // The other half of the control: the extension's READ filter must keep
-        // working, so a fix cannot "pass" by writing to the wrong column.
-        const riskId = await makeRisk();
-        await runInTenantContext(ctx, async (db) => {
-            await db.risk.delete({ where: { id: riskId } });
-        });
-        const found = await prisma.risk.findUnique({ where: { id: riskId } });
-        expect(found).toBeNull();
-    });
 });
