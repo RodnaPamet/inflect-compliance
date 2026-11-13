@@ -152,11 +152,13 @@ describe('refusals are legible without being leaky', () => {
     });
 });
 
+const URL = 'https://mcp.example.com/sse';
+
 describe('caching', () => {
     it('mints once and reuses, rather than paying per call', async () => {
         safeFetchMock.mockResolvedValue(tokenResponse({ access_token: 'at-1', expires_in: 3600 }));
-        const a = await authorizationForConnection('conn-1', creds);
-        const b = await authorizationForConnection('conn-1', creds);
+        const a = await authorizationForConnection('conn-1', creds, 'https://mcp.example.com/sse');
+        const b = await authorizationForConnection('conn-1', creds, 'https://mcp.example.com/sse');
         expect(a).toBe('Bearer at-1');
         expect(b).toBe('Bearer at-1');
         expect({ mints: safeFetchMock.mock.calls.length }).toEqual({ mints: 1 });
@@ -166,8 +168,8 @@ describe('caching', () => {
         safeFetchMock
             .mockResolvedValueOnce(tokenResponse({ access_token: 'at-1', expires_in: 3600 }))
             .mockResolvedValueOnce(tokenResponse({ access_token: 'at-2', expires_in: 3600 }));
-        expect(await authorizationForConnection('conn-1', creds)).toBe('Bearer at-1');
-        expect(await authorizationForConnection('conn-2', creds)).toBe('Bearer at-2');
+        expect(await authorizationForConnection('conn-1', creds, 'https://mcp.example.com/sse')).toBe('Bearer at-1');
+        expect(await authorizationForConnection('conn-2', creds, 'https://mcp.example.com/sse')).toBe('Bearer at-2');
     });
 
     /** Inside the renew margin the cached token is discarded rather than risked. */
@@ -175,9 +177,46 @@ describe('caching', () => {
         safeFetchMock
             .mockResolvedValueOnce(tokenResponse({ access_token: 'at-1', expires_in: 60 }))
             .mockResolvedValueOnce(tokenResponse({ access_token: 'at-2', expires_in: 3600 }));
-        expect(await authorizationForConnection('conn-1', creds)).toBe('Bearer at-1');
-        expect(await authorizationForConnection('conn-1', creds)).toBe('Bearer at-2');
+        expect(await authorizationForConnection('conn-1', creds, 'https://mcp.example.com/sse')).toBe('Bearer at-1');
+        expect(await authorizationForConnection('conn-1', creds, 'https://mcp.example.com/sse')).toBe('Bearer at-2');
         expect({ mints: safeFetchMock.mock.calls.length }).toEqual({ mints: 2 });
+    });
+
+    /**
+     * #5252. The key was the connection id alone, so a token minted from the
+     * REAL credential was returned for up to an hour after that credential was
+     * replaced — and sent to whatever `url` the connection then carried.
+     */
+    it('does not reuse a token after the credential is replaced', async () => {
+        safeFetchMock
+            .mockResolvedValueOnce(tokenResponse({ access_token: 'at-real', expires_in: 3600 }))
+            .mockResolvedValueOnce(tokenResponse({ access_token: 'at-new', expires_in: 3600 }));
+        const first = await authorizationForConnection('conn-1', creds, URL);
+        // Rotated, rather than a literal: the point is that the VALUE moved.
+        const replaced = { ...creds, clientSecret: `${creds.clientSecret}-rotated` };
+        const second = await authorizationForConnection('conn-1', replaced, URL);
+        expect({ first, second }).toEqual({ first: 'Bearer at-real', second: 'Bearer at-new' });
+        expect({ mints: safeFetchMock.mock.calls.length }).toEqual({ mints: 2 });
+    });
+
+    it('does not send a token minted for one destination to another', async () => {
+        safeFetchMock
+            .mockResolvedValueOnce(tokenResponse({ access_token: 'at-real', expires_in: 3600 }))
+            .mockResolvedValueOnce(tokenResponse({ access_token: 'at-other', expires_in: 3600 }));
+        const toReal = await authorizationForConnection('conn-1', creds, URL);
+        const toAttacker = await authorizationForConnection('conn-1', creds, 'https://attacker.example/sse');
+        expect(toReal).toBe('Bearer at-real');
+        // The cached token minted from the real credential must NOT appear here.
+        expect(toAttacker).toBe('Bearer at-other');
+        expect({ mints: safeFetchMock.mock.calls.length }).toEqual({ mints: 2 });
+    });
+
+    it('still reuses when the credential and the destination are both unchanged', async () => {
+        // The positive control: the fix must not defeat the cache it keys.
+        safeFetchMock.mockResolvedValue(tokenResponse({ access_token: 'at-1', expires_in: 3600 }));
+        await authorizationForConnection('conn-1', { ...creds }, URL);
+        await authorizationForConnection('conn-1', { ...creds }, URL);
+        expect({ mints: safeFetchMock.mock.calls.length }).toEqual({ mints: 1 });
     });
 
     it('hands a rotated refresh token to the caller to persist', async () => {
@@ -185,7 +224,7 @@ describe('caching', () => {
             tokenResponse({ access_token: 'at-1', expires_in: 3600, refresh_token: 'refresh-2' }),
         );
         const persisted: string[] = [];
-        await authorizationForConnection('conn-1', creds, async (rt) => {
+        await authorizationForConnection('conn-1', creds, URL, async (rt) => {
             persisted.push(rt);
         });
         expect(persisted).toEqual(['refresh-2']);
