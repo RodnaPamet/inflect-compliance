@@ -215,6 +215,43 @@ describe('against a real gRPC server built from the vendored contract', () => {
         );
     });
 
+    it('a run longer than the unary deadline completes; the stream has no deadline (#5289)', async () => {
+        // grpc-js bounds a server stream's WHOLE call by its deadline, so the
+        // 30 s unary deadline cut every longer collection as "unreachable"
+        // after the tool had run. Here the deadline is 50 ms and the run 300 ms.
+        await withRealServer(
+            {
+                ExecSandbox: (call: any) => {
+                    call.write({ stdout: { data: Buffer.from('started') } });
+                    setTimeout(() => {
+                        call.write({ exit: { exit_code: 0 } });
+                        call.end();
+                    }, 300);
+                },
+            },
+            async (client) => {
+                const t = grpcSandboxTransport({
+                    endpoint: 'u',
+                    caCertPath: 'u',
+                    clientCertPath: 'u',
+                    clientKeyPath: 'u',
+                    workspace: 'default',
+                    policy: POLICY,
+                    deadlineMs: 50,
+                    clientForTests: client,
+                });
+                const res = await t.execSandbox({
+                    sandboxId: 'sbx-long',
+                    file: 'x',
+                    args: [],
+                    signal: new AbortController().signal,
+                });
+                expect(res.exitCode).toBe(0);
+                expect(res.stdout).toBe('started');
+            },
+        );
+    });
+
     it('sends the command as file-then-args, and attaches a provider BY NAME only', async () => {
         const execReq: any[] = [];
         const attachReq: any[] = [];
@@ -384,6 +421,29 @@ describe('failure arms map onto this product error vocabulary', () => {
                 signal: new AbortController().signal,
             }),
         ).rejects.toThrow(/sbx-6[\s\S]*after 5 byte/);
+    });
+
+    it('a signal aborted before the call cancels the stream at once (#5289)', async () => {
+        // With no deadline on the stream, the signal is its only bound, and an
+        // already-aborted signal never fires 'abort'.
+        let cancelled = false;
+        const client = injected({
+            ExecSandbox: () => {
+                const stream = stubStream((s) => {
+                    if (cancelled) s.error(withCode(1, 'Cancelled on client'));
+                });
+                stream.cancel = () => {
+                    cancelled = true;
+                };
+                return stream;
+            },
+        });
+        const ac = new AbortController();
+        ac.abort();
+        await expect(
+            t(client).execSandbox({ sandboxId: 'sbx-7', file: 'x', args: [], signal: ac.signal }),
+        ).rejects.toThrow();
+        expect(cancelled).toBe(true);
     });
 
     it('UNAVAILABLE becomes SandboxUnreachableError — the ORDINARY case', async () => {

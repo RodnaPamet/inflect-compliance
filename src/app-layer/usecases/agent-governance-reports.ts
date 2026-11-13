@@ -1317,13 +1317,14 @@ async function loadAgents(ctx: RequestContext): Promise<{
         });
 
         const real = rows.filter((r) => !r.isLegacyPlaceholder);
+        const ids = real.map((r) => r.id);
         const vendorIds = [
             ...new Set(real.map((r) => r.vendorId).filter((v): v is string => v !== null)),
         ];
 
         const [cards, toolCounts, assessments, kills, breakers, vendors] = await Promise.all([
             db.agentPolicyCard.findMany({
-                where: { tenantId: ctx.tenantId },
+                where: { tenantId: ctx.tenantId, agentId: { in: ids } },
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, currentVersion: true },
             }),
@@ -1332,12 +1333,16 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 where: { tenantId: ctx.tenantId },
                 _count: { _all: true },
             }),
-            // Newest-completed first, so the first row seen per agent is the
-            // judgement in force. `staleAt` on THAT row is what makes an agent
-            // stale — an older run going stale says nothing about the current tier.
+            // Newest completed, ONE PER AGENT read above: the judgement in
+            // force. `staleAt` on THAT row is what makes an agent stale — an
+            // older run going stale says nothing about the current tier. It
+            // was the 500 newest assessments tenant-wide, so a tenant whose
+            // busiest agents were re-assessed often reported the rest as never
+            // assessed (#5140). Same shape as the register read.
             db.agentRiskAssessment.findMany({
-                where: { tenantId: ctx.tenantId, status: 'COMPLETED' },
-                orderBy: [{ completedAt: 'desc' }],
+                where: { tenantId: ctx.tenantId, agentId: { in: ids }, status: 'COMPLETED' },
+                orderBy: [{ agentId: 'asc' }, { completedAt: 'desc' }],
+                distinct: ['agentId'],
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, staleAt: true, staleTriggers: true },
             }),
@@ -1347,7 +1352,7 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 select: { agentId: true },
             }),
             db.agentCircuitBreaker.findMany({
-                where: { tenantId: ctx.tenantId },
+                where: { tenantId: ctx.tenantId, agentId: { in: ids } },
                 take: AGENT_ROW_CAP,
                 select: { agentId: true, state: true },
             }),
