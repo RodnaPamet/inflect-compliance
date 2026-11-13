@@ -5,7 +5,8 @@ await legal / compliance / finance sign-off (see [Open questions](#open-question
 **Owners:** Engineering (mechanism + inventory) · Compliance/Legal (regulatory
 periods + GDPR) · Finance (financial-record periods) · Product (tenant tiers).
 
-This document categorizes **every one of the 150 Prisma models**, declares the
+This document categorizes **every Prisma model** (`tests/guardrails/retention-policy-coverage.test.ts`
+fails CI on one left out, so no count is kept here to go stale), declares the
 retention behaviour that exists *today*, names who owns each undecided number,
 and enumerates the cleanup machinery. It is the companion to
 [`docs/encryption-data-protection.md`](encryption-data-protection.md) — that doc
@@ -25,17 +26,19 @@ covers confidentiality *at rest*; this one covers *lifecycle*.
   supported today (**it is not**, beyond `User.deletedAt` soft-delete) and what
   landing it would require — it does not implement it.
 
-## Category breakdown (149 models)
+## Category breakdown
 
-| Category | Count | One-line posture |
-|----------|-------|------------------|
-| Business record | 66 | Compliance domain (Risk/Control/Policy/Audit/Vendor/…). Retained indefinitely while the tenant is active; soft-delete + 90-day purge on the 12 `SOFT_DELETE_MODELS`; `retentionUntil` sweep on 2 (`Asset`, `Evidence`) — the only two with a writer. |
-| Configuration | 40 | Tenant/org structure, templates, framework reference data, integration + security settings. Lives with the tenant; purged on tenant deletion. |
-| Operational | 24 | Notifications, executions, snapshots, key-sequences, onboarding. No TTL today — prime candidates for time-boxed pruning. |
-| Security ephemeral | 13 | Tokens / sessions / credentials. `expiresAt`-driven; security lifetime, **not** a data-retention conversation. |
-| Regulatory artefact | 7 | `AuditLog`, `OrgAuditLog`, `ReadinessSnapshot` — immutable + hash-chained. Plus the NIS2 Article 23 incident triad (`Incident`, `IncidentNotification`, `IncidentTimelineEntry`) — incident + regulatory-notification records. Plus `AgentActionReceipt` — externally-verifiable, mediator-signed AI-agent action evidence. Retention is a **legal** decision; we do not delete by default. |
-| PII subject | 2 | `User`, `AuditorAccount` — the GDPR right-to-erasure surface. **Undefined** beyond soft-delete. |
-| Financial | 2 | `BillingAccount`, `BillingEvent` — typically a 7-year regulatory floor; **needs finance input**. |
+The inventory below is the count; this table is the posture of each category.
+
+| Category | One-line posture |
+|----------|------------------|
+| Business record | Compliance domain (Risk/Control/Policy/Audit/Vendor/…). Retained indefinitely while the tenant is active; soft-delete + 90-day purge on the 13 `SOFT_DELETE_MODELS`; `retentionUntil` sweep on 2 (`Asset`, `Evidence`) — the only two with a writer. |
+| Configuration | Tenant/org structure, templates, framework reference data, integration + security settings. Lives with the tenant; purged on tenant deletion. |
+| Operational | Notifications, executions, snapshots, key-sequences, onboarding. No TTL today — prime candidates for time-boxed pruning. |
+| Security ephemeral | Tokens / sessions / credentials. `expiresAt`-driven; security lifetime, **not** a data-retention conversation. |
+| Regulatory artefact | Among them `AuditLog`, `OrgAuditLog`, `ReadinessSnapshot` — immutable + hash-chained; the NIS2 Article 23 incident triad (`Incident`, `IncidentNotification`, `IncidentTimelineEntry`) — incident + regulatory-notification records; `AgentActionReceipt` — externally-verifiable, mediator-signed AI-agent action evidence; and the access-review campaign tables. The inventory lists every one. Retention is a **legal** decision; we do not delete by default. |
+| PII subject | Among them `User` and `AuditorAccount` — the GDPR right-to-erasure surface. **Undefined** beyond soft-delete. |
+| Financial | `BillingAccount`, `BillingEvent` — typically a 7-year regulatory floor; **needs finance input**. |
 
 ## Entity inventory
 
@@ -99,7 +102,7 @@ a `userId` but stores no contact PII).
 | `ControlTemplateRequirementLink` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `ControlTemplateTask` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `ControlTestEvidenceLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `ControlTestPlan` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
+| `ControlTestPlan` | Business record | No | Soft-delete (`deletedAt`, bulk delete) → hard-purged after 90 days by `data-lifecycle` (a `SOFT_DELETE_MODELS` member); otherwise cascade on parent/tenant delete | Indefinite while tenant active — review w/ compliance |
 | `ControlTestRun` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlTestStep` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `Cve` | Configuration | No | Global reference catalog — upserted daily by `nvd-cve-sync`; never tenant-deleted (no tenantId) | Indefinite global reference data (refreshed, not retained per-tenant) |
@@ -334,9 +337,9 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 - **Floor/ceiling:** none engineering-imposed. SOC 2 / ISO 27001 evidence is
   typically expected to be retained for the duration of the certification cycle
   plus a margin — a compliance decision.
-- **Mechanism:** soft-delete (`deletedAt`) on 12 models in `SOFT_DELETE_MODELS`
+- **Mechanism:** soft-delete (`deletedAt`) on 13 models in `SOFT_DELETE_MODELS`
   (`Asset, Risk, Control, Evidence, Policy, Vendor, FileRecord, Task, Finding,
-  Audit, AuditCycle, AuditPack`). Soft-deleted rows on **those** models are
+  Audit, AuditCycle, AuditPack, ControlTestPlan`). Soft-deleted rows on **those** models are
   hard-purged after a 90-day grace by `data-lifecycle`. 8 models carry a
   `retentionUntil` column (`Asset, Risk, Control, Evidence, Policy, Vendor,
   FileRecord, Task`) but only **2** are swept by `runRetentionSweep` —
@@ -462,7 +465,7 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 |----------------|----------|--------------|----------|
 | `retention-sweep` (daily 04:00 UTC) | `runEvidenceRetentionSweep` (`jobs/retention.ts`) | Archives `Evidence` where `retentionUntil < now`, not already archived, not soft-deleted. Idempotent. | Evidence only |
 | `daily-evidence-expiry` (daily 06:00 UTC) | `runDailyEvidenceExpiryNotifications` (`jobs/dailyEvidenceExpiry.ts`); reminder generation also in `runEvidenceRetentionNotifications` (`jobs/retention-notifications.ts`) | N-day-before (30/7/1) reminder tasks for expiring evidence, gated by `Tenant.reminderDaysBefore` (default 14). | Evidence only |
-| `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 12 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 12 soft-delete + 2 retention models |
+| `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 13 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 13 soft-delete + 2 retention models |
 
 ### Legacy access snapshots — a tenant setting, 90 days by default
 
