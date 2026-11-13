@@ -27,8 +27,12 @@ export function evalWorkflowRunsUrl(workflowFile: string): string {
 /** The value a switch variable must hold for the nightly to run. */
 export const EVAL_SWITCH_ON_VALUE = 'true';
 
-/** The shared key secret each nightly falls back to. */
-export const EVAL_SHARED_KEY_SECRET = 'ANTHROPIC_API_KEY';
+/**
+ * The shared key secret each nightly falls back to. These constants hold the
+ * NAMES of GitHub Actions secrets, which the card displays; no value is ever
+ * in this file, hence the secret-scan pragma on each line.
+ */
+export const EVAL_SHARED_KEY_SECRET = 'ANTHROPIC_API_KEY'; // pragma: allowlist secret -- a GitHub secret's NAME shown on the card, never a value
 
 export type EvalNightlyKey = 'garak' | 'inspect';
 
@@ -62,7 +66,7 @@ export const EVAL_NIGHTLIES: readonly EvalNightly[] = [
         sharedCapUsd: 5,
         budgetDecision: 'D-EV-11',
         switchVariable: 'GARAK_ENABLED',
-        dedicatedKeySecret: 'GARAK_CI_ANTHROPIC_KEY',
+        dedicatedKeySecret: 'GARAK_CI_ANTHROPIC_KEY', // pragma: allowlist secret -- a GitHub secret's NAME shown on the card, never a value
     },
     {
         key: 'inspect',
@@ -73,7 +77,7 @@ export const EVAL_NIGHTLIES: readonly EvalNightly[] = [
         sharedCapUsd: null,
         budgetDecision: 'D-EV-6',
         switchVariable: 'AGENT_EVALS_ENABLED',
-        dedicatedKeySecret: 'INSPECT_CI_ANTHROPIC_KEY',
+        dedicatedKeySecret: 'INSPECT_CI_ANTHROPIC_KEY', // pragma: allowlist secret -- a GitHub secret's NAME shown on the card, never a value
     },
 ];
 
