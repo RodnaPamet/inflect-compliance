@@ -275,7 +275,7 @@ describe('runSharePointDeltaSync — the branches a quiet drive takes', () => {
         // rather than loosened to `toMatchObject`: a quiet drive must report
         // zero of each, and a result that silently gained a non-zero counter
         // here would be a real finding.
-        expect(r).toEqual({ drivesSynced: 0, reimported: 0, staled: 0, failed: 0, tokensHeld: 0 });
+        expect(r).toEqual({ drivesSynced: 0, reimported: 0, staled: 0, failed: 0, tokensHeld: 0, drivesTruncated: 0 });
         expect(client.getDelta).not.toHaveBeenCalled();
     });
 

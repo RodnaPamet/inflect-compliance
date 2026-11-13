@@ -12,6 +12,8 @@
  */
 import {
     SharePointClient,
+    deltaQuery,
+    extractPageCursor,
     type SharePointConnectionConfig,
 } from '@/app-layer/integrations/providers/sharepoint/client';
 import { withApprovedDrives } from '../helpers/sharepoint-approved-drives';
@@ -161,12 +163,16 @@ describe('getDelta — walk termination', () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ value: [{ id: 'a' }] }));
         const res = await client(f).getDelta('drv1');
         expect(f).toHaveBeenCalledTimes(1);
-        expect(res).toEqual({ items: [{ id: 'a' }], deltaToken: undefined });
+        // `truncated: false` is part of the shape since #5555, and it is
+        // stated rather than loosened to `toMatchObject`: a walk that ended
+        // because Graph offered no further link is COMPLETE, and reporting it
+        // truncated would make every quiet drive look partially synced.
+        expect(res).toEqual({ items: [{ id: 'a' }], deltaToken: undefined, truncated: false });
     });
 
     it('tolerates a page with no `value` array', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ '@odata.deltaLink': 'https://graph/delta?token=T' }));
-        expect(await client(f).getDelta('drv1')).toEqual({ items: [], deltaToken: 'T' });
+        expect(await client(f).getDelta('drv1')).toEqual({ items: [], deltaToken: 'T', truncated: false });
     });
 
     it('yields no token when the deltaLink has no token param', async () => {
@@ -310,5 +316,88 @@ describe('change-notification subscriptions (SP-4)', () => {
     it('does NOT swallow a real delete failure', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({}, false, 500));
         await expect(client(f).deleteSubscription('sub-1')).rejects.toThrow('Graph subscription delete → 500');
+    });
+});
+
+
+// ─── A truncated delta walk can be resumed (#5555) ─────────────────────────
+
+describe('the cursor a truncated walk hands back', () => {
+    /**
+     * WHAT THIS IS ABOUT. `getDelta` set its return token only on the terminal
+     * `@odata.deltaLink`. A walk that ran out of pages therefore returned
+     * `deltaToken: undefined`, the caller stored nothing, and the drive
+     * re-walked from the beginning on every run — stopping at the same page and
+     * never checking a single item beyond it for a change or a deletion. The
+     * discarded `@odata.nextLink` was the only thing that could have resumed it.
+     */
+    it('reports truncation and returns the pending cursor, prefixed with its parameter', async () => {
+        // Every page offers another, so the walk can only end on the bound.
+        const f = jest.fn(async (url: string) =>
+            jsonRes({
+                value: [{ id: `i-${url.length}` }],
+                '@odata.nextLink': 'https://graph.microsoft.com/v1.0/drives/d1/root/delta?$skiptoken=PAGE9',
+            }),
+        );
+        const page = await reader(f).getDelta('d1', undefined, 3);
+
+        expect(page.truncated).toBe(true);
+        // PREFIXED: Graph names this parameter `$skiptoken` on a paging link and
+        // `token` on a deltaLink, and a bare value resumed under the wrong one
+        // is silently ignored — the walk restarts, which is the bug.
+        expect(page.deltaToken).toBe('skiptoken:PAGE9');
+        expect(f).toHaveBeenCalledTimes(3);
+    });
+
+    it('is NOT truncated when the walk reaches the deltaLink, and returns a delta token', async () => {
+        // The other side of the boundary: a completed walk must still hand back
+        // a plain delta token, or every ordinary sync would be reported partial.
+        const f = jest.fn(async () =>
+            jsonRes({
+                value: [{ id: 'a' }],
+                '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/drives/d1/root/delta?token=FINAL',
+            }),
+        );
+        const page = await reader(f).getDelta('d1', undefined, 3);
+
+        expect(page.truncated).toBe(false);
+        expect(page.deltaToken).toBe('FINAL');
+    });
+
+    it('resumes a stored skiptoken cursor under $skiptoken, not token', async () => {
+        // The parameter is DECLARED so `mock.calls[0][0]` is typed. A bare
+        // `async () => …` gives `mock.calls` an empty tuple, which jest runs
+        // happily and tsc refuses — a Typecheck failure, not a test failure.
+        const f = jest.fn(async (_url: string) => jsonRes({ value: [], '@odata.deltaLink': 'x?token=T' }));
+        await reader(f).getDelta('d1', 'skiptoken:PAGE9', 3);
+        const url = f.mock.calls[0][0];
+        expect(url).toContain('$skiptoken=PAGE9');
+        expect(url).not.toContain('?token=');
+    });
+
+    it('still resumes a BARE stored cursor as a delta token — no migration needed', async () => {
+        // Every cursor stored before #5555 is a bare delta token. Reading one as
+        // a skiptoken would restart the enumeration on every existing
+        // connection, which is a worse outage than the bug being fixed.
+        const f = jest.fn(async (_url: string) => jsonRes({ value: [], '@odata.deltaLink': 'x?token=T' }));
+        await reader(f).getDelta('d1', 'LEGACYTOKEN', 3);
+        expect(f.mock.calls[0][0]).toContain('token=LEGACYTOKEN');
+    });
+});
+
+describe('extractPageCursor / deltaQuery', () => {
+    it('reads either parameter Graph may use, and nothing when it uses neither', () => {
+        expect(extractPageCursor('https://g/x?$skiptoken=AB%2BC')).toBe('skiptoken:AB+C');
+        expect(extractPageCursor('https://g/x?token=XY')).toBe('token:XY');
+        // No cursor to store is not a failure — the caller is no worse off.
+        expect(extractPageCursor('https://g/x?$top=200')).toBeUndefined();
+    });
+
+    it('round-trips a cursor back onto the parameter it came from', () => {
+        expect(deltaQuery(extractPageCursor('https://g/x?$skiptoken=P9'))).toBe('?$skiptoken=P9');
+        expect(deltaQuery(extractPageCursor('https://g/x?token=T1'))).toBe('?token=T1');
+        // Bare = legacy delta token; absent = a first, uncursored walk.
+        expect(deltaQuery('LEGACY')).toBe('?token=LEGACY');
+        expect(deltaQuery(undefined)).toBe('');
     });
 });

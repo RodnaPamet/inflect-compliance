@@ -307,13 +307,38 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
      * terminal `@odata.deltaLink`, accumulating changed items. Returns the new
      * delta token to persist for the next incremental sync.
      */
-    async getDelta(driveId: string, deltaToken?: string, maxPages = 50): Promise<SpDeltaPage> {
-        let url = deltaToken
-            ? `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta?token=${encodeURIComponent(deltaToken)}`
-            : `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta`;
+    async getDelta(driveId: string, cursor?: string, maxPages = 50): Promise<SpDeltaPage> {
+        let url = `${GRAPH}/drives/${encodeURIComponent(driveId)}/root/delta${deltaQuery(cursor)}`;
         const items: SpDriveItem[] = [];
         let newToken: string | undefined;
-        for (let pages = 0; url && pages < maxPages; pages++) {
+        let truncated = false;
+        for (let pages = 0; ; pages++) {
+            if (!url) break;
+            if (pages >= maxPages) {
+                // ═══ OUT OF PAGES, NOT OUT OF CHANGES (#5555) ═══
+                //
+                // This used to just fall out of the loop and return
+                // `deltaToken: undefined`, so the caller stored nothing —
+                // correctly, because an unfinished walk has no valid DELTA
+                // token. But the unconsumed `@odata.nextLink` was discarded
+                // too, leaving nothing to resume from. A library past about
+                // 10,000 items therefore re-walked from the beginning on every
+                // run, stopped at the same page, and never checked a single
+                // item beyond it for a change or a deletion — silently, for the
+                // life of the connection.
+                //
+                // So the pending link's cursor is returned instead, PREFIXED
+                // with the query parameter it belongs to, and `truncated` says
+                // the walk is incomplete so the caller does not report a clean
+                // sync. Only the opaque token is kept: a stored URL would be a
+                // request target read back from the database and fetched with a
+                // bearer token attached, which is the hazard `listChildren`
+                // already validates against ("its host decides where the bearer
+                // token goes").
+                truncated = true;
+                newToken = extractPageCursor(url);
+                break;
+            }
             const body = await this.graphGet<{
                 value?: SpDriveItem[];
                 '@odata.nextLink'?: string;
@@ -326,7 +351,7 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
             }
             url = body['@odata.nextLink'] ?? '';
         }
-        return { items, deltaToken: newToken };
+        return { items, deltaToken: newToken, truncated };
     }
 
     /**
@@ -418,4 +443,47 @@ export class SharePointClient extends BaseIntegrationClient<SharePointConnection
 export function extractDeltaToken(deltaLink: string): string | undefined {
     const m = deltaLink.match(/[?&]token=([^&]+)/);
     return m ? decodeURIComponent(m[1]) : undefined;
+}
+
+/**
+ * The cursor of a pending `@odata.nextLink`, PREFIXED with the query parameter
+ * it belongs to (#5555).
+ *
+ * Graph is not consistent about the name: a drive `delta` link carries `token`,
+ * while its paging links carry `$skiptoken` (see
+ * `tests/fixtures/sharepoint/children.json`). A bare token would therefore be
+ * ambiguous — resumed under the wrong parameter it is silently ignored and the
+ * walk restarts from the beginning, which is the bug this is fixing. So the
+ * name travels with the value and `deltaQuery` below puts it back.
+ *
+ * Only the token is kept, never the URL: a stored URL is a request target read
+ * back from the database and then fetched with a bearer token attached.
+ *
+ * Returns undefined when neither parameter is present — then there is no cursor
+ * to store, and the caller is no worse off than before.
+ */
+export function extractPageCursor(nextLink: string): string | undefined {
+    const skip = nextLink.match(/[?&]\$skiptoken=([^&]+)/);
+    if (skip) return `skiptoken:${decodeURIComponent(skip[1])}`;
+    const tok = nextLink.match(/[?&]token=([^&]+)/);
+    if (tok) return `token:${decodeURIComponent(tok[1])}`;
+    return undefined;
+}
+
+/**
+ * The query string for a stored cursor.
+ *
+ * A BARE value is a delta token, which is what every cursor stored before
+ * #5555 is — so existing connections keep working with no migration and no
+ * special case at the call site.
+ */
+export function deltaQuery(cursor?: string): string {
+    if (!cursor) return '';
+    if (cursor.startsWith('skiptoken:')) {
+        return `?$skiptoken=${encodeURIComponent(cursor.slice('skiptoken:'.length))}`;
+    }
+    if (cursor.startsWith('token:')) {
+        return `?token=${encodeURIComponent(cursor.slice('token:'.length))}`;
+    }
+    return `?token=${encodeURIComponent(cursor)}`;
 }
