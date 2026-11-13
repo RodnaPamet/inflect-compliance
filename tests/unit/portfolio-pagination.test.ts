@@ -97,14 +97,43 @@ beforeEach(() => {
 
 // ── Controls ───────────────────────────────────────────────────────────
 
+type ControlFixture = { id: string; name: string; code: string | null; status: string; updatedAt: Date };
+
+/**
+ * Answer each per-tenant, per-bucket read from a fixture list (#5209): the
+ * rows of that tenant whose status is in the bucket the read asks for,
+ * newest first, up to its `take`. The reads are one per priority bucket, so
+ * answering by call order would hand a row to the wrong bucket.
+ */
+function controlsByTenant(fixture: Record<string, ControlFixture[]>) {
+    controlFindManyMock.mockImplementation(async (q: CapturedQuery) => {
+        const where = q.where as {
+            tenantId: string;
+            AND?: Array<{ status?: { in: string[] } }>;
+            status?: { notIn: string[] };
+        };
+        // A bucket read names its statuses; a read with no bucket (one
+        // un-bucketed query per tenant) is answered across every status it
+        // does not exclude, so the fixture answers either shape honestly.
+        const inBucket = (status: string) =>
+            where.AND?.[0]?.status
+                ? where.AND[0].status.in.includes(status)
+                : !(where.status?.notIn ?? []).includes(status);
+        return (fixture[where.tenantId] ?? [])
+            .filter((c) => inBucket(c.status))
+            .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+            .slice(0, q.take);
+    });
+}
+
 describe('listNonPerformingControls — cursor pagination', () => {
     it('first page (no cursor) does not apply a cursor predicate', async () => {
         controlFindManyMock.mockResolvedValue([]);
 
         await listNonPerformingControls(ctxFor());
 
-        // Both tenants queried.
-        expect(controlFindManyMock).toHaveBeenCalledTimes(2);
+        // Both tenants queried, once per priority bucket (#5209).
+        expect(controlFindManyMock).toHaveBeenCalledTimes(2 * 5);
         // No `OR` cursor clause merged in.
         const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where;
         expect(where).not.toHaveProperty('OR');
@@ -117,8 +146,8 @@ describe('listNonPerformingControls — cursor pagination', () => {
 
     it('returns rows + nextCursor when there are more rows than the limit', async () => {
         // Each tenant returns one row. limit=1 → page = 1 row + 1 leftover.
-        controlFindManyMock
-            .mockResolvedValueOnce([
+        controlsByTenant({
+            't-1': [
                 {
                     id: 'c-1',
                     name: 'High priority alpha',
@@ -126,8 +155,8 @@ describe('listNonPerformingControls — cursor pagination', () => {
                     status: 'NEEDS_REVIEW',
                     updatedAt: new Date('2026-04-25T00:00:00Z'),
                 },
-            ])
-            .mockResolvedValueOnce([
+            ],
+            't-2': [
                 {
                     id: 'c-2',
                     name: 'High priority beta',
@@ -135,7 +164,8 @@ describe('listNonPerformingControls — cursor pagination', () => {
                     status: 'NEEDS_REVIEW',
                     updatedAt: new Date('2026-04-24T00:00:00Z'),
                 },
-            ]);
+            ],
+        });
 
         const result = await listNonPerformingControls(ctxFor(), { limit: 1 });
 
@@ -161,10 +191,14 @@ describe('listNonPerformingControls — cursor pagination', () => {
         controlFindManyMock.mockResolvedValue([]);
         await listNonPerformingControls(ctxFor(), { cursor, limit: 50 });
 
-        // Per-tenant where now carries the cursor compound predicate.
-        const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where;
-        expect(where).toHaveProperty('OR');
-        const orClauses = (where.OR as Array<Record<string, unknown>>);
+        // Per-tenant where now carries the cursor compound predicate, ANDed
+        // with the read's priority bucket.
+        const where = (controlFindManyMock.mock.calls[0][0] as CapturedQuery).where as {
+            AND: Array<Record<string, unknown>>;
+        };
+        const cursorClause = where.AND[1];
+        expect(cursorClause).toHaveProperty('OR');
+        const orClauses = (cursorClause.OR as Array<Record<string, unknown>>);
         // Exactly three branches: lower priority statuses; same priority
         // older updatedAt; same priority same updatedAt larger id.
         expect(orClauses).toHaveLength(3);
@@ -210,9 +244,34 @@ describe('listNonPerformingControls — cursor pagination', () => {
         expect(where).not.toHaveProperty('OR');
     });
 
+    it('does not lose an older high-priority control behind newer low-priority ones (#5209)', async () => {
+        // One tenant: 30 freshly touched IMPLEMENTING controls and one
+        // NEEDS_REVIEW control untouched for months. The per-tenant read used
+        // to order by updatedAt alone with a 26-row quota, so the NEEDS_REVIEW
+        // control never reached the merge — on any page — although the merge
+        // ranks it first.
+        const fresh = Array.from({ length: 30 }, (_, i) => ({
+            id: `low-${i}`,
+            name: `Low ${i}`,
+            code: null,
+            status: 'IMPLEMENTING',
+            updatedAt: new Date(Date.UTC(2026, 9, 1 + i)),
+        }));
+        controlsByTenant({
+            't-1': [
+                ...fresh,
+                { id: 'old-high', name: 'Old high', code: null, status: 'NEEDS_REVIEW', updatedAt: new Date('2026-01-01T00:00:00Z') },
+            ],
+        });
+
+        const result = await listNonPerformingControls(ctxFor(), { limit: 1 });
+
+        expect(result.rows.map((r) => r.controlId)).toEqual(['old-high']);
+    });
+
     it('preserves tenant attribution on every returned row', async () => {
-        controlFindManyMock
-            .mockResolvedValueOnce([
+        controlsByTenant({
+            't-1': [
                 {
                     id: 'c-1',
                     name: 'A',
@@ -220,8 +279,8 @@ describe('listNonPerformingControls — cursor pagination', () => {
                     status: 'NOT_STARTED',
                     updatedAt: new Date('2026-04-20T00:00:00Z'),
                 },
-            ])
-            .mockResolvedValueOnce([
+            ],
+            't-2': [
                 {
                     id: 'c-2',
                     name: 'B',
@@ -229,7 +288,8 @@ describe('listNonPerformingControls — cursor pagination', () => {
                     status: 'NOT_STARTED',
                     updatedAt: new Date('2026-04-21T00:00:00Z'),
                 },
-            ]);
+            ],
+        });
 
         const result = await listNonPerformingControls(ctxFor());
 

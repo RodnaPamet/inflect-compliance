@@ -15429,6 +15429,7 @@
       "statusDraft": "Draft",
       "statusSubmitted": "Submitted",
       "statusRejected": "Rejected",
+      "statusNeedsReview": "Needs review",
       "emptyTitle": "No overdue evidence",
       "emptyDesc": "No evidence item awaiting approval in any of this organization's workspaces is past its review date.",
       "loadMore": "Load more evidence",

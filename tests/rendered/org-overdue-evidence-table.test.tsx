@@ -45,7 +45,7 @@ jest.mock('next-intl', () => {
 });
 
 import { EvidenceTable } from '@/app/org/[orgSlug]/(app)/evidence/EvidenceTable';
-import type { OverdueEvidenceRow } from '@/app-layer/schemas/portfolio';
+import { OverdueEvidenceRowSchema, type OverdueEvidenceRow } from '@/app-layer/schemas/portfolio';
 
 const row = (n: number, daysOverdue: number): OverdueEvidenceRow => ({
     evidenceId: `e-${n}`,
@@ -66,6 +66,18 @@ describe('the overdue-evidence list', () => {
         expect(within(table).getByText('1 day overdue')).toBeInTheDocument();
         expect(within(table).getByText('12 days overdue')).toBeInTheDocument();
         expect(within(table).queryByText(/\d+d overdue/)).toBeNull();
+    });
+
+    it('labels NEEDS_REVIEW — the status most overdue evidence carries (#5205)', () => {
+        // The stale-review sweep moves evidence past its review date to
+        // NEEDS_REVIEW, so it is the common case here. The row schema refused
+        // it and the table had no label or badge for it.
+        const r: OverdueEvidenceRow = { ...row(1, 9), status: 'NEEDS_REVIEW' };
+        expect(OverdueEvidenceRowSchema.safeParse(r).success).toBe(true);
+
+        render(<EvidenceTable rows={[r]} nextCursor={null} orgSlug="acme" />);
+
+        expect(within(screen.getByTestId('org-evidence-table')).getByText('Needs review')).toBeInTheDocument();
     });
 
     it('names the workspace column, and says it shows the rows loaded so far', () => {
