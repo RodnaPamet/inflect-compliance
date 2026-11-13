@@ -26,27 +26,10 @@ import {
     PII_GLOBAL_MODELS,
     PII_TENANT_SCOPED_MODELS,
 } from '@/lib/security/pii-middleware';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { parseSchemaModels } from '../helpers/prisma-schema-models';
-import { REPO_ROOT, repoRelativeFiles } from '../helpers/repo-files';
 
 const MODELS = parseSchemaModels();
 const byName = new Map(MODELS.map((m) => [m.name, m]));
-
-/**
- * One model's raw schema text. `SchemaModel` exposes field NAMES but not their
- * `@map` targets, and the physical column is what raw SQL needs.
- */
-function modelBlock(name: string): string {
-    const schema = repoRelativeFiles()
-        .filter((rel) => /^prisma\/schema\/.*\.prisma$/.test(rel))
-        .map((rel) => readFileSync(join(REPO_ROOT, rel), 'utf8'))
-        .join('\n');
-    const m = new RegExp(`^model ${name} \\{([\\s\\S]*?)^\\}`, 'm').exec(schema);
-    if (!m) throw new Error(`no model block for ${name}`);
-    return m[1];
-}
 
 const PII_MODELS = Object.keys(PII_ENCRYPTED_COLUMNS);
 const CLASSIFIED = [...PII_TENANT_SCOPED_MODELS, ...PII_GLOBAL_MODELS];
@@ -110,17 +93,16 @@ describe('the classification matches the live schema', () => {
     it('every named encrypted column is a real PHYSICAL column', () => {
         // The sweep rewrites through RAW SQL, so these names must be database
         // columns, not Prisma field names — and for the `mapped: true` models
-        // they differ: `User.email String @map("emailEncrypted")` means the
-        // field is `email` and the column is `emailEncrypted`. Checking
-        // `scalarFieldNames` therefore asserts the wrong thing, and said
-        // `User.emailEncrypted` did not exist when it does.
+        // they differ: `User.email String @map("emailEncrypted")` is the field
+        // `email` and the column `emailEncrypted`. Checking field NAMES
+        // therefore asserts the wrong thing, and claimed `User.emailEncrypted`
+        // did not exist when it does. `dbColumn` is the parser's answer to
+        // exactly that question.
         for (const [name, columns] of Object.entries(PII_ENCRYPTED_COLUMNS)) {
             expect({ name, inSchema: byName.has(name) }).toEqual({ name, inSchema: true });
-            const block = modelBlock(name);
+            const physical = new Set(byName.get(name)!.fields.map((f) => f.dbColumn));
             for (const column of columns) {
-                const asField = new RegExp(`^\\s+${column}\\s`, 'm').test(block);
-                const asMapTarget = block.includes(`@map("${column}")`);
-                expect({ name, column, physical: asField || asMapTarget })
+                expect({ name, column, physical: physical.has(column) })
                     .toEqual({ name, column, physical: true });
             }
         }

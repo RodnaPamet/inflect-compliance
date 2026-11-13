@@ -51,6 +51,19 @@ export interface SchemaField {
     isList: boolean;
     /** True if the declared type carried a trailing `?`. */
     isOptional: boolean;
+    /**
+     * The PHYSICAL column, i.e. the field's `@map("…")` target when it has one
+     * and its own name otherwise.
+     *
+     * Needed by anything that compares against the database rather than the
+     * Prisma client — raw SQL, `information_schema`, a migration — because the
+     * two names differ wherever `@map` is used: `User.email String
+     * @map("emailEncrypted")` is the field `email` and the column
+     * `emailEncrypted`. Parsed here so a caller does not re-read the schema
+     * text to find it (#5083/#5070: doing that in a guard added an
+     * un-analysable whole-file read to the Class D ratchet).
+     */
+    dbColumn: string;
 }
 
 /**
@@ -285,11 +298,16 @@ function parseModelBody(name: string, body: string): SchemaModel {
         // "line" is not a field declaration.
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(typeToken)) continue;
 
+        // `@map("…")` on the FIELD — the physical column. Matched on this
+        // line only, so a model-level `@@map` (two @s) cannot be mistaken for
+        // it: the regex requires a single `@` preceded by whitespace.
+        const mapMatch = /(?:^|\s)@map\("([^"]+)"\)/.exec(line);
         fields.push({
             name: fieldName,
             type: typeToken,
             isList,
             isOptional,
+            dbColumn: mapMatch ? mapMatch[1] : fieldName,
         });
 
         // Field-level `@id` / `@unique`. Match on word boundary so
