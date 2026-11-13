@@ -662,7 +662,9 @@ holds the census.
 
 ### Registration intake from a shadow-agent finding
 
-A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding into the
+A person holding `admin.agent_registry` takes a `SHADOW_AGENT` finding (or an
+`UNREGISTERED_IDENTITY` one, which registers the same way; see
+[`docs/agent-harness-contract.md`](agent-harness-contract.md#transport)) into the
 register with `POST /api/t/:slug/admin/agents/intake` (a literal
 `requirePermission('admin.agent_registry')`; `registerShadowAgent` in
 `src/app-layer/usecases/agent-registration-intake.ts`). One transaction creates
@@ -1228,7 +1230,8 @@ environment enumerates agent-shaped principals (IdP registrations and service
 principals, secrets inventories, MCP servers, runtimes, CI/CD, the Inflect
 register), scores each on the ladder and returns a signed report. Inflect
 verifies and ingests it, reconciles it against the register, and raises
-SHADOW_AGENT, UNPINNED_WRITE_TOOL, LEVEL_DROP and HARNESS_SHORTFALL findings. The
+SHADOW_AGENT, UNREGISTERED_IDENTITY, UNPINNED_WRITE_TOOL, LEVEL_DROP and
+HARNESS_SHORTFALL findings. The
 scanner never calls a tool, never records content, never moves a secret, and
 never claims completeness it did not establish.
 

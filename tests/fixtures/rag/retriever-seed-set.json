@@ -1,8 +1,8 @@
 {
   "id": "retriever-seed",
-  "version": "1",
-  "provenance": "SYNTHETIC. The questions were written by hand for this benchmark, in the style of an inbound security questionnaire, and each names the corpus chunks that answer it. The corpus is the seed's own policy text (the starter and flagship templates in prisma/seed.ts, and the ciso-toolkit fixture it loads), chunked by scripts/retriever-benchmark/corpus.ts. No customer or tenant data.",
-  "contentHash": "sha256:6c1f7d2585a0845c113b2f79d1063ff57f3133e63a0c66621e2cb2dcf7a8a8d4",
+  "version": "2",
+  "provenance": "SYNTHETIC. The questions were written by hand for this benchmark, in the style of an inbound security questionnaire, and each names the corpus chunks that answer it. The corpus is the seed's own policy text (the starter and flagship templates in prisma/seed.ts, and the ciso-toolkit fixture it loads), chunked by scripts/retriever-benchmark/corpus.ts. No customer or tenant data. The 50 cases with locale \"bg\" translate every fourth English case (q004 to q200) into Bulgarian and keep its relevance labels, so they measure cross-lingual retrieval: a Bulgarian question over the English corpus. Translated by the assistant on 2026-11-13; for review by a Bulgarian speaker.",
+  "contentHash": "sha256:297f425a247bb6f6800528187765f404fee8e9f879c41f2727897fe11573e92f",
   "corpus": [
     {
       "id": "asset-management-policy/purpose",
@@ -4225,6 +4225,513 @@
       "relevant": [
         "backup-and-recovery-policy/requirements-testing-and-validation"
       ]
+    },
+    {
+      "id": "bg-q004",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Има ли правила за връщане на служебно оборудване и за прехвърляне на активи между служители?",
+      "relevant": [
+        "asset-management-policy/policy-statements-3"
+      ],
+      "translationOf": "q004"
+    },
+    {
+      "id": "bg-q008",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Може ли да се отмени срокът за отстраняване на уязвимост и кой трябва да одобри такова изключение?",
+      "relevant": [
+        "vulnerability-management-policy/policy-statements-4"
+      ],
+      "translationOf": "q008"
+    },
+    {
+      "id": "bg-q012",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Преглежда ли се изходният код от колеги и спират ли автоматичните проверки за сигурност процеса на компилиране?",
+      "relevant": [
+        "secure-development-sdlc-policy/policy-statements-2"
+      ],
+      "translationOf": "q012"
+    },
+    {
+      "id": "bg-q016",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Сканирате ли хранилищата си за тайни, качени по погрешка?",
+      "relevant": [
+        "secure-development-sdlc-policy/policy-statements-2"
+      ],
+      "translationOf": "q016"
+    },
+    {
+      "id": "bg-q020",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Използват ли лаптопите и USB устройствата с чувствителни данни пълно криптиране на диска?",
+      "relevant": [
+        "data-protection-and-encryption-policy/policy-statements-4"
+      ],
+      "translationOf": "q020"
+    },
+    {
+      "id": "bg-q024",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Могат ли фирмените данни да бъдат изтрити дистанционно от изгубен телефон или при напускане на служител?",
+      "relevant": [
+        "mobile-device-and-byod-policy/policy-statements-2"
+      ],
+      "translationOf": "q024"
+    },
+    {
+      "id": "bg-q028",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Ограничавате ли събираните лични данни до необходимото за ясно посочена цел?",
+      "relevant": [
+        "privacy-policy/policy-statements-1"
+      ],
+      "translationOf": "q028"
+    },
+    {
+      "id": "bg-q032",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какви принципи ръководят обработването на лична информация от вас?",
+      "relevant": [
+        "privacy-policy/purpose"
+      ],
+      "translationOf": "q032"
+    },
+    {
+      "id": "bg-q036",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Преглеждат ли се редовно констатациите за заплахи със заинтересованите страни?",
+      "relevant": [
+        "threat-intelligence-and-management-policy/policy-statements-4"
+      ],
+      "translationOf": "q036"
+    },
+    {
+      "id": "bg-q040",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как се преглежда и подобрява програмата за сигурност с течение на времето?",
+      "relevant": [
+        "security-governance-policy/policy-statements-4"
+      ],
+      "translationOf": "q040"
+    },
+    {
+      "id": "bg-q044",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Прилагат ли се правилата ви за съхранение и към резервните копия и към данните при доставчици?",
+      "relevant": [
+        "data-retention-and-disposal-policy/policy-statements-4"
+      ],
+      "translationOf": "q044"
+    },
+    {
+      "id": "bg-q048",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какво се случва след приключването на пробив — предприемат ли се коригиращи действия?",
+      "relevant": [
+        "data-breach-notification-policy/policy-statements-4"
+      ],
+      "translationOf": "q048"
+    },
+    {
+      "id": "bg-q052",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Събирате ли и съхранявате ли доказателства за съответствие?",
+      "relevant": [
+        "compliance-and-audit-management-policy/policy-statements-4"
+      ],
+      "translationOf": "q052"
+    },
+    {
+      "id": "bg-q056",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как одобрените политики стават достъпни за служителите?",
+      "relevant": [
+        "policy-management-policy/policy-statements-2"
+      ],
+      "translationOf": "q056"
+    },
+    {
+      "id": "bg-q060",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Защитени ли са данните в облака и могат ли да бъдат възстановени?",
+      "relevant": [
+        "cloud-security-policy/policy-statements-4"
+      ],
+      "translationOf": "q060"
+    },
+    {
+      "id": "bg-q064",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какво трябва да направи служител с имейл, който смята за фишинг?",
+      "relevant": [
+        "acceptable-use-policy/use-of-email-and-other-electronic-communication"
+      ],
+      "translationOf": "q064"
+    },
+    {
+      "id": "bg-q068",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Заключват ли се работните станции автоматично, когато са оставени без действие?",
+      "relevant": [
+        "acceptable-use-policy/clear-screen-policy"
+      ],
+      "translationOf": "q068"
+    },
+    {
+      "id": "bg-q072",
+      "kind": "task",
+      "locale": "bg",
+      "question": "През какви етапи на жизнения цикъл минава един документ по сигурността?",
+      "relevant": [
+        "document-control-policy/requirements-document-lifecycle-management"
+      ],
+      "translationOf": "q072"
+    },
+    {
+      "id": "bg-q076",
+      "kind": "task",
+      "locale": "bg",
+      "question": "На какъв език и по какъв шаблон трябва да се пишат документите по сигурността?",
+      "relevant": [
+        "document-control-policy/requirements-document-structure"
+      ],
+      "translationOf": "q076"
+    },
+    {
+      "id": "bg-q080",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какви са стъпките на процеса ви за реагиране при инциденти?",
+      "relevant": [
+        "information-security-policy/procedures-incident-response",
+        "incident-response-and-communications-policy/procedures-incident-response-process"
+      ],
+      "translationOf": "q080"
+    },
+    {
+      "id": "bg-q084",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как се изчисляват нивата на риск?",
+      "relevant": [
+        "risk-management-policy/requirements-risk-assessment"
+      ],
+      "translationOf": "q084"
+    },
+    {
+      "id": "bg-q088",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Колко дълго се съхраняват плановете за третиране на риска?",
+      "relevant": [
+        "risk-management-policy/evidence-to-retain"
+      ],
+      "translationOf": "q088"
+    },
+    {
+      "id": "bg-q092",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Опишете как унищожавате сигурно оборудване, съдържало чувствителни данни.",
+      "relevant": [
+        "asset-and-data-management-policy/procedures-asset-disposal-process"
+      ],
+      "translationOf": "q092"
+    },
+    {
+      "id": "bg-q096",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как наблюдавате представянето на доставчиците си по отношение на сигурността?",
+      "relevant": [
+        "third-party-and-external-systems-policy/requirements-ongoing-monitoring"
+      ],
+      "translationOf": "q096"
+    },
+    {
+      "id": "bg-q100",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Разрешени ли са споделени или общи потребителски акаунти?",
+      "relevant": [
+        "identity-and-access-management-policy/requirements-identity-management"
+      ],
+      "translationOf": "q100"
+    },
+    {
+      "id": "bg-q104",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какви проверки се извършват преди създаването на нов потребителски акаунт?",
+      "relevant": [
+        "identity-and-access-management-policy/procedures-user-provisioning"
+      ],
+      "translationOf": "q104"
+    },
+    {
+      "id": "bg-q108",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Премахва ли се достъпът, когато човек вече не се нуждае от него?",
+      "relevant": [
+        "identity-and-access-management-policy/requirements-access-control",
+        "information-security-policy/procedures-access-control"
+      ],
+      "translationOf": "q108"
+    },
+    {
+      "id": "bg-q112",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Наблюдава ли се мрежовият трафик непрекъснато?",
+      "relevant": [
+        "network-security-policy/requirements-network-monitoring"
+      ],
+      "translationOf": "q112"
+    },
+    {
+      "id": "bg-q116",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Преглежда ли се редовно класификацията на данните и съобщава ли се на служителите?",
+      "relevant": [
+        "cryptography-and-data-protection-policy/requirements-data-classification"
+      ],
+      "translationOf": "q116"
+    },
+    {
+      "id": "bg-q120",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Трябва ли промените да бъдат тествани и да имат план за връщане назад, преди да бъдат пуснати?",
+      "relevant": [
+        "operations-security-policy/requirements-change-management"
+      ],
+      "translationOf": "q120"
+    },
+    {
+      "id": "bg-q124",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как приоритизирате уязвимостите за отстраняване?",
+      "relevant": [
+        "operations-security-policy/procedures-vulnerability-management-process",
+        "vulnerability-management-policy/policy-statements-2"
+      ],
+      "translationOf": "q124"
+    },
+    {
+      "id": "bg-q128",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Определили ли сте цели за време на възстановяване и за точка на възстановяване?",
+      "relevant": [
+        "backup-and-recovery-policy/requirements-recovery-requirements",
+        "business-continuity-and-dr-policy/requirements-business-continuity-planning"
+      ],
+      "translationOf": "q128"
+    },
+    {
+      "id": "bg-q132",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Ограничен ли е и наблюдава ли се достъпът до резервните копия?",
+      "relevant": [
+        "backup-and-recovery-policy/requirements-backup-security"
+      ],
+      "translationOf": "q132"
+    },
+    {
+      "id": "bg-q136",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Преглеждат ли се редовно журналите за събития, свързани със сигурността?",
+      "relevant": [
+        "logging-and-monitoring-policy/requirements-log-analysis"
+      ],
+      "translationOf": "q136"
+    },
+    {
+      "id": "bg-q140",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Инсталиран ли е антивирусен софтуер на всички крайни устройства?",
+      "relevant": [
+        "endpoint-security-policy/requirements-malware-protection"
+      ],
+      "translationOf": "q140"
+    },
+    {
+      "id": "bg-q144",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как постъпвате с устройства, които престанат да отговарят на изискванията?",
+      "relevant": [
+        "endpoint-security-policy/procedures-device-compliance-process"
+      ],
+      "translationOf": "q144"
+    },
+    {
+      "id": "bg-q148",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Получават ли служителите на високорискови длъжности специализирано обучение по сигурност?",
+      "relevant": [
+        "security-awareness-and-hr-policy/requirements-role-based-training"
+      ],
+      "translationOf": "q148"
+    },
+    {
+      "id": "bg-q152",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Измервате ли ефективността на обученията за осведоменост?",
+      "relevant": [
+        "security-awareness-and-hr-policy/requirements-security-awareness-program"
+      ],
+      "translationOf": "q152"
+    },
+    {
+      "id": "bg-q156",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Провеждате ли прегледи след инциденти и действате ли според извлечените поуки?",
+      "relevant": [
+        "incident-response-and-communications-policy/requirements-post-incident",
+        "incident-response-and-communications-policy/procedures-post-incident-process",
+        "data-breach-notification-policy/policy-statements-4"
+      ],
+      "translationOf": "q156"
+    },
+    {
+      "id": "bg-q160",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Извършили ли сте анализ на въздействието върху дейността?",
+      "relevant": [
+        "business-continuity-and-dr-policy/requirements-business-continuity-planning"
+      ],
+      "translationOf": "q160"
+    },
+    {
+      "id": "bg-q164",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как определяте критичните бизнес процеси и техните зависимости?",
+      "relevant": [
+        "business-continuity-and-dr-policy/procedures-business-continuity-planning-process"
+      ],
+      "translationOf": "q164"
+    },
+    {
+      "id": "bg-q168",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Опишете стъпките на вашата оценка на риска.",
+      "relevant": [
+        "risk-management-policy/procedures-risk-assessment-process",
+        "information-security-policy/procedures-risk-assessment"
+      ],
+      "translationOf": "q168"
+    },
+    {
+      "id": "bg-q172",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Опишете процеса си за наблюдение на сигурността.",
+      "relevant": [
+        "logging-and-monitoring-policy/procedures-security-monitoring-process"
+      ],
+      "translationOf": "q172"
+    },
+    {
+      "id": "bg-q176",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как откривате и разпределяте по приоритет инцидентите със сигурността?",
+      "relevant": [
+        "incident-response-and-communications-policy/procedures-incident-detection-process"
+      ],
+      "translationOf": "q176"
+    },
+    {
+      "id": "bg-q180",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как проверявате, че даден пач е инсталиран успешно?",
+      "relevant": [
+        "operations-security-policy/procedures-patch-management-process"
+      ],
+      "translationOf": "q180"
+    },
+    {
+      "id": "bg-q184",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Свързана ли е всяка потребителска самоличност с реален човек и управлява ли се през целия ѝ жизнен цикъл?",
+      "relevant": [
+        "identity-and-access-management-policy/requirements-identity-management"
+      ],
+      "translationOf": "q184"
+    },
+    {
+      "id": "bg-q188",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Как се постъпва при неспазване на политиката за сигурност?",
+      "relevant": [
+        "information-security-policy/requirements-compliance-and-monitoring"
+      ],
+      "translationOf": "q188"
+    },
+    {
+      "id": "bg-q192",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Каква е целта на програмата ви за управление на уязвимостите?",
+      "relevant": [
+        "vulnerability-management-policy/purpose"
+      ],
+      "translationOf": "q192"
+    },
+    {
+      "id": "bg-q196",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Какво обхваща политиката ви за управление на сигурността?",
+      "relevant": [
+        "security-governance-policy/scope"
+      ],
+      "translationOf": "q196"
+    },
+    {
+      "id": "bg-q200",
+      "kind": "task",
+      "locale": "bg",
+      "question": "Документират ли се и преглеждат ли се резултатите от тестовете за възстановяване?",
+      "relevant": [
+        "backup-and-recovery-policy/requirements-testing-and-validation"
+      ],
+      "translationOf": "q200"
     }
   ]
 }

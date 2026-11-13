@@ -1,6 +1,11 @@
 /**
  * What the D-L4-3 benchmark compares, and the engine it runs them on.
  *
+ * D-L4-3 as amended 2026-11-13 (owner): Layer 4 compares small open models
+ * only, multilingual among them, because the product serves Bulgarian as well
+ * as English. Nemotron is not a Layer 4 candidate; it stays only in the
+ * retriever's optional Layer 5 phase (a GPU engine), so it is not listed here.
+ *
  * Changing this file changes the benchmark, so it is reviewed like code: a new
  * candidate, a new image digest or a new margin is a diff somebody reads before
  * the workflow is dispatched, never an input typed into the dispatch form.
@@ -38,7 +43,8 @@ export interface EmbedCandidate {
      */
     readonly queryPrefix: string;
     readonly passagePrefix: string;
-    readonly nemotron: boolean;
+    /** Trained for questions beyond English (the Bulgarian slice). */
+    readonly multilingual: boolean;
 }
 
 export interface RerankCandidate {
@@ -47,19 +53,10 @@ export interface RerankCandidate {
     /** As `EmbedCandidate.revision`. */
     readonly revision: string | null;
     readonly parametersM: number;
-    readonly nemotron: boolean;
+    readonly multilingual: boolean;
 }
 
 export const EMBED_CANDIDATES: readonly EmbedCandidate[] = [
-    {
-        id: 'nemotron-embed-1b',
-        model: 'nvidia/llama-nemotron-embed-1b-v2',
-        revision: null,
-        parametersM: 1236,
-        queryPrefix: 'query: ',
-        passagePrefix: 'passage: ',
-        nemotron: true,
-    },
     {
         id: 'bge-small-en',
         model: 'BAAI/bge-small-en-v1.5',
@@ -67,7 +64,7 @@ export const EMBED_CANDIDATES: readonly EmbedCandidate[] = [
         parametersM: 33,
         queryPrefix: 'Represent this sentence for searching relevant passages: ',
         passagePrefix: '',
-        nemotron: false,
+        multilingual: false,
     },
     {
         id: 'e5-small',
@@ -76,24 +73,33 @@ export const EMBED_CANDIDATES: readonly EmbedCandidate[] = [
         parametersM: 33,
         queryPrefix: 'query: ',
         passagePrefix: 'passage: ',
-        nemotron: false,
+        multilingual: false,
+    },
+    {
+        id: 'multilingual-e5-small',
+        model: 'intfloat/multilingual-e5-small',
+        revision: null,
+        parametersM: 118,
+        queryPrefix: 'query: ',
+        passagePrefix: 'passage: ',
+        multilingual: true,
     },
 ];
 
 export const RERANK_CANDIDATES: readonly RerankCandidate[] = [
     {
-        id: 'nemotron-rerank-1b',
-        model: 'nvidia/llama-nemotron-rerank-1b-v2',
-        revision: null,
-        parametersM: 1236,
-        nemotron: true,
-    },
-    {
         id: 'bge-reranker-base',
         model: 'BAAI/bge-reranker-base',
         revision: null,
         parametersM: 278,
-        nemotron: false,
+        multilingual: false,
+    },
+    {
+        id: 'bge-reranker-v2-m3',
+        model: 'BAAI/bge-reranker-v2-m3',
+        revision: null,
+        parametersM: 568,
+        multilingual: true,
     },
 ];
 
@@ -105,9 +111,11 @@ export const RERANK_CANDIDATES: readonly RerankCandidate[] = [
  * Mistral and Qwen2; `llama_bidirec` is a serde alias of Llama). Tied to
  * `TEI_CPU_IMAGE`: a new image is a re-read of that file.
  *
- * Both Nemotron candidates are Llama-based, so on this engine they are
- * refused unless their repository carries an ONNX export, which TEI's ORT
- * backend tries first (`download_onnx`: `model.onnx*` or `onnx/model.onnx*`).
+ * No candidate here is of those types; the check stays because a candidate
+ * added later may be (the Nemotron models, which D-L4-3 compared until its
+ * 2026-11-13 amendment, are Llama-based). Such a model is refused unless its
+ * repository carries an ONNX export, which TEI's ORT backend tries first
+ * (`download_onnx`: `model.onnx*` or `onnx/model.onnx*`).
  */
 const TEI_CPU_REFUSED: Readonly<Record<string, string>> = {
     llama: 'Llama is only supported on Cuda devices in fp16 with flash attention enabled',
@@ -140,10 +148,11 @@ export function teiCpuRefusal(facts: HubModelFacts): string | null {
 export const RERANK_DEPTH = 50;
 
 /**
- * D-L4-3's margin, as an absolute drop in recall@10. PROPOSED, to be
- * confirmed by the owner before the first dispatch: on 200 cases the standard
- * error of a recall near 0.8 is about 0.028, so 0.05 is roughly two standard
- * errors — a smaller margin would choose between models on noise.
+ * D-L4-3's margin, as an absolute drop in recall@10, overall and on the
+ * Bulgarian slice (D-L4-10, decided 2026-11-12). On 200 English cases the
+ * standard error of a recall near 0.8 is about 0.028, so 0.05 is roughly two
+ * standard errors; on the 50-case Bulgarian slice it is nearer one, which is
+ * why D-L4-10 leaves growing that slice open.
  */
 export const D_L4_3_RECALL_MARGIN = 0.05;
 

@@ -34,9 +34,16 @@ function AgentCell({ scanId, row }: { scanId: string; row: MatrixRow }) {
         <div className="flex flex-col items-start gap-tight">
             <span className="font-medium text-content-emphasis">{row.registered?.name ?? row.discoveredId}</span>
             {row.registered && <span className="font-mono text-xs text-content-muted">{row.discoveredId}</span>}
-            {!row.registered && (
+            {/* Which of the two an unregistered row is comes from the server
+                (`unregisteredIdentity`); the grid never works it out. */}
+            {!row.registered && !row.unregisteredIdentity && (
                 <StatusBadge variant="warning" size="sm" data-testid={`harness-shadow-badge-${scanId}-${row.discoveredAgentId}`}>
                     {t('harness.shadowBadge')}
+                </StatusBadge>
+            )}
+            {!row.registered && row.unregisteredIdentity && (
+                <StatusBadge variant="neutral" size="sm" data-testid={`harness-identity-badge-${scanId}-${row.discoveredAgentId}`}>
+                    {t('harness.identityBadge')}
                 </StatusBadge>
             )}
             {row.verdictsUnreadable && (
@@ -57,6 +64,11 @@ function LevelCell({ scanId, row }: { scanId: string; row: MatrixRow }) {
         <div className="flex flex-col items-start gap-tight" data-testid={`harness-level-${scanId}-${row.discoveredAgentId}`}>
             <StatusBadge variant={row.belowBar ? 'error' : 'neutral'}>{t(`harness.level.${row.level}`)}</StatusBadge>
             {row.belowBar && <span className="text-xs text-content-error">{t('harness.belowBar', { bar: row.bar })}</span>}
+            {row.unregisteredIdentity && (
+                <span className="text-xs text-content-muted" data-testid={`harness-no-bar-${scanId}-${row.discoveredAgentId}`}>
+                    {t('harness.identityNoBar')}
+                </span>
+            )}
             {row.latestIngestedLevel !== null && (
                 <span
                     className="text-xs text-content-warning"

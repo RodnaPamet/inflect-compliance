@@ -87,10 +87,24 @@ export interface MatrixRow {
     readonly discoveredAgentId: string;
     readonly discoveredId: string;
     readonly discoveredVia: readonly string[];
-    /** `null` is SHADOW — including a register row deleted after the scan linked it. */
+    /**
+     * `null` is NOT REGISTERED — including a register row deleted after the
+     * scan linked it: a shadow agent, or, when `unregisteredIdentity` is set,
+     * an unregistered automated identity.
+     */
     readonly registered: { readonly agentId: string; readonly name: string } | null;
+    /**
+     * On record as an UNREGISTERED AUTOMATED IDENTITY (owner decisions,
+     * 2026-11-13): not registered, and its UNREGISTERED_IDENTITY finding is the
+     * one open — the server's reading of the record
+     * (`unregisteredIdentitiesOnRecord`), never re-derived here. It keeps its
+     * level and its cells and is held to NO bar: `belowBar` is false and no
+     * shortfall action or note is offered. Always false for a registered row.
+     */
+    readonly unregisteredIdentity: boolean;
     readonly level: HarnessLevel;
     readonly reach: HarnessStoredReach;
+    /** Below the bar for its reach. Never true of an unregistered identity, which is held to none. */
     readonly belowBar: boolean;
     readonly bar: HarnessLevel;
     readonly blockingNextRung: readonly string[];
@@ -134,7 +148,18 @@ export interface HarnessScannerSection {
     readonly rowsTruncated: boolean;
 }
 
+/**
+ * One principal with no live register row, on either of the tab's two lists:
+ * the shadow agents, or the unregistered automated identities. `kind` says
+ * which, and it is the server's reading of the finding on record.
+ */
 export interface ShadowRow {
+    /**
+     * `UNREGISTERED_IDENTITY` when that finding is the one open for the
+     * principal; `SHADOW_AGENT` otherwise — including when neither is, the
+     * more severe reading.
+     */
+    readonly kind: 'SHADOW_AGENT' | 'UNREGISTERED_IDENTITY';
     readonly discoveredAgentId: string;
     readonly discoveredId: string;
     readonly discoveredVia: readonly string[];
@@ -143,9 +168,10 @@ export interface ShadowRow {
     readonly lastLevel: HarnessLevel;
     readonly reason: 'UNREGISTERED' | 'REGISTER_ROW_DELETED';
     /**
-     * The agent's SHADOW_AGENT finding — what the registration intake registers
-     * from (#3712). `null` when none is on record, and then there is nothing to
-     * register from.
+     * The finding the registration intake registers from (#3712): an identity
+     * row's UNREGISTERED_IDENTITY finding, a shadow row's SHADOW_AGENT finding
+     * (or, when it never had one, the identity finding it had before). `null`
+     * when none is on record, and then there is nothing to register from.
      */
     readonly findingId: string | null;
     /**
@@ -229,6 +255,19 @@ export interface HarnessMatrixView {
          */
         readonly basis: 'EVIDENCED' | 'NOT_EVIDENCED';
         /** The OLDEST of those complete latest scans' `asOf`, when `basis` is EVIDENCED. */
+        readonly basisAsOf: string | null;
+    };
+    /**
+     * Unregistered automated identities (owner decisions, 2026-11-13): no live
+     * register row and no sign of a model, so not shadow agents and not on the
+     * list above. Read with the shadow list in ONE bounded read and split by
+     * the finding on record, so `truncated` and the basis are that list's: an
+     * empty list here is "none" under exactly the same evidence.
+     */
+    readonly unregisteredIdentities: {
+        readonly rows: readonly ShadowRow[];
+        readonly truncated: boolean;
+        readonly basis: 'EVIDENCED' | 'NOT_EVIDENCED';
         readonly basisAsOf: string | null;
     };
     readonly acceptances: { readonly rows: readonly AcceptanceRow[]; readonly truncated: boolean };

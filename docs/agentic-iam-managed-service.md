@@ -148,8 +148,8 @@ key, so a scanner cannot vouch for itself.
 - an `AGENT_HARNESS_SCAN_INGESTED` audit row carrying the report's digest and
   its signer;
 - the scan, its discovered agents and their levels;
-- `SHADOW_AGENT`, `UNPINNED_WRITE_TOOL`, `LEVEL_DROP`, `HARNESS_SHORTFALL` and
-  `ORPHAN_CREDENTIAL` findings;
+- `SHADOW_AGENT`, `UNREGISTERED_IDENTITY`, `UNPINNED_WRITE_TOOL`, `LEVEL_DROP`,
+  `HARNESS_SHORTFALL` and `ORPHAN_CREDENTIAL` findings;
 - each month's scans as Evidence against OWASP ASI10 and ASI03, marked
   `NEEDS_REVIEW` unless every trusted scanner's latest scan is complete and
   non-empty.
@@ -240,6 +240,7 @@ the response times. This section sets the path.
 | A suspected platform fault | Any | Inflect | Report it through Inflect's incident process ([`docs/incident-response.md`](incident-response.md)) | Inflect, which alone holds the platform-wide kill |
 | The kill-switch drill fails | A `CRITICAL` finding | The tenant | Escalate the same day; the client treats every kill as unproven until a drill passes | The client's security owner, with Inflect |
 | A shadow agent | `SHADOW_AGENT` finding; the shadow list | The client | Run the discovered-agent review; prepare the intake with the stored suggestion | A holder of `admin.agent_registry` confirms the owner and registers it |
+| An unregistered automated identity: on no list, with no sign that it runs a model | `UNREGISTERED_IDENTITY` finding (MEDIUM); the unregistered-identity list | The client | Find out what it is. The scan cannot show that it runs no model | If it is an agent, a holder of `admin.agent_registry` registers it from its finding and it is scored as one. If it is not, the client records an owner for it where it keeps such identities, or retires it |
 | An agent below the harness bar | `HARNESS_SHORTFALL` finding | The agent's owner | Recommend the fix, or a bounded acceptance | The agent's owner fixes or accepts, for at most 365 days |
 | A stale estate | `STALE_ESTATE` finding, the estate card | The scanner agent's owner | Restore the scanner or the source credential | The scanner agent's owner closes it with a complete scan |
 | An owner leaves | Orphan pass record; `AGENT_OWNER_DEPARTED` notice to the OWNERs | The OWNERs | Name the transfer candidate (the departed owner's manager where known) | Two-step transfer by `admin.agent_ownership`; the new owner lifts the kill |
