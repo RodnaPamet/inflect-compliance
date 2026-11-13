@@ -312,6 +312,10 @@ export async function runAutomationEventDispatch(
                                 triggerEvent: event.event,
                                 data: event.data as Record<string, unknown>,
                                 depth: 1,
+                                // Every link acts on the entity the event was
+                                // about (#5248), not on none.
+                                entityType: event.entityType,
+                                entityId: event.entityId,
                             },
                             rule.nextRuleDelay
                                 ? { delay: rule.nextRuleDelay * 60_000 }

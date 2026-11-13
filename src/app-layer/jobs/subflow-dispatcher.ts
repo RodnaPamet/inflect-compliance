@@ -10,6 +10,7 @@
  * The entry rule's action executes for real via `executeAction`, consistent
  * with automation-event-dispatch + rule-chain-dispatch.
  */
+import { Prisma } from '@prisma/client';
 import { runJob } from '@/lib/observability/job-runner';
 import { prisma } from '@/lib/prisma';
 import type { JobRunResult, SubflowDispatchPayload } from './types';
@@ -26,6 +27,18 @@ import { readRulesWithTenantDek } from '../automation/tenant-dek-read';
  * chain dispatcher has been capped since Epic 7; this one was simply missed.
  */
 const MAX_SUBFLOW_DEPTH = 10;
+
+/**
+ * One sub-flow run per (invoking execution, group) — the job's identity
+ * (#5103). The dispatcher ran the entry rule's action and THEN wrote the
+ * execution, so a BullMQ retry ran the real action twice. The row is now
+ * inserted first under this key. Null when the invocation names no parent: a
+ * key on an empty parent would make every top-level invocation of a group
+ * collide, and the unique index admits any number of nulls.
+ */
+export function subflowIdempotencyKey(parentExecutionId: string, targetGroupId: string): string | null {
+    return parentExecutionId ? `subflow:${parentExecutionId}:${targetGroupId}` : null;
+}
 
 export async function runSubflowDispatch(
     payload: SubflowDispatchPayload,
@@ -77,44 +90,72 @@ export async function runSubflowDispatch(
         );
 
         let executionId: string | null = null;
+        let alreadyClaimed = false;
         if (entry) {
             const actionStart = Date.now();
-            const outcome = await executeAction(prisma, entry, {
-                tenantId,
-                event: triggerEvent,
-                // `__subflowDepth` rides `data` alongside the existing
-                // `__parentExecutionId` marker — same convention. It is read
-                // back by `invokeSubflow` so a nested INVOKE_SUBFLOW enqueues
-                // depth+1. Without this the cap below would never be reached
-                // and the guard would be decorative.
-                data: { ...data, __parentExecutionId: parentExecutionId, __subflowDepth: depth },
-            });
-            const exec = await prisma.automationExecution.create({
-                data: {
-                    tenantId,
-                    ruleId: entry.id,
-                    triggerEvent,
-                    triggerPayloadJson: data as never,
-                    status: outcome.ok ? 'SUCCEEDED' : 'FAILED',
-                    triggeredBy: 'subflow',
-                    parentExecutionId,
-                    errorMessage: outcome.ok ? null : outcome.summary,
-                    outcomeJson: {
-                        actionType: entry.actionType,
-                        summary: outcome.summary,
-                        subFlowGroupId: targetGroupId,
-                        ...(outcome.detail ?? {}),
+            // CLAIM before acting (#5103): a retry of this job meets the
+            // unique key and stops before the action.
+            try {
+                const claim = await prisma.automationExecution.create({
+                    data: {
+                        tenantId,
+                        ruleId: entry.id,
+                        triggerEvent,
+                        triggerPayloadJson: data as never,
+                        status: 'RUNNING',
+                        triggeredBy: 'subflow',
+                        parentExecutionId,
+                        idempotencyKey: subflowIdempotencyKey(parentExecutionId, targetGroupId),
+                        startedAt: new Date(),
                     },
-                    durationMs: Date.now() - actionStart,
-                    startedAt: new Date(),
-                    completedAt: new Date(),
-                },
-            });
-            executionId = exec.id;
-            await prisma.automationRule.updateMany({
-                where: { id: entry.id, tenantId },
-                data: { executionCount: { increment: 1 }, lastTriggeredAt: new Date() },
-            });
+                    select: { id: true },
+                });
+                executionId = claim.id;
+            } catch (err) {
+                if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+                alreadyClaimed = true;
+                logger.info('subflow-dispatch: already claimed, not running the action again', {
+                    component: 'subflow-dispatcher',
+                    tenantId,
+                    targetGroupId,
+                    parentExecutionId,
+                });
+            }
+
+            if (executionId) {
+                const outcome = await executeAction(prisma, entry, {
+                    tenantId,
+                    event: triggerEvent,
+                    entityType: payload.entityType,
+                    entityId: payload.entityId,
+                    // `__subflowDepth` rides `data` alongside the existing
+                    // `__parentExecutionId` marker — same convention. It is read
+                    // back by `invokeSubflow` so a nested INVOKE_SUBFLOW enqueues
+                    // depth+1. Without this the cap below would never be reached
+                    // and the guard would be decorative.
+                    data: { ...data, __parentExecutionId: parentExecutionId, __subflowDepth: depth },
+                });
+                // Settled from RUNNING only, so an operator's cancel stands.
+                await prisma.automationExecution.updateMany({
+                    where: { id: executionId, tenantId, status: 'RUNNING' },
+                    data: {
+                        status: outcome.ok ? 'SUCCEEDED' : 'FAILED',
+                        errorMessage: outcome.ok ? null : outcome.summary,
+                        outcomeJson: {
+                            actionType: entry.actionType,
+                            summary: outcome.summary,
+                            subFlowGroupId: targetGroupId,
+                            ...(outcome.detail ?? {}),
+                        },
+                        durationMs: Date.now() - actionStart,
+                        completedAt: new Date(),
+                    },
+                });
+                await prisma.automationRule.updateMany({
+                    where: { id: entry.id, tenantId },
+                    data: { executionCount: { increment: 1 }, lastTriggeredAt: new Date() },
+                });
+            }
         }
 
         const result: JobRunResult = {
@@ -127,7 +168,11 @@ export async function runSubflowDispatch(
             itemsScanned: 1,
             itemsActioned: executionId ? 1 : 0,
             itemsSkipped: executionId ? 0 : 1,
-            details: { targetGroupId, dispatched: !!entry },
+            details: {
+                targetGroupId,
+                dispatched: executionId !== null,
+                ...(alreadyClaimed ? { skipped: 'already-claimed' } : {}),
+            },
         };
         return { result, executionId };
     });

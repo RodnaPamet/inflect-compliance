@@ -119,7 +119,7 @@ export async function getGovernanceGraph(ctx: RequestContext, now: Date) {
             }),
             db.automationRule.findMany({
                 where: { tenantId: ctx.tenantId, deletedAt: null },
-                select: { id: true, subFlowGroupId: true },
+                select: { id: true, actionType: true, actionConfigJson: true },
                 take: 5000,
             }),
             db.automationExecution.findMany({
@@ -178,12 +178,18 @@ export async function getGovernanceGraph(ctx: RequestContext, now: Date) {
             };
         });
 
-        // sub-flow-call links: a rule with subFlowGroupId → that group's map
+        // sub-flow-call links: a rule whose action INVOKES a sub-flow → the map
+        // holding that group (#5117). Keyed on the action's own
+        // `targetGroupId`, the field the invocation actually reads; it used to
+        // key on `subFlowGroupId`, which no writer sets, so the graph never drew
+        // a sub-flow edge.
         const links: GraphLink[] = [];
         for (const r of rules) {
-            if (!r.subFlowGroupId) continue;
+            if (r.actionType !== 'INVOKE_SUBFLOW') continue;
+            const targetGroupId = (r.actionConfigJson as { targetGroupId?: unknown } | null)?.targetGroupId;
+            if (typeof targetGroupId !== 'string' || !targetGroupId) continue;
             const sourceMapId = ruleToMap.get(r.id);
-            const targetMapId = groupToMap.get(r.subFlowGroupId);
+            const targetMapId = groupToMap.get(targetGroupId);
             if (sourceMapId && targetMapId) {
                 links.push({ sourceMapId, targetMapId, kind: 'subflow-call' });
             }
