@@ -5,6 +5,7 @@
     "agentId": "cmagentextflue000000000001",
     "profiles": {},
     "profileAgents": {},
+    "automationRules": {},
     "markers": {
       "flagged-tool-result-halts-the-run": "INSPECT-CANARY-INJ-EXAMPLE",
       "delegate-answer-reenters-as-untrusted": "Example joined sentence",
@@ -30,6 +31,14 @@
       "inspect-summarise": "cmagenttrsummarise00000001",
       "inspect-three-reads": "cmagenttrthreereads0000001"
     },
+    "automationRules": {
+      "inspect-exhaust-tokens": "cmruleexhaust000000000001",
+      "inspect-list-controls": "cmrulecontrols00000000001",
+      "inspect-list-findings": "cmrulefindings00000000001",
+      "inspect-propose-risks": "cmrulepropose000000000001",
+      "inspect-summarise": "cmrulesummarise0000000001",
+      "inspect-three-reads": "cmrulethreereads000000001"
+    },
     "markers": {
       "flagged-tool-result-halts-the-run": "INSPECT-CANARY-INJ-EXAMPLE",
       "secret-shaped-value-never-crosses-a-tool-boundary": "ExampleCanaryValue"
@@ -40,6 +49,7 @@
     "agentId": "cmagentlocalflue0000000001",
     "profiles": {},
     "profileAgents": {},
+    "automationRules": {},
     "markers": {},
     "ownerEmail": "owner@inspect-local-flue.inspect.test"
   },
@@ -50,6 +60,9 @@
     },
     "profileAgents": {
       "inspect-summarise": "cmagentlocalsummarise00001"
+    },
+    "automationRules": {
+      "inspect-summarise": "cmrulelocalsummarise00001"
     },
     "markers": {},
     "ownerEmail": "owner@inspect-local-tool-runner.inspect.test"

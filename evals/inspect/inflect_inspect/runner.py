@@ -13,6 +13,15 @@ start, and no run. The solver stores it, the scorer reports it INCOMPLETE and
 the record refuses it ``FACTS_INCOMPLETE``, naming the task; the next sample
 still runs. Only a run that may still be live (unnamed, not stoppable, a kill
 that would not lift) ends the pass, as ``PassMustStop``.
+
+HOW A RUN STARTS depends on the arm. A registered-workflow arm (Flue) is
+started at ``POST /agent-runs`` with the seed agent's key. A profile arm (the
+Tool Runner) is started as the AUTOMATION trigger (owner decision,
+2026-11-13), because the generic route names no trigger and so starts no
+profile (#5367): the harness creates a task titled with the sample's input,
+the profile's seeded rule fires on it, and the run is the one new row of the
+agent's runs (``_start_through_rule``). A start the product refuses, by either
+path, leaves no run, and the sample is INCOMPLETE, never a pass.
 """
 
 from __future__ import annotations
@@ -59,6 +68,10 @@ class _DidNotSettle(Exception):
     """The run was still live at the sample's deadline (internal: becomes ``RunNotObserved``)."""
 
 
+class _NotStarted(Exception):
+    """The start was refused and no run exists (internal: becomes ``RunNotObserved``)."""
+
+
 class PassMustStop(RuntimeError):
     """A run may still be live on the deployment: no further sample may start.
 
@@ -94,6 +107,10 @@ MARKER_READ_TOOL = {
 }
 
 
+# Execution statuses that are not yet an answer; any other is the rule's last word.
+EXECUTION_IN_FLIGHT = {"PENDING", "RUNNING"}
+
+
 @dataclass
 class SeedManifest:
     """What the seed step wrote for one tenant: no secrets, ids and synthetic markers only."""
@@ -101,6 +118,9 @@ class SeedManifest:
     agent_id: str
     profiles: Dict[str, str] = field(default_factory=dict)  # profileFixture → agent-profile:<id>@v<n>
     markers: Dict[str, str] = field(default_factory=dict)  # taskId → fixture marker
+    # The automation rule a profile arm's run starts from; None for a run the
+    # harness starts with the agent's key.
+    rule_id: Optional[str] = None
 
 
 def seed_for(tenant: Dict[str, Any], task: Dict[str, Any], engine: str) -> SeedManifest:
@@ -116,13 +136,22 @@ def seed_for(tenant: Dict[str, Any], task: Dict[str, Any], engine: str) -> SeedM
     arm = task["engines"][engine]
     if "notApplicable" in arm:
         raise ValueError(f"{task['id']} is n/a on {engine}; the set decides that, never a run")
+    rule_id: Optional[str] = None
     if "profileFixture" in arm:
         agent_id = (tenant.get("profileAgents") or {}).get(arm["profileFixture"])
+        rule_id = (tenant.get("automationRules") or {}).get(arm["profileFixture"])
+        if not isinstance(rule_id, str) or not rule_id:
+            raise ValueError(f"the seed manifest names no automation rule for {task['id']} on {engine}")
     else:
         agent_id = tenant.get("agentId")
     if not isinstance(agent_id, str) or not agent_id:
         raise ValueError(f"the seed manifest names no agent for {task['id']} on {engine}")
-    return SeedManifest(agent_id=agent_id, profiles=dict(tenant.get("profiles") or {}), markers=dict(tenant.get("markers") or {}))
+    return SeedManifest(
+        agent_id=agent_id,
+        profiles=dict(tenant.get("profiles") or {}),
+        markers=dict(tenant.get("markers") or {}),
+        rule_id=rule_id,
+    )
 
 
 def agent_key_env(slug: str, agent_id: str) -> str:
@@ -169,10 +198,14 @@ def run_sample(
     clock: Clock = Clock(),
     deadline_s: float = 600.0,
     poll_s: float = 1.0,
+    find_deadline_s: float = 120.0,
 ) -> Dict[str, Any]:
     task_id = task["id"]
     text = next(i["text"] for i in task["inputs"] if i["id"] == input_id)
     key = workflow_key_for(task, engine, seed)
+    through_rule = "profileFixture" in task["engines"][engine]
+    if through_rule and (seed.rule_id is None or text is None):
+        raise ValueError(f"{task_id} on {engine} starts from an automation rule: it needs the rule and an input to title the task")
     facts: Dict[str, Any] = {
         "admission": None,
         "run": None,
@@ -197,24 +230,31 @@ def run_sample(
             facts["residencyBefore"] = product.residency()
         if task_id == "ungranted-tool-is-never-reached":
             facts["grantsBefore"] = product.agent_grants(seed.agent_id)
+        # The agent's runs before the trigger: the run the rule starts is the
+        # one row that was not there.
+        runs_before = {r.get("id") for r in product.agent_runs(seed.agent_id)} if through_rule else set()
     except Exception as err:
         # Nothing was started: the sample is unobserved, the pass goes on.
         raise RunNotObserved(_unobserved(task_id, input_id, started_at, clock, facts), f"not started: {type(err).__name__}: {err}") from err
 
     run_input = {} if text is None else {"question": text}
-    try:
-        status, body = product.start_run(key, run_input)
-    except Exception as err:
-        # The request may have reached the product and created a run the
-        # harness cannot name.
-        raise PassMustStop(f"{task_id}: the start request failed ({type(err).__name__}); a run may be live unnamed") from err
+    status, body = 0, {}
+    if not through_rule:
+        try:
+            status, body = product.start_run(key, run_input)
+        except Exception as err:
+            # The request may have reached the product and created a run the
+            # harness cannot name.
+            raise PassMustStop(f"{task_id}: the start request failed ({type(err).__name__}); a run may be live unnamed") from err
     run_id: Optional[str] = None
     settled = False
     switch_id: Optional[str] = None
     engaged_at: Optional[str] = None
     try:
         try:
-            if status >= 400:
+            if through_rule:
+                run_id = _start_through_rule(product, task_id, seed, key, text, runs_before, clock, find_deadline_s, poll_s)
+            elif status >= 400:
                 facts["admission"] = {"httpStatus": status, "missingKeys": missing_input_keys(status, body)}
                 if task_id != "missing-input-is-refused-at-admission":
                     log.warning("%s: the start was refused, HTTP %s %s; no run to observe", task_id, status, refusal_code(body))
@@ -227,6 +267,7 @@ def run_sample(
                     # beside the next sample: stop the pass rather than move on.
                     raise PassMustStop(f"{task_id}: the start answered 201 without a runId")
                 run_id = candidate
+            if run_id is not None:
                 deadline = clock.now_ms() + int(deadline_s * 1000)
                 while True:
                     run = product.get_run(run_id)
@@ -274,7 +315,7 @@ def run_sample(
     except Exception as err:
         if run_id is not None and not settled:
             _stop(product, task_id, run_id)
-        reason = str(err) if isinstance(err, _DidNotSettle) else f"{type(err).__name__}: {err}"
+        reason = str(err) if isinstance(err, (_DidNotSettle, _NotStarted)) else f"{type(err).__name__}: {err}"
         raise RunNotObserved(_unobserved(task_id, input_id, started_at, clock, facts), reason) from err
     return {
         "taskId": task_id,
@@ -283,6 +324,101 @@ def run_sample(
         "settledAtMs": clock.now_ms(),
         "facts": facts,
     }
+
+
+def _start_through_rule(
+    product: Product,
+    task_id: str,
+    seed: SeedManifest,
+    key: str,
+    title: str,
+    runs_before: set,
+    clock: Clock,
+    find_deadline_s: float,
+    poll_s: float,
+) -> str:
+    """Start a profile run as the AUTOMATION trigger; its run id, or why there is none.
+
+    The OWNER creates a task titled with the sample's input. Its
+    ``TASK_CREATED`` fires the profile's seeded ``INVOKE_AGENT`` rule, which
+    enqueues ``agent-invoke-dispatch``; that starts the run as the profile's
+    agent under the rule author's membership, through ``startWorkflowRun``'s
+    ordinary admission (kill switch, breaker, registration and residency gates,
+    the version's own trigger check). Nothing here bypasses any of it.
+
+    Two reads name the run. The rule's execution for THIS task (its trigger
+    payload carries the task's key) says whether the rule acted: anything but
+    SUCCEEDED is an action that started nothing. The run is then the one row of
+    the agent's runs that was not there before the task, of the profile's run
+    key. A direct ``TASK_CREATED`` firing records no execution on the run
+    (``parentExecutionId`` is set only on a chained or sub-flow firing), so a
+    run naming a DIFFERENT execution is refused, never one naming none.
+
+    Refusals, none of them a pass:
+
+    * the task refused, an execution that did not succeed, or no run within
+      ``find_deadline_s`` of a SUCCEEDED execution (the dispatch refused it, or
+      its start threw on every attempt): ``_NotStarted``, so the sample is
+      unobserved and the pass goes on;
+    * a task request that failed in flight, a task with no key, a read that
+      failed once the task existed, no execution by the deadline (the rule may
+      yet fire), two new runs, or a new run of another key: ``PassMustStop``,
+      because a run may be live that the harness cannot name.
+    """
+    try:
+        status, created = product.create_task(title)
+    except Exception as err:
+        raise PassMustStop(f"{task_id}: the trigger task request failed ({type(err).__name__}); its rule may have started a run unnamed") from err
+    if status >= 400:
+        log.warning("%s: the trigger task was refused, HTTP %s %s; no rule fired", task_id, status, refusal_code(created))
+        raise _NotStarted(f"the trigger task was refused, HTTP {status} {refusal_code(created)}; no rule fired")
+    if status != 201:
+        raise PassMustStop(f"{task_id}: the trigger task answered HTTP {status}, neither created (201) nor refused")
+    task_key = created.get("key")
+    if not isinstance(task_key, str) or not task_key:
+        raise PassMustStop(f"{task_id}: the trigger task answered no key; the execution its rule wrote cannot be named")
+
+    deadline = clock.now_ms() + int(find_deadline_s * 1000)
+    while True:
+        try:
+            listed = product.rule_executions(seed.rule_id)
+        except Exception as err:
+            # The task exists: its rule may have started a run nobody named.
+            raise PassMustStop(f"{task_id}: the rule's executions could not be read after the trigger ({type(err).__name__})") from err
+        execution = next((e for e in listed if (e.get("triggerPayload") or {}).get("key") == task_key), None)
+        if execution is not None and execution.get("status") not in EXECUTION_IN_FLIGHT:
+            if execution.get("status") != "SUCCEEDED":
+                # Its status, never its message: the summary can carry text.
+                log.warning("%s: rule %s answered the trigger task %s; no run was started", task_id, seed.rule_id, execution.get("status"))
+                raise _NotStarted(f"the rule's execution {execution.get('id')} is {execution.get('status')}: its action started no run")
+            try:
+                rows = product.agent_runs(seed.agent_id)
+            except Exception as err:
+                raise PassMustStop(f"{task_id}: the agent's runs could not be read after its rule fired ({type(err).__name__})") from err
+            new = [r for r in rows if r.get("id") not in runs_before]
+            if len(new) > 1:
+                raise PassMustStop(f"{task_id}: {len(new)} runs of agent {seed.agent_id} appeared for one trigger task")
+            if new:
+                run = new[0]
+                run_id = run.get("id")
+                if not isinstance(run_id, str) or not run_id:
+                    raise PassMustStop(f"{task_id}: a run of agent {seed.agent_id} appeared without an id")
+                if run.get("workflowKey") != key:
+                    raise PassMustStop(f"{task_id}: run {run_id} of agent {seed.agent_id} runs another key; it is not this rule's")
+                if run.get("parentExecutionId") not in (None, "", execution.get("id")):
+                    raise PassMustStop(f"{task_id}: run {run_id} names another execution as its cause")
+                return run_id
+        if clock.now_ms() > deadline:
+            if execution is None or execution.get("status") in EXECUTION_IN_FLIGHT:
+                raise PassMustStop(
+                    f"{task_id}: rule {seed.rule_id} had not acted on the trigger task within {find_deadline_s:g}s; it may still start a run"
+                )
+            log.warning("%s: rule %s fired but no run started within %gs", task_id, seed.rule_id, find_deadline_s)
+            raise _NotStarted(
+                f"the rule fired (execution {execution.get('id')} SUCCEEDED) but no run started within {find_deadline_s:g}s: "
+                "agent-invoke-dispatch refused it or its start was refused on every attempt (the worker log says which)"
+            )
+        clock.sleep(poll_s)
 
 
 def _unobserved(task_id: str, input_id: str, started_at: int, clock: Clock, facts: Dict[str, Any]) -> Dict[str, Any]:

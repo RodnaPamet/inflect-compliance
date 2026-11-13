@@ -158,25 +158,36 @@ def test_the_record_keeps_facts_only_and_refuses_overlap():
 # ── HttpProduct against the product's real shapes ────────────────────────────
 
 
-class _ContractServer:
-    """Serves ``product-contract.json`` on loopback, recording each request's credential."""
+PREFIX = "/api/t/inspect-ext-flue"
 
-    def __init__(self, overrides=None):
+
+class _ContractServer:
+    """Serves ``product-contract.json`` on loopback, recording each request's credential and body.
+
+    ``dynamic(method, path, seen)`` may answer a request first, as ``(status,
+    body)``, for a read whose answer depends on what was asked before it.
+    """
+
+    def __init__(self, overrides=None, dynamic=None, agent_key="iflk_test"):
         routes = {**CONTRACT, **(overrides or {})}
         self.seen = []
-        prefix = "/api/t/inspect-ext-flue"
-        table = {(r["method"], prefix + r["path"]): r for name, r in routes.items() if name not in ("startRunMissingInput", "startRunUnknownWorkflow")}
-        seen = self.seen
+        self.bodies = {}
+        table = {(r["method"], PREFIX + r["path"]): r for name, r in routes.items() if name not in ("startRunMissingInput", "startRunUnknownWorkflow")}
+        seen, bodies = self.seen, self.bodies
 
         class Handler(BaseHTTPRequestHandler):
             def _serve(self):
                 length = int(self.headers.get("Content-Length") or 0)
                 if length:
-                    self.rfile.read(length)
+                    bodies[(self.command, self.path)] = json.loads(self.rfile.read(length))
                 auth = self.headers.get("Authorization") or ""
                 seen.append((self.command, self.path, "agent-key" if auth.startswith("Bearer iflk_") else "session" if self.headers.get("Cookie") else "none"))
                 route = table.get((self.command, self.path))
-                status, body = (route["status"], route["body"]) if route else (404, {"error": {"code": "NOT_FOUND", "message": "Not found"}})
+                answered = dynamic(self.command, self.path, seen) if dynamic else None
+                if answered is not None:
+                    status, body = answered
+                else:
+                    status, body = (route["status"], route["body"]) if route else (404, {"error": {"code": "NOT_FOUND", "message": "Not found"}})
                 raw = json.dumps(body).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
@@ -191,7 +202,7 @@ class _ContractServer:
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-        self.product = HttpProduct(f"http://127.0.0.1:{self.httpd.server_address[1]}", "inspect-ext-flue", "next-auth.session-token=s", "iflk_test")
+        self.product = HttpProduct(f"http://127.0.0.1:{self.httpd.server_address[1]}", "inspect-ext-flue", "next-auth.session-token=s", agent_key)
 
     def close(self):
         self.httpd.shutdown()
@@ -219,6 +230,49 @@ def test_every_read_parses_the_shape_the_product_serves(served):
     assert [s["seq"] for s in p.get_steps("run_1")] == [0]
     status, body = p.start_run("ad-hoc-question", {"question": "q"})
     assert (status, body["runId"]) == (201, "run_1")
+    status, task = p.create_task("Summarise the open risks and the failing controls.")
+    assert (status, task["key"]) == (201, "TSK-1")
+    [execution] = p.rule_executions("rule_1")
+    assert (execution["status"], execution["triggerPayload"]["key"]) == ("SUCCEEDED", "TSK-1")
+    [run] = p.agent_runs("agent_1")
+    assert (run["id"], run["workflowKey"], run["parentExecutionId"]) == ("run_1", "agent-profile:profile_1@v1", "")
+
+
+def test_a_tool_runner_sample_starts_through_its_rule_over_http():
+    """The owner's task fires the rule; the run is the agent's one new row; no key is ever presented."""
+    task = TASKS["every-model-call-has-a-decision-row"]
+    text = task["inputs"][0]["text"]
+
+    def dynamic(method, path, seen):
+        # The agent's runs before the trigger task: none. After it: the rule's.
+        if (method, path) == ("GET", PREFIX + "/agent-runs?agentId=agent_1") and ("POST", PREFIX + "/tasks", "session") not in seen:
+            return 200, []
+        return None
+
+    server = _ContractServer(dynamic=dynamic, agent_key=None)
+    try:
+        seed = SeedManifest(agent_id="agent_1", profiles={"inspect-summarise": "agent-profile:profile_1@v1"}, rule_id="rule_1")
+        sample = run_sample(server.product, task, task["inputs"][0]["id"], "tool-runner", seed, FakeClock(), poll_s=0.01)
+        assert sample["facts"]["run"]["status"] == "COMPLETED"
+        assert server.bodies[("POST", PREFIX + "/tasks")] == {"title": text}
+        calls = [(m, path[len(PREFIX):], c) for m, path, c in server.seen]
+        assert calls[:5] == [
+            ("GET", "/agent-runs?agentId=agent_1", "session"),
+            ("POST", "/tasks", "session"),
+            ("GET", "/automation/rules/rule_1/executions?limit=25", "session"),
+            ("GET", "/agent-runs?agentId=agent_1", "session"),
+            ("GET", "/agent-runs/run_1", "session"),
+        ]
+        assert ("POST", "/agent-runs") not in {(m, path) for m, path, _ in calls}
+        assert {c for _, _, c in calls} == {"session"}
+    finally:
+        server.close()
+
+
+def test_a_tool_runner_tenant_holds_no_key_and_starts_nothing_at_the_generic_route():
+    product = HttpProduct("http://127.0.0.1:1", "s", "c")
+    with pytest.raises(ValueError, match="automation rules"):
+        product.start_run("agent-profile:p@v1", {})
 
 
 def test_the_run_is_started_with_the_agent_key_and_nothing_else_is(served):
@@ -354,8 +408,10 @@ def test_every_applicable_sample_resolves_to_a_seeded_agent_and_its_markers(engi
         if "profileFixture" in arm:
             assert seed.agent_id == tenant["profileAgents"][arm["profileFixture"]]
             assert arm["profileFixture"] in seed.profiles
+            assert seed.rule_id == tenant["automationRules"][arm["profileFixture"]]
         else:
             assert seed.agent_id == tenant["agentId"]
+            assert seed.rule_id is None
         if task["id"] in MARKER_READ_TOOL:
             assert task["id"] in seed.markers
 
@@ -366,6 +422,9 @@ def test_seed_for_refuses_an_unnamed_agent_and_an_na_arm():
         seed_for({"agentId": None, "profiles": {}, "profileAgents": {}, "markers": {}}, task1, "flue")
     with pytest.raises(ValueError, match="n/a"):
         seed_for(SEED_EXAMPLE["inspect-ext-tool-runner"], TASKS["delegate-answer-reenters-as-untrusted"], "tool-runner")
+    no_rule = {**SEED_EXAMPLE["inspect-ext-tool-runner"], "automationRules": {}}
+    with pytest.raises(ValueError, match="no automation rule"):
+        seed_for(no_rule, task1, "tool-runner")
 
 
 def test_agent_key_env_is_one_variable_per_tenant_and_agent():

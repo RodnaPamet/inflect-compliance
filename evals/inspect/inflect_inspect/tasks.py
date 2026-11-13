@@ -22,11 +22,12 @@ Configuration comes from the environment the workflow sets, never from a task
 argument Inspect would echo into its log: ``INSPECT_PRODUCT_URL`` (loopback),
 ``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), per
 tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>``, and per
-seed agent its bound API key in ``INSPECT_AGENT_KEY_<TENANT>_<AGENT ID>``
+Flue seed agent its bound API key in ``INSPECT_AGENT_KEY_<TENANT>_<AGENT ID>``
 (``runner.agent_key_env``; ``product.py`` says which route takes which). A
-Flue tenant has one eval agent; a Tool Runner tenant has one per profile
-(``runner.seed_for`` says why), and each sample uses the key of the agent its
-run binds.
+Flue tenant has one eval agent, whose key starts its runs. A Tool Runner
+tenant has one per profile (``runner.seed_for`` says why) and NO key: each of
+its runs starts from the profile's automation rule, which the OWNER fires by
+creating a task (owner decision, 2026-11-13; ``runner._start_through_rule``).
 """
 
 from __future__ import annotations
@@ -68,9 +69,10 @@ def _env_name(slug: str) -> str:
     return slug.upper().replace("-", "_")
 
 
-def _product_for(slug: str, agent_id: str) -> HttpProduct:
+def _product_for(slug: str, seed: SeedManifest) -> HttpProduct:
     cookie = os.environ[f"INSPECT_SESSION_{_env_name(slug)}"]
-    agent_key = os.environ[agent_key_env(slug, agent_id)]
+    # A run started from an automation rule presents no key, so none is read.
+    agent_key = os.environ[agent_key_env(slug, seed.agent_id)] if seed.rule_id is None else None
     return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie, agent_key)
 
 
@@ -87,7 +89,7 @@ def governed_run(engine: str):
         try:
             slug = _tenant(task_def, engine)
             seed = _seed_for(slug, task_def, engine)
-            product = _product_for(slug, seed.agent_id)
+            product = _product_for(slug, seed)
         except (KeyError, ValueError, OSError) as err:
             # Configuration (a seed or a credential the workflow did not hand
             # over): nothing started, so the next sample may still run.

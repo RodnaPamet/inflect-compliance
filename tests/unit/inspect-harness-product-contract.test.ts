@@ -11,6 +11,11 @@
  * the type the product returns (the `satisfies` clauses are checked by
  * `npm run typecheck`; the runtime half checks the fixture carries them). The
  * pytest suite serves the same bodies to `HttpProduct` over HTTP.
+ *
+ * A Tool Runner run starts from an automation rule (owner decision,
+ * 2026-11-13): the harness creates a task, reads the rule's execution for it
+ * by the key `TASK_CREATED` carries, and finds the run among the agent's runs.
+ * Those three reads are held here too.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,6 +28,9 @@ import type { getWorkflowRun, listWorkflowRuns, startWorkflowRun } from '@/app-l
 import type { RunStepFeed } from '@/app-layer/usecases/workflow-run-steps';
 import type { RiskKpiCounts } from '@/app-layer/repositories/RiskRepository';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
+import type { createTask } from '@/app-layer/usecases/task';
+import type { listRuleExecutions } from '@/app-layer/usecases/automation-executions';
+import type { TaskCreatedData } from '@/app-layer/automation/event-contracts';
 import { assertRequiredInputPresent } from '@/app-layer/usecases/workflow-runs';
 import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
@@ -49,6 +57,8 @@ type SecurityConfig = Awaited<ReturnType<typeof getTenantSecurityConfig>>;
 type AgentTools = Awaited<ReturnType<typeof listAgentTools>>;
 type ListedProposal = Awaited<ReturnType<typeof listAgentProposals>>[number];
 type KillList = Awaited<ReturnType<typeof listKillSwitches>>;
+type CreatedTask = Awaited<ReturnType<typeof createTask>>;
+type RuleExecutions = Awaited<ReturnType<typeof listRuleExecutions>>;
 
 // What product.py and ledger.py read, field by field, each checked against
 // the type the product returns.
@@ -65,6 +75,13 @@ const READS = {
     proposal: ['id', 'status', 'createdEntityId'] as const satisfies readonly (keyof ListedProposal)[],
     killList: ['inForce'] as const satisfies readonly (keyof KillList)[],
     killRecord: ['id', 'agentId', 'engagedAt', 'liftedAt'] as const satisfies readonly (keyof KillSwitchRecord)[],
+    createdTask: ['key'] as const satisfies readonly (keyof CreatedTask)[],
+    ruleExecutions: ['items'] as const satisfies readonly (keyof RuleExecutions)[],
+    ruleExecution: ['id', 'status', 'triggerPayload'] as const satisfies readonly (keyof RuleExecutions['items'][number])[],
+    // The execution's trigger payload is the TASK_CREATED event's data; the
+    // harness names its execution by the task's key.
+    taskCreatedData: ['key', 'title'] as const satisfies readonly (keyof TaskCreatedData)[],
+    listedRun: ['id', 'workflowKey', 'parentExecutionId'] as const satisfies readonly (keyof ListedRuns[number])[],
 };
 // The run list is a bare array: product.py counts its rows.
 const listedRunsIsAnArray: readonly unknown[] = [] as unknown as ListedRuns;
@@ -121,10 +138,41 @@ describe('each field the harness reads is in the product type and in the fixture
     it('the run list is an array, capped at the page product.py refuses at', () => {
         expect(Array.isArray(R.listRuns.body)).toBe(true);
         expect(listedRunsIsAnArray).toEqual([]);
+        expect(Array.isArray(R.listAgentRuns.body)).toBe(true);
         const page = /\btake: opts\.take \?\? (\d+)/.exec(functionBodyOf(read('src/app-layer/usecases/workflow-runs.ts'), 'listWorkflowRuns'))?.[1];
         const harnessPage = /^RUN_LIST_PAGE = (\d+)$/m.exec(read('evals/inspect/inflect_inspect/product.py'))?.[1];
         expect(page).toBeDefined();
         expect(harnessPage).toBe(page);
+    });
+});
+
+describe('a Tool Runner run starts from its automation rule', () => {
+    it('the trigger task, its rule execution and the agent run carry what the harness reads', () => {
+        expect(R.createTask.status).toBe(201);
+        expect(keysOf(R.createTask.body)).toEqual(expect.arrayContaining([...READS.createdTask]));
+        const executions = R.ruleExecutions.body as { items: Array<{ triggerPayload: unknown }> };
+        expect(keysOf(executions)).toEqual(expect.arrayContaining([...READS.ruleExecutions]));
+        expect(keysOf(executions.items[0])).toEqual(expect.arrayContaining([...READS.ruleExecution]));
+        expect(keysOf(executions.items[0].triggerPayload)).toEqual(expect.arrayContaining([...READS.taskCreatedData]));
+        expect(keysOf((R.listAgentRuns.body as unknown[])[0])).toEqual(expect.arrayContaining([...READS.listedRun]));
+    });
+
+    it('the task create emits TASK_CREATED carrying the key and title, and the run list filters by agent', () => {
+        const emit = codeOf(functionBodyOf(read('src/app-layer/usecases/task.ts'), 'createTask'));
+        expect(emit).toContain("event: 'TASK_CREATED',");
+        expect(emit).toContain('key: task.key,');
+        expect(emit).toContain('title: task.title,');
+        expect(codeOf(read('src/app/api/t/[tenantSlug]/agent-runs/route.ts'))).toContain("const agentId = sp.get('agentId')?.trim() || undefined;");
+    });
+
+    it('the INVOKE_AGENT dispatch starts the run as the AUTOMATION trigger', () => {
+        expect(codeOf(read('src/app-layer/jobs/agent-invoke-dispatch.ts'))).toContain("profileTrigger: 'AUTOMATION',");
+    });
+
+    it('the harness never starts a profile run at the generic route', () => {
+        // product.py's start_run refuses without a key, and only a Flue tenant hands one over.
+        expect(R.startRun.body).toMatchObject({ workflowKey: 'ad-hoc-question' });
+        for (const name of ['createTask', 'ruleExecutions', 'listAgentRuns']) expect(R[name].credential).toBe('session');
     });
 });
 

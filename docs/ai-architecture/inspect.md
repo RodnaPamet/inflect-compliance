@@ -189,10 +189,31 @@ and, for the seed,
       steps, proposals and guard verdicts through the product's API (as the
       seed tenant's OWNER) — never the database directly. No harness route
       exists (garak built only the assistant half), so the solver starts each
-      run through the product's own `POST /agent-runs` with the seed agent's
-      bound API key, the way an agent starts one: a reasoning engine refuses a
-      run no ACTIVE registered agent vouches for, and a session binds none.
-      No bypass. Every response shape the harness reads is pinned in
+      Flue run through the product's own `POST /agent-runs` with the seed
+      agent's bound API key, the way an agent starts one: a reasoning engine
+      refuses a run no ACTIVE registered agent vouches for, and a session binds
+      none. A Tool Runner run is an agent profile's, and since #5367 a profile
+      key names the trigger that starts it, which the generic route never does
+      (`PROFILE_TRIGGER_REQUIRED`). So the solver starts it as the AUTOMATION
+      trigger, through a real automation rule, the way production starts an
+      unattended run (owner decision, 2026-11-13): the seed gives each profile
+      an ENABLED `INVOKE_AGENT` rule on `TASK_CREATED`, filtered to the titles
+      of the samples that run it and mapping the title into the run input; the
+      OWNER creates a task titled with the sample's input (`POST /tasks`), the
+      rule's execution for that task's key says whether it acted
+      (`GET /automation/rules/:id/executions`), and the run is the one new row
+      of the agent's runs (`GET /agent-runs?agentId=`). `agent-invoke-dispatch`
+      starts it as the profile's agent under the rule author's membership,
+      through `startWorkflowRun`'s ordinary admission (kill switch, breaker,
+      caps, residency and registration gates, the version's own trigger
+      check). A start either path refuses leaves no run, and the sample is
+      INCOMPLETE, never a pass; a run the harness cannot name (the rule had not
+      acted by the deadline, two new runs) ends the pass. A direct
+      `TASK_CREATED` firing records no execution on the run
+      (`parentExecutionId` is set only on a chained or sub-flow firing), which
+      is why the run is found among the agent's runs rather than by its cause.
+      No bypass, and the generic route still starts no profile. Every response
+      shape the harness reads is pinned in
       `evals/inspect/fixtures/product-contract.json` and held to the product's
       types.
 - [x] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
@@ -207,16 +228,24 @@ and, for the seed,
       scheduled run is skipped unless the repository variable
       `AGENT_EVALS_ENABLED` is `true`; a manual dispatch always runs), record validated and
       uploaded for a person to commit, dated `AGENT-EVAL-NON-BLOCKING-UNTIL:`
-      marker parsed by a guard.
-- [x] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (each
-      with a bound API key carrying `mcp:orchestrate` and its grants' scopes,
-      written to `--agent-keys` and never to the manifest), approved profiles
-      and fixtures, all through the product's usecases, idempotent, refusing
-      production and any database off loopback. A Tool Runner tenant has one
-      eval agent PER PROFILE, because a profile runs as its own agent, an agent
-      holds one profile, and only its version in force runs; the manifest
-      names each profile's agent (`profileAgents`) and the workflow passes one
-      key per agent. The fixture text follows what the read tools return:
+      marker parsed by a guard. With the fallback key, which is
+      organisation-level, the app and worker are given
+      `vars.ANTHROPIC_WORKSPACE_ID` as `ANTHROPIC_WORKSPACE_ID` (both engines
+      send it as `anthropic-workspace-id`), as `skills-evaluate.yml` and, in #5498, `garak.yml` do; the dedicated
+      key lives in its own workspace and needs none. The job log names which
+      key and whether the header was sent, never a value.
+- [x] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (a
+      Flue agent with a bound API key carrying `mcp:orchestrate` and its
+      grants' scopes, written to `--agent-keys` and never to the manifest),
+      approved profiles allowing the AUTOMATION trigger alone, one automation
+      rule per profile, and fixtures, all through the product's usecases,
+      idempotent, refusing production and any database off loopback. A Tool
+      Runner tenant has one eval agent PER PROFILE, because a profile runs as
+      its own agent, an agent holds one profile, and only its version in force
+      runs; the manifest names each profile's agent (`profileAgents`) and rule
+      (`automationRules`). A profile agent gets no key, because its runs start
+      from its rule and nothing would present one; the workflow refuses a key
+      handed over for a Tool Runner tenant and requires one for a Flue tenant. The fixture text follows what the read tools return:
       `list_findings` returns no description, so the fragment labels ride in
       the finding's `owner` field, and `list_controls` returns no description,
       so the secret-shaped value rides in the control's name. Two fixture

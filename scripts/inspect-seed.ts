@@ -19,19 +19,28 @@
  *     tenant, because a profile runs as its own agent, an agent holds one
  *     profile and only its version in force runs;
  *   - on a Tool Runner tenant, each profile version authored by the owner,
- *     submitted, and approved by the second person;
- *   - per agent, an API key BOUND to it (`createApiKey`), carrying
- *     `mcp:orchestrate` and the scopes its grants need.
+ *     submitted, and approved by the second person, allowing the AUTOMATION
+ *     trigger only;
+ *   - on a Tool Runner tenant, per profile, an ENABLED `INVOKE_AGENT`
+ *     automation rule the owner authors (`createAutomationRule`): it fires on
+ *     `TASK_CREATED` for the titles of the samples that run the profile and
+ *     starts the profile's version in force as its agent. That is how the
+ *     harness starts every Tool Runner run (owner decision, 2026-11-13);
+ *   - per Flue agent, an API key BOUND to it (`createApiKey`), carrying
+ *     `mcp:orchestrate` and the scopes its grants need. A profile agent gets
+ *     no key: its runs start from its rule, and nothing would present one.
  *
- * WHAT IT PRINTS: progress lines only. The manifest (ids, run keys, synthetic
- * markers, the owner's e-mail, `seedFixtureHash`) goes to `--manifest`; the raw
+ * WHAT IT PRINTS: progress lines only. The manifest (ids, run keys, rule ids,
+ * synthetic markers, the owner's e-mail, `seedFixtureHash`) goes to `--manifest`; the raw
  * keys go to `--agent-keys` ONLY, as `{ slug: { agentId: key } }`, mode 0600.
  * Neither is ever written to stdout: pino logs from the usecases share it.
  *
  * IDEMPOTENT. Every step reads before it writes and skips what is already
  * there. The one exception is the key: a key's plaintext cannot be read back,
  * so a re-run revokes the seed's earlier key for the agent (`revokeApiKey`) and
- * mints one fresh, leaving exactly one live seed key per agent. A definition
+ * mints one fresh, leaving exactly one live seed key per Flue agent and none
+ * per profile agent. A rule follows its profile's version in force, so a re-run
+ * that approves a new version re-points the rule (`updateAutomationRule`). A definition
  * that disagrees with what an earlier run stored (an agent's data scope, a
  * fixture's title, a card that does not permit a grant) is refused, not
  * overwritten.
@@ -73,15 +82,23 @@ import {
 import { AgentProfileVersionSchema } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
 import { createApiKey, revokeApiKey } from '@/app-layer/usecases/api-keys';
+import { createAutomationRule, updateAutomationRule } from '@/app-layer/usecases/automation-rules';
+import type { AutomationTriggerFilter } from '@/app-layer/automation/types';
 import { createFinding } from '@/app-layer/usecases/finding';
 import { createControl } from '@/app-layer/usecases/control/mutations';
 import { createRisk } from '@/app-layer/usecases/risk';
 import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import { InspectTaskSetSchema, inspectTaskSetHash } from '@/lib/ai/evals/inspect-record';
+import { canonicalJson } from '@/lib/canonical-json';
 import { seedAgentRiskAssessmentLibrary } from '../prisma/agent-risk-assessment-library';
 import {
     ASSESSMENT_ANSWER,
+    AUTOMATION_INPUT_FIELD,
+    AUTOMATION_INPUT_KEY,
+    AUTOMATION_TRIGGER_EVENT,
     BULK_RISK_TITLE_PREFIX,
+    PROFILE_TRIGGER,
+    automationRuleNameFor,
     FINDING_SOURCE_KIND,
     FIXTURES,
     NEVER_GRANTED,
@@ -97,7 +114,8 @@ import {
 const ROOT = path.resolve(__dirname, '..');
 /** The name every seed key carries: a re-run revokes keys of this name, and no other. */
 export const SEED_KEY_NAME = 'Inspect seed (agent-evals nightly)';
-const PROFILE_TRIGGERS = ['ASK'] as const;
+/** A profile version allows the one trigger the harness starts it by, and no other. */
+const PROFILE_TRIGGERS = [PROFILE_TRIGGER] as const;
 
 // ─── The target guard ───────────────────────────────────────────────
 
@@ -444,7 +462,7 @@ async function ensureProfile(
         const inForce = await runInTenantContext(people.owner, (db) =>
             db.agentProfileVersion.findFirst({
                 where: { tenantId: people.tenantId, profileId: profile.id, version: profile.currentApprovedVersion! },
-                select: { instructionsHash: true, toolNames: true, outputKind: true, maxTurns: true, modelTier: true, effort: true, flowJson: true },
+                select: { instructionsHash: true, toolNames: true, outputKind: true, maxTurns: true, modelTier: true, effort: true, flowJson: true, allowedTriggers: true },
             }),
         );
         const same =
@@ -455,7 +473,10 @@ async function ensureProfile(
             inForce.outputKind === input.outputKind &&
             inForce.maxTurns === input.maxTurns &&
             inForce.modelTier === input.modelTier &&
-            inForce.effort === input.effort;
+            inForce.effort === input.effort &&
+            // An earlier seed allowed ASK, which no start path the harness has
+            // names: such a version is replaced, never run.
+            [...inForce.allowedTriggers].sort().join(',') === [...PROFILE_TRIGGERS].sort().join(',');
         if (same) return profileRunKey(profile.id, profile.currentApprovedVersion);
     }
 
@@ -472,9 +493,98 @@ async function ensureProfile(
     return approved.runKey;
 }
 
+// ─── Automation rules ───────────────────────────────────────────────
+
+/** The rule a profile's runs start from, as the seed defines it. */
+export function automationRuleFor(def: ProfileDefinition, agentId: string, runKey: string) {
+    const triggerFilter: AutomationTriggerFilter = {
+        logic: 'AND',
+        conditions: [{ field: AUTOMATION_INPUT_FIELD, operator: 'in', value: [...def.triggerTitles] }],
+    };
+    return {
+        name: automationRuleNameFor(def.fixture),
+        triggerEvent: AUTOMATION_TRIGGER_EVENT,
+        triggerFilter,
+        actionType: 'INVOKE_AGENT' as const,
+        actionConfig: { agentId, workflowKey: runKey, inputMapping: { [AUTOMATION_INPUT_KEY]: AUTOMATION_INPUT_FIELD } },
+        status: 'ENABLED' as const,
+    };
+}
+
+/**
+ * The ENABLED `INVOKE_AGENT` rule that starts the profile's runs, authored by
+ * the owner, so a run executes under the owner's membership with the agent
+ * bound (`agent-invoke-dispatch`), through `startWorkflowRun`'s ordinary
+ * admission: the kill switch, the breaker, the registration and residency
+ * gates and the profile's own trigger check.
+ */
+async function ensureAutomationRule(
+    plan: SeedTenantPlan,
+    owner: RequestContext,
+    agentId: string,
+    def: ProfileDefinition,
+    runKey: string,
+    log: Log,
+): Promise<string> {
+    const where = `${plan.slug} / ${def.fixture}`;
+    const want = automationRuleFor(def, agentId, runKey);
+    const existing = await runInTenantContext(owner, (db) =>
+        db.automationRule.findMany({
+            where: { tenantId: owner.tenantId, name: want.name, deletedAt: null },
+            select: { id: true, triggerEvent: true, triggerFilterJson: true, actionType: true, actionConfigJson: true, status: true, createdByUserId: true },
+            take: 2,
+        }),
+    );
+    if (existing.length > 1) throw new Error(`${where}: two live rules are named ${want.name}; reseed a fresh database`);
+    const rule = existing[0];
+    if (rule) {
+        if (rule.createdByUserId !== owner.userId) {
+            throw new Error(`${where}: rule ${want.name} was authored by someone other than the owner; reseed a fresh database`);
+        }
+        const same =
+            rule.triggerEvent === want.triggerEvent &&
+            rule.actionType === want.actionType &&
+            rule.status === want.status &&
+            canonicalJson(rule.triggerFilterJson) === canonicalJson(want.triggerFilter) &&
+            canonicalJson(rule.actionConfigJson) === canonicalJson(want.actionConfig);
+        if (same) return rule.id;
+        await step(where, 'updateAutomationRule', () =>
+            updateAutomationRule(owner, rule.id, {
+                triggerEvent: want.triggerEvent,
+                triggerFilter: want.triggerFilter,
+                actionType: want.actionType,
+                // The update input's config union predates INVOKE_AGENT; the
+                // usecase validates it against the action type.
+                actionConfig: want.actionConfig as never,
+                status: want.status,
+            }),
+        );
+        log(`${where}: automation rule re-pointed`);
+        return rule.id;
+    }
+    const created = await step(where, 'createAutomationRule', () =>
+        createAutomationRule(owner, {
+            name: want.name,
+            description: 'Starts the Inspect nightly\'s Tool Runner runs for this profile (docs/ai-architecture/inspect.md).',
+            triggerEvent: want.triggerEvent,
+            triggerFilter: want.triggerFilter,
+            actionType: want.actionType,
+            actionConfig: want.actionConfig,
+            status: want.status,
+        }),
+    );
+    log(`${where}: automation rule created`);
+    return created.id;
+}
+
 // ─── Keys ───────────────────────────────────────────────────────────
 
-async function mintAgentKey(plan: SeedTenantPlan, owner: RequestContext, agentId: string, def: AgentDefinition): Promise<string> {
+/**
+ * Revoke the seed's earlier keys for the agent, then mint one fresh, for an
+ * agent the harness starts with its key; for one started by its rule, revoke
+ * and mint nothing (`null`).
+ */
+async function mintAgentKey(plan: SeedTenantPlan, owner: RequestContext, agentId: string, def: AgentDefinition): Promise<string | null> {
     const where = `${plan.slug} / ${def.name}`;
     const earlier = await runInTenantContext(owner, (db) =>
         db.tenantApiKey.findMany({
@@ -486,6 +596,7 @@ async function mintAgentKey(plan: SeedTenantPlan, owner: RequestContext, agentId
     for (const k of earlier) {
         await step(where, 'revoke the earlier seed key', () => revokeApiKey(owner, k.id));
     }
+    if (def.startedBy !== 'agent-key') return null;
     const created = await step(where, 'createApiKey', () =>
         createApiKey(owner, {
             name: SEED_KEY_NAME,
@@ -508,6 +619,8 @@ export interface InspectSeedTenantManifest {
     profiles: Record<string, string>;
     /** profile fixture → the agent that profile runs as */
     profileAgents: Record<string, string>;
+    /** profile fixture → the automation rule its runs start from */
+    automationRules: Record<string, string>;
     /** task id → synthetic fixture marker */
     markers: Record<string, string>;
     ownerEmail: string;
@@ -517,7 +630,7 @@ export interface InspectSeedResult {
     seedFixtureHash: string;
     seedVersion: number;
     tenants: Record<string, InspectSeedTenantManifest>;
-    /** slug → agentId → raw key. Written to the keys file only. */
+    /** slug → agentId → raw key, for the agents started with one. Written to the keys file only. */
     keys: Record<string, Record<string, string>>;
 }
 
@@ -556,21 +669,27 @@ export async function seedInspectTenants(log: Log = (line) => console.info(line)
 
         const profiles: Record<string, string> = {};
         const profileAgents: Record<string, string> = {};
+        const automationRules: Record<string, string> = {};
         for (const p of t.profiles) {
             const def = t.agents.find((a) => a.profileFixture === p.fixture);
             if (!def) throw new Error(`${t.slug}: no eval agent runs profile ${p.fixture}`);
             const agentId = agentIds.get(def)!;
             profiles[p.fixture] = await ensureProfile(t, people, agentId, p, log);
             profileAgents[p.fixture] = agentId;
+            automationRules[p.fixture] = await ensureAutomationRule(t, people.owner, agentId, p, profiles[p.fixture], log);
         }
 
         keys[t.slug] = {};
-        for (const [def, agentId] of agentIds) keys[t.slug][agentId] = await mintAgentKey(t, people.owner, agentId, def);
+        for (const [def, agentId] of agentIds) {
+            const key = await mintAgentKey(t, people.owner, agentId, def);
+            if (key !== null) keys[t.slug][agentId] = key;
+        }
 
         tenants[t.slug] = {
             agentId: t.engine === 'flue' ? agentIds.get(t.agents[0])! : null,
             profiles,
             profileAgents,
+            automationRules,
             markers: { ...t.markers },
             ownerEmail: t.ownerEmail,
         };

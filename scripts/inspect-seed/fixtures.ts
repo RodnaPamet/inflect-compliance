@@ -17,6 +17,8 @@ import { createHash } from 'node:crypto';
 import { canonicalJson } from '@/lib/canonical-json';
 import { connectKeyScopes } from '@/lib/agentic/connect-wizard';
 import { PROFILE_MAX_TURNS } from '@/lib/agentic/agent-profile';
+import { CreateTaskSchema } from '@/lib/schemas';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import type {
     InspectEngine,
     InspectTask,
@@ -204,6 +206,29 @@ export const PROFILE_FIXTURES: Readonly<Record<string, ProfileFixture>> = {
     'inspect-list-controls': { instructionsFrom: 'secret-shaped-value-never-crosses-a-tool-boundary', toolNames: ['list_controls', 'list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
 };
 
+// ─── How a run starts ───────────────────────────────────────────────
+
+/**
+ * A Tool Runner run starts as the AUTOMATION trigger, through a real
+ * automation rule (owner decision, 2026-11-13). Since #5367 a profile key
+ * names its trigger and the generic `POST /agent-runs` names none, so a
+ * profile run cannot start there; production starts an unattended run from an
+ * `INVOKE_AGENT` rule, and so does the harness. No new trigger, and the
+ * generic route stays as it is.
+ *
+ * The rule fires on `TASK_CREATED` (`createTask`, `POST /tasks`, which the
+ * tenant's OWNER may call) and projects the task's title into the run input as
+ * `question`. Its filter admits only the titles of the tenant's samples that
+ * run its profile, so one task fires exactly one rule. A profile run takes no
+ * caller input (D-EV-7), so the title is provenance, not the instructions.
+ */
+export const PROFILE_TRIGGER = 'AUTOMATION' as const;
+export const AUTOMATION_TRIGGER_EVENT = 'TASK_CREATED' as const;
+/** The `TASK_CREATED` field the rule maps into the run input, and the input key it feeds. */
+export const AUTOMATION_INPUT_FIELD = 'title' as const;
+export const AUTOMATION_INPUT_KEY = 'question' as const;
+export const automationRuleNameFor = (fixture: string): string => `Inspect eval (${fixture})`;
+
 export interface AgentDefinition {
     readonly name: string;
     /** The profile fixture this agent runs (Tool Runner), or null (Flue). */
@@ -212,13 +237,29 @@ export interface AgentDefinition {
     readonly dataAccessScope: 'READ_TENANT_DATA' | 'WRITE_TENANT_DATA';
     /** 1 reads; 2 also proposes (`AUTONOMY_REQUIRED_BY_CAPABILITY`). */
     readonly autonomyLevel: 1 | 2;
-    /** `mcp:orchestrate` starts the run; the rest are the grants' own scopes (`connectKeyScopes`). */
+    /**
+     * How the harness starts this agent's runs. A Flue agent's run is started
+     * with its bound key (`agent-key`); a profile agent's by its automation
+     * rule (`automation-rule`), which holds no key, so none is minted for it.
+     */
+    readonly startedBy: 'agent-key' | 'automation-rule';
+    /**
+     * `mcp:orchestrate` starts the run; the rest are the grants' own scopes
+     * (`connectKeyScopes`). Empty for an agent started by its rule: a key
+     * nothing presents is a credential with no use.
+     */
     readonly keyScopes: readonly string[];
 }
 
 export interface ProfileDefinition extends ProfileFixture {
     readonly fixture: string;
     readonly instructions: string;
+    /**
+     * The task titles that fire this profile's rule: the inputs of the
+     * tenant's samples that run it, each a valid task title, none shared with
+     * another profile on the tenant.
+     */
+    readonly triggerTitles: readonly string[];
 }
 
 export interface SeedTenantPlan extends SeedTenantDefinition {
@@ -252,13 +293,15 @@ function isApplicable(task: InspectTask, engine: InspectEngine): boolean {
 function agentFor(name: string, profileFixture: string | null, profileTools: readonly string[]): AgentDefinition {
     const grants = [...new Set<string>([...STANDARD_READ_GRANTS, ...profileTools])].sort();
     const proposes = grants.some((g) => g.startsWith('propose_'));
+    const startedBy = profileFixture === null ? 'agent-key' : 'automation-rule';
     return {
         name,
         profileFixture,
         grants,
         dataAccessScope: proposes ? 'WRITE_TENANT_DATA' : 'READ_TENANT_DATA',
         autonomyLevel: proposes ? 2 : 1,
-        keyScopes: [...new Set(['mcp:orchestrate', ...connectKeyScopes(grants)])].sort(),
+        startedBy,
+        keyScopes: startedBy === 'agent-key' ? [...new Set(['mcp:orchestrate', ...connectKeyScopes(grants)])].sort() : [],
     };
 }
 
@@ -314,15 +357,37 @@ export function planSeed(set: InspectTaskSet): SeedPlan {
             }
         }
 
+        const titleOwner = new Map<string, string>();
         const profiles = [...profileNames].sort().map((fixture): ProfileDefinition => {
             const p = PROFILE_FIXTURES[fixture];
             const text = set.tasks.find((t) => t.id === p.instructionsFrom)!.inputs[0].text!;
-            return { fixture, instructions: text, ...p };
+            const titles = new Set<string>();
+            for (const t of tasks) {
+                const arm = t.engines[tenant.engine];
+                if (!('profileFixture' in arm) || arm.profileFixture !== fixture) continue;
+                for (const i of t.inputs) {
+                    // The title is what fires the rule: a sample with no input
+                    // could fire nothing, one the task schema refuses could
+                    // never be created, and one `createTask`'s sanitiser
+                    // rewrites would reach the filter as other text.
+                    if (!i.text || !CreateTaskSchema.shape.title.safeParse(i.text).success || sanitizePlainText(i.text) !== i.text) {
+                        throw new Error(`inspect-seed: ${t.id}:${i.id} on ${tenant.slug} has no input a task title can carry`);
+                    }
+                    const owner = titleOwner.get(i.text);
+                    if (owner !== undefined && owner !== fixture) {
+                        throw new Error(`inspect-seed: ${tenant.slug} would fire both ${owner} and ${fixture} on one task title`);
+                    }
+                    titleOwner.set(i.text, fixture);
+                    titles.add(i.text);
+                }
+            }
+            return { fixture, instructions: text, ...p, triggerTitles: [...titles].sort() };
         });
 
         // A profile runs as its own agent (PROFILE_AGENT_MISMATCH), an agent
         // has one profile (@@unique on AgentProfile) and only its version in
-        // force runs, so each profile is a separate eval agent with its own key.
+        // force runs, so each profile is a separate eval agent with its own
+        // automation rule.
         const agents =
             tenant.engine === 'flue'
                 ? [agentFor('Inspect eval agent', null, [])]
