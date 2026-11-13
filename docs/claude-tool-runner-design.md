@@ -3,9 +3,10 @@ inflect · claude tool runner · design v1 · 2026-10-24
 # The Claude Tool Runner in Inflect: the in-process engine for customer-built agents
 
 > **Status: living design** — research into the Tool Runner in Anthropic's
-> TypeScript SDK, and a recommendation for where it belongs in Inflect's agent
-> stack. None of it is built. The **Current state** section is true today. The
-> **Roadmap** section is the plan, one pull request per step. Companion
+> TypeScript SDK, and where it belongs in Inflect's agent stack. The engine is
+> built and runs customer agents in production (Phase 2, Steps 2a to 2e and
+> 2g); the **Current state** section is what is true today, and the
+> **Roadmap** section is what remains, one pull request per step. Companion
 > documents: `docs/claude-agent-sdk-design.md`, which introduces the agent
 > builder this engine would run, and `docs/claude-managed-agents-design.md`.
 > SDK facts were read on 2026-10-24 from the bundled Claude API reference, the
