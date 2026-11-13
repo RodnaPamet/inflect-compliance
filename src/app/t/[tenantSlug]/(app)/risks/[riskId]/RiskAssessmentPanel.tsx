@@ -348,10 +348,9 @@ export function RiskAssessmentPanel({
         return <SkeletonCard lines={4} />;
     }
 
-    const maxScale = Math.max(config.likelihoodLevels, config.impactLevels);
-    const draftInherentScore = calculateRiskScore(likelihood, impact, maxScale);
+    const draftInherentScore = calculateRiskScore(likelihood, impact, config.likelihoodLevels, config.impactLevels);
     const inherentDirty = likelihood !== risk.likelihood || impact !== risk.impact;
-    const draftResidualScore = calculateRiskScore(residualLikelihood, residualImpact, maxScale);
+    const draftResidualScore = calculateRiskScore(residualLikelihood, residualImpact, config.likelihoodLevels, config.impactLevels);
 
     const saveInherent = async () => {
         clearStepError('inherent');
