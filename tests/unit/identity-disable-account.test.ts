@@ -114,6 +114,7 @@ import {
     disableAccount,
     disableAccountsForLeaver,
     findLeaverCandidates,
+    MAX_LEAVER_CANDIDATES,
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
 import { MAX_DISABLES_PER_RUN } from '@/app-layer/usecases/identity-write-breaker';
@@ -1425,8 +1426,37 @@ describe('candidate selection demands FRESH link evidence', () => {
         expect(typeof q.take).toBe('number');
     });
 
+    it('reads the newest departures first, one past the cap, and says when it was cut (#5142)', async () => {
+        const row = (i: number) => ({
+            id: `l${i}`,
+            connectedAccount: {
+                externalUserId: `x${i}`,
+                email: null,
+                isProtected: false,
+                status: 'ACTIVE',
+                onPremisesSyncEnabled: null,
+                onPremStateObservedAt: null,
+                connection: { isEnabled: true },
+            },
+        });
+        db.identityAccountLink.findMany.mockResolvedValue(
+            Array.from({ length: MAX_LEAVER_CANDIDATES + 1 }, (_, i) => row(i)),
+        );
+
+        const r = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+
+        const q = db.identityAccountLink.findMany.mock.calls[0][0];
+        expect(q.orderBy[0]).toEqual({ employee: { endDate: { sort: 'desc', nulls: 'first' } } });
+        expect(q.take).toBe(MAX_LEAVER_CANDIDATES + 1);
+        expect(r.truncated).toBe(true);
+        expect(r.candidates).toHaveLength(MAX_LEAVER_CANDIDATES);
+
+        db.identityAccountLink.findMany.mockResolvedValue([row(0)]);
+        expect((await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'))).truncated).toBe(false);
+    });
+
     it('no employees means no query at all', async () => {
-        expect(await findLeaverCandidates(ctx, 'entra-id', [], new Date())).toEqual([]);
+        expect(await findLeaverCandidates(ctx, 'entra-id', [], new Date())).toEqual({ candidates: [], truncated: false });
         expect(db.identityAccountLink.findMany).not.toHaveBeenCalled();
     });
 
@@ -1461,7 +1491,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                 },
             },
         ]);
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
         expect(out).toEqual([
             {
                 linkId: 'l1',
@@ -1499,7 +1529,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                 },
             },
         ]);
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
         expect(out[0].onPremStateObservedAt).toBeNull();
     });
 
@@ -1533,7 +1563,7 @@ describe('candidate selection demands FRESH link evidence', () => {
             { id: 'l3', connectedAccount: account({ status: 'DEPROVISIONED' }) },
         ]);
 
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
 
         expect(out.map((c) => c.lastObservedEnabled)).toEqual([true, false, false]);
         // Still three CANDIDATES. The count is the only thing the state changes.
@@ -1630,7 +1660,7 @@ describe('candidate selection demands FRESH link evidence', () => {
             { id: 'l3', connectedAccount: account({}) },
         ]);
 
-        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+        const { candidates: out } = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
 
         expect(out.map((c) => c.connectionEnabled)).toEqual([true, false, false]);
         // Still three CANDIDATES, for the same reason the account-state case
