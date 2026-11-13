@@ -213,13 +213,11 @@ describeFn('deferring a tool call to a person on the Tool Runner engine (real DB
                 await prisma.user.create({ data: { id, email, emailHash: hashForLookup(email) } });
                 await prisma.tenantMembership.create({ data: { tenantId, userId: id, role: role as Role, status: 'ACTIVE' } });
             }
-            // AUDIT, not BALANCED: on the propose surface the funnel's own result
-            // text names `quarantined` (its count key), which the injection
-            // scan's refusal-vocabulary rule matches, so under BALANCED every
-            // propose call through the engine-neutral core is flagged on its own
-            // result. That is a finding of its own, reported with this step; it
-            // is not what this test measures.
-            await prisma.tenantSecuritySettings.create({ data: { tenantId, agentDriver: 'TOOL_RUNNER', aiGuardMode: 'AUDIT' } });
+            // The DEFAULT guard mode (BALANCED), on purpose: a deferral has to work
+            // under the mode tenants actually run. Until #5548 the propose
+            // result's own `"quarantined"` key tripped the injection scan, and
+            // this test had to pin AUDIT to get a propose call through.
+            await prisma.tenantSecuritySettings.create({ data: { tenantId, agentDriver: 'TOOL_RUNNER', aiGuardMode: 'BALANCED' } });
             await seedAgent(t, AGENTS[t]);
             const created = await createAgentProfile(ctx(t, 'author'), AGENTS[t], version());
             await submitAgentProfileVersion(ctx(t, 'author'), AGENTS[t], 1);
