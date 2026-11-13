@@ -61,6 +61,7 @@ const base: Data = {
     uncoveredCriticalAssetsTotal: 1,
     totalCriticalAssets: 4,
     hotControls: [],
+    withheld: { risks: false, assets: false, controls: false },
 };
 
 describe('coverage map', () => {
@@ -100,5 +101,29 @@ describe('coverage map', () => {
         expect(screen.queryByText(C.emptyAssets)).toBeNull();
         // The risk KPI shows no percentage over an empty register.
         expect(document.getElementById('kpi-risks-mitigated')).toHaveTextContent(C.nothingToCover);
+    });
+
+    it('a list withheld from the viewer keeps its count and never reads as "all covered" (#5442)', () => {
+        render(
+            <CoverageClient
+                data={{
+                    ...base,
+                    unmappedRisks: [], uncoveredCriticalAssets: [],
+                    withheld: { risks: true, assets: true, controls: true },
+                }}
+                tenantSlug="acme"
+            />,
+        );
+        // The counts are still there.
+        expect(document.getElementById('unmapped-risks-count')).toHaveTextContent('40');
+        expect(document.getElementById('uncovered-assets-count')).toHaveTextContent('1');
+        // The empty table says why, not that nothing is uncovered.
+        expect(screen.getByText(C.emptyRisksWithheld)).toBeInTheDocument();
+        expect(screen.getByText(C.emptyAssetsWithheld)).toBeInTheDocument();
+        expect(screen.queryByText(C.emptyRisks)).toBeNull();
+        expect(screen.queryByText(C.emptyAssets)).toBeNull();
+        // No "Showing 0 of 40" pointing at a list the viewer cannot open.
+        expect(document.getElementById('unmapped-risks-more')).toBeNull();
+        expect(document.getElementById('uncovered-assets-more')).toBeNull();
     });
 });

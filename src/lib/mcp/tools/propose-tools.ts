@@ -169,7 +169,8 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         description:
             'Propose one or more candidate FINDINGS for human approval (NOT ' +
             'created). Each item uses the finding create shape (severity, type, ' +
-            'title required; description, rootCause, …). Returns pending proposal ids.',
+            'title required; type is NONCONFORMITY, OBSERVATION or OPPORTUNITY; ' +
+            'description, rootCause, …). Returns pending proposal ids.',
         inputSchema: proposeInputSchema('finding'),
         kind: 'FINDING',
         // The findings domain's READ scope, like every propose tool's: a

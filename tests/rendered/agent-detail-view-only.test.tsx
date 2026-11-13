@@ -7,7 +7,7 @@
  * agent's row and its runs, and is never handed a control the server refuses.
  */
 import * as React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // Mounting the register mounts the table, the filter system and the create
 // modal's form stack, which is slow on a loaded machine. Nothing here is about
@@ -41,6 +41,7 @@ jest.mock('next-intl', () => {
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
 
+const mockRouterRefresh = jest.fn();
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({
@@ -48,7 +49,7 @@ jest.mock('next/navigation', () => ({
         replace: jest.fn(),
         back: jest.fn(),
         forward: jest.fn(),
-        refresh: jest.fn(),
+        refresh: mockRouterRefresh,
         prefetch: jest.fn(),
     }),
     usePathname: () => '/t/acme/agents/agent-1',
@@ -75,6 +76,15 @@ jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentKillSwitchAction', (
 }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentAmendModal', () => ({ AgentAmendModal: () => null }));
 
+// The modal's own PATCH is covered in agent-amend-owner-readonly; here only
+// what the detail shell does once the modal says the amend was saved.
+jest.mock('@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentAmendModal', () => ({
+    AgentAmendModal: ({ onAmended }: { onAmended: () => void }) => (
+        <button type="button" data-testid="stub-amended" onClick={onAmended}>
+            amended
+        </button>
+    ),
+}));
 import { AgentDetailClient, type AgentDetailPermissions } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient';
 
 const AGENT = {
@@ -184,5 +194,16 @@ describe('the Behaviour tab', () => {
         cleanup();
         renderWith({ ...VIEW_ONLY, canReadRegistry: true }, true);
         expect(tab('behaviour')?.disabled).toBe(false);
+    });
+});
+
+// The header, meta strip and the amend form's seed are SERVER-rendered from the
+// `agent` prop, so re-keying the tabs leaves them showing the pre-amend values.
+describe('a saved amend re-renders the route (#5152)', () => {
+    it('asks the router to refresh once the modal reports the amend', async () => {
+        renderWith({ ...VIEW_ONLY, canReadRegistry: true, canManageRegistry: true });
+        fireEvent.click(screen.getByTestId('agent-amend-action'));
+        fireEvent.click(await screen.findByTestId('stub-amended'));
+        await waitFor(() => expect(mockRouterRefresh).toHaveBeenCalledTimes(1));
     });
 });

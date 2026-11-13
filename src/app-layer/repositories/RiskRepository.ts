@@ -109,12 +109,16 @@ const riskListSelect = {
     // so a risk wired to fifty assets cannot fan the list query out; the
     // `_count` supplies the honest "+N" without fetching the rest.
     // Covered by the existing `@@index([tenantId, riskId])` on AssetRiskLink.
+    //
+    // An asset in the trash is neither shown nor counted (#5442, owner
+    // decision 2026-11-12) — the same rule the Controls column takes above.
     assetLinks: {
+        where: { asset: { deletedAt: null } },
         select: { asset: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'asc' as const },
         take: 1,
     },
-    _count: { select: { assetLinks: true } },
+    _count: { select: { assetLinks: { where: { asset: { deletedAt: null } } } } },
 } as const;
 
 export class RiskRepository {

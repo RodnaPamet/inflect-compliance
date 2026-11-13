@@ -85,6 +85,7 @@
 import type {
     ScheduledCheckProvider,
     ConnectionConfigSchema,
+    ConnectionValidationOptions,
     ConnectionValidationResult,
     CheckResult,
     EvidencePayload,
@@ -153,8 +154,10 @@ export class OrangeHrmProvider
 {
     readonly id = ORANGEHRM_PROVIDER_ID;
     readonly displayName = 'OrangeHRM';
+    // The authorization-code grant since #3594; the client-credentials wording
+    // outlived it here and in the setup guide (#5201).
     readonly description =
-        'An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant ' +
+        'An OrangeHRM directory, read for the HRIS roster. Connects as an OAuth2 authorization-code client ' +
         'against an instance on a host covered by ORANGEHRM_HOSTS.';
     readonly supportedChecks: string[] = [];
 
@@ -174,10 +177,11 @@ export class OrangeHrmProvider
     readonly mappingVerifiedBy = '#2587 — the live run DISPROVED the mapping in five places, which is why\n        // the fixture label came off only after it ran';
 
     readonly setupGuide =
-        'Stand up an OrangeHRM instance on a ' +
-        'host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, ' +
-        'and provide the instance URL with the client id and secret. Test connection performs a real token ' +
-        'exchange against the instance.';
+        "Stand up an OrangeHRM instance on a host covered by ORANGEHRM_HOSTS and register an OAuth client there " +
+        "for the authorization-code grant, with this deployment's /api/integrations/orangehrm/callback as its redirect URI. " +
+        "Provide the instance URL with the client id and secret and save, then use Authorize to grant access in OrangeHRM: " +
+        "the client id and secret alone cannot obtain a token. Test connection performs a real token exchange with the " +
+        "stored refresh token.";
 
     readonly configSchema: ConnectionConfigSchema = {
         configFields: [
@@ -251,6 +255,7 @@ export class OrangeHrmProvider
     async validateConnection(
         config: Record<string, unknown>,
         secrets: Record<string, unknown>,
+        opts: ConnectionValidationOptions = {},
     ): Promise<ConnectionValidationResult> {
         const { client, missing } = readConfig({ ...config, ...secrets });
         if (missing.length) {
@@ -284,8 +289,11 @@ export class OrangeHrmProvider
             };
         }
         try {
-            const resolveToken = this.deps.resolveToken ?? resolveOrangeHrmAccessToken;
-            await resolveToken(secret, { client }, { fetchImpl: this.deps.fetchImpl });
+            // Through `accessTokenFor`, the ONE resolution site, so a refresh
+            // the Test makes persists the rotated pair as a sync's does. It
+            // used to resolve on its own and drop the rotated refresh token
+            // (#5195).
+            await this.accessTokenFor({ ...config, ...secrets }, client, { persistSecret: opts.persistSecret });
             return { valid: true };
         } catch (e) {
             return {

@@ -20,7 +20,7 @@ import { z } from '@/lib/openapi/zod';
 // reported as a server fault. `z.nativeEnum` moves the rejection back to
 // the boundary where it belongs. Safe to import here: this module is
 // server-only (no 'use client' file imports it).
-import { AssetType } from '@prisma/client';
+import { AssetType, FindingType } from '@prisma/client';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -521,7 +521,10 @@ export const LinkEvidenceControlSchema = z.object({
 const FindingCreateFieldsSchema = z.object({
     auditId: z.string().optional().nullable(),
     severity: z.string().min(1, 'Severity is required'),
-    type: z.string().min(1, 'Type is required'),
+    // A Prisma enum, as `AssetType` above (#5181): a free string let
+    // audit-prep propose findings typed 'Coverage Gap', which passed here and
+    // failed at the driver when a person approved them.
+    type: z.nativeEnum(FindingType, { message: 'Type is required' }),
     title: z.string().min(1, 'Title is required'),
     description: z.string().optional(),
     rootCause: z.string().optional().nullable(),
@@ -573,7 +576,7 @@ export type CreateFindingInput = z.infer<typeof ProposedFindingSchema>;
 
 export const UpdateFindingSchema = z.object({
     severity: z.string().optional(),
-    type: z.string().optional(),
+    type: z.nativeEnum(FindingType).optional(),
     title: z.string().min(1).optional(),
     description: z.string().optional(),
     rootCause: z.string().optional().nullable(),

@@ -193,6 +193,21 @@ export interface WorkflowDefinition {
     requiredInput?: readonly string[];
 
     /**
+     * REFUSE A PRESENT BUT MALFORMED INPUT AT ADMISSION (#5182).
+     *
+     * `requiredInput` says a key is there and non-blank; this says its VALUE is
+     * one the workflow can read. Asked by `assertRequiredInputPresent` right
+     * after the presence check, so a malformed input is refused before the run
+     * row exists, on every engine. Without it a reasoning engine — which never
+     * walks the synthesis that would have noticed — reasons over text the
+     * workflow's own reader would have refused.
+     *
+     * Returns `null` for an input it accepts, otherwise the refusal sentence the
+     * caller is shown. Called only once every `requiredInput` key is present.
+     */
+    validateInput?: (input: Readonly<Record<string, unknown>>) => string | null;
+
+    /**
      * THIS WORKFLOW PROPOSES NOTHING (#3749), by construction rather than by
      * its description.
      *

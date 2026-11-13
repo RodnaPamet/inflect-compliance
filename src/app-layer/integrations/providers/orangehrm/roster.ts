@@ -84,7 +84,7 @@
 import { logger } from '@/lib/observability/logger';
 import { IntegrationTerminalError, resilientFetch } from '../../http-resilience';
 import type { NormalizedEmployee, ListEmployeesResult } from '../hris';
-import { deriveEmploymentStatus } from '../hris/employment-status';
+import { deriveEmploymentStatus, parseVendorDate } from '../hris/employment-status';
 import { assertOrangeHrmHost } from './host';
 import { ORANGEHRM_WEB_ROOT } from './token';
 
@@ -304,8 +304,8 @@ function normalise(row: OrangeHrmEmployeeRow, enrichment: OrangeHrmEnrichment): 
         // the first is taken and the rest are dropped; picking arbitrarily
         // among several would be worse than picking the first consistently.
         managerEmail: enrichment.managerEmail,
-        startDate: enrichment.joinedDate ? new Date(enrichment.joinedDate) : null,
-        endDate: enrichment.terminationDate ? new Date(enrichment.terminationDate) : null,
+        startDate: parseVendorDate(enrichment.joinedDate),
+        endDate: parseVendorDate(enrichment.terminationDate),
     };
 }
 

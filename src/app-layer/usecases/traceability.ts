@@ -10,7 +10,8 @@ import { policyCountsWhere } from '@/lib/policy/coverage-predicate';
 // the traceability graph exposes control/risk/asset titles, so it must sit
 // behind the same canRead check as every other read surface. Since #5376 the
 // per-entity reads ask their anchor's own view assertion (which includes this
-// coarse check); `coverageSummary` still asks this one.
+// coarse check); `coverageSummary` still asks this one, and omits its name
+// lists per kind (#5442).
 import { assertCanRead } from '../policies/common';
 import { assertCanEditAsset, assertCanReadAssets, canReadAssets } from '../policies/asset.policies';
 import { assertCanUpdateControl, assertCanReadControls, canReadControls } from '../policies/control.policies';
@@ -283,8 +284,12 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
     const [seeControls, seeRisks, seeAssets] = [canReadControls(ctx), canReadRisks(ctx), canReadAssets(ctx)];
     return runInTenantContext(ctx, async (db) => {
         const t = ctx.tenantId;
+        // Items in the trash are hidden on every traceability panel (#5442,
+        // owner decision 2026-11-12): a trashed control is neither listed nor
+        // a path to inherited risks and assets, and a trashed risk or asset is
+        // not inherited.
         const links = await db.policyControlLink.findMany({
-            where: { tenantId: t, policyId },
+            where: { tenantId: t, policyId, control: { deletedAt: null } },
             select: {
                 id: true,
                 control: { select: { id: true, code: true, name: true, status: true, category: true } },
@@ -303,7 +308,7 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
 
         const [riskLinks, assetLinks] = await Promise.all([
             sideIf(seeRisks, () => db.riskControl.findMany({
-                where: { tenantId: t, controlId: { in: controlIds } },
+                where: { tenantId: t, controlId: { in: controlIds }, risk: { deletedAt: null } },
                 select: {
                     controlId: true,
                     risk: { select: { id: true, title: true, status: true, score: true, category: true } },
@@ -311,7 +316,7 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
                 take: POLICY_TRACE_TAKE,
             })),
             sideIf(seeAssets, () => db.controlAsset.findMany({
-                where: { tenantId: t, controlId: { in: controlIds } },
+                where: { tenantId: t, controlId: { in: controlIds }, asset: { deletedAt: null } },
                 select: {
                     controlId: true,
                     asset: { select: { id: true, name: true, type: true, criticality: true, status: true } },
@@ -351,8 +356,28 @@ export async function getPolicyTraceability(ctx: RequestContext, policyId: strin
 /** How many rows each coverage gap list shows; the totals are counted apart. */
 export const COVERAGE_GAP_ROWS = 10;
 
+/**
+ * The coverage dashboard. Gated on the coarse read tier, and its COUNTS are
+ * the same for every reader. Its NAME LISTS — the unmapped risks' titles, the
+ * uncovered critical assets' names, the hot controls' names — answer to each
+ * kind's own view key (#5442, owner decision 2026-11-12), the rule the
+ * traceability panels above follow: a kind the caller may not view comes back
+ * as an empty list whose query is not run, and `withheld` says so, so the page
+ * never reads an omitted list as "nothing is uncovered".
+ */
+/**
+ * A risk↔control link counts toward coverage only while both ends are out of
+ * the trash (#5442, owner decision 2026-11-12: a link to an item in the trash
+ * is not shown, and a trashed control mitigates nothing — the residual
+ * suggestion ignores it too). Without it a risk whose only control is in the
+ * trash read as mapped, and `hotControls` could rank a trashed control, which
+ * then came back with a count and no name.
+ */
+const LIVE_RISK_CONTROL = { control: { deletedAt: null }, risk: { deletedAt: null } } as const;
+
 export async function coverageSummary(ctx: RequestContext) {
     assertCanRead(ctx);
+    const withheld = { risks: !canReadRisks(ctx), assets: !canReadAssets(ctx), controls: !canReadControls(ctx) };
     return runInTenantContext(ctx, async (db) => {
         const t = ctx.tenantId;
 
@@ -367,12 +392,12 @@ export async function coverageSummary(ctx: RequestContext) {
 
         // Mapped counts (distinct)
         const [risksWithControls, controlsWithRisks, assetsWithControls, policiesWithControls] = await Promise.all([
-            db.riskControl.findMany({ where: { tenantId: t }, select: { riskId: true }, distinct: ['riskId'] }),
-            db.riskControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.controlAsset.findMany({ where: { tenantId: t }, select: { assetId: true }, distinct: ['assetId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { riskId: true }, distinct: ['riskId'] }),
+            db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { controlId: true }, distinct: ['controlId'] }),
+            db.controlAsset.findMany({ where: { tenantId: t, control: { deletedAt: null }, asset: { deletedAt: null } }, select: { assetId: true }, distinct: ['assetId'] }),
             // Counting policies is gated by the same predicate, applied to the
             // linked policy so an unpublished policy's links don't inflate coverage.
-            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t) }, select: { policyId: true }, distinct: ['policyId'] }),
+            db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t), control: { deletedAt: null } }, select: { policyId: true }, distinct: ['policyId'] }),
         ]);
 
         const risksWithControlsCount = risksWithControls.length;
@@ -394,28 +419,29 @@ export async function coverageSummary(ctx: RequestContext) {
         const uncoveredWhere = { ...criticalWhere, id: { notIn: Array.from(mappedAssetIds) } };
 
         const [unmappedRisks, unmappedRisksTotal, uncoveredCriticalAssets, uncoveredCriticalAssetsTotal, totalCriticalAssets] = await Promise.all([
-            db.risk.findMany({
+            sideIf(!withheld.risks, () => db.risk.findMany({
                 where: unmappedWhere,
                 select: { id: true, title: true, score: true, status: true },
                 orderBy: { score: 'desc' },
                 take: COVERAGE_GAP_ROWS,
-            }),
+            })),
             db.risk.count({ where: unmappedWhere }),
-            db.asset.findMany({
+            sideIf(!withheld.assets, () => db.asset.findMany({
                 where: uncoveredWhere,
                 select: { id: true, name: true, type: true, criticality: true },
                 take: COVERAGE_GAP_ROWS,
-            }),
+            })),
             db.asset.count({ where: uncoveredWhere }),
             // The population the asset gap is drawn from, so "none uncovered"
             // over no critical asset is said as what it is.
             db.asset.count({ where: criticalWhere }),
         ]);
 
-        // Hot controls (most risks)
-        const hotControls = await db.riskControl.groupBy({
+        // Hot controls (most risks) — a list of control names, so withheld
+        // from a caller who may not view controls.
+        const hotControls = withheld.controls ? [] : await db.riskControl.groupBy({
             by: ['controlId'],
-            where: { tenantId: t },
+            where: { tenantId: t, ...LIVE_RISK_CONTROL },
             _count: { riskId: true },
             orderBy: { _count: { riskId: 'desc' } },
             take: 5,
@@ -478,6 +504,7 @@ export async function coverageSummary(ctx: RequestContext) {
             uncoveredCriticalAssetsTotal,
             totalCriticalAssets,
             hotControls: hotControlsResult,
+            withheld,
         };
     });
 }

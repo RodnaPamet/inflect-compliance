@@ -18,6 +18,10 @@
 import { z } from 'zod';
 import { env } from '@/env';
 import { logger } from '@/lib/observability';
+// TYPE-only: erased at compile time, so this adds no runtime edge to the
+// risk-assessment factory (the trick `tenant-toggle-columns.ts` documents).
+// The shape `residencyTermsFrom` returns satisfies it field for field.
+import type { ProviderSelection } from '@/app-layer/ai/risk-assessment';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet-20241022';
@@ -113,7 +117,42 @@ function buildPrompt(sanitizedText: string): { system: string; user: string } {
  * schema mismatch) returns the empty OTHER extraction with `ok: false` so
  * the caller records the failure without crashing.
  */
-export async function extractDocument(sanitizedText: string): Promise<ExtractResult> {
+export async function extractDocument(
+    sanitizedText: string,
+    selection?: ProviderSelection,
+): Promise<ExtractResult> {
+    /*
+        A LOCAL_ONLY TENANT'S DOCUMENT NEVER LEAVES (#5073).
+
+        This decided on the DEPLOYMENT's env alone, so a tenant with
+        `aiResidency = LOCAL_ONLY` had up to 60,000 characters of a vendor's
+        SOC 2 report — scope, auditor findings, exceptions; only emails and
+        phone numbers are redacted — POSTed to openrouter.ai. `env.ts` says of
+        this very variable that "'anthropic' and 'openrouter' are EXTERNAL and
+        are never reached by a tenant with aiResidency=LOCAL_ONLY", and
+        CLAUDE.md calls LOCAL_ONLY a hard invariant.
+
+        FIRST, before the env read, for the reason `getProvider` and
+        `resolveFlueModel` both give: a residency invariant enforced after an
+        external provider has been chosen is one refactor away from not being
+        enforced at all.
+
+        There is no local extraction gateway, so LOCAL_ONLY gets the
+        deterministic stub — the same answer this function already gives when
+        the deployment configures no external provider, and a shape every
+        caller already handles.
+
+        An ABSENT selection reads as EXTERNAL, which is the default
+        `residencyTermsFrom` documents. That is why the caller must pass it:
+        forgetting to is a silent partial update, not a compile error.
+    */
+    if (selection?.residency === 'LOCAL_ONLY') {
+        logger.info('vendor-doc extraction kept local: tenant residency is LOCAL_ONLY', {
+            component: 'ai',
+            reason: 'residency_local_only',
+        });
+        return stubExtraction();
+    }
     if (env.AI_RISK_PROVIDER?.toLowerCase() !== 'openrouter' || !env.OPENROUTER_API_KEY) {
         return stubExtraction();
     }

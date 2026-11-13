@@ -365,6 +365,38 @@ describe('running', () => {
     });
 });
 
+describe('a network failure never leaves the page running (#5125)', () => {
+    it('a rejected submit says so and gives the button back', async () => {
+        (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => {
+            throw new TypeError('Failed to fetch');
+        });
+        render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+        await ask();
+        expect(await screen.findByText('The request could not reach the server. Check your connection and ask again.')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled();
+    });
+
+    it('a rejected poll keeps the run and offers Check again', async () => {
+        let failPoll = true;
+        const fetchMock = jest.fn(async (_url: string, init?: { method?: string }) => {
+            if (init?.method === 'POST') {
+                return { ok: true, status: 202, json: async () => ({ runId: 'run-7' }) } as unknown as Response;
+            }
+            if (failPoll) throw new TypeError('Failed to fetch');
+            return { ok: true, status: 200, json: async () => settled({ runId: 'run-7', answer: 'Back again.' }) } as unknown as Response;
+        });
+        (global as unknown as { fetch: unknown }).fetch = fetchMock;
+        render(<AskClient tenantSlug="acme" maxChars={MAX} />);
+        await ask();
+        expect(await screen.findByTestId('agent-ask-timed-out')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Ask' })).toBeEnabled();
+
+        failPoll = false;
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check again' })); });
+        expect(await screen.findByText('Back again.')).toBeInTheDocument();
+    });
+});
+
 describe('accessibility, in both themes', () => {
     /**
      * M3 asks for axe in both themes with zero critical or serious violations.

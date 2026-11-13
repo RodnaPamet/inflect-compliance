@@ -755,7 +755,7 @@ describeFn('a widening re-scores the agent', () => {
             const beforeRead = await callTool(token, 'list_risks');
             expect(errorOf(beforeRead.json)).toBeUndefined();
             const beforePropose = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'before the widening' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'before the widening' }],
             });
             expect(errorOf(beforePropose.json)).toBeUndefined();
 
@@ -770,7 +770,7 @@ describeFn('a widening re-scores the agent', () => {
             expect((await row(agentId)).riskTier).toBe('CRITICAL');
 
             const afterPropose = await callTool(token, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'after the widening' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'after the widening' }],
             });
             expect(errorOf(afterPropose.json)).toMatch(/autonomy/i);
 

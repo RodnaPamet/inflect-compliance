@@ -71,6 +71,10 @@ describe('raiseFindingFromAisvsCoverage', () => {
         const [, payload] = createFinding.mock.calls[0];
         expect(payload.title).toMatch(/AISVS AI-vendor gap: TestVendor/);
         expect(payload.severity).toBe('HIGH'); // <40% → HIGH
+        // A finding the real create accepts (#5181): 'AI vendor security' is
+        // not a FindingType, and the enum column refused it.
+        const { ProposedFindingSchema } = jest.requireActual('@/lib/schemas');
+        expect(ProposedFindingSchema.safeParse(payload).success).toBe(true);
         expect(result).toEqual({ findingId: 'finding-1', l1Percent: 0 });
     });
 

@@ -246,7 +246,7 @@ describe('aws-posture — evidence provenance', () => {
     it('auto-evidence is tagged aws-posture:* and carries the execution id', () => {
         expect(usecase).toMatch(/category = `aws-posture:\$\{c\.id\}`/);
         expect(usecase).toMatch(/kind: 'INTEGRATION_RESULT'/);
-        expect(usecase).toMatch(/integrationResultId: execution\.id/);
+        expect(usecase).toMatch(/integrationResultId: executionId/);
         // Evidence is written through the tenant-scoped db inside runInTenantContext
         // (the automated-evidence seam), and only for PASSING controls.
         expect(usecase).toMatch(/if \(c\.status !== 'ok'\) continue/);

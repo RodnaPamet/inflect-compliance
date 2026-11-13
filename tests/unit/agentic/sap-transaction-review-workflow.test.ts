@@ -27,6 +27,7 @@ import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { isExternalToolName } from '@/lib/mcp/external-tool-name';
 import { asA2aFactsJson, sapScenario, sapScenarios } from '../../fixtures/sap/sap-scenarios';
 import type { WorkflowContext } from '@/lib/agentic/workflow-types';
+import { assertRequiredInputPresent } from '@/app-layer/usecases/workflow-runs';
 
 const doc = (over: Record<string, unknown> = {}) => ({
     documentType: 'purchase order',
@@ -84,6 +85,33 @@ describe('the definition', () => {
         expect(skill).toBeDefined();
         const text = JSON.stringify(skill);
         for (const t of ['list_controls', 'list_risks']) expect(text).not.toContain(t);
+    });
+});
+
+describe('admission refuses facts the reader would refuse, on every engine (#5182)', () => {
+    // A Flue run never walks the synthesis that reads `facts`, so a payload
+    // the reader refuses must be stopped before the run row exists.
+    const admit = (f: string) =>
+        assertRequiredInputPresent(sapTransactionReviewWorkflow, { question: 'Any SoD conflict?', facts: f });
+
+    it('admits facts that validate', () => {
+        expect(() => admit(facts(doc()))).not.toThrow();
+    });
+
+    it.each([
+        ['not JSON', 'not json at all', 'MALFORMED_JSON'],
+        ['an unknown key', facts(doc({ costCentre: 'X1' })), 'UNKNOWN_KEY: costCentre'],
+        ['a bad value', facts(doc({ currency: 'euros' })), 'INVALID_VALUE'],
+        ['too many documents', facts(...Array.from({ length: SAP_FACTS_LIMITS.MAX_DOCUMENTS + 1 }, () => doc())), 'INVALID_VALUE: documents:'],
+    ])('refuses %s with the reader’s named reason, as a 400', (_label, f, reason) => {
+        let err: unknown;
+        try {
+            admit(f);
+        } catch (e) {
+            err = e;
+        }
+        expect((err as { status?: number }).status).toBe(400);
+        expect((err as Error).message).toContain(reason);
     });
 });
 

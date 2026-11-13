@@ -22,6 +22,7 @@
  * (#2200), plus AI_ADMIN, which reaches SCIM through an OWNER-made group
  * mapping only (#3699 deploy 2). Do not drop that argument.
  */
+import { parseScimEqFilter } from '@/lib/scim/filter';
 import { runInTenantContext } from '@/lib/db-context';
 import prisma from '@/lib/prisma';
 import type { RequestContext } from '../types';
@@ -88,10 +89,36 @@ export function scimGroupResource(g: {
     };
 }
 
-export async function scimListGroups(ctx: ScimContext) {
-    return runInTenantContext(ctxOf(ctx), (db) =>
-        db.scimGroup.findMany({ where: { tenantId: ctx.tenantId }, take: 200 }),
-    );
+/**
+ * List groups, honouring `filter`, `startIndex` and `count` (#5079).
+ *
+ * Entra checks whether a group exists with `displayName eq "…"` (or
+ * `externalId eq "…"`) before it creates one. Answering that with every group
+ * made it treat the first group returned as the match and patch it with the
+ * new group's members. An unsupported filter is refused (`ScimFilterError`).
+ */
+export async function scimListGroups(
+    ctx: ScimContext,
+    options: { startIndex?: number; count?: number; filter?: string | null } = {},
+) {
+    const { startIndex = 1, count = 100, filter } = options;
+    const parsed = parseScimEqFilter(filter, ['displayName', 'externalId'] as const);
+    const where = {
+        tenantId: ctx.tenantId,
+        ...(parsed ? { [parsed.attribute]: parsed.value } : {}),
+    };
+    return runInTenantContext(ctxOf(ctx), async (db) => {
+        const [groups, total] = await Promise.all([
+            db.scimGroup.findMany({
+                where,
+                orderBy: { createdAt: 'asc' },
+                skip: startIndex - 1,
+                take: Math.min(count, 200),
+            }),
+            db.scimGroup.count({ where }),
+        ]);
+        return { groups, total, startIndex };
+    });
 }
 
 export async function scimGetGroup(ctx: ScimContext, id: string) {

@@ -639,7 +639,16 @@ const HIGH_MULTIPLICITY = 5;
 // ONE `superRefine` call carrying the DATA_ENCRYPTION_KEY production refusal
 // (`allCallExpressionsOf` + `toHaveLength(1)`), which binds where the regex
 // never did. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1131;
+//
+// 1131 -> 1128 on 2026-11-13 (#5117, #5103). Three automation guards stopped
+// asking a whole file for a bare name. VR-10 asked the governance builder for
+// `/subFlowGroupId/` — the field #5117 removed from it because nothing writes
+// it; it now asks for the `.targetGroupId;` read the edges come from. VR-7 and
+// the Epic 7 chain guard asked their dispatchers for `/parentExecutionId/`,
+// which the claim-before-act change (#5103) took to nine positions in each;
+// they now ask for the execution row's `triggeredBy: …, parentExecutionId,`
+// pair, the one place lineage is written. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1128;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -772,7 +781,10 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1131;
 //   several places to one satisfied in the panel's props alone. Measured.
 // 157 -> 156 (2026-11-08): `toContain('privacyRiskTemplates')` over prisma/seed.ts,
 // retired when the risk templates moved to fixtures. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 156;
+// 156 -> 155 (2026-11-13): the Epic 7 chain guard's `/parentExecutionId/` over
+// rule-chain-dispatch.ts (five positions on main, nine after #5103), narrowed
+// to the execution row's lineage write — see the ambiguous baseline. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 155;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

@@ -202,7 +202,10 @@ describe('nothing is saved without an explicit save', () => {
         // And the profile call itself is a POST, which is deliberate — it dials a
         // customer-hosted server — so "no writes" is asserted on the MAPPING
         // endpoint rather than on the method alone.
-        expect(calls.filter((c) => c.url.includes('/admin/legacy-access/mapping'))).toEqual([]);
+        // A GET of the saved mapping is a read (#5214); no other method is.
+        expect(
+            calls.filter((c) => c.url.includes('/admin/legacy-access/mapping') && c.method !== 'GET'),
+        ).toEqual([]);
     });
 
     it('pressing save writes the mapping once, with the confirmed columns', async () => {
@@ -211,6 +214,48 @@ describe('nothing is saved without an explicit save', () => {
         await waitFor(() =>
             expect(calls.filter((c) => c.url.includes('/admin/legacy-access/mapping')).length)
                 .toBeGreaterThan(0));
+    });
+});
+
+describe('the saved mapping is the starting point, not the suggestions (#5214)', () => {
+    it('a save after reading the columns keeps what was confirmed', async () => {
+        let putBody: Record<string, unknown> | null = null;
+        global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = init?.method ?? 'GET';
+            if (url.includes('/admin/legacy-access/profile')) return { ok: true, status: 200, json: async () => PROFILE };
+            if (url.includes('/admin/legacy-access/mapping') && method === 'GET') {
+                // Confirmed earlier: EMAIL_ADDR is the USERNAME here, whatever
+                // the suggester thinks of its email share.
+                return {
+                    ok: true, status: 200,
+                    json: async () => ({
+                        mapping: {
+                            version: 3,
+                            fields: { accountKey: 'LOGIN_NAME', username: 'EMAIL_ADDR' },
+                            entitlements: { kind: 'none' },
+                        },
+                    }),
+                };
+            }
+            if (url.includes('/admin/legacy-access/mapping')) {
+                putBody = JSON.parse(String(init?.body));
+                return { ok: true, status: 200, json: async () => ({ mapping: { version: 4 } }) };
+            }
+            if (url.includes('/admin/integrations')) {
+                return { ok: true, status: 200, json: async () => [{ id: 'conn_1', provider: 'legacy-mcp' }] };
+            }
+            return { ok: true, status: 200, json: async () => ({}) };
+        }) as unknown as typeof fetch;
+
+        await readColumns();
+        fireEvent.click(screen.getByText('saveButton'));
+        await waitFor(() => expect(putBody).not.toBeNull());
+
+        const fields = (putBody as unknown as { fields: Record<string, string> }).fields;
+        expect(fields.username).toBe('EMAIL_ADDR');
+        expect(fields.email).toBeUndefined();
+        expect(fields.accountKey).toBe('LOGIN_NAME');
     });
 });
 

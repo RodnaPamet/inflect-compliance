@@ -11,7 +11,7 @@
  *     "this connection reaches no sites".
  */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
@@ -168,6 +168,37 @@ describe('choosing sites', () => {
         // Still open: the save did not land, so nothing was saved and the
         // choice is still in front of the admin.
         expect(screen.getByRole('button', { name: 'Save sites' })).toBeInTheDocument();
+    });
+
+    it('keeps an allowed site the list did not return when the selection changes (#5215)', async () => {
+        let saved: unknown = null;
+        serve([sp({ configJson: { allowedSiteIds: ['site-off-page'] } })], {
+            'GET /admin/integrations/sharepoint/sites?connectionId=sp-1': () => ({
+                body: [{ id: 'site-1', displayName: 'HR' }],
+            }),
+            'PATCH /admin/integrations/sharepoint/sites?connectionId=sp-1': () => ({ body: { ok: true } }),
+        });
+        const serveFetch = global.fetch as jest.Mock;
+        global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            if ((init?.method ?? 'GET').toUpperCase() === 'PATCH') saved = JSON.parse(String(init?.body));
+            return serveFetch(input, init);
+        }) as unknown as typeof fetch;
+
+        render(<SharePointCard />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Sites' }));
+        await act(async () => {
+            fireEvent.click(document.getElementById('sp-sites-sp-1') as HTMLElement);
+        });
+        await act(async () => {
+            fireEvent.click(await screen.findByRole('option', { name: /HR/ }));
+        });
+        await act(async () => {
+            fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+        });
+        fireEvent.click(await screen.findByRole('button', { name: 'Save sites' }));
+
+        await waitFor(() => expect(saved).not.toBeNull());
+        expect((saved as { siteIds: string[] }).siteIds.sort()).toEqual(['site-1', 'site-off-page']);
     });
 
     it('a save that lands closes the picker', async () => {

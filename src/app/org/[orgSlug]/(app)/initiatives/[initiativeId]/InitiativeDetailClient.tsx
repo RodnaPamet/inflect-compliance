@@ -73,6 +73,16 @@ export function InitiativeDetailClient({
     const t = useTranslations('org');
     const triggerUndoToast = useToastWithUndo();
     const [links, setLinks] = useState<LinkRow[]>(initiative.links);
+    // Re-seed from the server's list whenever a refresh brings a new one
+    // (#5271). The state was seeded once, so work linked here only appeared
+    // after a full reload, although `router.refresh()` had fetched it. Done
+    // during render, React's own pattern for state derived from a prop, so
+    // the table never paints the stale list first.
+    const [linksFromServer, setLinksFromServer] = useState(initiative.links);
+    if (linksFromServer !== initiative.links) {
+        setLinksFromServer(initiative.links);
+        setLinks(initiative.links);
+    }
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [editOpen, setEditOpen] = useState(false);

@@ -9,6 +9,8 @@
  *
  * @module usecases/integrations
  */
+import { MAPPING_CONFIG_KEY } from '@/lib/legacy-access/canonical';
+import { CONVENTION_CONFIG_KEY } from './legacy-username-convention';
 import { Prisma, EvidenceType } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
@@ -291,6 +293,36 @@ async function assertSoleEnabledHrisConnection(
  * Create or update an integration connection.
  * Secrets are encrypted before storage.
  */
+/**
+ * CONFIG KEYS ANOTHER USECASE OWNS (#5067).
+ *
+ * `legacyAccessMapping` is written only by the mapping save (with its version
+ * history) and `legacyUsernameConvention` only by the convention adoption; both
+ * update the column directly. The connection form round-trips `configJson` as
+ * strings, so an Edit sent both back as "[object Object]", the wholesale
+ * replace below stored that, and the next pull refused MAPPING_MISSING. So
+ * this path never writes them: a request's values are dropped, and an update
+ * keeps the stored ones.
+ */
+const USECASE_WRITTEN_CONFIG_KEYS: readonly string[] = [MAPPING_CONFIG_KEY, CONVENTION_CONFIG_KEY];
+
+function withoutUsecaseWrittenKeys<T>(config: T): T {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
+    const out = { ...(config as Record<string, unknown>) };
+    for (const key of USECASE_WRITTEN_CONFIG_KEYS) delete out[key];
+    return out as T;
+}
+
+function carryUsecaseWrittenKeys(stored: unknown, next: unknown): unknown {
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return next;
+    const kept: Record<string, unknown> = {};
+    for (const key of USECASE_WRITTEN_CONFIG_KEYS) {
+        if (key in (stored as Record<string, unknown>)) kept[key] = (stored as Record<string, unknown>)[key];
+    }
+    if (Object.keys(kept).length === 0) return next;
+    return { ...((next as Record<string, unknown> | null) ?? {}), ...kept };
+}
+
 export async function upsertIntegrationConnection(
     ctx: RequestContext,
     input: {
@@ -329,7 +361,7 @@ export async function upsertIntegrationConnection(
     // client credentials (Workday), four credentialed calls (Okta) and an LDAPS
     // bind target (Active Directory). Each was fixed at its call site; this is
     // the boundary that stops the next one being stored at all.
-    const validatedConfig = validateProviderConfig(input.provider, input.configJson);
+    const validatedConfig = withoutUsecaseWrittenKeys(validateProviderConfig(input.provider, input.configJson));
 
     // ONE expression for the resulting enabled state, read by the HRIS guard AND
     // by both writes below — so the state the guard measures cannot drift from
@@ -347,6 +379,19 @@ export async function upsertIntegrationConnection(
                 where: { id: input.id, tenantId: ctx.tenantId },
             });
             if (!existing) throw notFound('Connection not found');
+
+            // The secrets and config above were validated against
+            // `input.provider`, and the write below never changes the row's
+            // provider. A caller naming another registered provider would store
+            // values shaped for THAT provider on this connection (#5143), so a
+            // mismatch is refused before anything is written — the same refusal
+            // the Test path gives.
+            if (existing.provider !== input.provider) {
+                throw badRequest(
+                    `This connection is a ${existing.provider} connection, not ${input.provider}. ` +
+                        'A connection keeps the provider it was created with.',
+                );
+            }
 
             // `existing.provider`, NOT `input.provider`. The update below writes
             // name / configJson / secrets / isEnabled and never `provider`, so
@@ -397,7 +442,10 @@ export async function upsertIntegrationConnection(
                 where: { id: input.id },
                 data: {
                     name: input.name,
-                    configJson: input.configJson != null ? (validatedConfig as Prisma.InputJsonValue) : undefined,
+                    configJson:
+                        input.configJson != null
+                            ? (carryUsecaseWrittenKeys(existing.configJson, validatedConfig) as Prisma.InputJsonValue)
+                            : undefined,
                     ...(secretEncrypted ? { secretEncrypted } : {}),
                     isEnabled: willBeEnabled,
                 },
@@ -599,9 +647,29 @@ export async function testConnectionCredentials(
         }
     }
 
+    // A token exchange the Test makes may ROTATE the stored refresh token
+    // (Workday, OrangeHRM). The rotated pair is written back onto the saved
+    // connection, or the Test leaves it holding a dead one (#5194, #5195).
+    // Only for the stored credential: a credential typed into the form is not
+    // saved by testing it.
+    const connectionId = input.connectionId;
+    const testsStoredSecrets = connectionId !== undefined && Object.keys(input.secrets ?? {}).length === 0;
+    const persistSecret = testsStoredSecrets
+        ? async (patch: Record<string, unknown>) => {
+              Object.assign(storedSecrets, patch);
+              await runInTenantContext(ctx, (db) =>
+                  db.integrationConnection.update({
+                      where: { id: connectionId },
+                      data: { secretEncrypted: encryptField(JSON.stringify(storedSecrets)) },
+                  }),
+              );
+          }
+        : undefined;
+
     const result = await providerImpl.validateConnection(
         { ...storedConfig, ...(input.configJson ?? {}) },
         { ...storedSecrets, ...(input.secrets ?? {}) },
+        { persistSecret },
     );
 
     if (input.connectionId) {

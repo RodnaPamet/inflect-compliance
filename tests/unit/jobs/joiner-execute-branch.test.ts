@@ -119,6 +119,7 @@ const closeProv = jest.fn(async () => undefined);
 const closeWriter = jest.fn(async () => undefined);
 
 const mockProbe = jest.fn();
+const mockReadState = jest.fn();
 
 const liveProvisioner = () => ({
     kind: 'live' as const,
@@ -131,7 +132,7 @@ const liveProvisioner = () => ({
 });
 const liveWriter = () => ({
     kind: 'live' as const,
-    writer: { provider: 'active-directory', disable: mockDisable },
+    writer: { provider: 'active-directory', disable: mockDisable, readState: mockReadState },
     close: closeWriter,
     readiness: { readiness: 'DEDICATED_WRITE_BIND' as const, detail: 'fixture' },
 });
@@ -180,10 +181,13 @@ it('CREATES for a planned decision — the call nothing in src/ made before', as
         expect(req.candidate.displayName).toBe('Ada Lovelace');
     });
 
-    it('hands the undo the leaver verb, with the state the create left behind', async () => {
-        // Decision 4: the rollback is the live-proven disable, injected. The
-        // prior state is known rather than re-read — this pass enabled the
-        // account moments ago.
+    it('hands the undo the leaver verb, with a capture the WRITER took (#5096)', async () => {
+        // Decision 4: the rollback is the live-proven disable, injected. Both
+        // live writers refuse a capture they did not take, so the undo reads
+        // the account first and disables with that read — never a hand-built
+        // `{ createdBy }` object, which made every rollback fail.
+        const capture = { enabled: true, priorState: { userAccountControl: 512, distinguishedName: 'CN=x' } };
+        mockReadState.mockResolvedValue(capture);
         await run();
 
         const req = mockCreateAccount.mock.calls[0][1] as {
@@ -191,7 +195,32 @@ it('CREATES for a planned decision — the call nothing in src/ made before', as
         };
         await req.disableCreated('ext-9');
 
-        expect(mockDisable).toHaveBeenCalledWith('ext-9', expect.objectContaining({ enabled: true }));
+        expect(mockReadState).toHaveBeenCalledWith('ext-9');
+        expect(mockDisable).toHaveBeenCalledWith('ext-9', capture);
+    });
+
+    it('needs no undo for an account the read shows already disabled', async () => {
+        // A create that failed before its enable step left the account
+        // blocked; Active Directory refuses to disable a disabled account.
+        mockReadState.mockResolvedValue({ enabled: false, priorState: { userAccountControl: 514 } });
+        await run();
+
+        const req = mockCreateAccount.mock.calls[0][1] as {
+            disableCreated: (id: string) => Promise<void>;
+        };
+        await expect(req.disableCreated('ext-9')).resolves.toBeUndefined();
+        expect(mockDisable).not.toHaveBeenCalled();
+    });
+
+    it('lets a failed read fail the undo, so it is recorded as unsettled', async () => {
+        mockReadState.mockRejectedValue(new Error('LDAP unavailable'));
+        await run();
+
+        const req = mockCreateAccount.mock.calls[0][1] as {
+            disableCreated: (id: string) => Promise<void>;
+        };
+        await expect(req.disableCreated('ext-9')).rejects.toThrow('LDAP unavailable');
+        expect(mockDisable).not.toHaveBeenCalled();
     });
 
     it('counts a partial as neither created nor refused', async () => {

@@ -63,7 +63,11 @@ export async function runAwsPostureCollection(input: {
     const now = input.now ?? new Date();
     const provider = input.provider ?? new AwsPostureProvider();
 
-    return runInTenantContext(ctx, async (db) => {
+    // ── Phase 1: one short transaction — read the connection, open the run. ──
+    // The benchmark below runs for minutes and must not hold a transaction:
+    // a tenant transaction expires after seconds, and its expiry rolled back
+    // the RUNNING row and failed every write after it (#5064).
+    const prepared = await runInTenantContext(ctx, async (db) => {
         const conn = await db.integrationConnection.findFirst({
             where: { id: input.connectionId, tenantId: ctx.tenantId, provider: AWS_POSTURE_PROVIDER },
             select: { id: true, configJson: true, secretEncrypted: true, isEnabled: true },
@@ -72,7 +76,7 @@ export async function runAwsPostureCollection(input: {
             const execution = await db.integrationExecution.create({
                 data: { tenantId: ctx.tenantId, provider: AWS_POSTURE_PROVIDER, automationKey: 'aws-posture.unknown', status: 'ERROR', errorMessage: 'Connection not found', triggeredBy: 'scheduled', completedAt: now },
             });
-            return { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: 'Connection not found' };
+            return { done: { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: 'Connection not found' } as AwsPostureCollectResult };
         }
 
         const config = (conn.configJson ?? {}) as AwsPostureConfig;
@@ -86,27 +90,36 @@ export async function runAwsPostureCollection(input: {
         const execution = await db.integrationExecution.create({
             data: { tenantId: ctx.tenantId, connectionId: conn.id, provider: AWS_POSTURE_PROVIDER, automationKey, status: 'RUNNING', triggeredBy: 'scheduled', executedAt: now },
         });
+        return { connId: conn.id, config, check, automationKey, secrets, executionId: execution.id, secretVals };
+    });
+    if (prepared.done !== undefined) return prepared.done;
+    const { connId, config, check, automationKey, secrets, executionId, secretVals } = prepared;
 
-        const start = Date.now();
-        let checkResult;
-        try {
-            checkResult = await provider.runCheck({
-                automationKey,
-                parsed: { provider: AWS_POSTURE_PROVIDER, checkType: check, raw: automationKey },
-                tenantId: ctx.tenantId,
-                connectionConfig: { ...config, ...secrets },
-                triggeredBy: 'scheduled',
-            });
-        } catch (e) {
-            const msg = scrubAwsCredentials(e instanceof Error ? e.message : String(e), secretVals).slice(0, 500);
-            await db.integrationExecution.update({ where: { id: execution.id }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
+    // ── Phase 2: the external run, outside any transaction. ──
+    const start = Date.now();
+    let checkResult;
+    try {
+        checkResult = await provider.runCheck({
+            automationKey,
+            parsed: { provider: AWS_POSTURE_PROVIDER, checkType: check, raw: automationKey },
+            tenantId: ctx.tenantId,
+            connectionConfig: { ...config, ...secrets },
+            triggeredBy: 'scheduled',
+        });
+    } catch (e) {
+        const msg = scrubAwsCredentials(e instanceof Error ? e.message : String(e), secretVals).slice(0, 500);
+        await runInTenantContext(ctx, async (db) => {
+            await db.integrationExecution.update({ where: { id: executionId }, data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() } });
             // Surface a REVOKED CREDENTIAL on the connection; no-op for
             // anything that is not an IntegrationAuthError (401/403).
-            await markAuthFailure(db, conn.id, e, now, 'aws-posture');
-            // Caught here, so the retry classification must ride the result.
-            return { executionId: execution.id, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
-        }
+            await markAuthFailure(db, connId, e, now, 'aws-posture');
+        });
+        // Caught here, so the retry classification must ride the result.
+        return { executionId, status: 'ERROR', counts: null, evidenceCreated: 0, errorMessage: msg, noRetry: shouldBypassQueueRetry(e) };
+    }
 
+    // ── Phase 3: one short transaction — record the result and its evidence. ──
+    return runInTenantContext(ctx, async (db) => {
         const summary = checkResult.details as { counts?: AwsPostureCollectResult['counts']; controls?: Array<{ id: string; status: string }> };
         const counts = summary.counts ?? null;
         const controls = summary.controls ?? [];
@@ -135,7 +148,7 @@ export async function runAwsPostureCollection(input: {
                     seenControlIds.add(controlId);
                     const category = `aws-posture:${c.id}`;
                     const nextReviewDate = new Date(now.getTime() + EVIDENCE_FRESHNESS_DAYS * 86_400_000);
-                    const content = `AWS posture check "${c.id}" PASSED (${automationKey}) on ${now.toISOString().slice(0, 10)}. Machine-collected via Powerpipe; execution ${execution.id}.`;
+                    const content = `AWS posture check "${c.id}" PASSED (${automationKey}) on ${now.toISOString().slice(0, 10)}. Machine-collected via Powerpipe; execution ${executionId}.`;
                     const existing = await db.evidence.findFirst({
                         where: { tenantId: ctx.tenantId, evidenceControlLinks: { some: { controlId } }, category, type: 'TEXT', isArchived: false, deletedAt: null },
                         select: { id: true },
@@ -148,7 +161,7 @@ export async function runAwsPostureCollection(input: {
                         await db.evidenceControlLink.create({ data: { tenantId: ctx.tenantId, evidenceId: ev.id, controlId, createdByUserId: null } });
                         firstEvidenceId = firstEvidenceId ?? ev.id;
                         try {
-                            await db.controlEvidenceLink.create({ data: { tenantId: ctx.tenantId, controlId, kind: 'INTEGRATION_RESULT', integrationResultId: execution.id, note: `AWS posture: ${c.id}` } });
+                            await db.controlEvidenceLink.create({ data: { tenantId: ctx.tenantId, controlId, kind: 'INTEGRATION_RESULT', integrationResultId: executionId, note: `AWS posture: ${c.id}` } });
                         } catch { /* duplicate link acceptable */ }
                     }
                     evidenceCreated += 1;
@@ -159,7 +172,7 @@ export async function runAwsPostureCollection(input: {
         // resultJson is the BOUNDED summary from the provider (counts + per-control
         // status, already size-capped, creds already scrubbed) — never raw resources.
         await db.integrationExecution.update({
-            where: { id: execution.id },
+            where: { id: executionId },
             data: {
                 status: checkResult.status,
                 resultJson: summary as unknown as object,
@@ -218,10 +231,10 @@ export async function runAwsPostureCollection(input: {
         // Deliberately NOT `status === 'PASSED'`: that clamp would strand the
         // banner on a healthy connection whose benchmark keeps reporting gaps.
         if (checkResult.status !== 'ERROR') {
-            await clearAuthFailure(db, conn.id, 'aws-posture');
+            await clearAuthFailure(db, connId, 'aws-posture');
         }
 
-        logger.info('aws-posture collection complete', { component: 'aws-posture', tenantId: ctx.tenantId, executionId: execution.id, status: checkResult.status, evidenceCreated });
-        return { executionId: execution.id, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };
+        logger.info('aws-posture collection complete', { component: 'aws-posture', tenantId: ctx.tenantId, executionId: executionId, status: checkResult.status, evidenceCreated });
+        return { executionId, status: checkResult.status, counts, evidenceCreated, errorMessage: checkResult.errorMessage };
     });
 }

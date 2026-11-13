@@ -20,6 +20,7 @@ import { assertCanRead } from '../policies/common';
 import { getExecutiveDashboard } from './dashboard';
 import { listFrameworks } from './framework';
 import { getCompliancePostureProvider } from '../ai/compliance-posture/provider';
+import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { applyPostureOutputGuard } from '../ai/compliance-posture/output-guard';
 import { describePayload } from '../ai/compliance-posture/privacy';
 import type {
@@ -99,8 +100,21 @@ export async function gatherPostureSignals(ctx: RequestContext): Promise<Posture
 
     // Per-framework coverage — one tenant-scoped read of the control ⇄
     // requirement links, then grouped in memory (no per-framework query loop).
+    // The denominator counts LIVE requirements only (#5261), as the numerator's
+    // link read below does. `_count.requirements` includes deprecated ones, so a
+    // framework whose re-imported library dropped requirements could never
+    // reach 100%. One grouped read of the (global) requirement table.
+    const liveTotals = new Map(
+        (await runInTenantContext(ctx, (tdb) =>
+            tdb.frameworkRequirement.groupBy({
+                by: ['frameworkId'],
+                where: { frameworkId: { in: frameworks.map((f) => f.id) }, deprecatedAt: null },
+                _count: { _all: true },
+            }),
+        )).map((g) => [g.frameworkId, g._count._all]),
+    );
     const frameworkById = new Map(
-        frameworks.map((f) => [f.id, { key: f.key, name: f.name, total: f._count.requirements }]),
+        frameworks.map((f) => [f.id, { key: f.key, name: f.name, total: liveTotals.get(f.id) ?? 0 }]),
     );
 
     const now = new Date();
@@ -245,7 +259,16 @@ export async function generateCompliancePostureSummary(
 ): Promise<PostureSummaryResult> {
     const signals = await gatherPostureSignals(ctx);
 
-    const provider = getCompliancePostureProvider();
+    // The tenant's AI-residency posture decides whether the snapshot may leave
+    // (#5192). Read through the RLS-bound context like every other consumer of
+    // these three columns; only the mapping is shared (#3384).
+    const secSettings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        }),
+    );
+    const provider = getCompliancePostureProvider(residencyTermsFrom(secSettings));
     const raw = await provider.generate(signals);
     const result = applyPostureOutputGuard(raw);
 

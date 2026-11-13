@@ -378,6 +378,14 @@ export interface RuleChainDispatchPayload {
     data: Record<string, unknown>;
     /** Chain depth — a runtime cycle backstop (capped in the job). */
     depth: number;
+    /**
+     * The entity the chain started from (#5248). Carried link to link so an
+     * action that keys on it — CREATE_TASK dedupes per entity — sees the same
+     * entity at every step instead of collapsing every firing into one.
+     * Optional: a job enqueued before this field existed carries none.
+     */
+    entityType?: string;
+    entityId?: string;
 }
 
 /**
@@ -420,6 +428,9 @@ export interface SubflowDispatchPayload {
     parentExecutionId: string;
     triggerEvent: string;
     data: Record<string, unknown>;
+    /** The entity the invoking execution acted on (#5248), forwarded as for a chain step. */
+    entityType?: string;
+    entityId?: string;
     /**
      * Recursion depth, mirroring `RuleChainDispatchPayload.depth`.
      *

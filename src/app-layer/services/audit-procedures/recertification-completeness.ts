@@ -190,28 +190,35 @@ export const recertificationCompleteness: ProcedureModule = {
                 const accountById = new Map(accounts.map((a) => [a.id, a] as const));
                 const rowsByCampaign = groupBy(connectedRows, (r) => r.accessReviewId);
 
-                const coveringFor = (unitId: string): Campaign | null => {
-                    if (unitId === MEMBERSHIPS_UNIT) return campaigns.find((c) => c.scope === 'ALL_USERS') ?? null;
+                // THE UNIT'S OWN ROWS of a campaign (#5138). A CONNECTED_APP
+                // campaign can span every provider, so judging a connection
+                // unit by every row of it raised one connection's undecided or
+                // still-active account against another connection, and the
+                // same defect once per unit. The predicate is the one that
+                // chooses the covering campaign, so the two cannot disagree.
+                type ConnectedRow = (typeof connectedRows)[number];
+                const isUnitRow = (unitId: string, r: ConnectedRow): boolean => {
                     if (unitId.startsWith(CONNECTION_PREFIX)) {
                         const connId = unitId.slice(CONNECTION_PREFIX.length);
                         return (
-                            campaigns.find(
-                                (c) =>
-                                    c.scope === 'CONNECTED_APP' &&
-                                    (rowsByCampaign.get(c.id) ?? []).some(
-                                        (r) =>
-                                            r.connectedAccountId !== null &&
-                                            accountById.get(r.connectedAccountId)?.connectionId === connId,
-                                    ),
-                            ) ?? null
+                            r.connectedAccountId !== null &&
+                            accountById.get(r.connectedAccountId)?.connectionId === connId
                         );
                     }
                     const connId = unitId.slice(LEGACY_PREFIX.length);
+                    return r.subjectRef.startsWith(`${connId}:`);
+                };
+                const unitRows = (campaignId: string, unitId: string): ConnectedRow[] =>
+                    (rowsByCampaign.get(campaignId) ?? []).filter((r) => isUnitRow(unitId, r));
+
+                const coveringFor = (unitId: string): Campaign | null => {
+                    if (unitId === MEMBERSHIPS_UNIT) return campaigns.find((c) => c.scope === 'ALL_USERS') ?? null;
+                    const scope = unitId.startsWith(CONNECTION_PREFIX) ? 'CONNECTED_APP' : 'LEGACY_APP';
                     return (
                         campaigns.find(
                             (c) =>
-                                c.scope === 'LEGACY_APP' &&
-                                (rowsByCampaign.get(c.id) ?? []).some((r) => r.subjectRef.startsWith(`${connId}:`)),
+                                c.scope === scope &&
+                                (rowsByCampaign.get(c.id) ?? []).some((r) => isUnitRow(unitId, r)),
                         ) ?? null
                     );
                 };
@@ -382,7 +389,7 @@ export const recertificationCompleteness: ProcedureModule = {
                     }
                     const results: AttributeResult[] = [{ attribute: 'R1', result: 'MET' }];
                     const isMemberships = unitId === MEMBERSHIPS_UNIT;
-                    const rows = isMemberships ? membershipRows : (rowsByCampaign.get(camp.id) ?? []);
+                    const rows = isMemberships ? membershipRows : unitRows(camp.id, unitId);
                     const truncatedRows = isMemberships ? membershipRows.length > DECISION_CAP : connectedTruncated;
                     if (truncatedRows) {
                         results.push({ attribute: 'R2', result: 'UNTESTABLE', code: 'DECISION_READ_TRUNCATED' });
@@ -400,7 +407,7 @@ export const recertificationCompleteness: ProcedureModule = {
                     results.push(
                         r3CoveredWholePopulation(
                             camp,
-                            isMemberships ? [] : (rowsByCampaign.get(camp.id) ?? []).map((r) => r.snapshotJson),
+                            isMemberships ? [] : unitRows(camp.id, unitId).map((r) => r.snapshotJson),
                         ),
                     );
                     results.push(
@@ -438,7 +445,7 @@ export const recertificationCompleteness: ProcedureModule = {
                                 : { attribute: 'R6', result: 'MET' },
                         );
                     } else {
-                        const connRows = rowsByCampaign.get(camp.id) ?? [];
+                        const connRows = unitRows(camp.id, unitId);
                         const self = connRows.some((r) => {
                             const decider = r.decidedByUserId ? deciderEmail.get(r.decidedByUserId) : null;
                             const subject = emailKey(emailOf(r.snapshotJson));

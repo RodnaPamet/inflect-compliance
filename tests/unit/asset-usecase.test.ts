@@ -265,6 +265,29 @@ describe('createAsset', () => {
 
 // ─── updateAsset — three-state + notification ──────────────────────
 
+describe('updateAsset — an owner the edit does not change (#5159)', () => {
+    it('saves when the stored owner has left, because the form only sends it back', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: 'departed' });
+        (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: 'departed' });
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockClear();
+
+        await updateAsset(editorCtx, 'a-1', { name: 'renamed', ownerUserId: 'departed' });
+
+        // The unchanged owner is not re-checked at all, so a departed one
+        // cannot fail the save.
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+        expect(AssetRepository.update).toHaveBeenCalled();
+    });
+
+    it('still refuses a NEW owner who is not an active member', async () => {
+        (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: 'someone' });
+        (mockDb.tenantMembership.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+        await expect(updateAsset(editorCtx, 'a-1', { ownerUserId: 'departed' })).rejects.toThrow(/active member/);
+        expect(AssetRepository.update).not.toHaveBeenCalled();
+    });
+});
+
 describe('updateAsset — three-state ownerUserId', () => {
     it('leaves ownerUserId untouched when undefined (no key in patch)', async () => {
         (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: 'u-prev' });

@@ -325,7 +325,11 @@ export async function importMappingSet(
         }
     }
 
-    // 3. Upsert the mapping set
+    // 3. Upsert the mapping set. Its content hash is CLEARED here and written
+    // back only once every entry resolved (#5114). Stored up front, a file
+    // with an entry naming a requirement that did not exist yet (its library
+    // synced later, or a typo fixed in the library) matched on the next sync
+    // and was skipped, so that entry was never imported.
     const mappingSet = await RequirementMappingRepository.upsertMappingSet(db, {
         sourceFrameworkId: sourceFramework.id,
         targetFrameworkId: targetFramework.id,
@@ -333,7 +337,7 @@ export async function importMappingSet(
         description: stored.description ?? null,
         version: stored.version,
         sourceUrn: stored.urn,
-        contentHash,
+        contentHash: null,
     });
 
     // 4. Build requirement lookup maps for source and target frameworks
@@ -468,6 +472,10 @@ export async function importMappingSet(
             where: { id: { in: toRetire } },
             data: { validTo: now },
         });
+    }
+
+    if (errors.length === 0) {
+        await db.requirementMappingSet.update({ where: { id: mappingSet.id }, data: { contentHash } });
     }
 
     logger.info('Mapping set imported', {

@@ -126,6 +126,16 @@ describe('resendAssessmentInvite', () => {
         expect(data.externalAccessTokenHash).not.toBe(out.externalAccessToken);
     });
 
+    it('lifts a revocation, so the link it emails works, and audits that it did (#5154)', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValue(row({ revokedAt: new Date('2026-11-01T00:00:00Z') }));
+        await resendAssessmentInvite(makeCtx(), 'a1');
+        const data = mockTx.vendorAssessment.update.mock.calls[0][0].data;
+        expect(data.revokedAt).toBeNull();
+        expect(data.externalAccessTokenHash).toEqual(expect.any(String));
+        const audit = mockLog.mock.calls.find((c) => (c[2] as { action: string }).action === 'VENDOR_ASSESSMENT_RESENT');
+        expect((audit?.[2] as unknown as { detailsJson: { after: { revocationLifted: boolean } } }).detailsJson.after.revocationLifted).toBe(true);
+    });
+
     it('re-stamps sentAt and sentByUserId', async () => {
         mockTx.vendorAssessment.findFirst.mockResolvedValue(row());
         await resendAssessmentInvite(makeCtx(), 'a1');

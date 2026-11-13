@@ -20,10 +20,15 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-inflect}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staging_password_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}
       POSTGRES_DB: ${POSTGRES_DB:-inflect_staging}
     volumes:
       - staging-pgdata:/var/lib/postgresql/data
+      # Creates `app_user` and the placeholder `postgres` role the RLS-setup
+      # migration grants to (#5302). Without it a fresh volume has no
+      # `postgres` role, `prisma migrate deploy` fails and the app crash-loops.
+      # Runs only when the volume is initialised.
+      - ./prisma/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-inflect_staging}"]
       interval: 5s
@@ -42,7 +47,7 @@ services:
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: ${POSTGRES_USER:-inflect}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-staging_password_change_me}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}
       DB_NAME: ${POSTGRES_DB:-inflect_staging}
       POOL_MODE: transaction
       DEFAULT_POOL_SIZE: "25"
@@ -51,8 +56,10 @@ services:
       AUTH_TYPE: scram-sha-256
       STATS_PERIOD: "60"
       ADMIN_USERS: ${POSTGRES_USER:-inflect}
+    # Loopback only (#5088). Published on every interface, the pooler was
+    # reachable from the network with the database's own credentials.
     ports:
-      - "${DB_PORT:-5435}:5432"
+      - "127.0.0.1:${DB_PORT:-5435}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-inflect}"]
       interval: 5s
@@ -120,8 +127,8 @@ services:
       - .env.staging
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict
@@ -164,8 +171,8 @@ services:
       - .env.staging
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
-      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:-staging_password_change_me}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}@pgbouncer:5432/${POSTGRES_DB:-inflect_staging}?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}@postgres:5432/${POSTGRES_DB:-inflect_staging}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CLAMAV_HOST: clamav:3310
       AV_SCAN_MODE: strict

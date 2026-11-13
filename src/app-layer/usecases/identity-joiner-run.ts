@@ -853,17 +853,24 @@ async function executePlannedCreates(
                 },
                 groupId: decision.groupId,
                 mode,
-                // The prior state for the undo is KNOWN rather than read
-                // back: this pass created the account moments ago and the
-                // create's last step enables it, so `enabled: true` is what
-                // the disable is reverting. Re-reading would be a second
-                // round trip whose answer we already have, and a read that
-                // failed would strand the undo.
-                disableCreated: (externalUserId: string) =>
-                    writing.writer.disable(externalUserId, {
-                        enabled: true,
-                        priorState: { createdBy: 'joiner-pass', employeeId: decision.employeeId },
-                    }),
+                // The undo READS the account before it disables it (#5096).
+                // It used to hand the writer a capture it built itself
+                // (`{ createdBy, employeeId }`), and both live writers refuse
+                // one they did not take: Entra needs the observed on-premises
+                // flag, Active Directory the journalled userAccountControl and
+                // DN. So every rollback failed and left the half-made account
+                // for a human. A failed read throws, which the rollback
+                // records as an unsettled undo — the same place a failed
+                // disable lands.
+                //
+                // An account that already reads disabled needs no undo: a
+                // create that failed before its enable step left it blocked,
+                // and Active Directory refuses to disable a disabled account.
+                disableCreated: async (externalUserId: string) => {
+                    const current = await writing.writer.readState(externalUserId);
+                    if (current.enabled === false) return;
+                    await writing.writer.disable(externalUserId, current);
+                },
             });
             if (outcome.kind === 'APPLIED') created += 1;
             else if (outcome.kind === 'REFUSED') refused += 1;

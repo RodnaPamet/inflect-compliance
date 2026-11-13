@@ -407,26 +407,36 @@ export async function redeemOrgInvite(input: {
         );
     }
 
-    // Step 4 — membership upsert + slug fetch in one transaction.
+    // Step 4 — membership create (never update) + slug fetch in one
+    // transaction.
+    //
+    // An invite ADDS a member; it never changes one (#5147). This was an
+    // upsert whose update branch wrote the invite's role over an existing
+    // membership, so redeeming an ORG_READER invite demoted an owner — around
+    // the owner rule, the last-administrator guard and the audited role
+    // change. An existing member keeps their role; changing it is
+    // `changeOrgMemberRole`'s job, which asks all three.
     const txResult = await prisma.$transaction(async (tx) => {
-        const membership = await tx.orgMembership.upsert({
-            where: {
-                organizationId_userId: {
-                    organizationId: invite.organizationId,
-                    userId: input.userId,
-                },
-            },
-            create: {
+        const key = {
+            organizationId_userId: {
                 organizationId: invite.organizationId,
                 userId: input.userId,
-                role: invite.role,
             },
-            update: {
-                // Re-redemption (e.g. re-invite after manual removal)
-                // upgrades the role to whatever the invite specifies.
-                role: invite.role,
-            },
+        };
+        const existing = await tx.orgMembership.findUnique({
+            where: key,
+            select: { id: true, role: true },
         });
+        const membership =
+            existing ??
+            (await tx.orgMembership.create({
+                data: {
+                    organizationId: invite.organizationId,
+                    userId: input.userId,
+                    role: invite.role,
+                },
+                select: { id: true, role: true },
+            }));
 
         const org = await tx.organization.findUnique({
             where: { id: invite.organizationId },
@@ -438,7 +448,9 @@ export async function redeemOrgInvite(input: {
             membershipId: membership.id,
             organizationId: invite.organizationId,
             userId: input.userId,
-            role: invite.role,
+            role: membership.role,
+            invitedRole: invite.role,
+            alreadyMember: existing !== null,
             slug: org.slug,
             inviteId: invite.id,
         };
@@ -446,8 +458,10 @@ export async function redeemOrgInvite(input: {
 
     // Step 5 — provisioning fan-out for ORG_ADMIN. Same post-commit
     // semantics as addOrgMember: provision first, then audit.
+    // Only a membership this redemption CREATED is provisioned: an existing
+    // member was provisioned when they joined, and their role did not change.
     let provision: ProvisionResult | undefined;
-    if (txResult.role === 'ORG_ADMIN') {
+    if (!txResult.alreadyMember && txResult.role === 'ORG_ADMIN') {
         provision = await provisionOrgAdminToTenants(
             txResult.organizationId,
             txResult.userId,
@@ -469,22 +483,29 @@ export async function redeemOrgInvite(input: {
             inviteId: txResult.inviteId,
             role: txResult.role,
             membershipId: txResult.membershipId,
+            // Said, not hidden: an invite whose role was NOT applied because
+            // the person already held a membership.
+            ...(txResult.alreadyMember
+                ? { alreadyMember: true, invitedRole: txResult.invitedRole }
+                : {}),
         },
         requestId: input.requestId,
     });
-    await safeOrgAudit({
-        organizationId: txResult.organizationId,
-        actorUserId: input.userId,
-        action: OrgAuditAction.ORG_MEMBER_ADDED,
-        targetUserId: input.userId,
-        detailsJson: {
-            role: txResult.role,
-            via: 'invite_redemption',
-            inviteId: txResult.inviteId,
-            provisionedTenantCount: provision?.created ?? 0,
-        },
-        requestId: input.requestId,
-    });
+    if (!txResult.alreadyMember) {
+        await safeOrgAudit({
+            organizationId: txResult.organizationId,
+            actorUserId: input.userId,
+            action: OrgAuditAction.ORG_MEMBER_ADDED,
+            targetUserId: input.userId,
+            detailsJson: {
+                role: txResult.role,
+                via: 'invite_redemption',
+                inviteId: txResult.inviteId,
+                provisionedTenantCount: provision?.created ?? 0,
+            },
+            requestId: input.requestId,
+        });
+    }
     if (provision && provision.created > 0) {
         await safeOrgAudit({
             organizationId: txResult.organizationId,

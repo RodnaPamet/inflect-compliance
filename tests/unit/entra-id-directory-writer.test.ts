@@ -939,6 +939,44 @@ describe('definitivelyNotApplied — proven refusal vs lost response', () => {
         expect(calls.filter(isUserGet).length).toBeGreaterThanOrEqual(2);
     });
 
+    describe('a restore is judged against ITS end state, not the disable one (#5095)', () => {
+        /** A capture of an enabled account, then a restore whose PATCH loses its response. */
+        async function lostRestore(confirmEnabled: boolean) {
+            const { impl, calls } = scriptedFetch([
+                tokenRoute(TOKEN_WITH_WRITE),
+                { when: isMemberOf, reply: () => json({ value: [] }) },
+                { when: isPatch, reply: () => new IntegrationTimeoutError('https://graph.microsoft.com/x', 30_000) },
+                {
+                    when: isUserGet,
+                    // 0: the capture (enabled). 1: restore's own check (disabled).
+                    // 2: the confirming read after the lost response.
+                    reply: (n) =>
+                        json(graphUser({ accountEnabled: n === 0 ? true : n === 1 ? false : confirmEnabled })),
+                },
+            ]);
+            const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+            const captured = await writer.readState(USER_ID);
+            return { writer, captured, calls };
+        }
+
+        it('does NOT report a lost restore as applied while the account still reads disabled', async () => {
+            const { writer, captured } = await lostRestore(false);
+            const err = await writer.restore!(USER_ID, captured).catch((e: unknown) => e);
+            // The old test was `observed === false`, the disable's end state: a
+            // restore that never landed read the still-disabled account as its
+            // own success and reported access returned.
+            expect(err).toBeInstanceOf(DirectoryWriteError);
+            expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+            expect((err as Error).message).toMatch(/The restore of account/);
+            expect((err as Error).message).toMatch(/still DISABLED/);
+        });
+
+        it('resolves a lost restore whose write landed — the account now reads enabled', async () => {
+            const { writer, captured } = await lostRestore(true);
+            await expect(writer.restore!(USER_ID, captured)).resolves.toBeUndefined();
+        });
+    });
+
     it('a failed confirming read leaves it FALSE and says the outcome is unknown', async () => {
         const { impl } = scriptedFetch([
             tokenRoute(TOKEN_WITH_WRITE),

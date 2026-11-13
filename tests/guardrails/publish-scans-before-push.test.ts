@@ -987,3 +987,37 @@ describe('a running publish is never cancelled by the next push (#4280)', () => 
         expect(overrides).toEqual([]);
     });
 });
+
+/**
+ * `:latest` is tagged only on main (#5084).
+ *
+ * The workflow also takes `workflow_dispatch`, which a maintainer can run
+ * from ANY branch. Watchtower rolls whatever `:latest` names onto production
+ * within a minute, so an unconditional `type=raw,value=latest` let a dispatch
+ * from an unmerged branch ship it. The rolling tag must be enabled only when
+ * the ref is main; the immutable `:sha-<short>` tag is harmless anywhere.
+ */
+describe('only main moves `:latest` (#5084)', () => {
+    const publish = workflowDocs().find((d) => path.basename(d.file) === PUBLISH_WORKFLOW);
+    type MetaStep = { uses?: string; with?: { tags?: string } };
+    const tagLines = (): string[] => {
+        const steps = (publish?.wf.jobs?.[PUBLISH_JOB] as { steps?: MetaStep[] } | undefined)?.steps ?? [];
+        const meta = steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('docker/metadata-action'));
+        return String(meta?.with?.tags ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+    };
+
+    it('reads the metadata step (positive control)', () => {
+        expect(tagLines().some((l) => l.startsWith('type=sha'))).toBe(true);
+    });
+
+    it('every tag line naming `latest` is enabled only on refs/heads/main', () => {
+        const latest = tagLines().filter((l) => /value=latest\b/.test(l));
+        expect(latest).toEqual(["type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}"]);
+    });
+
+    it('the metadata flavor does not add `latest` behind the tags list', () => {
+        const steps = (publish?.wf.jobs?.[PUBLISH_JOB] as { steps?: Array<MetaStep & { with?: { flavor?: string } }> } | undefined)?.steps ?? [];
+        const meta = steps.find((s) => typeof s.uses === 'string' && s.uses.startsWith('docker/metadata-action'));
+        expect(String(meta?.with?.flavor ?? '').trim()).toBe('latest=false');
+    });
+});

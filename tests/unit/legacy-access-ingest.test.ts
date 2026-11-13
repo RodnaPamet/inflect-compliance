@@ -183,6 +183,40 @@ describe('DUPLICATE_ACCOUNT_KEY and the long layout', () => {
     });
 });
 
+describe('a sparse FIRST long row does not decide the account (#5179)', () => {
+    it('fills identity, status and dates from a later row of the same account', () => {
+        const long = mapping({ entitlements: { kind: 'long', column: 'ROLE_1' } });
+        const out = mapRows(
+            long,
+            [{ LOGIN: 'jsmith', ROLE_1: 'writer' }, row({ ROLE_1: 'reader' })],
+            COLUMNS
+        );
+        expect(out.accounts).toHaveLength(1);
+        const a = out.accounts[0];
+        expect(a.email).toBe('j.smith@corp.test');
+        expect(a.displayName).toBe('John Smith');
+        expect(a.status).not.toBe('UNKNOWN');
+        expect(a.createdAt?.toISOString()).toBe('2024-01-15T00:00:00.000Z');
+        expect([...a.entitlements].sort()).toEqual(['reader', 'writer']);
+    });
+
+    it('still refuses two PRESENT values that differ — filling never overwrites', () => {
+        const long = mapping({ entitlements: { kind: 'long', column: 'ROLE_1' } });
+        const err = refusalOf(() =>
+            mapRows(
+                long,
+                [
+                    { LOGIN: 'jsmith', ROLE_1: 'writer' },
+                    row({ ROLE_1: 'reader' }),
+                    row({ ROLE_1: 'admin', DISPLAY_NAME: 'Jane Smith' }),
+                ],
+                COLUMNS
+            )
+        );
+        expect(err.refusal).toBe('CONTRADICTORY_ROWS');
+    });
+});
+
 describe('AMBIGUOUS_COLUMN_CASE', () => {
     it('refuses a row carrying two columns that differ only by case', () => {
         // The contract already refuses EXACT duplicate column names; this is the

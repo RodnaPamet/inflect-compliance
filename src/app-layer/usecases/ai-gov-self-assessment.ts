@@ -221,7 +221,10 @@ export async function raiseFindingsFromAiGovGaps(
     for (const g of gaps) {
         const finding = await createFinding(ctx, {
             severity: g.criticality === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
-            type: 'AI governance',
+            // A FindingType (#5181): 'AI governance' is not one, and the
+            // enum column refused it, so raising these findings failed. A
+            // self-reported gap is an observation until someone audits it.
+            type: 'OBSERVATION',
             title: `AI-governance gap (${g.questionId}) [${FINDING_MARKER}:${g.questionId}]`,
             description: `Self-assessed gap: "${g.text}" — answered below YES. Source: unified AI-governance self-assessment (self-reported, not legal advice).`,
         });

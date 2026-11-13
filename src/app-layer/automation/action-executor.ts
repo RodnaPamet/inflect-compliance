@@ -237,6 +237,18 @@ async function notifyUser(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
 
 async function createTask(db: Db, rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as CreateTaskActionConfig;
+    // Self-trigger guard, the twin of UPDATE_STATUS's (#5249). The task this
+    // action creates emits TASK_CREATED with a NEW entity id, so the per-entity
+    // dedupe below never matches and a rule on TASK_CREATED fired again on its
+    // own task, without bound. Refused before any read or write, by name.
+    if (event.event === 'TASK_CREATED') {
+        return {
+            ok: false,
+            summary:
+                'Refused: a CREATE_TASK action cannot be driven by TASK_CREATED — the task it ' +
+                'creates fires the rule again, so it would re-trigger itself without end',
+        };
+    }
     // Author first, firing actor only as the author-less fallback — see
     // `resolveActorCtx`.
     const principalUserId = rule.createdByUserId ?? event.actorUserId;
@@ -634,6 +646,10 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
         parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
+        // The invoking execution's entity, so the sub-flow's actions act on
+        // it rather than on none (#5248).
+        entityType: event.entityType,
+        entityId: event.entityId,
         depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
     });
     return { ok: true, summary: `Enqueued sub-flow ${cfg.targetGroupId}` };

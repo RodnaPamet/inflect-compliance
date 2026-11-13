@@ -6,7 +6,9 @@ version = "1.0.0"
 requires-python = ">=3.11"
 # inspect-ai 0.3.280 (PyPI, 2026-10-14). Wheel sha256:
 # 5e93d62d6df813ed2794afdaed2b062590d310ed77538ed5f7d12d686e94bd5e
-dependencies = ["inspect-ai==0.3.280"]
+# agent-client-protocol is pinned below 1.0.0, which removed `acp.helpers`
+# that inspect-ai 0.3.280 imports (it declares only >=0.12.0).
+dependencies = ["inspect-ai==0.3.280", "agent-client-protocol==0.12.1"]
 
 [project.optional-dependencies]
 test = ["pytest==9.2.0"]

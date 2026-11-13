@@ -126,9 +126,9 @@ const CHECK_REQUIREDNESS: Readonly<Record<string, { required: boolean; why: stri
     },
     flue: {
         required: false,
-        why: 'Runs the ESM-only `flue` jest project. Its population is disjoint from Test and '
-            + 'Ratchets, so it is real coverage — a candidate for the required set, not a '
-            + 'deliberate exclusion. Recorded here as the decision nobody has made.',
+        why: 'Runs the ESM-only `flue` jest project. Its own context is not required: the '
+            + 'required `Test` rollup needs it and fails on its result (#5301), as it does for '
+            + 'the shards. Until then nothing required read it, so a broken agent loop merged green.',
     },
     'coverage-gate': {
         required: false,
@@ -227,5 +227,42 @@ describe('every ci.yml job declares whether it is a required check', () => {
         const gate = CHECK_REQUIREDNESS['change-class'];
         expect(gate.required).toBe(false);
         expect(gate.why).toMatch(/#4552/);
+    });
+});
+
+/**
+ * The required `Test` rollup reads EVERY Jest job (#5301).
+ *
+ * Only `Test` is required for the suites, so a Jest job the rollup does not
+ * `need` and check gates nothing: `flue` was that job until #5301, and a PR
+ * that broke the agent loop merged green. The population is not a list kept
+ * here. It is the Coverage gate's `needs`, which
+ * `coverage-gate-population.test.ts` already holds equal to every job that
+ * runs Jest, so a new Jest job joins it there and fails here until the
+ * rollup reads it too.
+ */
+describe('the Test rollup reads every Jest job (#5301)', () => {
+    const jobBody = (id: string): string => {
+        const start = new RegExp(`^  ${id}:$`, 'm').exec(CI);
+        if (!start) throw new Error(`no job ${id}`);
+        const rest = CI.slice(start.index + start[0].length);
+        const next = /^  [a-z][\w-]*:$/m.exec(rest);
+        return next ? rest.slice(0, next.index) : rest;
+    };
+    const needsOf = (id: string): string[] => {
+        const m = /^    needs:\s*\[([^\]]*)\]/m.exec(jobBody(id));
+        return m ? m[1].split(',').map((x) => x.trim()).filter(Boolean) : [];
+    };
+
+    it('reads the population from the Coverage gate (positive control)', () => {
+        expect(needsOf('coverage-gate')).toEqual(expect.arrayContaining(['test', 'ratchets', 'flue']));
+    });
+
+    it('needs every Jest job and fails on each one\'s result', () => {
+        const rollup = jobBody('test-summary');
+        const missing = needsOf('coverage-gate').filter(
+            (job) => !needsOf('test-summary').includes(job) || !rollup.includes(`needs.${job}.result`),
+        );
+        expect(missing).toEqual([]);
     });
 });

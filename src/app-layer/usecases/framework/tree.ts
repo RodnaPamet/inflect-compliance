@@ -23,7 +23,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
-import { buildFrameworkTree } from '@/lib/framework-tree/build';
+import { buildFrameworkTree, sectionKeyOf } from '@/lib/framework-tree/build';
 import {
     decorateTreeWithCompliance,
     type ControlForCompliance,
@@ -118,7 +118,9 @@ export async function getFrameworkTree(
               const { outOfScope } = partitionByScope(scope, requirements);
               const aliases = await resolveFamilyRequirementAliases(tdb, fw, requirements);
               const rows = await tdb.controlRequirementLink.findMany({
-                  where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds } },
+                  // A soft-deleted control covers nothing (#5268), as the
+                  // coverage report and the SoA already count it.
+                  where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds }, control: { deletedAt: null } },
                   select: {
                       requirementId: true,
                       control: { select: { id: true, status: true, applicability: true } },
@@ -198,7 +200,7 @@ export async function reorderFrameworkRequirements(
 
     const live = await prisma.frameworkRequirement.findMany({
         where: { frameworkId: fw.id, deprecatedAt: null },
-        select: { id: true },
+        select: { id: true, code: true, section: true, theme: true, category: true },
     });
     const liveIds = new Set(live.map((r) => r.id));
 
@@ -225,6 +227,27 @@ export async function reorderFrameworkRequirements(
             `Reorder payload covers ${total} of ${liveIds.size} requirements — partial reorders are not supported`,
         );
     }
+
+    // Each payload section must hold exactly one of the framework's own
+    // sections, and no section may be split across two (#5231). The overlay
+    // stores positions only, so a requirement moved into another section
+    // came back in its own on reload while the save answered 200.
+    const keyById = new Map(live.map((r) => [r.id, sectionKeyOf(r)]));
+    const payloadSectionOfKey = new Map<string, number>();
+    sections.forEach((s, index) => {
+        const keys = new Set(s.requirementIds.map((id) => keyById.get(id)));
+        if (keys.size > 1) {
+            throw badRequest('A requirement cannot move to another section: its section comes from the framework.', { reason: 'REQUIREMENT_SECTION_FIXED' });
+        }
+        for (const key of keys) {
+            if (key === undefined) continue;
+            const seenAt = payloadSectionOfKey.get(key);
+            if (seenAt !== undefined && seenAt !== index) {
+                throw badRequest('A requirement cannot move to another section: its section comes from the framework.', { reason: 'REQUIREMENT_SECTION_FIXED' });
+            }
+            payloadSectionOfKey.set(key, index);
+        }
+    });
 
     const overlay = flattenOrderedSectionsToOverlay(sections);
 

@@ -41,6 +41,7 @@ jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: jest.fn().mockResolvedValue(undefined),
 }));
 
+import { hashForLookup } from '@/lib/security/encryption';
 import {
     scimListUsers,
     scimCreateUser,
@@ -98,35 +99,32 @@ describe('scimListUsers — filter parsing + count branches', () => {
         });
     });
 
-    it('userName eq filter that MATCHES: filters in-memory, total=filtered.length, no count call', async () => {
+    it('userName eq is part of the QUERY, so paging and the total apply to the match (#5208)', async () => {
         mockMembershipFindMany.mockResolvedValueOnce([
             { status: 'ACTIVE', role: 'READER', user: userRow({ email: 'match@b.com' }) },
-            { status: 'ACTIVE', role: 'READER', user: userRow({ id: 'u2', email: 'other@b.com' }) },
         ] as never);
+        mockMembershipCount.mockResolvedValueOnce(1 as never);
 
         const result = await scimListUsers(scimCtx(), 'https://x', {
             filter: 'userName eq "Match@b.com"',
-            startIndex: 2,
+            startIndex: 1,
             count: 5,
         });
 
+        // The address is matched by its lookup hash, case-folded, IN the where —
+        // not by filtering whatever page the skip/take happened to return.
+        const where = (mockMembershipFindMany.mock.calls[0][0] as { where: { user?: unknown } }).where;
+        expect(where.user).toEqual({ emailHash: hashForLookup('match@b.com') });
+        expect(mockMembershipCount).toHaveBeenCalledWith({ where });
         expect(result.total).toBe(1);
-        expect(result.resources).toHaveLength(1);
         expect(result.resources[0].userName).toBe('match@b.com');
-        // emailFilter branch active → count() is skipped
-        expect(mockMembershipCount).not.toHaveBeenCalled();
     });
 
-    it('filter present but NON-matching pattern: emailFilter stays undefined → count path', async () => {
-        mockMembershipFindMany.mockResolvedValueOnce([] as never);
-        mockMembershipCount.mockResolvedValueOnce(0 as never);
-
-        const result = await scimListUsers(scimCtx(), 'https://x', {
-            filter: 'displayName co "foo"',
-        });
-
-        expect(result.total).toBe(0);
-        expect(mockMembershipCount).toHaveBeenCalled();
+    it('an UNSUPPORTED filter is refused, never answered with every user (#5208)', async () => {
+        await expect(
+            scimListUsers(scimCtx(), 'https://x', { filter: 'displayName co "foo"' }),
+        ).rejects.toMatchObject({ status: 400, scimType: 'invalidFilter' });
+        expect(mockMembershipFindMany).not.toHaveBeenCalled();
     });
 
     it('count capped at 200 via Math.min', async () => {

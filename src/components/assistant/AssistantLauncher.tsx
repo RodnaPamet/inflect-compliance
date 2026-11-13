@@ -112,10 +112,16 @@ export function AssistantLauncher() {
     // the kill switch is on, so registering here means the palette entry
     // follows the button's real presence instead of re-deriving the gate from
     // a flag it cannot read.
+    //
+    // Only for a viewer who may USE it (#5171): a READER is never rendered the
+    // launcher, so registering for them put "Ask the assistant" in the palette
+    // and bound mod+shift+A to a sheet the server refuses them.
+    const canUse = permissions.canWrite;
     useEffect(() => {
+        if (!canUse) return;
         setAvailable(true);
         return () => setAvailable(false);
-    }, [setAvailable]);
+    }, [setAvailable, canUse]);
 
     const close = useCallback(() => {
         setOpen(false);
@@ -145,15 +151,14 @@ export function AssistantLauncher() {
         () => {
             toggle();
         },
-        { description: t('shortcutDescription') },
+        // Disabled rather than skipped, so the hook order holds: a READER gets
+        // no binding and no entry in the shortcut list (#5171).
+        { description: t('shortcutDescription'), enabled: canUse },
     );
 
     // AFTER every hook, never before: an early return above them changes the
-    // hook call order between renders, which React refuses. The shortcut
-    // registration is harmless for a reader because the button it toggles is
-    // not rendered — and `useKeyboardShortcut` is in the registry either way,
-    // which is the lesser of the two wrongs available at this position.
-    if (!permissions.canWrite) return null;
+    // hook call order between renders, which React refuses.
+    if (!canUse) return null;
 
     return (
         <>

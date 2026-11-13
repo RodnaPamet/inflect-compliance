@@ -630,6 +630,14 @@ export const env = createEnv({
         // this says, and a named tenant stays open past `AGENT_PROFILES=0`.
         // Read through `agentProfilesDecisionFor`.
         AGENT_PROFILES_TENANTS: z.string().optional(),
+        // The organization settings page's "Evaluations" card (owner decisions
+        // 2026-11-12): every organization shows it to its org admins by
+        // default; this is the OPT-OUT list, comma-separated organization slugs
+        // that do not. Unset or empty hides it nowhere. The card describes the
+        // garak and Inspect CI nightlies, which this deployment cannot read, so
+        // it is static content and this list is the only thing an operator sets.
+        // Read only by the org settings page, through `evalsCardVisible`.
+        EVALS_CARD_HIDDEN_ORG_SLUGS: z.string().optional(),
         // A2A HOST CONSUMERS (#3861) — admits a host that calls Inflect as a
         // CLIENT rather than as a peer agent: no card to pin, no Ed25519 key,
         // an OAuth2 bearer instead of a signed receipt.
@@ -967,6 +975,7 @@ export const env = createEnv({
         AGENT_INTERACTIVE_RUNS: process.env.AGENT_INTERACTIVE_RUNS,
         AGENT_PROFILES: process.env.AGENT_PROFILES,
         AGENT_PROFILES_TENANTS: process.env.AGENT_PROFILES_TENANTS,
+        EVALS_CARD_HIDDEN_ORG_SLUGS: process.env.EVALS_CARD_HIDDEN_ORG_SLUGS,
         AGENT_FLUE_MODEL: process.env.AGENT_FLUE_MODEL,
         AGENT_FLUE_WORKER_MODEL: process.env.AGENT_FLUE_WORKER_MODEL,
         AGENT_TOOL_RUNNER_MODEL_BALANCED: process.env.AGENT_TOOL_RUNNER_MODEL_BALANCED,

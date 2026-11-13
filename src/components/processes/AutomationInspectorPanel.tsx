@@ -110,6 +110,12 @@ export interface AutomationInspectorPanelProps {
      */
     unsavedOwners?: number;
     tenantSlug: string;
+    /**
+     * May the viewer change these rules? Every write here is the rules API,
+     * which takes `admin.manage` and the Admin tier (#5283). Without it the
+     * panel shows the rule and offers nothing to change. Defaults to FALSE.
+     */
+    canManageRules?: boolean;
 }
 
 export function AutomationInspectorPanel({
@@ -117,6 +123,7 @@ export function AutomationInspectorPanel({
     ruleIds,
     unsavedOwners = 0,
     tenantSlug,
+    canManageRules = false,
 }: AutomationInspectorPanelProps) {
     const t = useTranslations('automation.autoInspector');
     const toast = useToast();
@@ -162,9 +169,12 @@ export function AutomationInspectorPanel({
      * "not saved" hid that.
      */
     async function patchRules(ids: string[], patch: Record<string, unknown>) {
+        if (!canManageRules) return;
         for (const id of ids) {
             const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(id)), {
-                method: 'PUT',
+                // The status toggle goes through PATCH, whose usecase refuses an
+                // ARCHIVED rule (#5284). Every other field is the PUT edit.
+                method: 'status' in patch ? 'PATCH' : 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(patch),
             });
@@ -215,6 +225,7 @@ export function AutomationInspectorPanel({
                         {rule?.status === 'ENABLED' ? t('enabled') : t('disabled')}
                         <Switch
                             checked={rule?.status === 'ENABLED'}
+                            disabled={!canManageRules || rule?.status === 'ARCHIVED'}
                             onCheckedChange={(c) =>
                                 patchRules(ruleIds, { status: c ? 'ENABLED' : 'DISABLED' })
                             }
@@ -247,6 +258,7 @@ export function AutomationInspectorPanel({
                 <FormField label={t('ruleName')}>
                     <Input
                         value={name}
+                        readOnly={!canManageRules}
                         onChange={(e) => setName(e.target.value)}
                         onBlur={() =>
                             name.trim() &&
@@ -263,6 +275,7 @@ export function AutomationInspectorPanel({
                         options={TRIGGER_OPTIONS}
                         selected={triggerSelected}
                         setSelected={(o) => o && patchRules(ruleIds, { triggerEvent: o.value })}
+                        disabled={!canManageRules}
                         placeholder={t('selectEvent')}
                         forceDropdown
                         matchTriggerWidth
@@ -284,7 +297,7 @@ export function AutomationInspectorPanel({
                             size="sm"
                             variant="secondary"
                             onClick={() => openBuilder(ruleIds[0]!)}
-                            disabled={!rowsById.has(ruleIds[0]!)}
+                            disabled={!canManageRules || !rowsById.has(ruleIds[0]!)}
                             data-testid="automation-inspector-edit-action"
                         >
                             {t('editAction')}
@@ -307,7 +320,7 @@ export function AutomationInspectorPanel({
                             size="sm"
                             variant="secondary"
                             onClick={() => openBuilder(id)}
-                            disabled={!rowsById.has(id)}
+                            disabled={!canManageRules || !rowsById.has(id)}
                             data-testid="automation-inspector-edit-conditions"
                         >
                             {ruleIds.length > 1
@@ -323,6 +336,7 @@ export function AutomationInspectorPanel({
                     <Input
                         type="number"
                         min={1}
+                        readOnly={!canManageRules}
                         value={sla}
                         onChange={(e) => setSla(e.target.value)}
                         onBlur={() =>

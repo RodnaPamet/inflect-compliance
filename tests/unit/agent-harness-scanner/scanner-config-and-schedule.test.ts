@@ -10,7 +10,11 @@
 import { CLIENT_ESTATES } from '../../helpers/agent-harness-estate-fixtures';
 import { ConfigError, credentialEnvNames, parseScannerConfig } from '../../../packages/agent-harness-scanner/src/config';
 import { jsonLineLog } from '../../../packages/agent-harness-scanner/src/log';
-import { runOnSchedule } from '../../../packages/agent-harness-scanner/src/schedule';
+import {
+    MAX_TIMER_MS,
+    boundedSleep,
+    runOnSchedule,
+} from '../../../packages/agent-harness-scanner/src/schedule';
 
 const base = () => structuredClone(CLIENT_ESTATES[0].scannerConfig) as Record<string, unknown>;
 
@@ -121,5 +125,51 @@ describe('2. three estates, each on a schedule', () => {
             },
         });
         expect(starts).toEqual([0, 90 * 60_000]);
+    });
+
+    it('the longest allowed cadence really waits (#5239)', async () => {
+        // 720 h is past the 2^31-1 ms a timer honours; one setTimeout of that
+        // length fires after 1 ms, and the schedule ran scans back to back.
+        jest.useFakeTimers();
+        try {
+            const spy = jest.spyOn(global, 'setTimeout');
+            let done = false;
+            const sleeping = boundedSleep(720 * 3_600_000).then(() => {
+                done = true;
+            });
+            await jest.advanceTimersByTimeAsync(MAX_TIMER_MS);
+            expect(done).toBe(false);
+            await jest.advanceTimersByTimeAsync(720 * 3_600_000 - MAX_TIMER_MS);
+            await sleeping;
+            expect(done).toBe(true);
+            for (const call of spy.mock.calls) {
+                expect(Number(call[1])).toBeLessThanOrEqual(MAX_TIMER_MS);
+            }
+            spy.mockRestore();
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it('the default sleep is the bounded one', async () => {
+        jest.useFakeTimers();
+        try {
+            const runs: number[] = [];
+            const pending = runOnSchedule({
+                everyHours: 720,
+                log: jsonLineLog(() => undefined),
+                maxRuns: 2,
+                run: async () => {
+                    runs.push(Date.now());
+                },
+            });
+            await jest.advanceTimersByTimeAsync(1_000);
+            expect(runs).toHaveLength(1);
+            await jest.advanceTimersByTimeAsync(720 * 3_600_000);
+            await pending;
+            expect(runs).toHaveLength(2);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });

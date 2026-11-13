@@ -1,6 +1,7 @@
 /**
  * LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENT DEFINITIONS, READ OUT OF ONE
- * FILE'S FACTS (#3737, #4156).
+ * FILE'S FACTS (#3737, #4156) — AND, THROUGH `provider-sdk.ts`, AGENTS BUILT
+ * DIRECTLY ON A MODEL PROVIDER'S SDK.
  *
  * One recogniser for both languages: `python.ts` and `javascript.ts` lower a
  * file to the same IR, and this module reads agents out of it by what each
@@ -20,7 +21,12 @@
  *     or `query`, `ClaudeSDKClient` from `claude_agent_sdk` — and, in Python, a
  *     `ClaudeAgentOptions` no such call in the file consumes. Its options are
  *     read as well (`sdkAgent`, below), and the planner maps them onto the
- *     harness ladder (`agentSdkOptionVerdicts`).
+ *     harness ladder (`agentSdkOptionVerdicts`);
+ *   • a model call that is given tools, on Anthropic's, OpenAI's, Google's or
+ *     AWS Bedrock's own SDK. `provider-sdk.ts` holds what counts and how it is
+ *     read; it is on unless the source's configuration turns it off
+ *     (`providerSdks: false`), and it reads through this recogniser, so a
+ *     reference, an endpoint and a credential mean the same thing there.
  *
  * For each, the tools it binds, the model endpoints it calls and the
  * credentials those reference. A credential is reported by REFERENCE only: the
@@ -48,6 +54,7 @@ import {
     type FileFacts,
     type Qualified,
 } from './ir';
+import { providerSdkAgents, type ProviderSdkFramework } from './provider-sdk';
 
 export interface DetectedModel {
     readonly provider: string;
@@ -75,7 +82,7 @@ export interface DetectedCredential {
 }
 
 export interface DetectedAgent {
-    readonly framework: 'langchain' | 'langgraph' | 'claude-agent-sdk';
+    readonly framework: 'langchain' | 'langgraph' | 'claude-agent-sdk' | ProviderSdkFramework;
     readonly language: 'python' | 'javascript';
     /** The name the definition is bound to, or `L<line>`. */
     readonly name: string;
@@ -88,6 +95,12 @@ export interface DetectedAgent {
     readonly sdkOptions: AgentSdkOptionFacts | null;
     /** How many subagents an Agent SDK agent's options define; null when unread, or another framework. */
     readonly subagents: number | null;
+}
+
+/** What the recogniser is asked to look for, beyond the frameworks it always reads. */
+export interface RecognizeOptions {
+    /** Agents built directly on a model provider's SDK. On unless it is `false`. */
+    readonly providerSdks?: boolean;
 }
 
 export interface FileDetection {
@@ -295,7 +308,7 @@ const SDK_SHELL_OR_FETCH: readonly string[] = ['Bash', 'WebFetch'];
 
 // ─── The recogniser ─────────────────────────────────────────────────────────
 
-interface Resolved {
+export interface Resolved {
     readonly tools: DetectedTool[];
     readonly models: DetectedModel[];
     readonly credentials: DetectedCredential[];
@@ -340,19 +353,26 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
 class Recognizer {
     readonly unresolved: CodeLocation[] = [];
+    /**
+     * What may be repeated from the code into a report, for `provider-sdk.ts`:
+     * the same rules as here. A model's name is held to the rule every other
+     * name is.
+     */
+    readonly reportable = { locator: codeLocator, name: reportableName, modelName: reportableName, credentialKey: isCredentialKey };
     private readonly resolving = new Set<Expr>();
 
     constructor(
-        private readonly facts: FileFacts,
+        readonly facts: FileFacts,
         private readonly label: string,
         private readonly path: string,
+        private readonly look: RecognizeOptions = {},
     ) {}
 
     at(line: number): CodeLocation {
         return { label: this.label, path: this.path, line };
     }
 
-    private fail(line: number): void {
+    fail(line: number): void {
         this.unresolved.push(this.at(line));
     }
 
@@ -366,7 +386,7 @@ class Recognizer {
     }
 
     /** `x`, `self.llm`, `this.llm` as a binding key. */
-    private dotted(e: Expr): string | null {
+    dotted(e: Expr): string | null {
         if (e.k === 'ref') return e.name;
         if (e.k === 'attr') {
             const head = this.dotted(e.obj);
@@ -398,7 +418,7 @@ class Recognizer {
     }
 
     /** An option by keyword (Python) or by key of an options object (JavaScript), or by position. */
-    private option(call: CallExpr, where: readonly (string | number)[]): Expr | undefined {
+    option(call: CallExpr, where: readonly (string | number)[]): Expr | undefined {
         for (const w of where) {
             if (typeof w === 'number') {
                 if (call.args[w] !== undefined) return call.args[w];
@@ -432,6 +452,25 @@ class Recognizer {
     }
 
     // ── values ─────────────────────────────────────────────────────────────
+
+    /**
+     * What a call IS, to decide whether it is part of an agent at all. Nothing
+     * it could not resolve on the way is recorded.
+     *
+     * Every call in a file is asked this, and most are ordinary code: an array
+     * of route rules, a spread into a sort. Evaluating one of those as if it
+     * were a tool list finds nothing it can resolve, and recording that would
+     * report a file with no agent in it as a file that was not read. What an
+     * agent IS built from is resolved again, by `factory`, `toolsOf`,
+     * `modelOf` and the rest, once the call is known to be one; that pass
+     * records what does not resolve.
+     */
+    private classify(e: Expr): Value {
+        const before = this.unresolved.length;
+        const v = this.value(e);
+        this.unresolved.length = before;
+        return v;
+    }
 
     value(e: Expr, depth = 0): Value {
         if (depth > 32 || this.resolving.has(e)) return UNKNOWN;
@@ -687,7 +726,7 @@ class Recognizer {
         return r;
     }
 
-    private chatModel(call: CallExpr, provider: string): Resolved {
+    chatModel(call: CallExpr, provider: string): Resolved {
         const at = this.at(call.line);
         if (call.spread) this.fail(call.line);
         const known = PROVIDERS[provider];
@@ -843,7 +882,7 @@ class Recognizer {
     }
 
     /** Follow a name or attribute to the expression it was bound to; null when it is bound to nothing here. */
-    private deref(e: Expr, depth = 0): Expr | null {
+    deref(e: Expr, depth = 0): Expr | null {
         if (depth > 16) return null;
         if (e.k !== 'ref' && e.k !== 'attr') return e;
         const key = this.dotted(e);
@@ -852,7 +891,7 @@ class Recognizer {
     }
 
     /** Python's `None` and JavaScript's `undefined`/`null`: an option written as absent. */
-    private isNothing(e: Expr): boolean {
+    isNothing(e: Expr): boolean {
         return e.k === 'ref' && (e.name === 'None' || e.name === 'undefined' || e.name === 'null');
     }
 
@@ -1200,7 +1239,7 @@ class Recognizer {
 
         // Executors first: each absorbs the factory it wraps.
         for (const { call, boundTo } of this.facts.calls) {
-            const v = this.value(call);
+            const v = this.classify(call);
             if (v.v !== 'executor') continue;
             const r = empty();
             let framework: DetectedAgent['framework'] = 'langchain';
@@ -1225,7 +1264,7 @@ class Recognizer {
         }
         for (const { call, boundTo } of this.facts.calls) {
             if (consumed.has(call)) continue;
-            const v = this.value(call);
+            const v = this.classify(call);
             if (v.v !== 'factory') continue;
             found.push({
                 call,
@@ -1244,6 +1283,13 @@ class Recognizer {
         // Claude Agent SDK agents.
         for (const { call, boundTo, sdk } of this.sdkAgents()) {
             found.push({ call, boundTo, framework: 'claude-agent-sdk', r: sdk.r, sdk: { facts: sdk.facts, subagents: sdk.subagents } });
+        }
+        // A model call that is given tools, on a provider's own SDK. Named by the function it is
+        // written in: `response = client.messages.create(…)` would name every one of them `response`.
+        if (this.look.providerSdks !== false) {
+            for (const { call, boundTo, within, framework, r } of providerSdkAgents(this)) {
+                found.push({ call, boundTo: within ?? boundTo, framework, r });
+            }
         }
 
         const names = new Map<string, number>();
@@ -1294,7 +1340,8 @@ class Recognizer {
             if (ADD_NODE.has(builder.fn.name)) nodes.push(builder);
             builder = builder.fn.obj;
         }
-        const builderValue = this.value(builder);
+        // Any `.compile()` reaches here, a regular expression's among them.
+        const builderValue = this.classify(builder);
         if (builderValue.v !== 'graph') return null;
         // A named builder: every `builder.add_node(…)` in the file.
         const key = this.dotted(builder);
@@ -1332,9 +1379,13 @@ function dedupe<T>(items: readonly T[], key: (t: T) => string): T[] {
     });
 }
 
-/** Read the LangChain and LangGraph agents out of one file's facts. */
-export function recognizeAgents(facts: FileFacts, file: { readonly label: string; readonly path: string }): FileDetection {
-    const recognizer = new Recognizer(facts, file.label, file.path);
+/** Read the agents out of one file's facts. */
+export function recognizeAgents(
+    facts: FileFacts,
+    file: { readonly label: string; readonly path: string },
+    options: RecognizeOptions = {},
+): FileDetection {
+    const recognizer = new Recognizer(facts, file.label, file.path, options);
     const agents = recognizer.agents();
     return { agents, unresolved: dedupe(recognizer.unresolved, (u) => `${u.line}`) };
 }

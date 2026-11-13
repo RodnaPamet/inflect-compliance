@@ -26,7 +26,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
 
 afterEach(cleanup);
 
-function renderPage() {
+function renderPage(probe: { reachableVersion: string | null; probeOutcome: string } = { reachableVersion: '0.1.6', probeOutcome: 'answered' }) {
     return render(
         <NextIntlClientProvider locale="en" messages={EN as unknown as Record<string, unknown>}>
             <SandboxRuntimeClient
@@ -34,8 +34,8 @@ function renderPage() {
                 view={{
                     configured: true,
                     configDigest: 'sha256:abc',
-                    reachableVersion: '0.1.6',
-                    probeOutcome: 'answered',
+                    reachableVersion: probe.reachableVersion,
+                    probeOutcome: probe.probeOutcome,
                     probedAtIso: '2026-10-31T10:00:00.000Z',
                     channels: {
                         'anonymous-telemetry': null,
@@ -69,5 +69,19 @@ describe('Sandbox runtime enforcement rows', () => {
         expect(container.textContent).not.toContain(TIER_C_POLICY_MODULE);
         expect(container.textContent).not.toContain(TIER_C_CI_CHECK);
         expect(container.textContent).not.toMatch(/src\/lib\//);
+    });
+});
+
+describe('Sandbox runtime channel rows follow the probe (#5275)', () => {
+    const UNREACHABLE = (EN.admin.sandboxRuntime as unknown as { status: Record<string, string> }).status.unreachable;
+
+    it.each(['not-probed', 'answered-without-version'])('a %s gateway is not badged unreachable', (probeOutcome) => {
+        const { container } = renderPage({ reachableVersion: null, probeOutcome });
+        expect(container.textContent).not.toContain(UNREACHABLE);
+    });
+
+    it('a gateway that did not answer is', () => {
+        renderPage({ reachableVersion: null, probeOutcome: 'unreachable' });
+        expect(screen.getAllByText(UNREACHABLE)).toHaveLength(4);
     });
 });

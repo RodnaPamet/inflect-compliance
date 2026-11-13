@@ -22,6 +22,7 @@ import { AgentAmendModal } from './AgentAmendModal';
 import { ConnectAgentSheet } from './ConnectAgentSheet';
 import { InteractiveAgentAction } from './InteractiveAgentAction';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 
@@ -223,6 +224,14 @@ export function AgentDetailClient({
     // breaker) can make the others re-read without the shell knowing what
     // any of them holds.
     const refresh = useCallback(() => setRefreshToken((n) => n + 1), []);
+    // An amend changes what the SERVER rendered — the header, the meta strip
+    // and the `agent` this modal is seeded from — so the tabs re-reading is
+    // not enough; the route has to render again (#5152).
+    const router = useRouter();
+    const afterAmend = useCallback(() => {
+        refresh();
+        router.refresh();
+    }, [refresh, router]);
 
     const meta: MetaItem[] = [
         {
@@ -510,7 +519,7 @@ export function AgentDetailClient({
                     // The whole shell re-reads rather than this header alone:
                     // an amend can change autonomy and provenance, which the
                     // risk and coverage tabs both derive from.
-                    onAmended={refresh}
+                    onAmended={afterAmend}
                 />
             )}
         </EntityDetailLayout>

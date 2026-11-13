@@ -18,10 +18,13 @@ verdict.
 
 Configuration comes from the environment the workflow sets, never from a task
 argument Inspect would echo into its log: ``INSPECT_PRODUCT_URL`` (loopback),
-``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), and per
-tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>`` and the seed
-agent's bound API key in ``INSPECT_AGENT_KEY_<TENANT>`` (``product.py`` says
-which route takes which).
+``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), per
+tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>``, and per
+seed agent its bound API key in ``INSPECT_AGENT_KEY_<TENANT>_<AGENT ID>``
+(``runner.agent_key_env``; ``product.py`` says which route takes which). A
+Flue tenant has one eval agent; a Tool Runner tenant has one per profile
+(``runner.seed_for`` says why), and each sample uses the key of the agent its
+run binds.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 
 from inflect_inspect import verdicts
 from inflect_inspect.product import HttpProduct
-from inflect_inspect.runner import SeedManifest, run_sample
+from inflect_inspect.runner import SeedManifest, agent_key_env, run_sample, seed_for
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_SET = json.loads((ROOT / "task-set.json").read_text(encoding="utf-8"))
@@ -59,15 +62,15 @@ def _env_name(slug: str) -> str:
     return slug.upper().replace("-", "_")
 
 
-def _product_for(slug: str) -> HttpProduct:
+def _product_for(slug: str, agent_id: str) -> HttpProduct:
     cookie = os.environ[f"INSPECT_SESSION_{_env_name(slug)}"]
-    agent_key = os.environ[f"INSPECT_AGENT_KEY_{_env_name(slug)}"]
+    agent_key = os.environ[agent_key_env(slug, agent_id)]
     return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie, agent_key)
 
 
-def _seed_for(slug: str) -> SeedManifest:
+def _seed_for(slug: str, task_def: Dict[str, Any], engine: str) -> SeedManifest:
     manifest = json.loads(Path(os.environ["INSPECT_SEED_MANIFEST"]).read_text(encoding="utf-8"))[slug]
-    return SeedManifest(agent_id=manifest["agentId"], profiles=manifest["profiles"], markers=manifest["markers"])
+    return seed_for(manifest, task_def, engine)
 
 
 @solver
@@ -75,7 +78,8 @@ def governed_run(engine: str):
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_def = state.metadata["task"]
         slug = _tenant(task_def, engine)
-        sample = run_sample(_product_for(slug), task_def, state.metadata["inputId"], engine, _seed_for(slug))
+        seed = _seed_for(slug, task_def, engine)
+        sample = run_sample(_product_for(slug, seed.agent_id), task_def, state.metadata["inputId"], engine, seed)
         state.metadata["sample"] = {**sample, "epoch": state.epoch}
         state.completed = True
         return state
