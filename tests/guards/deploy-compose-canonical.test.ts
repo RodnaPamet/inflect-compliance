@@ -258,6 +258,11 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
  * master encryption key; a tag instead of a digest, or a Watchtower label, lets
  * the image change underneath the pin; a dropped hardening line goes unnoticed
  * because the scanner runs the same either way.
+ *
+ * Since scanent #26 the image is scanent's (`ghcr.io/rodnapamet/scanent`), and
+ * the paths below are its image's: the CLI's default command, the proxy at
+ * `/app/packages/scanner/dist/egress-proxy.js`, the configuration at
+ * `/etc/scanent`.
  */
 describe('deploy compose — the harness scanner stays in its own overlay, pinned and narrowed', () => {
     const SCANNER_OVERLAY = 'deploy/docker-compose.harness-scanner.yml';
@@ -276,6 +281,7 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         command?: string[];
         entrypoint?: string[];
         networks?: string[];
+        pids_limit?: number;
     };
     const doc = yaml.load(read(SCANNER_OVERLAY)) as { services: Record<string, Service>; networks?: Record<string, unknown> };
     const svc = doc.services['harness-scanner'];
@@ -286,19 +292,28 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         expect(Object.keys(doc.services).sort()).toEqual(['harness-egress', 'harness-scanner']);
     });
 
-    it('pins the published image by digest', () => {
-        expect(svc.image).toMatch(/^ghcr\.io\/rodnapamet\/agent-harness-scanner@sha256:[0-9a-f]{64}$/);
+    it('pins scanent\'s published image by digest', () => {
+        expect(svc.image).toMatch(/^ghcr\.io\/rodnapamet\/scanent@sha256:[0-9a-f]{64}$/);
+    });
+
+    it('no longer runs the in-repo scanner\'s image', () => {
+        // The previous digest is kept in a comment for the rollback; no service
+        // names it.
+        for (const s of Object.values(doc.services)) expect(s.image).not.toContain('agent-harness-scanner');
     });
 
     it('reads its own environment file, never .env.prod, and interpolates nothing', () => {
         expect(svc.env_file).toEqual(['./.env.scanner']);
-        // The only literals it sets are the ones that point it at its proxy:
-        // no secret, and nothing interpolated from the host's env files.
+        // The only literals it sets are the ones that point it at its proxy,
+        // and the statement that the proxy is scanent's own, which checks the
+        // address it dials: no secret, and nothing interpolated from the
+        // host's env files.
         expect(svc.environment).toEqual({
             HTTPS_PROXY: 'http://harness-egress:3128',
             HTTP_PROXY: 'http://harness-egress:3128',
             NO_PROXY: '',
             NODE_USE_ENV_PROXY: '1',
+            EGRESS_PROXY_CHECKS_ADDRESSES: '1',
         });
         expect(read(SCANNER_OVERLAY)).not.toContain('${');
     });
@@ -311,7 +326,8 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
 
     it('runs the proxy from the same pinned image, as narrowly as the scanner, holding no credential', () => {
         expect(proxy.image).toBe(svc.image);
-        expect(proxy.entrypoint).toEqual(['node', '--import', 'tsx', '/app/packages/agent-harness-scanner/src/egress-proxy.ts']);
+        expect(proxy.entrypoint).toEqual(['node', '/app/packages/scanner/dist/egress-proxy.js']);
+        expect(proxy.command).toEqual([]);
         expect(proxy.read_only).toBe(true);
         expect(proxy.user).toBe('1000:1000');
         expect(proxy.cap_drop).toEqual(['ALL']);
@@ -331,8 +347,14 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
         expect(svc.security_opt).toEqual(['no-new-privileges:true']);
     });
 
+    it('bounds the process count of both, as scanent\'s own template does', () => {
+        expect(svc.pids_limit).toBe(256);
+        expect(proxy.pids_limit).toBe(256);
+    });
+
     it('mounts only its configuration directory, read-only', () => {
-        expect(svc.volumes).toEqual(['./harness-scanner:/etc/agent-harness-scanner:ro']);
+        // No writable mount: with the `inflect` output alone the scanner writes nothing.
+        expect(svc.volumes).toEqual(['./harness-scanner:/etc/scanent:ro']);
     });
 
     it('serves nothing and is never auto-updated', () => {
@@ -342,7 +364,7 @@ describe('deploy compose — the harness scanner stays in its own overlay, pinne
     });
 
     it('runs the schedule against the mounted configuration', () => {
-        expect(svc.command).toEqual(['schedule', '--config', '/etc/agent-harness-scanner/config.json']);
+        expect(svc.command).toEqual(['schedule', '--config', '/etc/scanent/config.json']);
     });
 });
 
@@ -582,6 +604,18 @@ describe('the scripts it runs print no credential', () => {
 
     it.each(scripts)('%s never prints an environment file', (rel) => {
         expect(code(rel).filter((l) => /\b(cat|less|more|head|tail)\b[^|]*\.env(\.prod|\.scanner)?\b/.test(l))).toEqual([]);
+    });
+
+    it('configure has the pinned image read the staged configuration, and compares its hosts to EGRESS_ALLOW, before installing anything', () => {
+        const lines = code('deploy/harness-scanner/remote.sh');
+        const hosts = lines.findIndex((l) => l.includes('hosts --config /etc/scanent/config.json --format egress-allow'));
+        const compare = lines.findIndex((l) => l.includes("sed -n 's/^ *EGRESS_ALLOW: *//p'"));
+        const firstInstall = lines.findIndex((l) => l.includes('install -m 0644 -o root -g root'));
+        expect(hosts).toBeGreaterThan(-1);
+        expect(compare).toBeGreaterThan(hosts);
+        expect(firstInstall).toBeGreaterThan(compare);
+        // The configuration check runs with no network.
+        expect(lines.slice(hosts - 2, hosts + 1).join('\n')).toContain('--network none');
     });
 
     it('the dry run sends the report to the summariser, never to the log', () => {

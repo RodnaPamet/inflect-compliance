@@ -13,14 +13,22 @@
 # ── WHAT THIS IS ──────────────────────────────────────────────────────
 #
 # The pilot estate is Inflect's own (roadmap decision 10): its Entra
-# directory, its MCP server, the tenant's own register, its GitHub workflows
-# and its GCP project's service accounts. Its scanner runs here, on the
-# production VM, from the copy the dispatch-only `Scanner image` workflow
-# published to the repository's private GHCR package (owner decision
-# 2026-10-20). A client's estate still builds the image from source.
+# directory, the tenant's own register, its GitHub workflows and its GCP
+# project's service accounts. Its scanner runs here, on the production VM.
+#
+# Since scanent #26 the image is scanent's, the standalone scanner product
+# (github.com/RodnaPamet/scanent), not the in-repo
+# `packages/agent-harness-scanner`: scanent carries every source and rule that
+# package does, and the report contract both speak is scanent's own package,
+# which the ingest takes too (`@rodnapamet/scanent-contract`). The image is
+# public, multi-arch and signed keylessly by scanent's release workflow;
+# deploy/harness-scanner/README.md has the verification.
 #
 # It reads, signs one report per run and POSTs it to the tenant's ingest
-# route over the public origin. It serves nothing: no port, no Caddy vhost.
+# route over the public origin (the configuration's one output, `inflect`).
+# It serves nothing: no port, no Caddy vhost. With no `file` output it writes
+# nothing either, which is why its root filesystem can be read-only with no
+# writable mount at all.
 #
 # ── WHY AN OVERLAY AND NOT docker-compose.prod.yml ────────────────────
 #
@@ -43,7 +51,8 @@
 #
 # ── WHY THE DIRECTORY, NOT THE FILE ───────────────────────────────────
 #
-# The configuration is mounted as its directory, for two reasons:
+# The configuration is mounted as its directory, at /etc/scanent (the path
+# scanent's image and templates use), for two reasons:
 #
 #  - Caddy's: a single-file bind mount pins the inode, so an edit that
 #    renames a temp file over it never reaches the container.
@@ -57,37 +66,48 @@
 # route out and nothing else on it: not the internet, and not the production
 # database or Redis on the default network. Its one neighbour is
 # `harness-egress`, the CONNECT-only proxy that ships in the scanner's own
-# image (`packages/agent-harness-scanner/src/egress-proxy.ts`), which is also
-# on `harness-scanner-egress` and forwards a tunnel to a host on EGRESS_ALLOW,
-# port 443, and refuses everything else. The scanner's fetch goes through it
-# (HTTPS_PROXY, honoured because NODE_USE_ENV_PROXY=1).
+# image (scanent's `packages/scanner/src/egress-proxy.ts`, compiled to
+# `dist/egress-proxy.js`), which is also on `harness-scanner-egress` and
+# forwards a tunnel to a host on EGRESS_ALLOW, port 443, and refuses
+# everything else. It resolves each allowed name itself, refuses a loopback,
+# link-local, metadata or private address, and dials the address it checked.
+# The scanner's fetch goes through it (HTTPS_PROXY, honoured because
+# NODE_USE_ENV_PROXY=1). EGRESS_PROXY_CHECKS_ADDRESSES=1 tells the scanner
+# that this proxy is scanent's own, so a host the configuration names (an MCP
+# server) is address-checked by the proxy rather than by a resolver the
+# internal network does not have; scanent's own egress overlay sets it the
+# same way. It is never to be set beside any other proxy.
 #
-# The allowlist is exactly the hosts the pilot's sources and the ingest reach:
-# Microsoft Graph and its token endpoint (entra-sp), the GitHub API (cicd),
-# Google's IAM API and token endpoint (gcp-sa), and the Inflect origin
-# (inflect-register and the ingest). A source added to the configuration needs
-# its host added here, or it reads UNREACHABLE — the safe direction.
+# The allowlist is exactly the hosts the pilot's sources and the ingest reach,
+# as the pinned image prints them for the configuration
+# (`hosts --format egress-allow`): Microsoft Graph and its token endpoint
+# (entra-sp), the GitHub API (cicd), Google's IAM API and token endpoint
+# (gcp-sa), and the Inflect origin (inflect-register and the ingest). The
+# `configure` action refuses a configuration whose hosts differ from this
+# line. A source added to the configuration needs its host added here, or it
+# reads UNREACHABLE — the safe direction.
 #
-# Every scan PROVES this before it reads (`egress-proof.ts`): the proxy admits
-# the Inflect host, refuses the canary in the configuration, and a direct
-# connection to the Inflect host fails. The result is the scanner's own
-# `H3.egress_enforced` verdict.
+# Every scan PROVES this before it reads (scanent's `egress-proof.ts`): the
+# proxy admits the Inflect host, refuses the canary in the configuration, and
+# a direct connection to the Inflect host fails. The result is the scanner's
+# own `H3.egress_enforced` verdict.
 #
 # ── HARDENING ─────────────────────────────────────────────────────────
 #
-# The README's Container section: a read-only root filesystem, every
-# capability dropped, no new privileges, the image's own uid 1000. The image
-# is pinned by DIGEST, and the service carries no Watchtower label, so
-# nothing updates it underneath the pin. A new image means a new dispatch of
-# the `Scanner image` workflow and a reviewed edit of the line below.
+# scanent's deployment template: a read-only root filesystem, every
+# capability dropped, no new privileges, the image's own uid 1000, a bounded
+# process count. The image is distroless (no shell, no package manager). It
+# is pinned by DIGEST — the multi-arch index digest of scanent's release —
+# and the service carries no Watchtower label, so nothing updates it
+# underneath the pin. A new scanent release means a reviewed edit of the two
+# image lines below.
 #
 # ── PRECONDITIONS ─────────────────────────────────────────────────────
-#   [ ] The VM's GHCR login can pull the private `agent-harness-scanner`
-#       package: `sudo docker pull <the image line below>`.
+#   [ ] The VM can pull the image line below (public; no registry login).
 #   [ ] The scanner is a registered agent in Inflect's tenant, and its
 #       public key is registered against it. Print it with no network:
 #         docker compose ... run --rm --no-deps harness-scanner \
-#           public-key --config /etc/agent-harness-scanner/config.json
+#           public-key --config /etc/scanent/config.json
 #   [ ] /opt/inflect/harness-scanner/config.json, filled in from
 #       deploy/harness-scanner/config.pilot.example.json. Directory 0755,
 #       file 0644: it holds no credential, and the container reads it as uid
@@ -96,30 +116,46 @@
 #       (deploy/harness-scanner/scanner.env.example), root-owned, mode 0600.
 #   [ ] A dry run reads every source COMPLETE before the schedule starts:
 #         docker compose ... run --rm harness-scanner \
-#           scan --dry-run --config /etc/agent-harness-scanner/config.json
+#           scan --dry-run --config /etc/scanent/config.json
 #
 # ── TEARDOWN ──────────────────────────────────────────────────────────
 #   docker compose ... rm -sf harness-scanner harness-egress
 #   revoke the ingest key and each source's read credential at its source
 #   remove /opt/inflect/.env.scanner
 #
+# ── ROLLBACK ──────────────────────────────────────────────────────────
+#   The image before scanent #26 was Inflect's own scanner, 0.13.0:
+#     ghcr.io/rodnapamet/agent-harness-scanner@sha256:e9059418045046ce507c56b68e818de1e59c945176c21abfdcb9b993a4598924
+#   Rolling back is reverting the commit that moved this file to scanent:
+#   this file, deploy/harness-scanner/{remote.sh,vm.sh} and the configuration
+#   template move together (the paths and the proxy's entrypoint differ, not
+#   only the digest, and remote.sh refuses any other image), then the
+#   `Scanner VM` workflow's `configure` and `start`. The signing key is kept,
+#   so the registered public key stays valid either way.
+#
 services:
   harness-scanner:
-    # `Scanner image` run 43398571764, 2026-11-13, commit b25747dff (scanner
-    # 0.13.0, contract /4: #5414's refusal of a secret-shaped member name,
-    # #5471's provider-SDK agents in the `code` source, #5489's scoped
-    # reconcile): smoke-tested, then Trivy-gated at CRITICAL,HIGH with
-    # nothing found.
-    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:e9059418045046ce507c56b68e818de1e59c945176c21abfdcb9b993a4598924
+    # scanent 0.15.0, the multi-arch index digest of
+    # ghcr.io/rodnapamet/scanent:0.15.0, signed by
+    # https://github.com/RodnaPamet/scanent/.github/workflows/release.yml@refs/tags/v0.15.0
+    # (cosign verify, and its SLSA provenance by `gh attestation verify`).
+    image: ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171
     restart: unless-stopped
-    command: ["schedule", "--config", "/etc/agent-harness-scanner/config.json"]
+    # The image's own default command, stated so the mount below and the
+    # command cannot drift apart.
+    command: ["schedule", "--config", "/etc/scanent/config.json"]
     # Capacity budget C1 (2026-11-12): peak 155 MiB; 1.5x rounded up, with
     # room for a larger estate's code parse. Batch-shaped, so capped at one
     # core with half the weight under contention: the request path keeps the
     # other. docs/implementation-notes/2026-11-12-capacity-c1.md.
+    # scanent's own Compose file sets 1536m, for its `file` output: scoring
+    # and rendering a large estate's results.json, page and PDF (its
+    # docs/scanner.md, "Capacity"). With the `inflect` output alone none of
+    # that runs, and the scan itself is the cost this limit was sized for.
     mem_limit: 512m
     cpus: 1.0
     cpu_shares: 512
+    pids_limit: 256
     user: "1000:1000"
     read_only: true
     cap_drop:
@@ -136,12 +172,14 @@ services:
       HTTP_PROXY: http://harness-egress:3128
       NO_PROXY: ""
       NODE_USE_ENV_PROXY: "1"
+      # The proxy above is scanent's own, and checks the address it dials.
+      EGRESS_PROXY_CHECKS_ADDRESSES: "1"
     networks:
       - harness-scanner-internal
     depends_on:
       - harness-egress
     volumes:
-      - ./harness-scanner:/etc/agent-harness-scanner:ro
+      - ./harness-scanner:/etc/scanent:ro
     logging:
       # The canonical file's `default-logging`. An anchor does not cross
       # files, so its values are repeated here.
@@ -151,16 +189,20 @@ services:
         max-file: "3"
 
   harness-egress:
-    # The SAME digest as the scanner: the proxy is reviewed code from this
-    # repository, not a third-party image. `vm.sh` refuses two digests.
-    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:e9059418045046ce507c56b68e818de1e59c945176c21abfdcb9b993a4598924
+    # The SAME digest as the scanner: the proxy is scanent's reviewed code,
+    # shipped in its image, not a third-party image. `vm.sh` refuses two
+    # digests.
+    image: ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171
     restart: unless-stopped
-    entrypoint: ["node", "--import", "tsx", "/app/packages/agent-harness-scanner/src/egress-proxy.ts"]
+    # As scanent's deploy/compose.egress.yaml starts it. `node` is on the
+    # distroless image's PATH (/nodejs/bin).
+    entrypoint: ["node", "/app/packages/scanner/dist/egress-proxy.js"]
     command: []
     # Capacity budget C1: peak 66 MiB; a Node process's floor. It forwards
     # the scanner's tunnels and nothing else, so half a core is ample.
     mem_limit: 256m
     cpus: 0.5
+    pids_limit: 256
     user: "1000:1000"
     read_only: true
     cap_drop:
@@ -168,8 +210,10 @@ services:
     security_opt:
       - no-new-privileges:true
     # Exact hostnames, no wildcard. Empty or missing refuses every tunnel.
+    # No EGRESS_PRIVATE_CIDR_ALLOWLIST: no host here is private, so the proxy
+    # refuses every private address.
     environment:
-      EGRESS_ALLOW: graph.microsoft.com,login.microsoftonline.com,api.github.com,iam.googleapis.com,oauth2.googleapis.com,app.inflect.bg
+      EGRESS_ALLOW: api.github.com,app.inflect.bg,graph.microsoft.com,iam.googleapis.com,login.microsoftonline.com,oauth2.googleapis.com
     networks:
       - harness-scanner-internal
       - harness-scanner-egress
