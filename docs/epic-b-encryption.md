@@ -45,6 +45,7 @@
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | **REQUIRED** in production (≥32 chars). Dev: dev-fallback + WARN log. Test: dev-fallback (silent). | — | Production boot exits 1 if missing, too short, or equal to the dev-fallback string. Three independent checks — zod schema (`src/env.ts`), startup hook (`src/instrumentation.ts` + `scripts/worker.ts` + `scripts/scheduler.ts`), and Compose `:?error` syntax — each refuses to start the process. Set once in every prod environment, identical across replicas, distinct between staging and prod. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Optional (≥32 chars) | unset | Set ONLY during a master-key rotation. When set, `decryptField` tries primary, then falls back to previous on auth-tag failure. **Remove after the rotation job reports zero remaining v1 rows.** |
+| `LOOKUP_HASH_KEY` | Optional (≥32 chars) | unset — falls back to `DATA_ENCRYPTION_KEY`'s material | The key the DETERMINISTIC LOOKUP HASHES derive from (`hashForLookup`: `User.emailHash`, `UserIdentityLink.emailAtLinkTimeHash`, and `keyedChangeDigest`). **Set this to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE your first master-KEK rotation.** A lookup hash is an INDEX, not a ciphertext — the stored hash IS the lookup key and has no previous-key fallback — so while it derived from the KEK, rotating broke every email-based sign-in, SSO/OAuth account match and invite redemption (#5071). Unset reproduces the old derivation exactly, so upgrading moves no stored hash. A production boot with `DATA_ENCRYPTION_KEY_PREVIOUS` set and this unset REFUSES to start. |
 | `ENCRYPTION_DECRYPT_FAIL_CLOSED` | Optional | unset (fail CLOSED) | Set to `0` ONLY as an incident lever. The read path throws on a genuine decrypt failure (a DEK resolved, AES-GCM still rejected); `0` reverts it to passing the ciphertext through. Use when one corrupt row is 500ing a page and you need the page back before you can fix the row — then unset it. |
 
 `AUTH_TEST_MODE` / `RATE_LIMIT_ENABLED` don't affect the encryption layer directly — they gate the Epic A middleware this system integrates with.
@@ -136,6 +137,15 @@ The system tolerates mixed state at every stage. A given environment can sit at 
         Reads dispatch per-value on envelope prefix.
 
   6. Periodic master-KEK rotation (Epic B.3):
+        a0. FIRST, if LOOKUP_HASH_KEY is not already set, deploy it set
+            to the CURRENT (outgoing) DATA_ENCRYPTION_KEY value, and
+            restart. The lookup hashes were computed under that key and
+            there is no fallback for an index: skipping this makes every
+            email-based sign-in, SSO/OAuth match and invite redemption
+            miss from the first request after step b (#5071). The
+            material is unchanged, so no hash moves and no backfill is
+            needed. Boot REFUSES in production if step b lands without
+            it.
         a. Generate the NEW key material.
         b. Deploy with
               DATA_ENCRYPTION_KEY=<new>
@@ -211,6 +221,7 @@ SELECT COUNT(*) FROM "Tenant" WHERE "encryptedDek" IS NULL;
 ### Rotating keys safely
 
 Pre-flight:
+- [ ] **`LOOKUP_HASH_KEY` is set to the CURRENT (outgoing) `DATA_ENCRYPTION_KEY` value, deployed and restarted — BEFORE the new key goes anywhere.** Skipping this breaks every email-based sign-in the moment the new key lands, because `User.emailHash` is an index with no previous-key fallback (#5071). No backfill: the material is unchanged, so every stored hash still resolves. A production boot with `DATA_ENCRYPTION_KEY_PREVIOUS` set and `LOOKUP_HASH_KEY` unset refuses to start, naming this step.
 - [ ] New `DATA_ENCRYPTION_KEY` generated (`openssl rand -base64 48`).
 - [ ] Both replicas have the new key deployed in env AND the old key as `DATA_ENCRYPTION_KEY_PREVIOUS`.
 - [ ] Rolling restart completed; smoke-test reads/writes still work.

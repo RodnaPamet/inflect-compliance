@@ -613,10 +613,20 @@ export interface HarnessSourceFact {
 export interface HarnessTallies {
     readonly levels: Readonly<Record<HarnessLevel, number>>;
     readonly reach: Readonly<Record<HarnessStoredReach, number>>;
-    /** Below the report-only bar for its reach. Reported; it gates nothing. */
+    /**
+     * Below the report-only bar for its reach. Reported; it gates nothing.
+     * An unregistered automated identity is held to no bar and is never
+     * counted here (owner decisions, 2026-11-13).
+     */
     readonly belowBar: number;
     /** Not linked to a live register row AS OF THE EMISSION (unregistered, or its register row deleted). */
     readonly notInRegister: number;
+    /**
+     * Of `notInRegister`, those on record AS OF THE EMISSION as unregistered
+     * automated identities: no sign of a model, so not shadow agents. Counted
+     * in the levels and the reaches like every other principal the scan found.
+     */
+    readonly unregisteredIdentities: number;
 }
 
 /**
@@ -1079,6 +1089,7 @@ function scannerBlock(s: HarnessScanFact): string[] {
         `  Agents: ${s.agentCount} · by level — ${HARNESS_LEVELS.map((l) => `${l}: ${t.levels[l]}`).join(' · ')}`,
         `  Reach — READ_ONLY: ${t.reach.READ_ONLY} · WRITE_OR_EXTERNAL: ${t.reach.WRITE_OR_EXTERNAL} · UNKNOWN: ${t.reach.UNKNOWN}`,
         `  Below the report-only bar: ${t.belowBar} · Not in the agent register as of this emission: ${t.notInRegister}`,
+        `  Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): ${t.unregisteredIdentities}`,
     );
     return lines;
 }

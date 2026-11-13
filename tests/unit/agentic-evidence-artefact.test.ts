@@ -363,6 +363,7 @@ const tallies = (over: Partial<HarnessTallies> = {}): HarnessTallies => ({
     reach: { READ_ONLY: 1, WRITE_OR_EXTERNAL: 2, UNKNOWN: 0 },
     belowBar: 1,
     notInRegister: 1,
+    unregisteredIdentities: 0,
     ...over,
 });
 
@@ -535,8 +536,25 @@ describe('the harness artefact body', () => {
         expect(body.content).toContain('Agents: 3 · by level — H0: 1 · H1: 0 · H2: 2 · H3: 0 · H4: 0 · H5: 0');
         expect(body.content).toContain('Reach — READ_ONLY: 1 · WRITE_OR_EXTERNAL: 2 · UNKNOWN: 0');
         expect(body.content).toContain('Below the report-only bar: 1 · Not in the agent register as of this emission: 1');
+        expect(body.content).toContain(
+            'Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): 0',
+        );
         expect(body.content).toContain('REDACTION CONTRACT');
         expect(body.content).toContain('e'.repeat(64));
+    });
+
+    it('states how many of the unregistered are automated identities, which the below-bar count leaves out', () => {
+        // Three agents: one registered at its bar, one shadow agent below it,
+        // one unregistered identity at H0 that is held to no bar.
+        const body = buildHarnessScanArtefact(
+            p,
+            period([scan('s1', { tallies: tallies({ belowBar: 1, notInRegister: 2, unregisteredIdentities: 1 }) })]),
+            'e'.repeat(64),
+        );
+        expect(body.content).toContain('Below the report-only bar: 1 · Not in the agent register as of this emission: 2');
+        expect(body.content).toContain(
+            'Of those not in the register, unregistered automated identities (no sign of a model; held to no bar, so not counted below it): 1',
+        );
     });
 
     it('says INCOMPLETE in the title and names the scanner and the source that fell short', () => {
@@ -569,6 +587,7 @@ describe('the harness artefact body', () => {
                 reach: { READ_ONLY: 0, WRITE_OR_EXTERNAL: 0, UNKNOWN: 0 },
                 belowBar: 0,
                 notInRegister: 0,
+                unregisteredIdentities: 0,
             }) })]),
             'e'.repeat(64),
         );

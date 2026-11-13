@@ -35,6 +35,7 @@ export const ORG_AUDIT_ACTIONS = [
     'ORG_AUTHZ_DENIED',
     'ORG_TENANT_DELETED',
     'ORG_AGENT_SWITCHES_CHANGED',
+    'ORG_AGENT_TURN_CAPS_CHANGED',
 ] as const;
 
 export type OrgAuditActionValue = (typeof ORG_AUDIT_ACTIONS)[number];
@@ -76,6 +77,7 @@ const ACTION_LABEL_KEY: Record<OrgAuditActionValue, string> = {
     ORG_AUTHZ_DENIED: 'audit.actionAccessRefused',
     ORG_TENANT_DELETED: 'audit.actionWorkspaceDeleted',
     ORG_AGENT_SWITCHES_CHANGED: 'audit.actionAgentSwitchesChanged',
+    ORG_AGENT_TURN_CAPS_CHANGED: 'audit.actionAgentTurnCapsChanged',
 };
 
 type OrgTranslate = ReturnType<typeof useTranslations>;
@@ -96,6 +98,7 @@ const ACTION_VARIANT: Record<OrgAuditActionValue, 'success' | 'error' | 'info' |
     ORG_AUTHZ_DENIED: 'error',
     ORG_TENANT_DELETED: 'error',
     ORG_AGENT_SWITCHES_CHANGED: 'warning',
+    ORG_AGENT_TURN_CAPS_CHANGED: 'warning',
 };
 
 function isKnownAction(action: string): action is OrgAuditActionValue {
@@ -146,6 +149,11 @@ const INITIATIVE_STATUS_KEY: Record<string, string> = {
 const AGENT_SWITCH_LABEL_KEY: Record<string, string> = {
     agentProfiles: 'settings.agentSwitches.agentProfiles.label',
     toolRunner: 'settings.agentSwitches.toolRunner.label',
+};
+/** The organization's per-turn ceilings (#4594), by the key the audit row stores. */
+const TURN_CAP_LABEL_KEY: Record<string, string> = {
+    delegationsPerTurn: 'settings.agentSwitches.turnCaps.delegationsPerTurn.label',
+    toolCallsPerTurn: 'settings.agentSwitches.turnCaps.toolCallsPerTurn.label',
 };
 
 /**
@@ -249,6 +257,13 @@ export function summarize(t: OrgTranslate, row: AuditRow): string {
             const changes = (d.changes ?? {}) as Record<string, { before?: unknown; after?: unknown }>;
             return Object.entries(changes)
                 .map(([key, c]) => `${word(t, AGENT_SWITCH_LABEL_KEY, key)}: ${onOff(t, c?.before)} → ${onOff(t, c?.after)}`)
+                .join('; ');
+        }
+        case 'ORG_AGENT_TURN_CAPS_CHANGED': {
+            const changes = (d.changes ?? {}) as Record<string, { before?: unknown; after?: unknown }>;
+            const n = (v: unknown) => (typeof v === 'number' ? String(v) : '—');
+            return Object.entries(changes)
+                .map(([key, c]) => `${word(t, TURN_CAP_LABEL_KEY, key)}: ${n(c?.before)} → ${n(c?.after)}`)
                 .join('; ');
         }
         default:

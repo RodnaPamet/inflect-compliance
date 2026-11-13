@@ -2,7 +2,10 @@
 
 /**
  * Register a shadow agent from its SHADOW_AGENT finding (#3712) —
- * `POST /admin/agents/intake`, the registration intake of #3669.
+ * `POST /admin/agents/intake`, the registration intake of #3669. A row of the
+ * unregistered-identity list registers the same way, from its
+ * UNREGISTERED_IDENTITY finding (`target.kind`, decided by the server): the
+ * dialog then says that registering it records it as an agent, scored as one.
  *
  * One request makes a DRAFT register row and a provisional AI-system entry at
  * UNCLASSIFIED. The dialog asks for what a scan cannot observe: who is
@@ -253,7 +256,10 @@ export function RegisterShadowAgentModal({
         }
     };
 
-    const title = t('harness.registerModal.title');
+    // An unregistered identity is registered through the same intake, and the
+    // dialog says what that means: it is then an agent, scored as one.
+    const identity = target.kind === 'UNREGISTERED_IDENTITY';
+    const title = identity ? t('harness.registerModal.identityTitle') : t('harness.registerModal.title');
 
     return (
         <Modal
@@ -280,6 +286,11 @@ export function RegisterShadowAgentModal({
                         {error && (
                             <InlineNotice variant="error" data-testid="harness-register-error">
                                 {error}
+                            </InlineNotice>
+                        )}
+                        {identity && (
+                            <InlineNotice variant="info" icon={null} data-testid="harness-register-identity-notice">
+                                {t('harness.registerModal.identityNotice')}
                             </InlineNotice>
                         )}
 

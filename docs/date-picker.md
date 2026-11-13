@@ -3,7 +3,7 @@
 Epic 58. One place for "how do I add a date field in Inflect?" — if
 your question isn't answered here, the canonical code lives in
 [`src/components/ui/date-picker/`](../src/components/ui/date-picker/)
-and [`src/lib/format-date.ts`](../src/lib/format-date.ts).
+and [`packages/ui/src/lib/format-date.ts`](../packages/ui/src/lib/format-date.ts).
 
 ---
 
@@ -11,7 +11,7 @@ and [`src/lib/format-date.ts`](../src/lib/format-date.ts).
 
 - **Single date** (one day, form field) → `<DatePicker>`
 - **Date range** (from / to, reporting filter) → `<DateRangePicker>`
-- **Display a date value** → `formatDate` / `formatDateTime` / `formatDateCompact` / `formatDateRange` from `@/lib/format-date`
+- **Display a date value** → `formatDate` / `formatDateTime` / `formatDateCompact` / `formatDateRange` from `@inflect/ui/lib/format-date`
 - **YMD wire format** → `toYMD(date)` / `parseYMD(str)` from `@/components/ui/date-picker/date-utils`
 - **Don't ship `<input type="date">`** — the guardrail at
   `tests/guardrails/date-input-rollout.test.ts` fails CI on new additions.
@@ -133,7 +133,7 @@ survives catalogue additions without defensive filtering.
 
 ## Display formatters
 
-Always route through `src/lib/format-date.ts`. These helpers are
+Always route through `packages/ui/src/lib/format-date.ts`, imported as `@inflect/ui/lib/format-date`. These helpers are
 UTC-anchored and SSR-safe; routing around them re-introduces the
 hydration / locale bugs the module was built to fix.
 
@@ -145,7 +145,7 @@ import {
     formatDateLong,      // "16 April 2026"
     formatDateCompact,   // "16 Apr"
     formatDateRange,     // "16 – 30 Apr 2026" (adaptive)
-} from '@/lib/format-date';
+} from '@inflect/ui/lib/format-date';
 ```
 
 **Empty state:** every helper returns `'—'` (U+2014 em-dash) by default

@@ -365,12 +365,48 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
  */
 export const COLLECTOR_PROVIDER_NAME = 'inflect-collector';
 
+/**
+ * The refusal when a collection would run on a provider that is not this
+ * tenant's — #5251.
+ *
+ * It used to default to `COLLECTOR_PROVIDER_NAME`, and the singleton posture
+ * providers are dispatched by `automation-runner` for EVERY tenant, so with
+ * the switch on every tenant's scan attached the same gateway credential.
+ * Worse than ignoring the tenant's own credential: the scan benchmarked
+ * whatever account that one credential reaches and the results were stored as
+ * this tenant's `IntegrationExecution` and `Evidence`.
+ *
+ * The other half of the defect is in the collectors, and it is why returning
+ * `null` here would NOT be a fix: the GCP provider writes the tenant's service
+ * -account key only on the on-host path (`if (saJson && !exec)`), because in a
+ * sandbox "the gateway injects the credential as an attached provider". That
+ * comment is correct about the intent and was written against an attachment
+ * that is per-tenant — which nothing builds. So a `null` would quietly drop
+ * back to the host and ignore a switch the operator deliberately set, and a
+ * shared attachment runs the wrong account. Refusing is the only answer that
+ * is neither.
+ *
+ * Owner decision (2026-11-13, #5251): refuse, and build per-tenant gateway
+ * providers as its own piece of work. Until that exists, sandboxed posture
+ * collection is inert BY DESIGN and says so on every attempt rather than
+ * reporting another account's posture as yours.
+ */
+export const SHARED_PROVIDER_REFUSAL = 'SANDBOX_PROVIDER_NOT_TENANT_SCOPED';
+
 export function collectorExecForDeploy(
     deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},
 ): CollectorExec | null {
     if (!readSandboxExecutionPlatformEnabled()) return null;
-    return sandboxedCollectorExec({
-        ...deps,
-        providerName: deps.providerName ?? COLLECTOR_PROVIDER_NAME,
-    });
+    if (!deps.providerName) {
+        // No sandbox is created and no credential is attached: the refusal is
+        // returned before the transport is touched, so a scan that cannot be
+        // run for the right tenant does not run at all.
+        return async () =>
+            didNotComplete(
+                SHARED_PROVIDER_REFUSAL,
+                'sandboxed collection needs a provider holding THIS tenant and connection\'s '
+                    + 'credential; the shared collector provider is refused (#5251)',
+            );
+    }
+    return sandboxedCollectorExec({ ...deps, providerName: deps.providerName });
 }

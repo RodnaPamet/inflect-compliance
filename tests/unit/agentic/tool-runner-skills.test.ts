@@ -47,7 +47,7 @@ import {
     TOOL_RUNNER_SUPPLIED_TOOLS,
     toolRunnerSuppliedToolNamesFor,
 } from '@/lib/agentic/tool-runner/supplied-tools';
-import { SerialQueue, type RunStop, type ToolRunBinding } from '@/lib/agentic/tool-runner/tools';
+import { SerialQueue, TurnCallCounter, type RunStop, type ToolRunBinding } from '@/lib/agentic/tool-runner/tools';
 
 const DOC: ResolvedSkillDocument = {
     name: 'acme-joiner-review',
@@ -64,8 +64,10 @@ const pinOf = (doc: ResolvedSkillDocument): MountedSkillPin => ({
 const MOUNTED: RunSkills = { documents: [DOC], pins: [pinOf(DOC)] };
 
 /** A binding whose stop and step cap the test sets. */
-function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | null } = {}) {
+function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | null; toolCallsPerTurn?: number } = {}) {
     let seq = 0;
+    // One turn throughout: the cap is the turn's (#4594), one by default.
+    const turnCalls = new TurnCallCounter(opts.toolCallsPerTurn ?? 1);
     const halts: RunCapHalt[] = [];
     const binding: ToolRunBinding = {
         ctx: { tenantId: 't-1', requestId: 'r-1' } as unknown as RequestContext,
@@ -82,6 +84,7 @@ function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | nu
         originOf: () => undefined,
         forgetOrigin: () => undefined,
         onFailure: () => undefined,
+        admitToolCall: () => turnCalls.admit('parent', 1),
     };
     return { binding, halts };
 }
@@ -155,6 +158,29 @@ describe('activation', () => {
         expect(error?.message).toBe('Run halted at its STEPS cap.');
         expect(halts).toEqual([halt]);
         expect(mockSteps).toEqual([]);
+    });
+
+    it('an activation is a tool call of its turn: past the turn\'s cap it is refused, named, and returns no text (#4594)', async () => {
+        const { binding } = bindingFor({ toolCallsPerTurn: 1 });
+        const tool = activateSkillTool(binding, MOUNTED, new SerialQueue());
+        if (!tool) throw new Error('expected a tool');
+        // The first activation of the turn is admitted (the positive control).
+        await expect(tool.run({ name: DOC.name })).resolves.toContain(DOC.instructions);
+        // The second, in the same turn, is past a cap of one.
+        await expect(tool.run({ name: DOC.name })).rejects.toThrow(
+            /^tool_calls_per_turn_exceeded: this turn has already made 1 tool call, .*\(1\)/,
+        );
+        expect(mockSteps).toHaveLength(2);
+        expect(mockSteps[1]).toEqual({
+            seq: 1,
+            kind: 'TOOL_CALL',
+            rec: {
+                toolCalled: 'activate_skill',
+                status: 'FAILED',
+                label: 'activate_skill',
+                output: { refused: 'TOOL_CALLS_PER_TURN_EXCEEDED', cap: 1, madeThisTurn: 1 },
+            },
+        });
     });
 
     it('is offered only to a run that mounted a skill', () => {

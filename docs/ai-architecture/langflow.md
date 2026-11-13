@@ -227,7 +227,7 @@ no element that the engine would ignore.
 | A tool on a node | `offerToolSet` offers only the flow's tools ∩ the agent's grants; save refuses an ungranted tool by name | enforced |
 | A propose node | propose-not-commit: the run can only queue `AgentProposal`s a human approves | enforced |
 | No propose node anywhere | the flow compiles to `readOnly: true`, so the run is offered the read surface only | enforced |
-| A subagent node | the delegation gate and fan-out policy; the subagent's tools are a subset of the parent's | enforced |
+| A subagent node | nothing today: no engine runs a flow (`RUNS_FLOWS` is false for every engine, so admission refuses a flow version with `PROFILE_FLOW_NOT_RUNNABLE`), no engine has a delegation tool, and the node's `profileRef` names another agent's profile, whose tools are not held to this version's | **not enforced**. Decided 2026-11-13 (decision 1 of the Delegation section of `docs/claude-tool-runner-design.md`): a version carries a flow or inline sub-agents, never both, and Phase 5.6 re-points the node at one of the version's own sub-agents |
 | A skill | the skill mount gate: a skill mounts only with an evaluation record | enforced |
 | Node order and edges | the run message lists the steps in order; the model may deviate | **advisory** — drawn dashed, and deviations shown on replay |
 | A checkpoint node | nothing today: no reasoning engine parks a run at a checkpoint | **not offered** until Phase 5.1 (D-L2-2, decided 2026-11-11) |
@@ -743,6 +743,16 @@ same canvas. A checkpoint can be drawn only once an engine will honour it.
       - a checkpoint parks the run;
       - an edited, unapproved flow does not run;
       - `LOCAL_ONLY` residency is unchanged by a flow.
+- [ ] 5.6 **The `subagent` node names an inline sub-agent** (owner decision 1
+      of 2026-11-13, in the Delegation section of
+      `docs/claude-tool-runner-design.md`).
+      - The node's `profileRef` is replaced by the name of one of the
+        version's own sub-agents, so the approver reads every word the flow
+        can run and the sub-agent's tools stay a subset of the version's.
+      - A node naming the version's own sub-agent needs a version that holds a
+        flow and sub-agents together, which the same decision refuses at save
+        (`SUBAGENTS_WITH_FLOW`). How that refusal narrows for such a flow is
+        put to the owner in this sub-phase's pull request, before any code.
 
 **Prompt.**
 ```text

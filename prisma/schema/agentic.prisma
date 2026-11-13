@@ -2439,6 +2439,17 @@ model ExternalWriteJournal {
   /// Stays set once set. It is also the durable record that the product noticed,
   /// which is the half an auditor asks about.
   expiryRaisedAt DateTime?
+
+  /// WHEN A RECONCILE PASS LAST VISITED THIS ROW (#5259).
+  ///
+  /// The ACCEPTED-delivery reconcile and the grant-expiry sweep each read a
+  /// bounded batch. Ordered by age alone, rows that cannot progress (a deleted
+  /// connection, an unparseable end date, a grant already escalated) held the
+  /// same oldest batch every pass and the rows behind them were never read.
+  /// Both passes stamp every row they visit and read the least recently
+  /// visited first (NULL first), so the batch rotates through the population.
+  /// It records a visit, not an outcome.
+  lastCheckedAt DateTime?
   /// Why a FAILED write failed, or what an INDETERMINATE one was last seen doing.
   detail  String?
 
@@ -2470,6 +2481,9 @@ model ExternalWriteJournal {
   /// term and goes last: a confirmed row leaves the population for good, so
   /// this index shrinks as the sweep works instead of growing with the journal.
   @@index([tenantId, advertisedToolName, expiryVerifiedAt], map: "ExternalWriteJournal_expirySweep_idx")
+  /// #5259 — both reconcile passes read the least recently visited rows of
+  /// one outcome first.
+  @@index([tenantId, outcome, lastCheckedAt])
   /// The dwell's evidence query: RECORDED_ONLY rows since a window opened.
   @@index([tenantId, mode, attemptedAt])
   @@index([connectionId])

@@ -377,6 +377,18 @@ model Organization {
   agentProfilesEnabled   Boolean @default(false)
   agentToolRunnerEnabled Boolean @default(false)
 
+  /// The CEILING of the two per-turn caps for every workspace under the
+  /// organization (#4594, owner decision 3 of 2026-11-13): how many sub-agent
+  /// delegations, and how many tool calls, one model turn may start. A
+  /// workspace may only narrow (`TenantSecuritySettings`, same names, NULL
+  /// follows the organization); the value that applies is the lower of the
+  /// two. Defaults are today's behaviour (3 and 1), so nothing moved on deploy.
+  /// CHECKs hold 0..10 and 1..10. Read only through
+  /// `src/lib/agentic/turn-caps-policy.ts`; written only by
+  /// `usecases/org-agent-turn-caps.ts`, which audits ORG_AGENT_TURN_CAPS_CHANGED.
+  agentMaxSubagentsPerTurn Int @default(3)
+  agentMaxToolCallsPerTurn Int @default(1)
+
   tenants                      Tenant[]
   memberships                  OrgMembership[]
   invites                      OrgInvite[]
@@ -1688,7 +1700,21 @@ model TenantSecuritySettings {
   /// agents may not delegate" — the readable way to withdraw delegation
   /// without retiring an agent or engaging a kill switch, both of which say
   /// something larger.
-  agentMaxSubagentsPerTurn     Int      @default(3)
+  ///
+  /// NULLABLE SINCE #4594, and NULL now FOLLOWS THE ORGANIZATION: the
+  /// organization holds the ceiling (`Organization.agentMaxSubagentsPerTurn`)
+  /// and this column may only narrow it; the value that applies is the lower
+  /// of the two (`src/lib/agentic/turn-caps.ts`). The default was dropped in
+  /// the same migration and every stored 3 left in place, because an older
+  /// container's client reads NULL in a required field as a conversion error;
+  /// a later data-only migration sets the stored 3s to NULL. Written by
+  /// `PUT admin/security-settings`, which refuses a value above the
+  /// organization's ceiling.
+  agentMaxSubagentsPerTurn     Int?
+  /// The workspace's narrowing of the tool calls one Tool Runner turn may
+  /// make (#4594): NULL follows the organization's ceiling
+  /// (`Organization.agentMaxToolCallsPerTurn`), and a CHECK holds 1..10.
+  agentMaxToolCallsPerTurn     Int?
   /// When the current DRY_RUN period began, per direction. The gate to
   /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.

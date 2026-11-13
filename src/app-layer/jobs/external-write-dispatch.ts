@@ -91,7 +91,7 @@ export async function runExternalWriteDispatchJob(
         indeterminate: 0,
         accepted: 0,
         reconcile: { scanned: 0, promoted: 0, notYet: 0, unreadable: 0, unverifiable: 0, indeterminate: 0 },
-        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0 },
+        expiry: { scanned: 0, confirmedExpired: 0, raised: 0, alreadyRaised: 0, unreadable: 0, raiseFailed: 0 },
     };
 
     for (const tenantId of tenants) {
@@ -154,6 +154,7 @@ export async function runExternalWriteDispatchJob(
             total.expiry.raised += r.raised;
             total.expiry.alreadyRaised += r.alreadyRaised;
             total.expiry.unreadable += r.unreadable;
+            total.expiry.raiseFailed += r.raiseFailed;
         } catch (err) {
             logger.error('grant expiry verification failed for one tenant', {
                 component: 'external-write-expiry',

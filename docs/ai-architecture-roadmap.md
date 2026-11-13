@@ -435,8 +435,8 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   plus the OpenShell gateway VM. Images pinned by digest (dependency
   governance, fifth pillar). CI builds `app`, the worker/scheduler bundle and
   a `scanner-image`.
-- **The TypeScript API gateway is the Next.js route tree** (582 routes under
-  two authorization layers), and the "microservices" are the Compose services.
+- **The TypeScript API gateway is the Next.js route tree** (every
+  `src/app/api/**/route.ts`, under two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
 - **Every container has a memory limit and a CPU cap** (C1, applied

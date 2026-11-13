@@ -19,6 +19,7 @@ import { runInTenantContext } from '@/lib/db/rls-middleware';
 import type { RequestContext } from '@/app-layer/types';
 import { logEvent } from '@/app-layer/events/audit';
 import { getBillingMode, type Plan } from '@/lib/billing/entitlements';
+import { manualCustomerId } from '@/lib/billing/manual-customer';
 import {
     recordPlanUpgraded,
     recordPlanDowngraded,
@@ -81,7 +82,7 @@ export async function changeTenantPlan(
                     // went through checkout has no real customer id. Mint a
                     // unique sentinel so the (required, @unique) column is
                     // satisfied and the row is clearly non-Stripe-originated.
-                    stripeCustomerId: `manual:${ctx.tenantId}`,
+                    stripeCustomerId: manualCustomerId(ctx.tenantId),
                 },
             });
 

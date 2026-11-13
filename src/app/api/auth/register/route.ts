@@ -37,9 +37,8 @@ import { jsonResponse } from '@/lib/api-response';
 import { recordTenantCreated, recordUserSignup } from '@/lib/observability/business-metrics';
 
 // NOTE for whoever owns signup policy: this route has NO AUTH_TEST_MODE
-// gate, while both CLAUDE.md ("credentials self-service signup
-// (AUTH_TEST_MODE-gated)") and the OpenAPI description ("gated by
-// AUTH_TEST_MODE in non-prod") say it does. The provider side is
+// gate. CLAUDE.md and the OpenAPI description both once said it had one;
+// both now say it does not (#5132). The provider side is
 // unambiguous — src/auth.ts:342-349 states the credentials provider is
 // "always registered" — so a self-registered production account is
 // usable. Whether public signup should be open is a product decision and

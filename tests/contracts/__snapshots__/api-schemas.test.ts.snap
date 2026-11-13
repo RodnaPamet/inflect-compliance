@@ -1214,6 +1214,75 @@ exports[`API contract — per-schema snapshots schema: AuthRegisterRequest 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AuthRegisterResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "name",
+        "role"
+      ]
+    },
+    "tenant": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug"
+      ]
+    },
+    "emailVerificationRequired": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "user",
+    "tenant",
+    "emailVerificationRequired"
+  ],
+  "additionalProperties": {},
+  "description": "The account created, the workspace created with it (null for an account-only registration that an invitation will attach), and whether the email must be verified before sign-in."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AuthResetPasswordRequest 1`] = `
 "{
   "type": "object",

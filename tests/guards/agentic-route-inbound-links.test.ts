@@ -253,6 +253,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // Read by every org member; written by an org admin, audited on the org's
     // own chain. Linked from the org sidebar's Settings entry.
     'org/[orgSlug]/agent-switches/route.ts',
+    // #4594 — the organization's per-turn ceilings, read and set by the
+    // "Per-turn limits" group in the same Agent features section.
+    'org/[orgSlug]/agent-turn-caps/route.ts',
     // #3484 — the SECOND capacity axis beside the monthly token budget. The
     // budget bounds spend over a month and cannot express simultaneity, so a
     // tenant inside its budget could start runs until the shared worker pool
