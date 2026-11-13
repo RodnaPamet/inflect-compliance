@@ -290,9 +290,11 @@ A provider that sets no part gets the history it always got.
 This section is the design for Step 2e, written before any code under that
 step's Part 1. It carries out the owner's decision 4 of 2026-10-30 in
 `docs/claude-agent-sdk-design.md`: delegation is on in v1, inline, subset-only
-and one level deep. Points this design could not settle alone are listed at the
-end, under **Open questions for the owner**, each with a proposed answer. The
-step's code waits for them.
+and one level deep. The points this design could not settle alone went to the
+owner, who decided them on 2026-11-13 (recorded on #4594). They are listed at
+the end, under **Owner decisions (2026-11-13)**, and the design below is drawn
+to them. The step's code ships as two pull requests: **B**, the org-level turn
+caps (below), and then **C**, the sub-agents themselves.
 
 ### What is reused from Flue, and what differs
 
@@ -303,7 +305,7 @@ Runner reuses every piece of that work that is not Flue-shaped:
 | Reused as is | Where |
 | --- | --- |
 | The fan-out arithmetic and the sentence the model reads | `evaluateFanOut`, `fanOutRefusalMessage` (`subagent-fanout.ts`) |
-| The tenant's cap, and its failed-read rule (unreadable is 0, owner decision 2026-11-12) | `readFanOutCap` (`subagent-fanout-policy.ts`) |
+| The delegation cap's failed-read rule (unreadable is 0, owner decision 2026-11-12) | kept, and moved into the turn-cap resolver `readTurnCaps` (**Org-level turn caps** below), which replaces `readFanOutCap` (`subagent-fanout-policy.ts`) for both engines |
 | The span grouping on the run page | `delegationSpans`, `delegatesClaiming` (`delegation-spans.ts`) |
 | The marker step's input shape (`agent`, `taskId`, `fromSeq`) | read by `delegationOf` (`run-step-projection.ts`) |
 | The subset rule: a child's set is a filter of the parent's, never re-derived from the register | the invariant `narrowTools` / `narrowSkills` hold |
@@ -338,6 +340,138 @@ Flue also has a worker-model override (`workerModelOverride`, D-L3-1). The Tool
 Runner does not use one: a child runs on the parent's model tier and effort,
 through the same client, so there is no second residency decision to make.
 
+### Org-level turn caps
+
+Owner decision 3 of 2026-11-13. Two numbers bound what one model turn may
+start. An organization sets the **ceiling** of each for every workspace under
+it, and a workspace may only **narrow** it:
+
+| Cap | What it counts | Org ceiling (new) | Workspace narrowing |
+| --- | --- | --- | --- |
+| Delegations per turn | `delegate` calls in one turn of a Tool Runner parent; `task` operations in one turn of a Flue parent | `Organization.agentMaxSubagentsPerTurn`, `NOT NULL DEFAULT 3`, CHECK 0 to 10 | `TenantSecuritySettings.agentMaxSubagentsPerTurn`, the existing column, `NOT NULL DEFAULT 3`, CHECK `>= 0` |
+| Tool calls per turn | every `tool_use` block in one Tool Runner turn: funnel tools, `activate_skill` and `delegate` alike | `Organization.agentMaxToolCallsPerTurn`, `NOT NULL DEFAULT 1`, CHECK 1 to 10 | `TenantSecuritySettings.agentMaxToolCallsPerTurn`, new, nullable, CHECK `NULL` or 1 to 10 |
+
+**The value that applies is `min(org ceiling, workspace value)`**, per cap. A
+`NULL` workspace tool-call value means the workspace has not narrowed, so the
+org's ceiling applies. There is no per-run delegation cap: the run's `STEPS`,
+`TOKENS` and wall-clock caps bound the total, and every delegation is charged to
+them. This ships as its own pull request, **B**, merged before the sub-agents
+pull request, **C**.
+
+**Storage mirrors the org switches** (#4557). The two ceilings are columns on
+`Organization`, beside `agentProfilesEnabled` and `agentToolRunnerEnabled`,
+`NOT NULL` with constant defaults, so the `ADD` rewrites no rows. They are
+written only by a new usecase, `usecases/org-agent-turn-caps.ts`, and read only
+through the resolver below. The defaults are today's behaviour, so nothing moves
+when B lands: `min(3, 3)` is 3 delegations, and `min(1, NULL)` is 1 tool call,
+which is the serial request the engine sends now. Each ceiling's upper bound is
+10, the top of the tool-call range, because a turn cannot start more
+delegations than tool calls.
+
+**The workspace narrowing.** The fan-out column has had no writer in the product
+since #3473: every workspace holds the migration's 3. B adds both values to the
+patch-shaped `PUT admin/security-settings` (`admin.manage`, the route that
+already writes this row): `agentMaxSubagentsPerTurn`, 0 to 10, and
+`agentMaxToolCallsPerTurn`, 1 to 10 or `null` to follow the organization. A
+value above the organization's current ceiling is refused, 400
+`TURN_CAP_ABOVE_ORGANIZATION_CEILING` with the ceiling in `details`, because it
+would store a choice that changes nothing. The two columns differ in one way,
+and on purpose. The fan-out column stays `NOT NULL`: every workspace's stored 3
+cannot be told from a choice, so rewriting it to `NULL` would discard any
+workspace that chose 3. The consequence is that an org raising its delegation
+ceiling above 3 reaches a workspace only once that workspace raises its own
+value, while a raised tool-call ceiling reaches every workspace that has not
+narrowed.
+
+**The resolver.** One function decides both caps, in two halves, as the fan-out
+cap is split today:
+
+- `src/lib/agentic/turn-caps.ts` is pure and loads in the Flue ESM graph:
+  `resolveTurnCaps({ organization, workspace })` returns
+  `{ delegationsPerTurn, toolCallsPerTurn }`, each with its `basis`
+  (`ORGANIZATION_CEILING`, `WORKSPACE`, `NO_ORGANIZATION`, `FAILED_READ`), so a
+  page can say why a number is what it is.
+- `src/lib/agentic/turn-caps-policy.ts` holds `readTurnCaps(tenantId,
+  requestId)`: one read of the tenant row, selecting the organization's two
+  columns and the security settings' two. It never throws. **A failed read
+  resolves to the narrowest safe value of both: 0 delegations and 1 tool
+  call**, logged at WARN with the values applied. One query reads both, so a
+  failure of either part is a failure of the read. This keeps the owner's
+  decision of 2026-11-12 for delegation and adds its twin for tool calls.
+  `FAILED_READ_FAN_OUT_CAP` moves here; `readFanOutCap` is removed in the same
+  pull request, so there is one reader.
+- A workspace with **no organization** takes the product defaults (3 and 1) as
+  its ceiling, which is what it has today. An **absent** settings row narrows
+  nothing.
+
+**Who reads it.** The Tool Runner reads `readTurnCaps` once per segment, as the
+design reads the fan-out cap, and hands the same values to the parent loop and
+every child loop. **Flue reads the same resolver for delegations**: its driver
+puts `delegationsPerTurn` into the run binding where `readFanOutCap`'s value
+goes today, and `delegation-gate.ts` is unchanged. Tool calls per turn is the
+Tool Runner's: Flue's runtime dispatches the model's tool calls itself and
+offers no per-turn bound, so B does not apply that cap to Flue.
+
+**On the Tool Runner, both loops.**
+
+- `lockedParams` takes the effective tool-call cap. At 1, `tool_choice` is
+  today's `{ type: 'auto', disable_parallel_tool_use: true }` byte for byte, and
+  its guard pins that. Above 1, `disable_parallel_tool_use` is `false`, so the
+  model may ask for several calls in one turn. **Dispatch stays serial**
+  (decision 2 of 2026-10-25): the per-run queue in each tool's `run` still runs
+  them one at a time, so the `TOOL_CALL` order, the cap charging and the guard
+  latch stay exact.
+- The count lives in the shared `run` wrapper, in a map that lives for one
+  segment, keyed by the loop (parent, or the child's delegation) and its turn
+  number, on the way in. The call past the cap is refused with a tool error
+  naming the cap, so the model sees why ("this turn has already made 2 tool
+  calls, the most your organization allows in one turn; continue with the
+  results you have"), and is recorded as a `FAILED` `TOOL_CALL` step,
+  `refused: TOOL_CALLS_PER_TURN_EXCEEDED`, with the cap in its output. It is
+  charged one `STEPS`, as every recorded step is, and the funnel is never asked.
+  Fan-out counts in the same map.
+- A `delegate` call counts against both caps. At 1 tool call per turn the
+  delegation cap binds only at 0, and the workspace and org copy says so.
+
+**When an org lowers its ceiling below a workspace's stored value**, the lower
+number applies from the next segment any run reads: a run in flight keeps the
+values it read, and no turn changes cap mid-way. The workspace's stored value is
+not rewritten. If the org later raises the ceiling again, the workspace's own
+value applies again. The workspace's security settings show the stored value
+and the value that applies, with "narrowed by your organization" when the
+ceiling binds.
+
+**The org route and the UI.** A sibling of the switches' route,
+`src/app/api/org/[orgSlug]/agent-turn-caps/route.ts`: `GET` for any member who
+can see the portfolio, `PUT` behind
+`requireOrgPermission('canManageAgentSwitches')`, the switches' permission,
+asked again in the usecase. The body is `.strict()`, `{ delegationsPerTurn?: 0
+to 10, toolCallsPerTurn?: 1 to 10 }`, and at least one key. It is not folded into
+the switches' route because a switch has a deployment override and these do
+not: the operator's bound is `ENGINE_CAPS`. The org settings page's **Agent
+features** section (`OrgAgentSwitchesSection.tsx`) gains a **Per-turn limits**
+group: two `NumberStepper` inputs in `FormField`s, bounded as above, each saving
+on its own and sending only its key, as each switch does. Lowering a ceiling
+asks first, naming the organization and how many workspaces it reaches, as
+turning a switch off does (#4850). A member without the permission sees the
+values read-only. Strings go in `messages/en.json` and `messages/bg.json`.
+
+**Audit rows.** An org change writes `ORG_AGENT_TURN_CAPS_CHANGED`, a new
+`OrgAuditAction` value, with the before and after of each cap that moved and
+nothing else. A `PUT` that moves nothing writes no row. It is appended after the
+update commits, and a failure there is logged at ERROR and does not undo the
+change, as the switches' writer behaves. A refusal is `requireOrgPermission`'s
+`ORG_AUTHZ_DENIED`. A workspace change writes `AGENT_TURN_CAPS_CHANGED` with
+before and after, beside `SECURITY_SETTINGS_UPDATED`, as
+`API_KEY_ROTATION_AGE_CHANGED` does.
+
+**The migration** (B, one, additive, forward-only): the enum value, added in one
+deploy on the argument `20261030120000_org_agent_switches` made (only the new
+usecase writes it); the two `Organization` columns with their CHECKs; and the
+nullable `TenantSecuritySettings.agentMaxToolCallsPerTurn` with its CHECK. These
+are columns an older Prisma client never selects, so no two-deploy split is
+needed.
+
 ### 1. The model
 
 **Storage: one encrypted column, `AgentProfileVersion.subagentsJson`**, not a
@@ -366,11 +500,13 @@ in `agent-profile.schemas.ts` that is the cheap first refusal):
 | Field | Rule |
 | --- | --- |
 | `name` | `^[a-z][a-z0-9_]{1,39}$`, unique in the version. Snake case like a tool name, so it can sit in a guard source, a ledger column and an audit row as an identifier (see **Guard sources** below) |
-| `description` | one line, at most 300 characters: what the parent reads when choosing. **Proposed**, see open question 2 |
 | `instructions` | sanitised (`sanitizePlainText`), trimmed, non-empty, at most `PROFILE_INSTRUCTIONS_MAX_CHARS` (16,000), as the version's are |
 | `toolNames` | non-empty, deduplicated, sorted, and every name one of the version's `toolNames` |
 | `skillRefs` | deduplicated, sorted, and every ref one of the version's `skillRefs` |
 | `maxTurns` | 1 to the version's own `maxTurns` |
+
+A sub-agent has no description (owner decision 2): the parent chooses by name
+alone, so the name is the whole of what the parent reads about a sub-agent.
 
 At most `PROFILE_MAX_SUBAGENTS = 4` per version. The canonical form sorts the
 list by `name` and writes each object's keys in the order above, so the stored
@@ -378,7 +514,7 @@ string, and therefore the hash, does not depend on the order the editor sent.
 
 **At save**, in `prepareVersion`, after the version's own checks:
 
-- each sub-agent's description and instructions go through `scanSkillText`
+- each sub-agent's instructions go through `scanSkillText`
   with `declaredTools` set to that sub-agent's own `toolNames`, so text naming a
   tool outside its subset is refused by `skill.undeclared_tool`, exactly as the
   version's text is held to the version's tools;
@@ -390,7 +526,8 @@ string, and therefore the hash, does not depend on the order the editor sent.
   `SUBAGENT_MAX_TURNS_ABOVE_VERSION`, all 400, each with the sub-agent's name
   and the offending tools or skills in `details`;
 - a version with a flow and sub-agents together is refused
-  (`SUBAGENTS_WITH_FLOW`) until open question 1 is answered.
+  (`SUBAGENTS_WITH_FLOW`). A version carries one or the other, never both
+  (owner decision 1).
 
 The version's own grant, skill and catalogue checks need no change: a
 sub-agent's tools and skills are subsets of the version's, so a version whose
@@ -400,7 +537,7 @@ sets pass already covers its sub-agents.
 are, because the text scan's rules can change while a version waits.
 
 **Audit rows** (`AGENT_PROFILE_*`) gain the sub-agents' names, count and tool
-names. They never carry a description or instructions.
+names. They never carry instructions.
 
 **The content hash.** `instructionsHash` already covers the flow when there is
 one (`profileContentHash`). It gains a third argument and a second domain:
@@ -494,10 +631,11 @@ Its input schema:
   "required": ["subagent", "task"], "additionalProperties": false }
 ```
 
-The tool's description lists each sub-agent as `name: description`, so the
-parent's system prompt, and its cached prefix, are unchanged for a version
-without sub-agents. A name outside the enum is refused `SUBAGENT_NOT_DEFINED`
-without echoing it, as `activate_skill` answers `SKILL_NOT_MOUNTED`.
+The tool's description lists the version's sub-agent names and nothing else
+(owner decision 2), so no part of a child's instructions reaches the parent's
+context. The list lives in the tool, so the parent's system prompt, and its
+cached prefix, are unchanged for a version without sub-agents. A name outside
+the enum is refused `SUBAGENT_NOT_DEFINED` without echoing it, as `activate_skill` answers `SKILL_NOT_MOUNTED`.
 
 A child is never offered `delegate`. Its tools are a filter of the parent's
 offered set, which never contains an engine-supplied tool. If a model names
@@ -515,21 +653,24 @@ A delegation, in order, inside the parent's serial queue:
    call, as every tool does.
 2. **One step is charged** (`STEPS`, like an activation; not `TOOL_CALLS`,
    because `delegate` is not a funnel call). Every recorded step is charged.
-3. **The arguments**: the name in the enum, the task within its bounds.
-4. **Fan-out.** The cap is read once per segment with `readFanOutCap`, so an
-   unreadable settings row is 0, and a stored 0 is 0. `evaluateFanOut` counts
-   delegations in the parent's current turn (the number of the parent's yielded
-   message), on the way in. A refusal reads `fanOutRefusalMessage`: at 0 it says
-   delegation is disabled and not to retry, so the model carries on alone. The
-   tool stays offered at 0, as `task` does on Flue, so the refusal is a ledgered
-   step an operator can see rather than an absence nobody can.
-5. **The task's egress scan** (`guardEgress`, source
+3. **Tool calls per turn**, as for every tool (**Org-level turn caps** above):
+   a `delegate` past the turn's tool-call cap is refused with the cap named.
+4. **The arguments**: the name in the enum, the task within its bounds.
+5. **Fan-out.** The cap is the delegations value `readTurnCaps` read for the
+   segment, so an unreadable row is 0, and a 0 that applies is 0.
+   `evaluateFanOut` counts delegations in the parent's current turn (the
+   number of the parent's yielded message), on the way in. A refusal reads
+   `fanOutRefusalMessage`: at 0 it says delegation is disabled and not to
+   retry, so the model carries on alone. The tool stays offered at 0, as
+   `task` does on Flue, so the refusal is a ledgered step an operator can see
+   rather than an absence nobody can.
+6. **The task's egress scan** (`guardEgress`, source
    `tool-runner-delegate-args:<name>:<toolUseId>`), noted through the run's
    observer. Anything but clean stops the run at the guard.
-6. **The kill switch and the breaker**, uncached. A kill latches the run's
+7. **The kill switch and the breaker**, uncached. A kill latches the run's
    stop. An `OPEN` breaker refuses the delegation
    (`subagent_breaker_open`), as the funnel refuses every call while it is open.
-7. **The child's tools**: `offerToolSet` over the parent's own invocation, with
+8. **The child's tools**: `offerToolSet` over the parent's own invocation, with
    `profileTools` set to the sub-agent's `toolNames`, the parent's `readOnly`,
    observer and origin resolver, the sub-agent's guard source, and **the
    parent's review latch**. The engine-neutral core gains an optional `review`
@@ -538,7 +679,7 @@ A delegation, in order, inside the parent's serial queue:
    parent's offered set, so the subset is a property of the code and not of two
    calls agreeing. Each tool lost is listed with its reason. A child left with
    no tools is refused (`subagent_has_no_tools`) and nothing is sent.
-8. **The child's skills**: the parent's resolved documents and row pins,
+9. **The child's skills**: the parent's resolved documents and row pins,
    filtered to the sub-agent's `skillRefs`. Nothing is resolved again and
    nothing new is pinned: the run's `mountedSkills` is the version's set, and
    a child's is a subset of it. The child gets its own `activate_skill` over
@@ -546,27 +687,27 @@ A delegation, in order, inside the parent's serial queue:
    `MAX_CATALOG_BYTES` before it is sent. That cannot fail for a subset of a
    priced set, and the check stays as the guard against a future change that
    breaks the subset.
-9. **The child runner**, on the **same client** (one client per run, so
-   residency is the parent's and cannot race), from `lockedParams` with a
-   `subagent` option, so it is still the one function that shapes a request
-   and its guard pins the child's values as well: `thread: false`, serial
-   `tool_choice`, the parent's model tier, effort, thinking and fallbacks;
-   `max_iterations` is the lower of the sub-agent's `maxTurns` and the run's
-   remaining `STEPS`. The system prompt is Inflect's preamble with one added
-   paragraph (you are a sub-agent named so, you work for the agent that
-   delegated, you cannot delegate, answer in plain text), then the child's
-   catalogue, then its instructions fenced as
-   `<operator_instructions source="agent-profile-subagent" name="…">`. The one
-   user message is the task, fenced and labelled as written by the delegating
-   agent. The child sees the task and nothing else of the parent's
-   conversation, including the run's declared input. The request's signal is
-   `AbortSignal.any([parent, child])`, so every stop the parent latches aborts
-   a child request in flight, which matters because the runner waits for a
-   running tool and `delegate` is that tool.
-10. **The child's answer**: its last message's text, scanned by
+10. **The child runner**, on the **same client** (one client per run, so
+    residency is the parent's and cannot race), from `lockedParams` with a
+    `subagent` option, so it is still the one function that shapes a request
+    and its guard pins the child's values as well: `thread: false`, the
+    `tool_choice` the run's tool-call cap gives, the parent's model tier,
+    effort, thinking and fallbacks; `max_iterations` is the lower of the
+    sub-agent's `maxTurns` and the run's remaining `STEPS`. The system prompt
+    is Inflect's preamble with one added paragraph (you are a sub-agent named so, you work for the agent that
+    delegated, you cannot delegate, answer in plain text), then the child's
+    catalogue, then its instructions fenced as
+    `<operator_instructions source="agent-profile-subagent" name="…">`. The one
+    user message is the task, fenced and labelled as written by the delegating
+    agent. The child sees the task and nothing else of the parent's
+    conversation, including the run's declared input. The request's signal is
+    `AbortSignal.any([parent, child])`, so every stop the parent latches aborts
+    a child request in flight, which matters because the runner waits for a
+    running tool and `delegate` is that tool.
+11. **The child's answer**: its last message's text, scanned by
     `guardDelegateAnswer` (prefix `tool-runner`), and returned fenced as
     `<subagent_answer name="…">`.
-11. **The marker step**, in `finally`, closing the span (below), and then the
+12. **The marker step**, in `finally`, closing the span (below), and then the
     kill switch read, as after every tool call.
 
 **The child's loop body is the parent's.** The per-message checks in
@@ -574,15 +715,19 @@ A delegation, in order, inside the parent's serial queue:
 before the caps, kill and operator abort, latched stops, token and wall-clock
 caps, named stop reasons) move into one function both loops call, with the
 sub-agent's name as a parameter. A second copy would drift, which is the
-defect this repository keeps paying for. Two additions are the child's: each
-child model call charges one `STEPS`, and the breaker is read with the kill
-switch.
+defect this repository keeps paying for. Two checks are added to that body,
+so **both loops** take them (owner decision 4): each model call, the parent's
+as well as a child's, charges one `STEPS` before it is sent, and the breaker is
+read with the kill switch before it. Both only narrow. A parent run may
+therefore halt at `STEPS` sooner than the Step 2H production evidence showed,
+because its model calls are now charged beside its tool calls and activations.
+That is the owner's accepted consequence.
 
 **Where the caps bind.** The child shares the parent's `RunBudget`, its ledger
 counter and its run state:
 
 - `STEPS`: the delegation, each child model call, each child tool call and
-  each child activation;
+  each child activation, and each of the parent's own model calls (decision 4);
 - `TOOL_CALLS`: each child funnel call;
 - `PROPOSALS`: each item a child proposes, when the run is not read-only;
 - `TOKENS`: every child call's usage, added to the run's `costTokens`, which
@@ -642,7 +787,7 @@ is found today.
 **The marker.** The delegation is a `TOOL_CALL` step naming `delegate`, written
 when it ends, so its own `seq` closes the span. Its input is Flue's marker
 shape, `{ agent: <name>, taskId: <the model's tool_use id>, fromSeq }`, plus
-`taskChars` and the tools lost at step 7; its output names the outcome
+`taskChars` and the tools lost at step 8; its output names the outcome
 (`answered`, a refusal reason, or the run's stop) and the child's model-call and
 tool-call counts. It never carries the task or the answer: both are model text
 composed from tenant reads, and this column is the step's plaintext payload
@@ -662,16 +807,16 @@ owner is read, not inferred, wherever the column is set. Strings go in
 - **The editor** (`BehaviourEditorSheet.tsx`) gains a **Sub-agents** section
   below the tools and skills, built from the platform's `Accordion`,
   `FormField`, `Combobox` and `NumberStepper`. At most four entries, each with a
-  name, a description, instructions, a tool picker, a skill picker and a turn
-  limit. The pickers offer **only what the version being edited has selected**,
-  never the agent's wider grants, and the turn limit is bounded by the
-  version's. Deselecting a tool or skill a sub-agent uses marks that sub-agent
-  in place; the server still refuses by name, because the editor is not the
+  name, instructions, a tool picker, a skill picker and a turn limit, and no
+  description field (decision 2). The pickers offer **only what the version
+  being edited has selected**, never the agent's wider grants, and the turn
+  limit is bounded by the version's. Deselecting a tool or skill a sub-agent
+  uses marks that sub-agent in place; the server still refuses by name, because the editor is not the
   authority.
 - **The approval view** (`BehaviourTab.tsx`) shows every sub-agent of the
-  submitted version: name, description, tools, skills, turn limit and
-  instructions, as text in `<pre>`, never markup. `describeSubagentsForReview`
-  renders the list in name order, and `VersionDiff` diffs it against the
+  submitted version: name, tools, skills, turn limit and instructions, as
+  text in `<pre>`, never markup. `describeSubagentsForReview` renders the
+  list in name order, and `VersionDiff` diffs it against the
   version in force, as `describeFlowForReview` does for a flow. The hash note
   says what the hash covers (`review.hashNoteWithSubagents`), and Approve sends
   the hash on screen, so the approver approves every word a run of the version
@@ -679,53 +824,34 @@ owner is read, not inferred, wherever the column is set. Strings go in
 - **The version history** shows a sub-agent count beside each version. The
   Test run is unchanged: it starts the same read-only run, which may delegate.
 
-### Open questions for the owner
+### Owner decisions (2026-11-13)
 
-Each is a point decision 4 does not settle. The proposed answer is the one this
-design is drawn to.
+Decided by the owner on 2026-11-13 and recorded on #4594. The design above is
+drawn to them.
 
-1. **The flow's `subagent` node and inline sub-agents.** Phase 1 of
-   `docs/ai-architecture/langflow.md` shipped a flow node kind `subagent` whose
-   `profileRef` names **another approved profile** in the tenant, which is
-   delegation to another agent's text, not inline. No engine runs a flow today
-   (`RUNS_FLOWS` is false everywhere). Options: (a) a version may carry a flow
-   or sub-agents, not both, in 2e, and langflow's Phase 5 re-points the node at
-   one of the version's own sub-agent names; (b) at save, a `profileRef` is
-   copied into the version as an inline sub-agent, its text frozen and hashed
-   with the version; (c) a `profileRef` delegates to the other agent under that
-   agent's own identity and grants. **Proposed: (a).** It keeps decision 4's
-   rule that the approver of a version reads all the text it runs, and that a
-   sub-agent's tools are a subset of its parent's, which a reference to another
-   agent's profile cannot promise. (b) imports another agent's text under this
-   agent's authority. (c) is a second authority model.
-2. **A sub-agent's `description`.** Decision 4 names instructions, tools,
-   skills and a turn limit. Without a description the parent chooses by name
-   alone. Options: (a) a required one-line description, at most 300
-   characters, scanned and hashed with the instructions; (b) the name only;
-   (c) the instructions' first line. **Proposed: (a).** It is the catalogue
-   line Flue's specialists and every skill already carry, and (c) puts part of
-   the child's instructions into the parent's context.
-3. **A per-run bound on delegations.** The tenant's cap counts per parent
-   turn. Under serial dispatch a turn holds one tool call, so the cap binds
-   only at 0, or when a fallback model ignores `disable_parallel_tool_use`.
-   Options: (a) per turn only, as on Flue, with the run's `STEPS`, `TOKENS` and
-   wall clock as the whole bound; (b) also a fixed per-run cap in code;
-   (c) also a per-run tenant setting. **Proposed: (a)**, with the settings copy
-   saying that on this engine the cap works as on or off. Every delegation is
-   already charged to the run's caps, and a second knob is a second thing to
-   misread.
-4. **Whether the parent's loop changes with the child's.** The step asks for
-   the breaker before each child model call, and for each child model call to
-   be charged to `STEPS`. Neither is true of the parent today: the parent reads
-   only the kill switch between calls (the funnel asks the breaker on each tool
-   call), and its in-segment `STEPS` counts tool calls and activations, while
-   model calls are bounded by `max_iterations`. Options: (a) the child only, as
-   the step says; (b) both loops, through the shared loop body; (c) the child
-   now, the parent in a separate issue. **Proposed: (b).** One loop body with
-   two behaviours is the drift the shared body exists to prevent, and both
-   changes only narrow. It does mean a parent run can halt at `STEPS` sooner
-   than it does today, which is a change to a behaviour Step 2H recorded in
-   production.
+1. **A version carries a flow or sub-agents, never both**
+   (`SUBAGENTS_WITH_FLOW`). A later step of `docs/ai-architecture/langflow.md`
+   re-points the flow's `subagent` node at one of the version's own sub-agent
+   names. Reason: the node's `profileRef` names another approved profile, which
+   is delegation to a different agent's text and tools, and the approver of a
+   version must read all the text it runs. A node naming the version's own
+   sub-agent needs a version that holds both, so how the refusal narrows for
+   such a flow goes back to the owner in that step, before its code.
+2. **No description.** A sub-agent has a name, instructions, tools, skills and
+   `maxTurns`, and the parent chooses by name alone. Reason: nothing of a
+   child's text reaches the parent's context.
+3. **Both turn caps are org-level settings**, in the org settings page's
+   **Agent features** section: delegations per turn (the existing fan-out cap)
+   and tool calls per turn (new, default 1, range 1 to 10, calls past it refused
+   visibly). The org sets the ceiling, a workspace may only narrow, and the
+   value that applies is the lower of the two. There is no per-run delegation
+   cap. Reason: the run's `STEPS`, `TOKENS` and wall-clock caps already bound
+   the total. Designed in **Org-level turn caps**.
+4. **The breaker and the `STEPS` charge before each model call apply to both
+   loops**, through one shared loop body. Reason: one body with two behaviours
+   is the drift the shared body exists to prevent. Both only restrict, and a
+   parent run may now halt at `STEPS` sooner than Step 2H's production evidence
+   showed.
 
 ## Decisions for the owner
 
@@ -1135,8 +1261,15 @@ halts a child before its next model call; a two-tenant test.
 Deliver per the Definition of done. This step is Significant.
 ```
 
+**Part 1 is done**: the **Delegation** section above, with the owner's
+decisions of 2026-11-13. Part 2 ships as two pull requests, B (the org-level
+turn caps, including tool calls per turn) and then C (the sub-agents). Where the
+prompt above asks for the breaker and the `STEPS` charge before each child model
+call, decision 4 applies both to the parent's loop as well.
+
 **Hardening**
 
+- [ ] The value that applies for each turn cap is the lower of the org's ceiling and the workspace's, a failed read is 0 delegations and 1 tool call, and a tool call past the cap is refused with a tool error naming it (tests, B).
 - [ ] A sub-agent cannot reach a tool, skill or rung its parent version does not hold (conformance scenario, on this engine).
 - [ ] A sub-agent cannot delegate (test).
 - [ ] The approved hash covers every sub-agent's instructions, and changing one sub-agent's text changes it (test).
