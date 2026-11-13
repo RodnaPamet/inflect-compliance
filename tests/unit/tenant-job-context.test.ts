@@ -174,12 +174,20 @@ describe('runInTenantJobContext binds the audit context the extensions read', ()
         // every extension that reads the store. `readPriorState` is named
         // because it was added on purpose: it lets the audit extension read the
         // row a write is replacing, through THIS transaction's client.
+        //
+        // `softDeleteWrite` is named for the same reason (#5287): it lets the
+        // soft-delete extension perform its rewritten UPDATE through THIS
+        // transaction's client instead of the one it was built on, which was
+        // committing outside the caller's transaction and outside RLS. A job
+        // context binds it because `runInTenantJobContext` opens a transaction
+        // too, so a job's soft deletes belong to it.
         expect(seen).toEqual({
             tenantId: 'tenant-a',
             actorUserId: 'user-operator',
             requestId: 'run-77',
             source: 'av-rescan',
             readPriorState: expect.any(Function),
+            softDeleteWrite: expect.any(Function),
         });
     });
 

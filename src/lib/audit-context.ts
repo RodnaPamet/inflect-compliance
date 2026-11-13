@@ -86,6 +86,32 @@ export type PriorStateReader = (
     where: unknown,
 ) => Promise<Record<string, unknown> | null>;
 
+/**
+ * Performs a soft delete INSIDE the caller's transaction — #5287.
+ *
+ * The soft-delete extension rewrites `delete` into an `update`, and a Prisma
+ * query extension is handed no client at all (measured: `this` is the handler's
+ * arguments, and `getExtensionContext` gives nothing usable there). So it used
+ * to dispatch to the client it was BUILT on — the module-scope singleton — and
+ * the write left the caller's transaction and its RLS posture: it committed
+ * immediately, so a later failure rolled back the audit rows and left the row
+ * deleted, and it ran as the owning role, where `superuser_bypass` matches.
+ *
+ * This is the same remedy `PriorStateReader` uses one field below, for the same
+ * reason, and `db-context.ts` states that reason in full. Absent when there is
+ * no tenant transaction in scope — a job on the global client, a seed — and
+ * there the extension's own client IS the caller's client, so dispatching to it
+ * is correct rather than a fallback.
+ *
+ * UNLIKE `PriorStateReader`, this must NOT fail to null. A prior-state read
+ * only decorates an audit row; this IS the write.
+ */
+export type SoftDeleteWriter = (
+    model: string,
+    args: { where?: Record<string, unknown>; data: Record<string, unknown> },
+    many: boolean,
+) => Promise<unknown>;
+
 export interface AuditContextData {
     /** Tenant ID for the current request */
     tenantId?: string;
@@ -97,6 +123,8 @@ export interface AuditContextData {
     source?: string;
     /** See {@link PriorStateReader}. Absent outside a tenant transaction. */
     readPriorState?: PriorStateReader;
+    /** See {@link SoftDeleteWriter}. Absent outside a tenant transaction. */
+    softDeleteWrite?: SoftDeleteWriter;
 }
 
 /**
