@@ -137,13 +137,17 @@ export const CHANNEL_KIND_PRECEDENCE: readonly RuntimeRowKind[] = [
 export function displayForChannel(
     _channel: ReportingChannelKey,
     declaration: SandboxRuntimeDeclaration,
+    probeOutcome: ProvenanceDisplay['reachability'],
 ): RuntimeRowDisplay {
     // Resolved in `CHANNEL_KIND_PRECEDENCE` order. Kept as an if-chain rather
     // than a loop over the constant: the constant is the CONTRACT a test holds
     // this against, and deriving the behaviour from it would make the test
     // compare the code to itself.
     if (!declaration.configured) return { kind: 'not-configured', actionable: false };
-    if (declaration.reachableVersion === null) return { kind: 'unreachable', actionable: false };
+    // The PROBE's outcome, never a null version (#5275). A null version comes
+    // from three outcomes — not probed, unreachable, answered without a version
+    // — and only one of them is a gateway that did not answer.
+    if (probeOutcome === 'unreachable') return { kind: 'unreachable', actionable: false };
     return { kind: 'declared-not-observed', actionable: false };
 }
 

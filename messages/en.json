@@ -13387,6 +13387,7 @@
       "emptyCatalogueTitle": "No tools were available to this agent, so nothing was consulted",
       "inputLabel": "Your question",
       "model": "Model",
+      "networkError": "The request could not reach the server. Check your connection and ask again.",
       "noAnswerDescription": "The run finished without producing an answer. The calls it made are listed below.",
       "noAnswerTitle": "No answer was produced",
       "noCalls": "Nothing was consulted, so an answer here is not based on this workspace's records",

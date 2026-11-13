@@ -153,7 +153,10 @@ export default async function AgentDetailPage({
                 canManageRegistry: registry.canManage,
                 canEditPolicyCard: ctx.appPermissions.admin.agent_policy_card,
                 canGrantTools: ctx.appPermissions.admin.agent_tool_exposure,
-                canKill: ctx.appPermissions.admin.agent_kill_switch,
+                // The engage and lift routes sit under `/api/t/:slug/admin/`,
+                // so the edge's role gate applies as it does to the history
+                // read below (#5153).
+                canKill: ctx.appPermissions.admin.agent_kill_switch === true && edgeAdmits,
                 // Closing a breaker: the same three gates with
                 // `assertAgentGovernanceAdmin` as the floor, which
                 // `closeAgentCircuitBreaker` asserts.
