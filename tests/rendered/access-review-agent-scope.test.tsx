@@ -108,7 +108,7 @@ function agentReview(over: Record<string, unknown> = {}) {
         connectedDecisions: [agentSubject('1'), agentSubject('2', { decision: 'CONFIRM', decidedAt: new Date().toISOString() })],
         snapshotTruncated: false,
         subjectsRestricted: false,
-        lastActivityByUser: {},
+        lastSignInByUser: {},
         ...over,
     };
 }

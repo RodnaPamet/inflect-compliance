@@ -610,3 +610,36 @@ export async function countActiveSessionsForTenantUsers(
     }
     return out;
 }
+
+/**
+ * Each user's latest sign-in, across every session they have had (#5106).
+ *
+ * The access-review page shows it as "Last sign-in". It used to read
+ * `lastActiveAt` from this tenant's live sessions only, and a session is
+ * stamped with the person's PRIMARY workspace, so a member who works in this
+ * workspace but whose oldest membership is another one read "Never", and so
+ * did everybody after a Revoke All. Owner decision (2026-11-13): show the
+ * latest sign-in across all sessions, revoked ones included, with no
+ * per-workspace stamp. A session row is minted at sign-in, so its `createdAt`
+ * is the sign-in.
+ *
+ * The global client on purpose: `UserSession` RLS shows a tenant only its own
+ * rows. The result is one timestamp per user and nothing else, and the caller
+ * passes only people it is already entitled to see (the subjects of a review
+ * in its own tenant). An empty input reads nothing.
+ */
+export async function latestSignInByUser(
+    userIds: readonly string[],
+): Promise<Record<string, Date>> {
+    if (userIds.length === 0) return {};
+    const rows = await prisma.userSession.groupBy({
+        by: ['userId'],
+        where: { userId: { in: [...new Set(userIds)] } },
+        _max: { createdAt: true },
+    });
+    const out: Record<string, Date> = {};
+    for (const r of rows) {
+        if (r._max.createdAt) out[r.userId] = r._max.createdAt;
+    }
+    return out;
+}

@@ -13900,7 +13900,7 @@
     "colSubject": "Subject",
     "colSnapshotRole": "Snapshot role",
     "colLiveRole": "Live role",
-    "colLastActive": "Last active",
+    "colLastSignIn": "Last sign-in",
     "colDecision": "Decision",
     "deleted": "(deleted)",
     "never": "never",

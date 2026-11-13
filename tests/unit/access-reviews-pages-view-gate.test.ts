@@ -57,7 +57,7 @@ type Rendered = React.ReactElement<Record<string, unknown>>;
 const BUILT_IN_ROLES = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'] as const;
 
 const REVIEWS = [{ id: 'rev_1', name: 'Q3 review' }];
-const REVIEW = { id: 'rev_1', name: 'Q3 review', decisions: [], lastActivityByUser: {} };
+const REVIEW = { id: 'rev_1', name: 'Q3 review', decisions: [], lastSignInByUser: {} };
 
 /** A custom role on a READER base with the view key switched off. */
 function customRoleWithoutView(): RequestContext {

@@ -107,7 +107,7 @@ function makeReview(overrides: Record<string, unknown> = {}) {
         // campaign has an empty connected list, and vice versa.
         connectedDecisions: [],
         snapshotTruncated: false,
-        lastActivityByUser: { usr_alice: new Date('2026-04-30').toISOString() },
+        lastSignInByUser: { usr_alice: new Date('2026-04-30').toISOString() },
         ...overrides,
     };
 }

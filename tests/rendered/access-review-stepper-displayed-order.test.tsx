@@ -159,7 +159,7 @@ function detail(id: string, name: string) {
         createdBy: { id: 'usr_admin', email: 'a@example.test', name: null },
         closedBy: null,
         decisions: [],
-        lastActivityByUser: null,
+        lastSignInByUser: null,
     } as unknown as Parameters<typeof AccessReviewDetailClient>[0]['initialReview'];
 }
 

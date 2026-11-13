@@ -24,12 +24,12 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
+jest.mock('@/lib/security/session-tracker', () => ({ latestSignInByUser: jest.fn(async () => ({})) }));
 jest.mock('@/app-layer/repositories/AccessReviewRepository', () => ({
     AccessReviewRepository: {
         create: jest.fn(async (_db: unknown, _ctx: unknown, data: { name: string }) => ({ id: 'ar-new', name: data.name })),
         closeCampaign: jest.fn(async () => 1),
         getById: jest.fn(),
-        getLastActivityByUser: jest.fn(async () => ({})),
         resolveMembershipsForScope: jest.fn(async () => [
             { id: 'm-1', userId: 'u-1', role: 'READER', status: 'ACTIVE', customRoleId: null },
         ]),

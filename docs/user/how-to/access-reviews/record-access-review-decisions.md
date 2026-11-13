@@ -21,7 +21,7 @@ As the reviewer of an access review campaign, you go through the people in it an
 | {{ui:accessReviews.colSubject}} | The person's name and email address |
 | {{ui:accessReviews.colSnapshotRole}} | Their role when the campaign was created, such as **{{ui:roles.ADMIN}}** |
 | {{ui:accessReviews.colLiveRole}} | Their role now. {{ui:accessReviews.deleted}} means they have since been removed from the workspace |
-| {{ui:accessReviews.colLastActive}} | When they were last active in this workspace, or {{ui:accessReviews.never}} |
+| {{ui:accessReviews.colLastSignIn}} | When they last signed in, to any workspace, or {{ui:accessReviews.never}} if they never have |
 | {{ui:accessReviews.colDecision}} | Your decision, once you have recorded it |
 | {{ui:accessReviews.colNotes}} | The justification recorded with the decision, or a dash |
 

@@ -13900,7 +13900,7 @@
     "colSubject": "Субект",
     "colSnapshotRole": "Роля при снимка",
     "colLiveRole": "Текуща роля",
-    "colLastActive": "Последна активност",
+    "colLastSignIn": "Последно влизане",
     "colDecision": "Решение",
     "deleted": "(изтрит)",
     "never": "никога",
