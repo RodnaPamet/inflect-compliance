@@ -67,6 +67,16 @@
  * encrypted in `subagentsJson`, frozen by the version trigger, and covered by
  * the content hash under its own domain, so no existing version's hash moves.
  *
+ * ── COMPACTION (Step 2g of `docs/claude-tool-runner-design.md`) ─────────────
+ *
+ * A version may turn the engine's context compaction off (`0`) or lower its
+ * threshold, and never raise it: a value below the minimum
+ * (`COMPACTION_THRESHOLD_BELOW_MINIMUM`) or above the tier's engine threshold
+ * (`COMPACTION_THRESHOLD_ABOVE_TIER`) is refused at save and again at
+ * approval, where a deploy may have lowered the tier's constant while the
+ * version waited. It is frozen by the version trigger and shown to the
+ * approver, and it is not in the content hash.
+ *
  * Audit rows carry hashes, version numbers, tool names, sub-agent names and
  * rule ids, never the instructions, a sub-agent's instructions or a flow's
  * labels.
@@ -85,6 +95,7 @@ import { readApprovedTenantSkillsByNameIn, readMountableTenantSkillLines } from 
 import { catalogBytes, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
+    PROFILE_COMPACTION_THRESHOLD_MIN,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_MAX_SUBAGENTS,
     PROFILE_MAX_TURNS,
@@ -94,11 +105,15 @@ import {
     profileNamesNoReadTool,
     profileRunKey,
     serializeProfileSubagents,
+    type ProfileModelTier,
     type ProfileSkillOption,
     type ProfileSkillRef,
     type ProfileSubagent,
     type ProfileSubagentRefusal,
 } from '@/lib/agentic/agent-profile';
+import { compactionThresholdFor } from '@/lib/agentic/tool-runner/compaction';
+import { COMPACTION_THRESHOLD_TOKENS } from '@/lib/agentic/tool-runner/params';
+import { ENGINE_RUN_CAPS } from '@/lib/agentic/run-caps';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
 import { getAgentDriverSetting } from './agent-driver-setting';
 import {
@@ -155,7 +170,9 @@ export type AgentProfileRefusal =
     | 'FLOW_UNREADABLE'
     | 'FLOW_TOOLS_DIVERGED'
     | ProfileSubagentRefusal
-    | 'SUBAGENTS_UNREADABLE';
+    | 'SUBAGENTS_UNREADABLE'
+    | 'COMPACTION_THRESHOLD_BELOW_MINIMUM'
+    | 'COMPACTION_THRESHOLD_ABOVE_TIER';
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     PROFILES_DISABLED: 404,
@@ -214,6 +231,8 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     SUBAGENT_SKILL_NOT_IN_VERSION: 400,
     SUBAGENT_MAX_TURNS_ABOVE_VERSION: 400,
     SUBAGENTS_UNREADABLE: 409,
+    COMPACTION_THRESHOLD_BELOW_MINIMUM: 400,
+    COMPACTION_THRESHOLD_ABOVE_TIER: 400,
 };
 
 /** A refusal carrying its reason as `details.reason`, beside a sentence for the person who asked. */
@@ -318,8 +337,34 @@ interface PreparedVersion {
     readonly modelTier: string;
     readonly effort: string;
     readonly maxTurns: number;
+    /** NULL takes the engine's threshold, 0 turns compaction off (Step 2g). */
+    readonly compactionThresholdTokens: number | null;
     readonly outputKind: AgentProfileVersionInput['outputKind'];
     readonly allowedTriggers: string[];
+}
+
+/**
+ * A version's compaction threshold may only LOWER the engine's (Step 2g, owner
+ * decision 2 of 2026-11-13): NULL and 0 always pass; any other value is the
+ * minimum to the tier's engine threshold. Asked at save and at approval.
+ */
+function assertCompactionThreshold(value: number | null, tier: string): void {
+    if (value === null || value === 0) return;
+    if (!Number.isInteger(value) || value < PROFILE_COMPACTION_THRESHOLD_MIN) {
+        throw refuse(
+            'COMPACTION_THRESHOLD_BELOW_MINIMUM',
+            `A compaction threshold is 0 (off) or at least ${PROFILE_COMPACTION_THRESHOLD_MIN} tokens.`,
+            { min: PROFILE_COMPACTION_THRESHOLD_MIN, value },
+        );
+    }
+    const max = COMPACTION_THRESHOLD_TOKENS[tier as ProfileModelTier];
+    if (max === undefined || value > max) {
+        throw refuse(
+            'COMPACTION_THRESHOLD_ABOVE_TIER',
+            `A version may lower the engine's compaction threshold, never raise it: at most ${max ?? 0} tokens for this tier.`,
+            { tier, max: max ?? null, value },
+        );
+    }
 }
 
 /**
@@ -365,6 +410,8 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
     const flowJson = flow ? serializeAgentFlow(flow) : null;
     const subagents = prepareSubagents(input, { toolNames, skillRefs, maxTurns: input.maxTurns }, flow !== null);
     const subagentsJson = serializeProfileSubagents(subagents);
+    const compactionThresholdTokens = input.compactionThresholdTokens ?? null;
+    assertCompactionThreshold(compactionThresholdTokens, input.modelTier);
     return {
         instructions,
         instructionsHash: profileContentHash(instructions, flowJson, subagentsJson),
@@ -380,6 +427,7 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
         modelTier: input.modelTier,
         effort: input.effort,
         maxTurns: input.maxTurns,
+        compactionThresholdTokens,
         outputKind: input.outputKind,
         allowedTriggers: [...new Set(input.allowedTriggers)].sort(),
     };
@@ -701,6 +749,7 @@ async function insertVersion(db: PrismaTx, ctx: RequestContext, profileId: strin
             modelTier: v.modelTier,
             effort: v.effort,
             maxTurns: v.maxTurns,
+            compactionThresholdTokens: v.compactionThresholdTokens,
             outputKind: v.outputKind,
             allowedTriggers: v.allowedTriggers,
             authoredByUserId: ctx.userId,
@@ -771,6 +820,7 @@ export async function createAgentProfile(
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
                         maxTurns: prepared.maxTurns,
+                        compactionThresholdTokens: prepared.compactionThresholdTokens,
                         outputKind: prepared.outputKind,
                         allowedTriggers: prepared.allowedTriggers,
                     },
@@ -863,6 +913,7 @@ export async function createAgentProfileVersion(
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
                         maxTurns: prepared.maxTurns,
+                        compactionThresholdTokens: prepared.compactionThresholdTokens,
                         outputKind: prepared.outputKind,
                         allowedTriggers: prepared.allowedTriggers,
                         supersededVersion: open?.version ?? null,
@@ -899,6 +950,9 @@ const VERSION_SELECT = {
     // Read so approval can price the catalogue the version names (#4523).
     skillRefs: true,
     maxTurns: true,
+    // Read so approval can hold the compaction threshold to the tier again (Step 2g).
+    modelTier: true,
+    compactionThresholdTokens: true,
     authoredByUserId: true,
 } as const;
 
@@ -1009,6 +1063,9 @@ export async function approveAgentProfileVersion(
             );
         }
         assertSubagentTextScans(subagents);
+        // Asked again (Step 2g): a deploy may have lowered the tier's engine
+        // threshold while the version waited, and a version never raises it.
+        assertCompactionThreshold(v.compactionThresholdTokens, v.modelTier);
         await assertToolsGranted(db, ctx, agentId, v.toolNames);
         // Re-priced at APPROVAL, not just at save (#4523): a deploy between the
         // two can lengthen a shipped skill's description, and approving a tenant
@@ -1062,6 +1119,8 @@ export async function approveAgentProfileVersion(
                         names: stored.subagentFacts.names,
                         toolNames: stored.subagentFacts.toolNames,
                     },
+                    // What the approver approved about compaction (Step 2g).
+                    compactionThresholdTokens: v.compactionThresholdTokens,
                     supersededVersion: inForce?.version ?? null,
                 },
             },
@@ -1198,6 +1257,12 @@ export interface AgentProfileVersionView {
     modelTier: string;
     effort: string;
     maxTurns: number;
+    /**
+     * The version's compaction threshold (Step 2g): null takes the engine's,
+     * 0 turns compaction off. Shown to the approver, so they know whether a run
+     * of the version may summarise its own history.
+     */
+    compactionThresholdTokens: number | null;
     outputKind: string;
     allowedTriggers: string[];
     author: AgentProfilePerson;
@@ -1238,6 +1303,16 @@ export interface AgentProfileView {
         rejectionReasonMaxChars: number;
         /** The per-run catalogue budget the save and the run apply (#4590). */
         skillCatalogueBudgetBytes: number;
+        /**
+         * The bounds a version's compaction threshold takes (Step 2g): at least
+         * `min`, at most the tier's engine threshold, and the threshold a run
+         * of each tier takes when the version leaves it to the engine.
+         */
+        compactionThreshold: {
+            min: number;
+            maxByTier: Record<ProfileModelTier, number>;
+            engineDefaultByTier: Record<ProfileModelTier, number>;
+        };
     };
 }
 
@@ -1271,6 +1346,22 @@ export function profileTestRunState(
     if (engine.effectiveDriver !== 'tool-runner') return { available: false, reason: 'ENGINE_NOT_IN_FORCE' };
     if (agent.status !== 'ACTIVE' || agent.riskTier === null) return { available: false, reason: 'AGENT_NOT_READY' };
     return { available: true };
+}
+
+/**
+ * The compaction bounds the Behaviour editor offers (Step 2g): the minimum, the
+ * tier's engine threshold as the maximum, and the threshold a run takes by
+ * default under the engine's TOKENS cap (no policy card raises it).
+ */
+function compactionThresholdLimits(): AgentProfileView['limits']['compactionThreshold'] {
+    const tiers = Object.keys(COMPACTION_THRESHOLD_TOKENS) as ProfileModelTier[];
+    return {
+        min: PROFILE_COMPACTION_THRESHOLD_MIN,
+        maxByTier: { ...COMPACTION_THRESHOLD_TOKENS },
+        engineDefaultByTier: Object.fromEntries(
+            tiers.map((tier) => [tier, compactionThresholdFor({ tier, tokensLimit: ENGINE_RUN_CAPS.TOKENS }) ?? 0]),
+        ) as Record<ProfileModelTier, number>,
+    };
 }
 
 /** Display labels for members of this tenant, by user id. Unknown ids are absent. */
@@ -1355,6 +1446,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             maxTurns: PROFILE_MAX_TURNS,
             rejectionReasonMaxChars: PROFILE_REJECTION_REASON_MAX_CHARS,
             skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
+            compactionThreshold: compactionThresholdLimits(),
         };
 
         const profile = await db.agentProfile.findFirst({
@@ -1376,6 +1468,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             modelTier: true,
             effort: true,
             maxTurns: true,
+            compactionThresholdTokens: true,
             outputKind: true,
             allowedTriggers: true,
             authoredByUserId: true,
@@ -1433,6 +1526,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             modelTier: r.modelTier,
             effort: r.effort,
             maxTurns: r.maxTurns,
+            compactionThresholdTokens: r.compactionThresholdTokens,
             outputKind: r.outputKind,
             allowedTriggers: r.allowedTriggers,
             author: person(r.authoredByUserId),

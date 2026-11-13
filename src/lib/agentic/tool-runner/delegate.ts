@@ -120,6 +120,11 @@ export type ChildLoopRunner = (input: {
     readonly knownNames: ReadonlySet<string>;
     /** Told the child's turn number before its tools run, so its tool-call cap counts its own turns. */
     readonly onTurn: (turn: number) => void;
+    /**
+     * The child's own skills (a subset of the run's), so a compaction of the
+     * child's history (Step 2g) re-teaches exactly what the child activated.
+     */
+    readonly skills: RunSkills;
 }) => Promise<ChildLoopResult>;
 
 /** Everything a delegation needs from the parent's run. */
@@ -329,6 +334,7 @@ async function delegate(dc: DelegationContext, args: Record<string, unknown>, to
                 onTurn: (n) => {
                     childTurn = n;
                 },
+                skills,
             });
         } finally {
             childController.abort();

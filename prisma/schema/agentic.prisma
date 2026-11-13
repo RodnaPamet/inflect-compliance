@@ -3332,6 +3332,15 @@ model AgentProfileVersion {
   effort           String
   /// 1 to `ENGINE_CAPS.MAX_STEPS`; CHECK.
   maxTurns         Int
+  /// The version's context-compaction threshold, in tokens (Step 2g of
+  /// `docs/claude-tool-runner-design.md`): NULL takes the engine's, 0 turns
+  /// compaction off, and any other value is 10,000 to 150,000 (CHECK) and no
+  /// higher than the tier's engine threshold (the writer). A run takes the
+  /// lowest of it, the tier's constant and 15% of its TOKENS limit, so it can
+  /// only lower the engine's. Frozen with the rest of the version (trigger);
+  /// not in the content hash, so an older worker that does not read it does
+  /// not compact, which is the behaviour before it existed.
+  compactionThresholdTokens Int?
   outputKind       AgentProfileOutputKind
   /// `PROFILE_TRIGGERS`: ASK, AUTOMATION, TEST_RUN; CHECK, non-empty.
   allowedTriggers  String[]

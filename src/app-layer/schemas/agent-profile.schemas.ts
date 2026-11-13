@@ -12,6 +12,7 @@
 import { z } from 'zod';
 
 import {
+    PROFILE_COMPACTION_THRESHOLD_MAX,
     PROFILE_EFFORTS,
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
@@ -76,6 +77,12 @@ export const AgentProfileVersionSchema = z
         modelTier: z.enum(PROFILE_MODEL_TIERS),
         effort: z.enum(PROFILE_EFFORTS),
         maxTurns: z.number().int().min(1).max(PROFILE_MAX_TURNS),
+        // The version's compaction threshold (Step 2g): absent or null takes the
+        // engine's, 0 turns compaction off. Bounded loosely here: the usecase
+        // refuses a value below the minimum or above the tier's engine
+        // threshold BY NAME (`COMPACTION_THRESHOLD_*`), with the bound in
+        // `details`, rather than as an anonymous schema error.
+        compactionThresholdTokens: z.number().int().min(0).max(PROFILE_COMPACTION_THRESHOLD_MAX * 10).nullable().optional(),
         outputKind: z.enum(PROFILE_OUTPUT_KINDS),
         allowedTriggers: z.array(z.enum(PROFILE_TRIGGERS)).min(1).max(PROFILE_TRIGGERS.length),
     })

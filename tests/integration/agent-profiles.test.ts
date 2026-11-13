@@ -902,6 +902,12 @@ describeFn('agent profiles (real DB)', () => {
                 maxTurns: 50,
                 rejectionReasonMaxChars: 1_000,
                 skillCatalogueBudgetBytes: MAX_CATALOG_BYTES,
+                // Step 2g: a version may lower the engine's compaction threshold, never raise it.
+                compactionThreshold: {
+                    min: 10_000,
+                    maxByTier: { balanced: 150_000, deep: 150_000 },
+                    engineDefaultByTier: { balanced: 30_000, deep: 30_000 },
+                },
             });
 
             // The pickers offer what the save accepts, PER OPTION — every tool

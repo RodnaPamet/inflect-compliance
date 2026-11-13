@@ -3,9 +3,10 @@ inflect · claude tool runner · design v1 · 2026-10-24
 # The Claude Tool Runner in Inflect: the in-process engine for customer-built agents
 
 > **Status: living design** — research into the Tool Runner in Anthropic's
-> TypeScript SDK, and a recommendation for where it belongs in Inflect's agent
-> stack. None of it is built. The **Current state** section is true today. The
-> **Roadmap** section is the plan, one pull request per step. Companion
+> TypeScript SDK, and where it belongs in Inflect's agent stack. The engine is
+> built and runs customer agents in production (Phase 2, Steps 2a to 2e and
+> 2g); the **Current state** section is what is true today, and the
+> **Roadmap** section is what remains, one pull request per step. Companion
 > documents: `docs/claude-agent-sdk-design.md`, which introduces the agent
 > builder this engine would run, and `docs/claude-managed-agents-design.md`.
 > SDK facts were read on 2026-10-24 from the bundled Claude API reference, the
@@ -131,6 +132,26 @@ Inflect would host it in the worker, the same way it hosts Flue.
   `delegate` marker closes the span the run page groups. `RUNS_SUBAGENTS` is
   true for this engine alone; any other engine refuses such a version
   `PROFILE_SUBAGENTS_NOT_RUNNABLE`.
+- **A long run's earlier turns are summarised (Step 2g, #5531).** At loop-body
+  step 9 of `runModelLoop`, after a complete tool round, a run whose next
+  request is estimated at or above its threshold (the lowest of
+  `COMPACTION_THRESHOLD_TOKENS[tier]`, 15% of its `TOKENS` limit, which is
+  30,000 today, and the profile version's `compactionThresholdTokens`) sends
+  Inflect's own summary call (`compactionParams`, `tool_choice: none`), after the
+  kill switch, the breaker and one `STEPS`. Its tokens are charged to `TOKENS`;
+  its text is egress- and injection-scanned, and any verdict but clean stops the
+  run at the guard with the summary unused. It is recorded as a `MODEL_CALL`
+  step with `purpose: 'compaction'` and the digests before and after, with its
+  own Art 12 row. The next request is rebuilt by `tool-runner/compaction.ts`:
+  the opening message verbatim, Inflect's run-state block (activated skills'
+  pinned text re-hashed, refusals by code, proposals, delegations, the guard
+  tally), the summary fenced as model-written, and the last turn verbatim with
+  its thinking blocks dropped. Never mid tool round, not with fewer than two
+  `STEPS` left, not twice in a row, and not again in a segment whose summary
+  failed. A sub-agent compacts its own history on the run's one budget. A
+  version may set `compactionThresholdTokens` to `0` (off) or a lower value, and
+  never above the tier's constant (`COMPACTION_THRESHOLD_ABOVE_TIER`, at save and
+  at approval). The SDK's `compactBeforeNextTurn()` is never used.
 - **A resumed segment starts its conversation again.** The run keeps no
   transcript between segments: `lockedParams` sends the opening message alone,
   and the turn counters are per segment. So a run resumed after a guard flag,

@@ -11963,6 +11963,11 @@
           "MODEL_CALL": "Model call",
           "TOOL_CALL": "Tool call"
         },
+        "compaction": {
+          "label": "Conversation summarised",
+          "sizes": "about {before} tokens before, about {after} after",
+          "notUsed": "about {before} tokens before; the summary was not used"
+        },
         "metaStatus": "Status",
         "metaDriver": "Engine",
         "metaSteps": "Steps",
@@ -13473,6 +13478,7 @@
         "modelTier": "Model tier",
         "effort": "Effort",
         "maxTurns": "Turn limit",
+        "compaction": "Summarise long conversations",
         "outputKind": "Output",
         "triggers": "Allowed triggers",
         "subagents": "Sub-agents: each one's tools, skills, turn limit and every word of its instructions"
@@ -13494,6 +13500,12 @@
         "ASK": "Asked by a person",
         "AUTOMATION": "Started by an automation",
         "TEST_RUN": "Test run"
+      },
+      "compaction": {
+        "default": "Engine default",
+        "off": "Off",
+        "lower": "At a lower threshold",
+        "atTokens": "At {count} tokens"
       },
       "inForce": {
         "heading": "In force",
@@ -13568,6 +13580,9 @@
         "modelTierHint": "Balanced suits most work. Deep is slower and costs more.",
         "effortHint": "How much the model reasons before it answers.",
         "maxTurnsHint": "The most model turns a run may take, from 1 to {max}.",
+        "compactionHint": "When a run's next request would pass the threshold, the model summarises the earlier turns and the run carries on from the summary. The instructions, the skills it activated, refused calls, proposals and the last turn's results are always kept word for word. By default this happens at about {tokens} tokens. A version can turn it off or lower the threshold, never raise it.",
+        "compactionThresholdLabel": "Threshold, in tokens",
+        "compactionThresholdHint": "From {min} to {max} tokens.",
         "outputKindHint": "Proposals are never applied by the agent. A person decides each one.",
         "triggersHint": "What may start a run of this profile.",
         "cancel": "Cancel",

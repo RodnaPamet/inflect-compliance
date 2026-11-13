@@ -519,6 +519,14 @@ function VersionBody({ v }: { v: ProfileVersionView }) {
                 <dd>{t(`effort.${v.effort}`)}</dd>
                 <dt>{t('field.maxTurns')}</dt>
                 <dd>{v.maxTurns}</dd>
+                <dt>{t('field.compaction')}</dt>
+                <dd data-testid={`behaviour-version-${v.version}-compaction`}>
+                    {v.compactionThresholdTokens === null
+                        ? t('compaction.default')
+                        : v.compactionThresholdTokens === 0
+                          ? t('compaction.off')
+                          : t('compaction.atTokens', { count: v.compactionThresholdTokens })}
+                </dd>
                 <dt>{t('field.outputKind')}</dt>
                 <dd>{t(`outputKind.${v.outputKind}`)}</dd>
                 <dt>{t('field.triggers')}</dt>

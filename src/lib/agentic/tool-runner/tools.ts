@@ -79,7 +79,12 @@ export type RunStop =
     | { readonly kind: 'OPERATOR_ABORT' }
     /** The agent's circuit breaker read OPEN, or could not be read (Step 2e). */
     | { readonly kind: 'BREAKER' }
-    | { readonly kind: 'GUARD' };
+    | { readonly kind: 'GUARD' }
+    /**
+     * A compaction found an activated skill whose text no longer hashes to the
+     * run's pin (Step 2g): the run stops rather than re-teach it.
+     */
+    | { readonly kind: 'SKILL_PIN_MISMATCH' };
 
 /** What a run's tools share with the loop that drives them. */
 export interface ToolRunBinding {
@@ -203,6 +208,8 @@ export function stoppedMessage(stop: RunStop): string {
             return 'This agent is stopped: its circuit breaker is latched open.';
         case 'GUARD':
             return 'This run is stopped for review by the AI guard.';
+        case 'SKILL_PIN_MISMATCH':
+            return 'This run is stopped: a skill it activated no longer matches the version it was pinned to.';
     }
 }
 

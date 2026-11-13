@@ -693,8 +693,24 @@ export function AgentRunDetailClient({
                                         {label(stepStatusLabelKey(s.status), s.status)}
                                     </StatusBadge>
                                     <span className="text-sm font-medium text-content-emphasis">
-                                        {t(`runs.detail.kind.${s.kind}`)}
+                                        {s.compaction !== null
+                                            ? t('runs.detail.compaction.label')
+                                            : t(`runs.detail.kind.${s.kind}`)}
                                     </span>
+                                    {/* A COMPACTION (Step 2g): the sizes of the
+                                        request before and after, estimated. */}
+                                    {s.compaction !== null && (
+                                        <span className="text-xs tabular-nums text-content-subtle" data-testid={`step-${s.seq}-compaction`}>
+                                            {s.compaction.estimatedTokensAfter !== null
+                                                ? t('runs.detail.compaction.sizes', {
+                                                      before: s.compaction.estimatedTokensBefore ?? 0,
+                                                      after: s.compaction.estimatedTokensAfter,
+                                                  })
+                                                : t('runs.detail.compaction.notUsed', {
+                                                      before: s.compaction.estimatedTokensBefore ?? 0,
+                                                  })}
+                                        </span>
+                                    )}
                                     {/* The tool, when this kind has one. Rendered
                                         from the column where the step recorded it
                                         and from the definition where a failure

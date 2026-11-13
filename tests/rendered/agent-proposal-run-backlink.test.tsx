@@ -235,6 +235,7 @@ function runStep(over: Partial<RunStepRow> = {}): RunStepRow {
         // is every step in these fixtures.
         delegation: null,
         subagent: null,
+        compaction: null,
         proposals: [],
         ...over,
     };
