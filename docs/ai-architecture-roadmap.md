@@ -12,7 +12,8 @@ inflect · ai architecture · master roadmap v2 · 2026-11-12
 > The **Current state** section is true today (verified at main 3.338.0,
 > `a1c2f05c`; re-checked where it changed at 3.347.0, `e0e682e03`, on
 > 2026-10-31, and again on 2026-11-12 against the integration of the
-> 2026-11-11 wave, twenty-two work items on top of main 3.368.1) and names
+> 2026-11-11 wave, twenty-two work items on top of main 3.368.1, and on
+> 2026-11-13 against #5361, the 2026-11-12 batch) and names
 > what each layer already has. The
 > **Roadmap** section is the plan: what complete means, a status board, the
 > sequencing, the evals per layer, and the decisions the owner must take. Every framework the target
@@ -63,10 +64,10 @@ production use, together with its status-board row.
 flowchart LR
   subgraph EV["EVALUATION AND VALIDATION · measures every layer"]
     direction TB
-    GA["Garak<br/>nightly built, non-blocking;<br/>awaits its CI key"]:::partial
+    GA["Garak<br/>nightly built, off by default;<br/>first run dispatched 2026-11-13"]:::partial
     RA["Ragas<br/>set and record format;<br/>no harness yet"]:::partial
     AR["ARES<br/>calibrated judges"]:::todo
-    IS["Inspect<br/>ten tasks defined"]:::todo
+    IS["Inspect<br/>harness and nightly built;<br/>seed in review"]:::partial
     SB["SWE-bench<br/>no capability to measure"]:::declined
     HR["House eval records (ours)<br/>skills, identity-match"]:::done
   end
@@ -80,7 +81,7 @@ flowchart LR
     MO5["Modal<br/>not adopted 2026-10-31"]:::declined
     OS["OpenShell gateway<br/>collectors sandboxed"]:::done
     GW["TS API gateway (ours)<br/>Next.js routes + Compose"]:::done
-    CAP["Capacity budget<br/>limits on every container"]:::todo
+    CAP["Capacity budget<br/>every container measured and limited;<br/>resize with the first crossing"]:::partial
   end
 
   subgraph L4["LAYER 4 · Knowledge and deep RAG"]
@@ -103,7 +104,7 @@ flowchart LR
 
   subgraph L2["LAYER 2 · Orchestration and workflow"]
     direction TB
-    LF["Agent-flow canvas on tldraw<br/>flow data and read-only view built;<br/>Langflow not adopted"]:::partial
+    LF["Agent-flow canvas on tldraw<br/>draw, save as draft, preview built;<br/>runs on no engine; Langflow not adopted"]:::partial
     FL["Flue<br/>phases 1-3 shipped"]:::done
     CV["Canvas, rule builder,<br/>agent profiles (ours)"]:::done
   end
@@ -115,8 +116,8 @@ flowchart LR
     NG["NeMo Guardrails<br/>provider seam built; no server"]:::partial
     NC["NemoClaw<br/>reference only; runtime declined"]:::partial
     PR["Microsoft Presidio<br/>EN + BG record; PiiDetector seam"]:::partial
-    WB["Web Bot Auth (added)<br/>key directory served; nothing signs yet"]:::partial
-    MA["Mastercard Agent Pay (added)<br/>spending authority on the register"]:::partial
+    WB["Web Bot Auth (added)<br/>vendor monitor signs, honours robots.txt;<br/>no inbound verifier"]:::partial
+    MA["Mastercard Agent Pay (added)<br/>spending authority on the register;<br/>paying agents discovered"]:::partial
   end
 
   classDef done fill:#d1fae5,stroke:#047857,color:#064e3b
@@ -208,13 +209,21 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   `BEHAVIOUR_ANOMALY`. It is off by default under `AGENT_BEHAVIOUR_DETECTOR` +
   `AGENT_BEHAVIOUR_DETECTOR_TENANTS`, with `AGENT_BEHAVIOUR_DETECTOR_LATCH` as a
   third key for the latch, and its thresholds are written down with reasons
-  but not measured (Morpheus Phase 0.2's seeded check is open).
-- **Automated HTTP: a signing key exists, nothing signs, and a refusal is now
-  visible.** The product's only unattended crawler of third-party websites,
-  the vendor monitor's TLS grade, still identifies itself by a User-Agent
-  string alone. It fetches the tenant-entered domain only through
-  `safeFetch`, following redirects one re-checked hop at a time (since
-  2026-10-31). Since 2026-11-11 it records why a fetch did not grade —
+  but not measured (Morpheus Phase 0.2's seeded check is open). Its surface
+  (Phase 1.3, 2026-11-12) shows the fingerprint on the agent page and in
+  reports, and a person can accept a new baseline as normal, also for an agent
+  with no breaker row.
+- **Automated HTTP: the vendor monitor signs its requests, honours
+  robots.txt, and a refusal is visible.** The product's only unattended crawler
+  of third-party websites, the vendor monitor's TLS grade, goes through one bot
+  seam (Web Bot Auth Phase 2, 2026-11-12): `botFetch` is `safeFetch`, following
+  redirects one re-checked hop at a time, plus an honest User-Agent and an
+  RFC 9421 signature whenever the deployment key is set. robots.txt is read per
+  RFC 9309 and judged on every hop, same-origin redirects included: a disallow
+  is `REFUSED` with reason `ROBOTS` and nothing on that path is requested, and a
+  robots.txt that fails or answers 5xx counts as a complete disallow. A public
+  page, `/bots/vendor-monitor`, says who the bot is. The seam is held by an
+  ESLint single-seam rule and the SSRF guard's `BOT_SEAM_CALLERS`. Since 2026-11-11 it records why a fetch did not grade —
   `GRADED`, `REFUSED`, `UNREACHABLE` or `BLOCKED`, with the time, on
   `VendorMonitor` — counts it on `vendor_monitor.tls_fetch{provider,outcome}`,
   and the vendor page marks a stale grade stale. A DNS failure is
@@ -224,9 +233,12 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   absent means a 404 and nothing built) and a signed key directory at
   `/.well-known/http-message-signatures-directory`, its `keyid` the RFC 7638
   thumbprint, signed in-house on `node:crypto`. The wire format follows
-  `draft-ietf-webbotauth-httpsig-protocol-01` (2026-10-29). No outbound request
-  is signed yet, and the public trust center knows automated visitors only by
-  IP. [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
+  `draft-ietf-webbotauth-httpsig-protocol-01` (2026-10-29). The production key
+  was set on 2026-11-13 and the directory is served. The request half of the
+  conformance record is recomputed in CI against `web-bot-auth@0.2.0`. The
+  directory is registered nowhere (Phase 2.4 waits on the signature covering
+  `content-digest` and on D-L1-13's crawl-delay), and the public trust center
+  knows automated visitors only by IP. [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) plans both
   directions; it is an addition to the blueprint (owner, 2026-10-30).
 - **The register records an agent's spending authority** (Agent Pay Phase 1,
   partly). `AgentSpendingAuthority` holds a declared envelope reviewed by a
@@ -236,14 +248,20 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   task; widening an envelope raises a `SPENDING_AUTHORITY_WIDENED` finding.
   The harness contract refuses a card number as a secret (Phase 0,
   `harness-contract-rules.ts`). No card data exists anywhere in the product,
-  and Inflect never holds a payment credential (D-L1-8). The recertification
+  and Inflect never holds a payment credential (D-L1-8). Discovery is built
+  (Phase 2, 2026-11-12): the scanner's `code` source finds agents whose code
+  can pay, reported under contract `inflect-agent-harness/4` (the DPIA's `/4`
+  amendment is signed), and the ingest raises `SPENDING_AGENT_UNDECLARED` for a
+  registered paying agent with no reviewed envelope. Only a reviewed envelope,
+  or a person, closes it; a clean code read never does. The recertification
   section, the governance-pack row, the API routes and the register page
   section are not built.
   [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) is the
   second addition to the blueprint (owner, 2026-10-30).
-- Missing: a deployed second guard slice (NeMo server), a PII detector, signed
-  outbound requests and the inbound verifier, Agent Pay's discovery and
-  evidence. NemoClaw is reference-only by decision (D-L1-4); its Phase 1 is
+- Missing: a deployed second guard slice (NeMo server), a PII detector, the
+  inbound Web Bot Auth verifier and the directory's registration, Agent Pay's
+  evidence (Phase 3) and its scan-to-signature link (Phase 2.4, which waits on
+  the verifier). NemoClaw is reference-only by decision (D-L1-4); its Phase 1 is
   two collector-policy tightenings.
 
 ### Layer 2 — Orchestration & workflow
@@ -287,9 +305,14 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   `/t/:slug/processes/agents/:agentId`, inside the process-canvas module, with
   its own node taxonomy (`AGENT_VIEW_NODE_TAXONOMY`); ESLint refuses
   `@xyflow/*` across the agent-flow paths.
-- Missing: authoring a flow on the canvas, the Behaviour tab's "Open on
-  canvas" link and the approver's visual diff (Phase 2.3, 2.4), preview, and
-  running a flow. [`langflow.md`](./ai-architecture/langflow.md) plans it in the
+- **A flow is drawn on the canvas and previewed** (agent-flow canvas Phases 3
+  and 4, 2026-11-12). The editor saves a drawn flow as a new DRAFT profile
+  version through the profile usecase and its permission, shows the engine's
+  own run message beside it, and puts the approver's diff in the editor. The
+  panel says a flow version runs on no engine (`PROFILE_FLOW_NOT_RUNNABLE`).
+- Missing: the Behaviour tab's "Open on canvas" link and the approver's diff
+  for form-edited versions (Phase 2.3, 2.4), the stored layout record (3.2),
+  and running a flow with checkpoint enforcement (Phase 5). [`langflow.md`](./ai-architecture/langflow.md) plans it in the
   product as a second editor for the agent profile (D-L2-1, decided
   2026-10-29); Langflow itself is not adopted.
 - The process canvas is switching drawing engines tenant by tenant, from
@@ -412,17 +435,19 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
-- **No container has a memory or CPU limit** (`deploy/docker-compose.prod.yml`,
-  2026-10-31); Redis caps its own data at 256 MB. § Capacity budget plans the
-  limits and the room the completeness services need. The 2026-11-11 wave
-  added no container: the embedding, rerank, parsing, NeMo and PII services it
-  prepared are each held by the capacity rule until C1, and pgvector adds none
-  (it grows `postgres`).
+- **Every container has a memory limit and a CPU cap** (C1, applied
+  2026-11-12, #5324), set from the peaks C0 measured the same day: 10,496 MiB of
+  limits across the stack and its overlays, against a 14.5 GB line
+  (§ Capacity budget). The embedding, rerank, parsing, NeMo and PII services the
+  2026-11-11 wave prepared are each held by the capacity rule; the first one
+  that crosses the line carries the resize (D-CAP-1), and pgvector adds no
+  container (it grows `postgres`).
 - **Model usage is LLM API keys.** `inflect-external` is registered from
   `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
   bounds what each provider receives.
-- Missing for completeness: the capacity budget's measurements and limits
-  (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
+- Missing for completeness: C1b's re-measure of `app` and `worker` across the
+  nightly jobs (#5327) and C2, the resize, with the first addition that
+  crosses the line (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
   serving (a self-hosted model route, the GPU arms other roadmaps deferred,
   Triton, a NIM proof of concept) is optional and starts only after every
   other roadmap is complete. Modal is not adopted.
@@ -442,22 +467,34 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   own the same way; D-EV-4 (2026-11-11) decided that it will, and Inspect's
   Phase 0 defined the first ten governed-run tasks
   ([`2026-11-11-inspect-first-tasks.md`](./implementation-notes/2026-11-11-inspect-first-tasks.md)).
-  No Inspect harness exists.
-- **Garak's nightly is built and has not run keyed** (garak Phases 0–1,
-  partly): `.github/workflows/garak.yml` (01:15 UTC and dispatch, never from a
-  pull request) runs a pinned garak in a `python:3.12-slim` image by digest
-  against the assistant's existing non-streaming route,
-  `POST /api/t/:slug/assistant/ask`, under the USD 5/night cap (D-EV-1), with a
-  pinning guard and a parsed `GARAK-NON-BLOCKING-UNTIL: 2027-02-28` marker. It
-  waits on the owner creating the `GARAK_CI_ANTHROPIC_KEY` secret in its own
-  Anthropic workspace, with that workspace's spend limit as the backstop. The
-  baseline (0.4), the agent-run adapter route (1.1b) and the
-  re-enabled-probe proof (1.5) are open.
-- **Ragas has its set and record format** (Phase 0, Layer 4 above); the
-  harness and the judge are Phase 1. Web Bot Auth's conformance vectors are at
+  The Inspect harness is built (Phase 1.1–1.5, 2026-11-12): a pinned
+  `inspect-ai` project under `evals/inspect/` that starts runs on Flue and the
+  Tool Runner as the seed agent's bound `iflk_` key, deterministic scorers, the
+  record module `src/lib/ai/evals/inspect-record.ts`, and the
+  `agent-evals.yml` nightly (02:20 UTC, USD 10, D-EV-6). The nightly is off
+  unless the repository variable `AGENT_EVALS_ENABLED` is `true`, and it fails
+  closed without its seed: `scripts/inspect-seed.ts` (1.6) is in review as
+  #5447. No Inspect record exists.
+- **Garak's nightly is built, off by default, and its first run was
+  dispatched on 2026-11-13** (garak Phases 0–1, partly):
+  `.github/workflows/garak.yml` (01:15 UTC and dispatch, never from a pull
+  request) runs a pinned garak in a `python:3.12-slim` image by digest against
+  the assistant's existing non-streaming route,
+  `POST /api/t/:slug/assistant/ask`, with a pinning guard and a parsed
+  `GARAK-NON-BLOCKING-UNTIL: 2027-02-28` marker. It spends at most its USD 2.50
+  share of the shared USD 5 nightly cap (D-EV-11), metered by the shared cost
+  meter (`evals/cost-meter/`), at 40 requests per role. The schedule runs only
+  while the repository variable `GARAK_ENABLED` is `true`; a dispatch always
+  runs. Its key is `GARAK_CI_ANTHROPIC_KEY`, falling back to the existing
+  `ANTHROPIC_API_KEY` secret when that is unset. The baseline (0.4), the
+  agent-run adapter route (1.1b) and the re-enabled-probe proof (1.5) are
+  open.
+- **Ragas has its set and record format** (Phase 0, Layer 4 above), and the
+  shared cost meter it splits the nightly cap through (0.6); the harness and
+  the judge are Phase 1. Web Bot Auth's conformance vectors are at
   `evals/web-bot-auth/vectors.json`; the PII record at `evals/pii/records/`.
-- Missing: an ARES labelled set, the Inspect harness, a RAG record, a keyed
-  garak run. SWE-bench is declined (D-EV-5, 2026-11-11): there is no
+- Missing: an ARES labelled set, an Inspect record, a RAG record, a completed
+  keyed garak run. SWE-bench is declined (D-EV-5, 2026-11-11): there is no
   capability to measure.
 
 ### Existing roadmaps this one indexes, not replaces
@@ -777,29 +814,29 @@ completion.
 
 | Framework | Layer | Child roadmap | Wave | Status | Phase on `main` | Complete at | Decisions open |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | Phase 0 done: D-L1-1's scope, an EN + BG fixture corpus, Bulgarian recognisers, the first precision/recall record ([note](./implementation-notes/2026-11-11-pii-redaction-decision.md)); Phase 1.2–1.4 built: the `PiiDetector` seam on the in-deployment dial, fail-closed egress use, record mount gate; 1.1 (the `presidio` container) open, held by C1; no detector deployed | 0 | 3 | D-L1-11 |
+| Presidio | 1 | [`presidio.md`](./ai-architecture/presidio.md) | 3 | Phase 0 done: D-L1-1's scope, an EN + BG fixture corpus, Bulgarian recognisers, the first precision/recall record ([note](./implementation-notes/2026-11-11-pii-redaction-decision.md)); Phase 1.2–1.4 built: the `PiiDetector` seam on the in-deployment dial, fail-closed egress use, record mount gate; 1.1 (the `presidio` container) open, held by C1; no detector deployed | 0 | 3 | — |
 | NeMo Guardrails | 1 | [`nemo-guardrails.md`](./ai-architecture/nemo-guardrails.md) | 3 | Phase 0's done-when met: F5 closed, D-L1-2 decided; 0.2 (the rail-by-rail list) and 0.3 (the garak baseline) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.5: `GuardProvider`, worst-of, a fail-closed NeMo client); 1.3, the server and its rails, held by C1; nothing runs | 0 | 3, LLM-backed rails by API key | — |
-| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | Phase 0 — signal defined; seeded check (0.2) open. Phase 1 partly: the `agent-fingerprint` CPU detector built (1.1, 1.2, 1.4), off by default under three keys, thresholds unmeasured; 1.3 open | — | 1, the CPU detector | — |
-| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | Phase 0 done; reference-only, runtime and router declined (D-L1-4, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)); Phase 1 — two collector-policy tightenings | 0 | 1 | D-L1-12 |
-| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | Phase 0's sub-phases done: the wire format recorded (`-01`), signing in-house on `node:crypto`, the TLS-fetch outcome recorded and metered, a stale grade marked; its done-when waits for the outcome metric to be observed in production. Phase 1 partly (1.1, 1.3, 1.5): a deployment Ed25519 key and a signed key directory; nothing signs outbound yet | — | 3 | D-L1-13, D-L1-14 |
-| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | Phase 0 partly: the card-number refusal in code (0.4); 0.2, 0.3 and 0.5 done in substance, their boxes to be ticked in the child now that D-L1-8 to D-L1-10 are initialled here; 0.1 (primary sources, a conversation with Mastercard) open. Phase 1 partly: spending authority on the register (1.1, 1.2, 1.3, 1.5), four-eyes, refused at activation, suspended by a kill; 1.4 and 1.6 open | — | 3 (4 waits on access) | — |
-| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | Phase 1 done: a flow as data on the profile version, refused on every engine until Phase 5. Phase 2 partly: the read-only agent view; 2.3 (open on canvas, drill-down) and 2.4 (the approver's diff) open. Langflow not adopted | 1 | 5 | — |
+| Morpheus | 1 | [`morpheus.md`](./ai-architecture/morpheus.md) | 3 / optional (GPU, Phase 2) | Phase 0 — signal defined; seeded check (0.2) open. Phase 1's sub-phases built (1.1–1.4): the `agent-fingerprint` CPU detector, off by default under three keys, and its surface with a person's "accept as new normal" (1.3, 2026-11-12); the done-when waits on thresholds measured on the seed tenant | — | 1, the CPU detector | — |
+| NemoClaw | 1 | [`nemoclaw.md`](./ai-architecture/nemoclaw.md) | 3 | Phase 0 done; reference-only, runtime and router declined (D-L1-4, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)); Phase 1 — two collector-policy tightenings | 0 | 1 | — |
+| Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | Phase 0's sub-phases done; its done-when waits for the outcome metric to be observed in production. Phase 1 partly (1.1, 1.3, 1.5): the deployment Ed25519 key, set in production 2026-11-13, and the signed key directory; 1.2 and 1.4 open. Phase 2 partly (2.1–2.3, 2026-11-12): the vendor monitor signs through `botFetch`, honours robots.txt on every hop, and names itself on `/bots/vendor-monitor`; the conformance record's request half is recomputed in CI. 2.4 (registration, after `content-digest` and D-L1-13's crawl-delay) and 2.5 (the 14-day measurement) open | — | 3 | — |
+| Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | Phase 0 partly: the card-number refusal in code (0.4); 0.2, 0.3 and 0.5 done in substance, their boxes to be ticked in the child now that D-L1-8 to D-L1-10 are initialled here; 0.1 (primary sources, a conversation with Mastercard) open. Phase 1 partly: spending authority on the register (1.1, 1.2, 1.3, 1.5), four-eyes, refused at activation, suspended by a kill; 1.4 and 1.6 open. Phase 2 partly (2.1–2.3, 2.5, 2026-11-12): the scanner finds agents whose code can pay (contract `/4`, DPIA amendment signed) and `SPENDING_AGENT_UNDECLARED` is raised and closed only by a reviewed envelope or a person; 2.4 blocked on Web Bot Auth Phase 3 | — | 3 (4 waits on access) | — |
+| Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | Phase 1 done: a flow as data on the profile version, refused on every engine until Phase 5. Phase 2 partly: the read-only agent view; 2.3 (open on canvas, drill-down) and 2.4 (the diff for form-edited versions) open. Phase 3 (the editor, saving a DRAFT version; 3.2's stored layout record open) and Phase 4 (the engine's own run message beside the flow) built 2026-11-12. Langflow not adopted | 1 | 5 | — |
 | Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3); F5 closed and F12 fixed 2026-11-11 | 3 | 3 (met) | F3 decision to record |
 | Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | Phase 1 done: the role axis, worker by API key (`AGENT_FLUE_WORKER_MODEL`, unset by default, so the worker runs the supervisor's model). Phase 3 and the optional Phases 0 and 2 unchanged | 1 | 1 and 3, worker by API key | — |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
 | cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | — | **declined** — no optimisation problem in the product, none at GPU scale (D-L3-3, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decline (met) | — |
-| Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1's seam built, off by default (`VectorRepository`, `VECTOR_STORE_BACKEND`), tested only against a mock: no image in the repository carries pgvector, no migration, no table. Phase 4 (Weaviate) only on a missed floor | 0 | 3 | D-L4-8, D-L4-9 |
-| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the D-L4-3 benchmark built and never dispatched, and TEI CPU refuses both Nemotron candidates. Phase 1 seam built (1.2–1.5), 1.1 (`tei-embed`) held by C1; Phase 2.1 (`RerankProvider`) built. No service deployed, nothing calls the seam | — | 2, the D-L4-3 winner on CPU | D-L4-10 |
+| Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1's seam built, off by default (`VectorRepository`, `VECTOR_STORE_BACKEND`), tested only against a mock: no image in the repository carries pgvector, no migration, no table. Phase 4 (Weaviate) only on a missed floor | 0 | 3 | — |
+| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the D-L4-3 benchmark built and never dispatched, and TEI CPU refuses both Nemotron candidates. Phase 1 seam built (1.2–1.5), 1.1 (`tei-embed`) held by C1; Phase 2.1 (`RerankProvider`) built. No service deployed, nothing calls the seam | — | 2, the D-L4-3 winner on CPU | D-L4-10's latency budgets |
 | Document parsing (Docling-class; RAGFlow measured) | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | Phase 0 decided (D-L4-4), its fidelity set and measurements (0.1–0.5) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.7: `DocumentParser`, a docling-serve client, a paragraph stub default); 1.3 (the Compose service, held by C1), 1.5 and 1.6 open | 0 | 3 | — |
 | Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | — | **complete** — OTel-only (D-L4-5, 2026-11-11); content capture off by default (D-L4-6) ([note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's OTel-only decision (met) | — |
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
 | Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
-| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited (10,496 MiB of the 14.5 GB line); D-CAP-1 decided | C0, C1 | C1b (#5327), and C2, the resize, with the first addition that crosses the line | — |
-| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built, non-blocking until 2027-02-28, skipped until the owner creates its CI key; 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
+| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited (10,496 MiB of the 14.5 GB line); D-CAP-1 decided (measure, smaller pieces, then resize) | C0, C1 | C1b (#5327), and C2, the resize, with the first addition that crosses the line | — |
+| Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built (USD 2.50 of the shared USD 5, D-EV-11), non-blocking until 2027-02-28, off unless `GARAK_ENABLED` is `true`, keyed by the shared `ANTHROPIC_API_KEY` when its own key is unset; first run dispatched 2026-11-13. 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
 | Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's USD 2.50 each); 0.5 (one seed set with the retriever's) open | 0 | 3 | — |
 | ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | Phase 0: D-EV-3 decided; labelling not yet done | — | 3, or 2's recorded failure to calibrate | — |
-| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | Phase 0 done: the ten governed-run tasks defined ([note](./implementation-notes/2026-11-11-inspect-first-tasks.md)), D-EV-4 decided; Phase 1 next, under D-EV-6's budget | 0 | 3 | D-EV-7, D-EV-8, D-EV-9, D-EV-10 |
+| Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | Phase 0 done: the ten governed-run tasks defined ([note](./implementation-notes/2026-11-11-inspect-first-tasks.md)), D-EV-4 decided. Phase 1 partly (1.1–1.5, 2026-11-12): the harness for Flue and the Tool Runner, the record module and the `agent-evals.yml` nightly (D-EV-6's USD 10), off unless `AGENT_EVALS_ENABLED` is `true`; 1.6, the seed script, in review (#5447); 1.7, the done-when, open | 0 | 3 | — |
 | SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | **declined** — no capability to measure (D-EV-5, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decision (met) | — |
 
 ### Sequencing
