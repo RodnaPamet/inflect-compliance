@@ -47,7 +47,6 @@ import { logEvent } from '@/app-layer/events/audit';
 import { buildSystemContext } from '@/app-layer/context-system';
 import { prisma } from '@/lib/prisma';
 import { runInTenantContext } from '@/lib/db-context';
-import { COLLECTOR_PROVIDER_NAME } from './cloud-posture/sandboxed-collector-exec';
 import { maintainSandboxLease } from './openshell-sandbox-leases';
 import type { RequestContext } from '@/app-layer/types';
 import type { PrismaTx } from '@/lib/db-context';
@@ -250,7 +249,9 @@ export function sandboxDecisionRecorderForScan(input: {
             maintainSandboxLease(db, {
                 tenantId: input.tenantId,
                 ownerJob: input.job,
-                providerName: input.providerName ?? COLLECTOR_PROVIDER_NAME,
+                // No shared collector provider exists any more (#5251); a lease
+                // whose caller named none says so rather than naming one.
+                providerName: input.providerName ?? 'unnamed',
                 decision,
             }),
         );

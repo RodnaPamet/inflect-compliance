@@ -347,6 +347,42 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
 }
 
 /**
+ * Why a deploy's sandboxed collection refuses every connection today — #5251.
+ *
+ * It used to attach ONE gateway provider, `inflect-collector`, to every
+ * tenant's scan, so tenant B's benchmark ran on whatever cloud account that
+ * shared credential reached and the result was filed as tenant B's evidence;
+ * the connection's own credential was never used. A per-connection credential
+ * cannot simply be handed over either: the gateway gives a sandbox
+ * PLACEHOLDERS and substitutes real values only in inspected egress, which no
+ * request-signing client (AWS SigV4, a GCP service-account JWT) can use. Until
+ * a per-connection provider is built and proved against a live gateway (the
+ * follow-up issue), a sandboxed scan refuses with this reason and the scan is
+ * recorded ERROR. Owner decision, 2026-11-13.
+ */
+export const SANDBOX_NO_CONNECTION_CREDENTIAL = 'SANDBOX_NO_CONNECTION_CREDENTIAL';
+
+/**
+ * The runner a deploy with sandboxing ON gets: one that refuses before it
+ * starts the gateway VM or reads a key, in the result shape the collectors'
+ * classifier reads as did-not-complete. The secret values are still scrubbed
+ * from the message, though it names none.
+ */
+function refusingCollectorExec(): CollectorExec {
+    return async (_file, _args, _env, secretValues, patterns) =>
+        didNotComplete(
+            SANDBOX_NO_CONNECTION_CREDENTIAL,
+            scrubSecrets(
+                'Sandboxed collection is refused: this deploy has no per-connection gateway ' +
+                    'credential, and a shared one would scan another account. Turn ' +
+                    'SANDBOX_EXECUTION_ENABLED off to collect on the host.',
+                secretValues,
+                patterns,
+            ),
+        );
+}
+
+/**
  * The runner this deploy should use, or `null` to leave the caller's default.
  *
  * `null` is the answer whenever the platform switch is off, which is its
@@ -354,23 +390,15 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
  * as it was. Returning `undefined`-by-omission rather than a no-op runner is
  * deliberate: the providers' on-disk credential handling keys off whether a
  * runner was supplied, and a no-op runner would suppress the key write while
- * still running on the host.
+ * still running on the host. With the switch ON and no provider named, the
+ * runner REFUSES (#5251): it never falls back to the host.
  */
-/**
- * The gateway-side provider the collectors attach, named once.
- *
- * It was a literal in two places the moment #4568 needed it for a lease row —
- * and two spellings of one name is the shape that goes wrong silently, because
- * each looks authoritative alone.
- */
-export const COLLECTOR_PROVIDER_NAME = 'inflect-collector';
-
 export function collectorExecForDeploy(
     deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},
 ): CollectorExec | null {
     if (!readSandboxExecutionPlatformEnabled()) return null;
-    return sandboxedCollectorExec({
-        ...deps,
-        providerName: deps.providerName ?? COLLECTOR_PROVIDER_NAME,
-    });
+    // No provider named, no sandbox: there is no shared credential to fall
+    // back to (#5251). A caller that names one (a drill, a test) still runs.
+    if (deps.providerName === undefined) return refusingCollectorExec();
+    return sandboxedCollectorExec({ ...deps, providerName: deps.providerName });
 }

@@ -182,7 +182,9 @@ describe('the recorder a scan hands over', () => {
             {
                 tenantId: 'tenant-abc',
                 ownerJob: 'gcp-posture-collect',
-                providerName: 'inflect-collector',
+                // No shared collector provider exists any more (#5251): a
+                // recorder whose caller names none says so.
+                providerName: 'unnamed',
                 kind: 'sandbox-created',
             },
         ]);

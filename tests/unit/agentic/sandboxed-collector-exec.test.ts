@@ -19,6 +19,7 @@ jest.mock('@/env', () => ({ env: mockEnv }));
 import {
     sandboxedCollectorExec,
     collectorExecForDeploy,
+    SANDBOX_NO_CONNECTION_CREDENTIAL,
 } from '@/app-layer/integrations/cloud-posture/sandboxed-collector-exec';
 import { runPowerpipeBenchmark } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import {
@@ -235,6 +236,37 @@ describe('the deploy switch leaves an unconfigured deploy alone (#3961)', () => 
             exec: exec!,
         });
         expect(r.status).toBe('ERROR');
+    });
+});
+
+describe('a deploy never scans a tenant with a shared credential (#5251)', () => {
+    beforeEach(() => {
+        for (const k of Object.keys(mockEnv)) delete mockEnv[k];
+        mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
+    });
+
+    it('refuses with a named reason, before starting the gateway or attaching anything', async () => {
+        // It attached one `inflect-collector` provider to every tenant's scan,
+        // so tenant B benchmarked whatever account that credential reached.
+        const startGateway = jest.fn();
+        const transport = { attachProvider: jest.fn(), createSandbox: jest.fn() };
+        const exec = collectorExecForDeploy({
+            benchmarkId: BENCHMARK,
+            startGateway,
+            transport: transport as never,
+        });
+        const r = await exec!('powerpipe', ['benchmark', 'run'], {} as NodeJS.ProcessEnv, ['AKIASECRETVALUE'], []);
+        expect(r.ok).toBe(false);
+        expect(r.failure).toBe(SANDBOX_NO_CONNECTION_CREDENTIAL);
+        expect(r.stderr).not.toContain('AKIASECRETVALUE');
+        expect(startGateway).not.toHaveBeenCalled();
+        expect(transport.attachProvider).not.toHaveBeenCalled();
+        expect(transport.createSandbox).not.toHaveBeenCalled();
+    });
+
+    it('a caller that names its own provider (a drill) still runs the sandbox path', () => {
+        const exec = collectorExecForDeploy({ benchmarkId: BENCHMARK, providerName: 'drill-provider' });
+        expect(typeof exec).toBe('function');
     });
 });
 
