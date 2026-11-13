@@ -65,14 +65,15 @@ describe('a variance must name an owner decision', () => {
 
 describe('the suite holds no engine branch', () => {
     // Engine differences live in the adapter. The helper reads the adapter's
-    // engine name in exactly two places, both describe titles, and compares it
-    // with nothing.
+    // engine name only in describe titles — the run, admission and sub-agent
+    // (Step 2e, #4594) suites — and compares it with nothing: every read is a
+    // title, so a read that is not one fails here.
     const source = readFileSync(path.join(__dirname, '../helpers/driver-conformance.ts'), 'utf8');
 
-    it('reads the engine name only to title the two describe blocks', () => {
+    it('reads the engine name only to title the three describe blocks', () => {
         const reads = source.match(/\.engine\b/g) ?? [];
         const titles = source.match(/\$\{adapter\.engine\}/g) ?? [];
-        expect({ reads: reads.length, titles: titles.length }).toEqual({ reads: 2, titles: 2 });
+        expect({ reads: reads.length, titles: titles.length }).toEqual({ reads: 3, titles: 3 });
     });
 });
 
