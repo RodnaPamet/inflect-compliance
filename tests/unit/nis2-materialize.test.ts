@@ -105,6 +105,30 @@ describe('materializeNis2Gaps', () => {
         expect(mockState.findings[0].status).toBe('OPEN');
     });
 
+    it('a new, unanswered run closes nothing (#5146)', async () => {
+        mockState.answers = { q1: 'NO' };
+        await materializeNis2Gaps(ctx, { minCriticality: 'HIGH' });
+
+        // A fresh run becomes the latest, with no answers yet.
+        mockState.answers = {};
+        const preview = await materializeNis2Gaps(ctx, { minCriticality: 'HIGH', dryRun: true });
+        expect(preview.closed).toBe(0);
+        const r = await materializeNis2Gaps(ctx, { minCriticality: 'HIGH' });
+        expect(r.closed).toBe(0);
+        expect(mockState.findings[0].status).toBe('OPEN');
+    });
+
+    it('a half-answered run closes only the findings it answered YES or NA (#5146)', async () => {
+        mockState.answers = { q1: 'NO', q2: 'NO' };
+        await materializeNis2Gaps(ctx, { minCriticality: 'LOW' });
+        expect(mockState.findings.map((f) => f.status)).toEqual(['OPEN', 'OPEN']);
+
+        mockState.answers = { q2: 'NA' }; // q1 not reached yet
+        const r = await materializeNis2Gaps(ctx, { minCriticality: 'LOW' });
+        expect(r.closed).toBe(1);
+        expect(Object.fromEntries(mockState.findings.map((f) => [f.sourceRef, f.status]))).toEqual({ q1: 'OPEN', q2: 'CLOSED' });
+    });
+
     it('dryRun previews counts without mutating', async () => {
         mockState.answers = { q1: 'NO' };
         const r = await materializeNis2Gaps(ctx, { minCriticality: 'HIGH', dryRun: true });

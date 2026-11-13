@@ -16,6 +16,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { appendAuditEntry } from '@/lib/audit';
 import { recordAuditPackShared } from '@/lib/observability/business-metrics';
+import { logger } from '@/lib/observability/logger';
 import crypto from 'crypto';
 
 /** Discriminator for a return-channel row (mirrors the Prisma enum). */
@@ -328,9 +329,8 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
         // combination is refused, by a message that says which one it is.
         if (comment.status === 'RESOLVED' && !existing) {
             throw badRequest(
-                'Entry is already resolved but no finding was materialised from it. This is the residue of a ' +
-                    'failed materialisation: the entry was claimed and the finding creation did not complete. ' +
-                    'Re-open the entry to retry it.',
+                'Entry is already resolved but no finding was materialised from it. The entry was claimed and ' +
+                    'the process stopped before the finding was created. Raise the finding by hand from the entry.',
                 { reason: 'ENTRY_RESOLVED_WITHOUT_FINDING' satisfies AuditPackRefusal },
             );
         }
@@ -435,16 +435,40 @@ export async function materializeShareCommentFinding(ctx: RequestContext, packId
         throw badRequest('Entry is already being materialised by another reviewer', { reason: 'ENTRY_BEING_MATERIALISED' satisfies AuditPackRefusal });
     }
 
-    const finding = await createFinding(ctx, {
-        auditId: loaded.auditId,
-        controlId: loaded.controlId,
-        severity: 'MEDIUM',
-        type: findingType,
-        title: short,
-        description: body || undefined,
-        sourceKind: AUDITOR_SHARE_COMMENT_SOURCE,
-        sourceRef: commentId,
-    });
+    // A create that fails RELEASES the claim (#5118). Nothing in the product
+    // re-opens a resolved entry, so a claim left standing over a failed create
+    // refused every retry with ENTRY_RESOLVED_WITHOUT_FINDING for ever. The
+    // release is predicated on this caller's own claim, and the finding is the
+    // only thing created before it, so nothing exists to point the entry at.
+    let finding: { id: string };
+    try {
+        finding = await createFinding(ctx, {
+            auditId: loaded.auditId,
+            controlId: loaded.controlId,
+            severity: 'MEDIUM',
+            type: findingType,
+            title: short,
+            description: body || undefined,
+            sourceKind: AUDITOR_SHARE_COMMENT_SOURCE,
+            sourceRef: commentId,
+        });
+    } catch (err) {
+        await runInTenantContext(ctx, (tdb) =>
+            tdb.auditPackShareComment.updateMany({
+                where: { id: commentId, tenantId: ctx.tenantId, auditPackId: packId, status: 'RESOLVED', resolvedByUserId: ctx.userId },
+                data: { status: 'OPEN', resolvedAt: null, resolvedByUserId: null },
+            }),
+        ).catch((releaseErr: unknown) => {
+            // The create's own error is the one the caller needs; a failed
+            // release only leaves the residue the RESOLVED refusal names.
+            logger.warn('audit_pack.share_comment_claim_release_failed', {
+                component: 'audit-pack-sharing',
+                commentId,
+                error: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+            });
+        });
+        throw err;
+    }
 
     await createTask(ctx, {
         title: `Remediate auditor ${loaded.comment.kind === 'FINDING' ? 'finding' : 'request'}: ${short}`,

@@ -799,11 +799,10 @@ export async function getControlBiaSurface(ctx: RequestContext, controlId: strin
             select: { processMapId: true, sourceKey: true, targetKey: true },
             take: 400,
         });
-        const nodeKeys = [...new Set(edges.flatMap((e) => [e.sourceKey, e.targetKey]))];
-        const mapIds = [...new Set(edges.map((e) => e.processMapId))];
-        if (nodeKeys.length === 0) return { kind: 'none' };
+        const endpoints = edgeEndpointPairs(edges);
+        if (endpoints.length === 0) return { kind: 'none' };
         const nodes = await db.processNode.findMany({
-            where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
+            where: { tenantId: ctx.tenantId, OR: endpoints },
             select: { processMapId: true, nodeKey: true, label: true },
             take: 400,
         });
@@ -905,6 +904,25 @@ export async function getBiasForProcessNodeKey(ctx: RequestContext, processMapId
 }
 
 /**
+ * The exact (map, node) pairs an edge set touches, deduplicated, as an OR of
+ * pairs (#5260). Never `mapId in [...] AND nodeKey in [...]`: map templates
+ * reuse node keys n1..n6, so that cross-product also matched node n5 of map A
+ * when only map B's n5 sat on a protected edge, and surfaced a BIA for a
+ * process the control does not protect.
+ */
+function edgeEndpointPairs(
+    edges: ReadonlyArray<{ processMapId: string; sourceKey: string; targetKey: string }>,
+): Array<{ processMapId: string; nodeKey: string }> {
+    const seen = new Map<string, { processMapId: string; nodeKey: string }>();
+    for (const e of edges) {
+        for (const nodeKey of [e.sourceKey, e.targetKey]) {
+            seen.set(`${e.processMapId}\u0000${nodeKey}`, { processMapId: e.processMapId, nodeKey });
+        }
+    }
+    return [...seen.values()];
+}
+
+/**
  * Recovery-deadline context for a live incident: the BIAs reachable from
  * the incident's linked controls (control → process → BIA). Derived — no
  * direct incident→process FK exists, so we resolve via the controls the
@@ -931,11 +949,10 @@ export async function getIncidentBiaContext(ctx: RequestContext, incidentId: str
             select: { processMapId: true, sourceKey: true, targetKey: true },
             take: 500,
         });
-        const nodeKeys = [...new Set(edges.flatMap((e) => [e.sourceKey, e.targetKey]))];
-        const mapIds = [...new Set(edges.map((e) => e.processMapId))];
-        if (nodeKeys.length === 0) return [];
+        const endpoints = edgeEndpointPairs(edges);
+        if (endpoints.length === 0) return [];
         const nodes = await db.processNode.findMany({
-            where: { tenantId: ctx.tenantId, processMapId: { in: mapIds }, nodeKey: { in: nodeKeys } },
+            where: { tenantId: ctx.tenantId, OR: endpoints },
             select: { processMapId: true, nodeKey: true },
             take: 500,
         });

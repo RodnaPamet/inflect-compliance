@@ -3,7 +3,7 @@
  *
  * The unit test holds the rule with the repository mocked. This one holds the
  * part a mock cannot: `AuditRepository.lockStatus` is raw SQL, and the reason
- * it reads `FOR UPDATE` is a race only Postgres can show — a cancel committed
+ * it locks the row is a race only Postgres can show — a cancel committed
  * while an edit is in flight must refuse the edit, not let it land on the
  * cancelled audit.
  */
@@ -94,6 +94,20 @@ describe('updateAudit on a closed audit', () => {
         await updateAudit(ctx, auditId, { checklistUpdates: [{ id: itemId, result: 'PASS' }] });
         expect((await prisma.auditChecklistItem.findUniqueOrThrow({ where: { id: itemId } })).result).toBe('PASS');
     });
+
+    it('an open audit takes a checklist FAIL, and the finding and task it cascades into (#5063)', async () => {
+        // The cascade inserts the Finding in a transaction of its own, while
+        // the edit's transaction holds the audit row. With the row read
+        // FOR UPDATE that insert's foreign-key check waited on the edit, which
+        // waited on the insert, until the transaction timed out.
+        const { auditId, itemId } = await auditWith('IN_PROGRESS');
+        await updateAudit(ctx, auditId, { checklistUpdates: [{ id: itemId, result: 'FAIL' }] });
+        expect((await prisma.auditChecklistItem.findUniqueOrThrow({ where: { id: itemId } })).result).toBe('FAIL');
+        expect(await prisma.finding.count({ where: { auditId } })).toBe(1);
+        expect(await prisma.task.count({
+            where: { tenantId: T1, type: 'AUDIT_FINDING', title: 'Remediate finding: Access reviewed' },
+        })).toBeGreaterThanOrEqual(1);
+    }, 30_000);
 
     it('another tenant’s audit is not found, whatever its status', async () => {
         const { auditId } = await auditWith('PLANNED');
