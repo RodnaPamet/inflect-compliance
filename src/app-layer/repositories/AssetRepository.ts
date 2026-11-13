@@ -35,6 +35,15 @@ export interface AssetListParams {
  */
 const FLAT_LIST_CAP = 1000;
 
+/**
+ * An asset's links to controls that are NOT in the trash (#5442, owner
+ * decision 2026-11-12). Soft-deleting a control keeps its `ControlAsset` row,
+ * and the soft-delete extension filters top-level reads only — never a nested
+ * `include` or `_count` — so without this the list's Controls column and the
+ * asset page still counted and listed a trashed control.
+ */
+const LIVE_CONTROL_LINKS = { where: { control: { deletedAt: null } } } as const;
+
 export class AssetRepository {
     /**
      * `options.take` lets the API route ask for `LIST_BACKFILL_CAP + 1`
@@ -56,7 +65,7 @@ export class AssetRepository {
             orderBy: { createdAt: 'desc' },
             take: options.take ?? FLAT_LIST_CAP,
             include: {
-                _count: { select: { controls: true } },
+                _count: { select: { controls: LIVE_CONTROL_LINKS } },
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
         });
@@ -84,7 +93,7 @@ export class AssetRepository {
             // one past its cap so a clipped deleted view says so.
             take: options.take ?? FLAT_LIST_CAP,
             include: {
-                _count: { select: { controls: true } },
+                _count: { select: { controls: LIVE_CONTROL_LINKS } },
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
         }));
@@ -108,7 +117,7 @@ export class AssetRepository {
             orderBy: CURSOR_ORDER_BY,
             take: limit + 1,
             include: {
-                _count: { select: { controls: true } },
+                _count: { select: { controls: LIVE_CONTROL_LINKS } },
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
         });
@@ -229,7 +238,9 @@ export class AssetRepository {
         return db.asset.findFirst({
             where: { id, tenantId: ctx.tenantId },
             include: {
-                controls: { include: { control: true } },
+                // The asset page's linked controls hide a control in the
+                // trash, as the list's Controls column above does (#5442).
+                controls: { ...LIVE_CONTROL_LINKS, include: { control: true } },
                 ownerUser: { select: { id: true, name: true, email: true } },
             },
         });
