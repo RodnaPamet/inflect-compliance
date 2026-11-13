@@ -3,10 +3,11 @@
  *
  * `TenantRegion` (the Prisma enum) is the SET OF DECLARABLE regions. This
  * module is the source of truth for which of those are actually
- * **operationally provisioned** — i.e. have live infrastructure (RDS / S3
- * / KMS / Helm deploy / DNS) a tenant's data can sit in.
+ * **operationally provisioned** — i.e. have live infrastructure (database,
+ * object storage, keys, a deployment and DNS) a tenant's data can sit in.
  *
- * Today production is single-region, so only `US_EAST_1` is provisioned.
+ * Today production is single-region, on GCP europe-west1 (Belgium), so only
+ * `EUROPE_WEST1` is provisioned (#5288).
  * A tenant requesting any other region is refused at provision time with
  * a clear error — NOT silently defaulted. See docs/data-residency.md for
  * the foundation-vs-follow-up split.
@@ -22,7 +23,7 @@ import type { TenantRegion } from '@prisma/client';
  * here ONLY when its infra is live — never speculatively.
  */
 export const OPERATIONALLY_PROVISIONED_REGIONS: readonly TenantRegion[] = [
-    'US_EAST_1',
+    'EUROPE_WEST1',
 ] as const;
 
 /**
@@ -32,12 +33,12 @@ export const OPERATIONALLY_PROVISIONED_REGIONS: readonly TenantRegion[] = [
  * so a future enum addition without a provisioning plan fails CI.
  */
 export const PLANNED_REGIONS: Readonly<Record<string, string>> = {
+    US_EAST_1:
+        'Not provisioned: production has never run there. It was the column default until #5288, so every tenant read it; they were moved to EUROPE_WEST1, where production runs.',
     EU_WEST_1:
-        'Planned (EU residency): needs EU-resident RDS/S3/KMS + a per-region Helm deploy + DNS routing + EU-only sub-processor options. See docs/data-residency.md.',
+        'Planned (EU residency): needs an EU-resident database, storage and keys in AWS eu-west-1 (Ireland), a per-region deploy, DNS routing and EU-only sub-processor options. EUROPE_WEST1 is the EU region production runs in. See docs/data-residency.md.',
     AP_SOUTHEAST_1:
         'Planned (APAC residency): needs AP-resident infrastructure + per-region deploy + DNS routing.',
-    EUROPE_WEST1:
-        'Where production runs (GCP europe-west1, Belgium). Declared one deploy ahead of use (#5288): the next deploy makes it the default and the provisioned region and moves every tenant to it.',
 };
 
 /** Is this region backed by live infrastructure right now? */
