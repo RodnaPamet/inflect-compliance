@@ -16,8 +16,8 @@
  */
 import { createHash } from 'crypto';
 
-import { canonicalJson } from '@/lib/canonical-json';
-import { HARNESS_CONTRACT_V4 } from '@/lib/agentic/harness-contract';
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+import { HARNESS_CONTRACT_V4 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';

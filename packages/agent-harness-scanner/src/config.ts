@@ -35,7 +35,7 @@
  */
 import { z } from 'zod';
 
-import { looksLikeSecret, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
+import { looksLikeSecret, SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { customerOriginProblem, parsePrivateCidrAllowlist } from './customer-host';
 import { httpsOrigin } from './http';

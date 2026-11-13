@@ -51,7 +51,7 @@
  * this source asks for; neither is read, and both are dropped with the page.
  * A test holds a marker in each out of the report and the log.
  */
-import { MAX_AGENTS } from '@/lib/agentic/harness-contract';
+import { MAX_AGENTS } from '@rodnapamet/scanent-contract/harness-contract';
 
 import {
     ageInDays,

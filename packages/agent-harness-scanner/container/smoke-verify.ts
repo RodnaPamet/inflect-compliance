@@ -13,7 +13,7 @@
  */
 import { readFileSync } from 'fs';
 
-import { HARNESS_CONTRACT_V4, verifyAndParseHarnessReport } from '@/lib/agentic/harness-contract';
+import { HARNESS_CONTRACT_V4, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { SCANNER_VERSION, scannerManifestHash } from '../src/scanner-surface';
 

@@ -10,11 +10,3 @@
 !packages/agent-harness-scanner/container/package-lock.json
 !packages/agent-harness-scanner/container/tsconfig.json
 !packages/agent-harness-scanner/src
-!src/lib/agentic/harness-contract.ts
-!src/lib/agentic/harness-contract-rules.ts
-!src/lib/agentic/harness-findings.ts
-!src/lib/agentic/harness-ladder.ts
-!src/lib/audit-redact.ts
-!src/lib/canonical-json.ts
-!src/lib/mcp/receipt-verification.ts
-!src/lib/security/cidr.ts
