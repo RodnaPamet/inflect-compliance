@@ -6,8 +6,8 @@
 > `infra/observability/docker-compose.observability.yml`,
 > `infra/observability/prometheus/prometheus.yml`,
 > `infra/observability/prometheus/rules/recording-rules.yml`,
-> `infra/observability/prometheus/rules/alerting-rules.yml`,
-> `infra/observability/grafana/provisioning/` and
+> `infra/observability/grafana/provisioning/` (the alert rules are in
+> `alerting/alert-rules.yml`) and
 > `infra/observability/grafana/dashboards/`.
 
 ## Where it runs
@@ -34,7 +34,7 @@ alerts are GCP Cloud Monitoring policies: the uptime check in
 Until 2026-10-26 `infra/alerts/rules.yml` was a third set of Prometheus rules,
 which nothing loaded: Prometheus reads only
 `infra/observability/prometheus/rules/*.yml`. Its security-control and
-agentic-run alerts moved into `alerting-rules.yml`, below. Two of them read
+agentic-run alerts moved into the alert rules, below. Two of them read
 names the exporter does not produce and were corrected, and a third read a
 breaker-trip counter nothing incremented, which the breaker now does. The rest
 of it (the API, queue, database, Redis and
@@ -58,7 +58,7 @@ From `prometheus.yml`:
 - `external_labels: { monitor: inflect-observability }`
 - `rule_files: [/etc/prometheus/rules/*.yml]`, mounted read-only from
   `infra/observability/prometheus/rules/`
-- No `alerting:` block. The Alertmanager section is commented out.
+- No `alerting:` block, and no Alertmanager: Prometheus fires no alerts. The alert rules are Grafana-managed (#5238).
 - A commented-out `remote_write:` block that reads `PROM_REMOTE_WRITE_URL`, and
   `PROM_REMOTE_WRITE_USERNAME` / `PROM_REMOTE_WRITE_PASSWORD` for basic auth.
 
@@ -173,11 +173,14 @@ Notes on these rules:
 
 ## Alerting rules
 
-`alerting-rules.yml`, five groups, twenty-one rules. Prometheus evaluates them.
-With no `alerting:` block in `prometheus.yml`, a firing alert reaches nothing
-outside Prometheus's own alerts page. Grafana can show these rules but does not
-route them: its provisioned contact point and notification policy apply only to
-alert rules created in Grafana, and none is provisioned.
+`grafana/provisioning/alerting/alert-rules.yml`, five groups, twenty-one rules,
+Grafana-managed (#5238). They were Prometheus alerting rules, and a firing one
+reached nothing: this stack runs no Alertmanager, and Grafana routes only the
+rules it evaluates itself. Grafana now evaluates each rule's PromQL against the
+Prometheus datasource every 30 seconds and routes what fires through the
+provisioned contact point (`contact-points.yml`, the `GRAFANA_ALERT_WEBHOOK`
+webhook). A query that returns no series is OK: the expression already filters
+to the breaching series, so any series it returns fires.
 
 | Group | Alert | Fires when | `for` | Severity |
 |-------|-------|------------|-------|----------|
@@ -345,10 +348,10 @@ Then:
    environment, for both `app` and `worker`.
 3. **Check the targets.** Prometheus's targets page should show the five jobs
    up, and the `job:*` recording rules should have data.
-4. **Give the alerts somewhere to go.** As shipped they reach nobody. Either
-   add an `alerting:` block and an Alertmanager to `prometheus.yml`, or write
-   the rules as Grafana-managed alerts so the provisioned contact point applies,
-   and set `GRAFANA_ALERT_WEBHOOK`.
+4. **Give the alerts somewhere to go.** Set `GRAFANA_ALERT_WEBHOOK`. Grafana
+   evaluates the rules and sends what fires to that webhook; while it is empty
+   the contact point accepts the config and sends nothing. Confirm the path with
+   `DeadMansSwitch`, which always fires.
 
 CI runs `tests/unit/prometheus-rules-match-emitted-metrics.test.ts` over the
 rules and dashboards (see [Metric names in Prometheus](#metric-names-in-prometheus)).

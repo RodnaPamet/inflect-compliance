@@ -245,7 +245,7 @@ Monitoring policies in `infra/alerts/` (see
 |---|---|---|
 | **SLO Definitions** | [`docs/slos.md`](slos.md) | Availability, latency, error rate, health check SLOs |
 | **Grafana Dashboards** | `infra/observability/grafana/dashboards/` | API (RED), jobs and queues, business KPIs, stack health |
-| **Alert Rules** | `infra/observability/prometheus/rules/alerting-rules.yml` | Prometheus alerting rules, in five groups |
+| **Alert Rules** | `infra/observability/grafana/provisioning/alerting/alert-rules.yml` | Grafana-managed alert rules over Prometheus queries, in five groups (#5238) |
 | **OTel Collector** | `infra/otel-collector/config.yml` | Collector config (app → Prometheus + traces) |
 
 See `infra/README.md` for deployment instructions and complete metrics inventory.

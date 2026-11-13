@@ -455,4 +455,4 @@ Terraform module it describes are not in the tree.
 
 - Wiring `docs/slos.md` SLOs as Grafana SLO objects.
 - On-call routing (PagerDuty/Opsgenie) for the alerting rules in
-  `infra/observability/prometheus/rules/alerting-rules.yml` (per-customer).
+  `infra/observability/grafana/provisioning/alerting/alert-rules.yml` (per-customer).
