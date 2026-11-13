@@ -326,6 +326,28 @@ export interface VerifyResult {
     revoked: boolean;
     /** Non-null when we actually found the row. */
     rowId: string | null;
+    /**
+     * True only when this call actually stamped `lastActiveAt`, i.e. at least
+     * `TOUCH_INTERVAL_MS` had elapsed since the last touch (#5246).
+     *
+     * It exists because it is the only 5-minute cadence on this path that
+     * SURVIVES a request. The jwt callback used to throttle its
+     * membership-claims re-read on `token.sessionVersionCheckedAt`, but in the
+     * App Router the re-signed cookie is never written back, so that timestamp
+     * persisted exactly once — at sign-in, where the cookie IS written. After
+     * five minutes every server request re-ran the full claims read: a joined
+     * user+memberships+orgs query plus a `tenantsEnforcingSso` query, on every
+     * page render, for the life of the session.
+     *
+     * `lastActiveAt` is already read here on every pass and written at most
+     * once per interval, so reporting whether that write happened hands the
+     * caller a persisted throttle for free — no new column, no extra query.
+     *
+     * False when there is no row, when the session is revoked or expired, and
+     * on any error: the caller must treat it as "no persisted signal" and fall
+     * back to its own timing rather than skipping the work for ever.
+     */
+    touched: boolean;
 }
 
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -352,8 +374,8 @@ export async function verifyAndTouchSession(
                 expiresAt: true,
             },
         });
-        if (!row) return { revoked: false, rowId: null };
-        if (row.revokedAt) return { revoked: true, rowId: row.id };
+        if (!row) return { revoked: false, rowId: null, touched: false };
+        if (row.revokedAt) return { revoked: true, rowId: row.id, touched: false };
 
         const now = Date.now();
         // Treat expiry as implicit revocation. We also stamp `revokedAt`
@@ -373,23 +395,27 @@ export async function verifyAndTouchSession(
                 // If the bookkeeping write fails we still report
                 // revoked — the JWT callback should still force re-auth.
             }
-            return { revoked: true, rowId: row.id };
+            return { revoked: true, rowId: row.id, touched: false };
         }
 
         const lastTouchMs = row.lastActiveAt.getTime();
+        let touched = false;
         if (now - lastTouchMs >= TOUCH_INTERVAL_MS) {
             await prisma.userSession.update({
                 where: { id: row.id },
                 data: { lastActiveAt: new Date(now) },
             });
+            // Set only AFTER the write committed, so a failed update reports no
+            // signal rather than a cadence that did not actually persist.
+            touched = true;
         }
-        return { revoked: false, rowId: row.id };
+        return { revoked: false, rowId: row.id, touched };
     } catch (err) {
         logger.warn('session-tracker: verify/touch failed', {
             component: 'session-tracker',
             error: err instanceof Error ? err.message : String(err),
         });
-        return { revoked: false, rowId: null };
+        return { revoked: false, rowId: null, touched: false };
     }
 }
 

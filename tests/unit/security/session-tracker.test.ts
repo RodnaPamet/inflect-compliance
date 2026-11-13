@@ -114,14 +114,19 @@ describe('verifyAndTouchSession', () => {
             expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         });
         const out = await verifyAndTouchSession('sid');
-        expect(out).toEqual({ revoked: true, rowId: 'row-1' });
+        // `touched: false` — a revoked row is not stamped, so it offers the
+        // caller no claims-refresh signal (#5246).
+        expect(out).toEqual({ revoked: true, rowId: 'row-1', touched: false });
         expect(mockUserSession.update).not.toHaveBeenCalled();
     });
 
     it('returns revoked=false (no rowId) when no row exists — legacy tokens still work', async () => {
         mockUserSession.findUnique.mockResolvedValue(null);
         const out = await verifyAndTouchSession('sid');
-        expect(out).toEqual({ revoked: false, rowId: null });
+        // No row means no persisted cadence at all. The jwt callback reads this
+        // as "no signal" and falls back to its own timing rather than never
+        // refreshing the claims (#5246).
+        expect(out).toEqual({ revoked: false, rowId: null, touched: false });
         expect(mockUserSession.update).not.toHaveBeenCalled();
     });
 
@@ -133,7 +138,8 @@ describe('verifyAndTouchSession', () => {
             expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         });
         const out = await verifyAndTouchSession('sid');
-        expect(out).toEqual({ revoked: false, rowId: 'row-1' });
+        // Within the interval: no write, and so no claims refresh this request.
+        expect(out).toEqual({ revoked: false, rowId: 'row-1', touched: false });
         expect(mockUserSession.update).not.toHaveBeenCalled();
     });
 
@@ -144,17 +150,38 @@ describe('verifyAndTouchSession', () => {
             lastActiveAt: new Date(Date.now() - 6 * 60 * 1000),
             expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         });
-        await verifyAndTouchSession('sid');
+        const out = await verifyAndTouchSession('sid');
         expect(mockUserSession.update).toHaveBeenCalledTimes(1);
         const args = mockUserSession.update.mock.calls[0][0];
         expect(args.where).toEqual({ id: 'row-1' });
         expect(args.data.lastActiveAt).toBeInstanceOf(Date);
+        // THE signal the claims refresh is throttled on (#5246): true only
+        // when the interval actually elapsed and the write happened.
+        expect(out.touched).toBe(true);
+    });
+
+    it('reports touched=false when the touch WRITE fails (#5246)', async () => {
+        // The flag is set after the update resolves, so a failed write reports
+        // no cadence rather than a cadence that did not persist — otherwise the
+        // claims refresh would be skipped for five minutes on the strength of a
+        // write that never landed.
+        mockUserSession.findUnique.mockResolvedValue({
+            id: 'row-1',
+            revokedAt: null,
+            lastActiveAt: new Date(Date.now() - 6 * 60 * 1000),
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        });
+        mockUserSession.update.mockRejectedValueOnce(new Error('write failed'));
+        const out = await verifyAndTouchSession('sid');
+        expect(out.touched).toBe(false);
+        // The whole call fails open, as it already did for a failed read.
+        expect(out.revoked).toBe(false);
     });
 
     it('fails-open on DB error — returns revoked=false so a transient blip does not sign everyone out', async () => {
         mockUserSession.findUnique.mockRejectedValue(new Error('boom'));
         const out = await verifyAndTouchSession('sid');
-        expect(out).toEqual({ revoked: false, rowId: null });
+        expect(out).toEqual({ revoked: false, rowId: null, touched: false });
     });
 });
 
@@ -354,7 +381,9 @@ describe('verifyAndTouchSession — expiry as implicit revocation', () => {
             expiresAt: new Date(Date.now() - 60_000),
         });
         const out = await verifyAndTouchSession('sid');
-        expect(out).toEqual({ revoked: true, rowId: 'row-1' });
+        // An expired row is stamped revoked, not touched: the write it makes is
+        // `revokedAt`, so it is no claims-refresh cadence (#5246).
+        expect(out).toEqual({ revoked: true, rowId: 'row-1', touched: false });
 
         const upd = mockUserSession.update.mock.calls[0][0];
         expect(upd.where).toEqual({ id: 'row-1' });
