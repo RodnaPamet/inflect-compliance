@@ -343,6 +343,39 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
         expect(result.observations).toHaveLength(1);
     });
 
+    it('ordinary code is not something that failed to resolve: a file that only names a framework is read in full', async () => {
+        const dir = estate({
+            // No import of a framework: the word appears in a comment and a string.
+            'routes.ts': [
+                '// rules for the langchain proxy',
+                'const RULES = [{ path: "/a", methods: ["GET"] }, { path: "/b", methods: ["POST"] }];',
+                'export const first = [{ path: "/c" }, { path: "/d" }].find((r) => r.path === "/c");',
+                'export const names = [...new Set(RULES.map((r) => r.path))].sort();',
+                'export const MODES = ["STATIC", "langgraph"] as const;',
+                'export const re = new RegExp("x").compile();',
+            ].join('\n'),
+            'notes.py': ['# claude_agent_sdk is not used here', 'RULES = [{"a": 1}, {"b": 2}]', 'names = sorted([*RULES])', 'first = [r for r in RULES][0]'].join('\n'),
+        });
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result).toMatchObject({ status: 'COMPLETE', rows: 2 });
+        expect(result.observations).toHaveLength(0);
+    });
+
+    it.each([
+        ['JavaScript', LANGCHAIN_JS, /\.[cm]?[jt]sx?$/, '\nconst RULES = [{ path: "/a" }, { path: "/b" }].filter((r) => r.path);\nexport const names = [...new Set(RULES.map((r) => r.path))].sort();\n'],
+        ['Python', LANGCHAIN_PYTHON, /\.py$/, '\nRULES = [{"a": 1}, {"b": 2}]\nnames = sorted([*RULES])\n'],
+    ] as const)('ordinary %s beside an agent changes neither the agents nor what was not resolved', async (_language, tree, sourceFile, ordinary) => {
+        const withOrdinary = Object.fromEntries(Object.entries(tree).map(([path, text]) => [path, sourceFile.test(path) ? `${text}${ordinary}` : text]));
+        const plain = await agentsIn(tree);
+        const mixed = await agentsIn(withOrdinary);
+        expect(plain.scan.agents.length).toBeGreaterThan(0);
+        const shape = (scan: typeof plain.scan) => ({
+            agents: scan.agents.map((a) => ({ name: a.name, tools: a.tools.map((t) => t.name), models: a.models.map((m) => m.model) })),
+            problems: scan.problems.map((p) => `${p.reason} ${p.at?.path}#${p.at?.line}`),
+        });
+        expect(shape(mixed.scan)).toEqual(shape(plain.scan));
+    });
+
     it('the scan\'s deadline: TIME_BOX', async () => {
         const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: estate(LANGCHAIN_PYTHON) }] }), Date.now() - 1);
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'TIME_BOX' });

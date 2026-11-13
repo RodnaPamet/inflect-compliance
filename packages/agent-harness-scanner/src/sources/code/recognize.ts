@@ -433,6 +433,25 @@ class Recognizer {
 
     // ── values ─────────────────────────────────────────────────────────────
 
+    /**
+     * What a call IS, to decide whether it is part of an agent at all. Nothing
+     * it could not resolve on the way is recorded.
+     *
+     * Every call in a file is asked this, and most are ordinary code: an array
+     * of route rules, a spread into a sort. Evaluating one of those as if it
+     * were a tool list finds nothing it can resolve, and recording that would
+     * report a file with no agent in it as a file that was not read. What an
+     * agent IS built from is resolved again, by `factory`, `toolsOf`,
+     * `modelOf` and the rest, once the call is known to be one; that pass
+     * records what does not resolve.
+     */
+    private classify(e: Expr): Value {
+        const before = this.unresolved.length;
+        const v = this.value(e);
+        this.unresolved.length = before;
+        return v;
+    }
+
     value(e: Expr, depth = 0): Value {
         if (depth > 32 || this.resolving.has(e)) return UNKNOWN;
         this.resolving.add(e);
@@ -1200,7 +1219,7 @@ class Recognizer {
 
         // Executors first: each absorbs the factory it wraps.
         for (const { call, boundTo } of this.facts.calls) {
-            const v = this.value(call);
+            const v = this.classify(call);
             if (v.v !== 'executor') continue;
             const r = empty();
             let framework: DetectedAgent['framework'] = 'langchain';
@@ -1225,7 +1244,7 @@ class Recognizer {
         }
         for (const { call, boundTo } of this.facts.calls) {
             if (consumed.has(call)) continue;
-            const v = this.value(call);
+            const v = this.classify(call);
             if (v.v !== 'factory') continue;
             found.push({
                 call,
@@ -1294,7 +1313,8 @@ class Recognizer {
             if (ADD_NODE.has(builder.fn.name)) nodes.push(builder);
             builder = builder.fn.obj;
         }
-        const builderValue = this.value(builder);
+        // Any `.compile()` reaches here, a regular expression's among them.
+        const builderValue = this.classify(builder);
         if (builderValue.v !== 'graph') return null;
         // A named builder: every `builder.add_node(…)` in the file.
         const key = this.dotted(builder);
