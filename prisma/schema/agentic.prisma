@@ -2422,6 +2422,39 @@ model ExternalWriteJournal {
 
   outcome ExternalWriteOutcome @default(PENDING)
 
+  /// WHEN A DISPATCH PASS TOOK THIS ROW TO SEND IT (#5256).
+  ///
+  /// The dispatch is a `*/10` repeatable on a worker with `concurrency: 5`, and
+  /// nothing stopped a second pass from overlapping a first that ran long. Both
+  /// read the same `outcome: 'PENDING'` batch and both called the far end's
+  /// write tool for the same row, so an approved grant, revoke or
+  /// service-principal disable was applied TWICE while the journal recorded one
+  /// attempt. The same row re-sent after a crash between a successful
+  /// `callTool` and its `settleWrite` is the second way in.
+  ///
+  /// So a row is CLAIMED before it is sent: an `updateMany` conditioned on
+  /// `outcome: 'PENDING'` AND `claimedAt: null`, which exactly one pass wins.
+  /// A pass that loses leaves the row alone.
+  ///
+  /// Stamped immediately before `callTool` and nowhere else — deliberately as
+  /// late as possible. The rung re-check, the paired prior-state read and the
+  /// drift and bound checks all run BEFORE it, so a crash during them leaves
+  /// the row unclaimed and freely retryable, which is the safe case and the
+  /// common one. A claim therefore means "a send was about to happen or did",
+  /// which is the only window anybody has to be careful about.
+  ///
+  /// NOT an `ExternalWriteOutcome` value. The outcome says what happened to the
+  /// write; this says that a pass owns the row. Folding it in would make an
+  /// in-flight row invisible to the `[tenantId, outcome]` sweep that asks "what
+  /// still needs a human".
+  ///
+  /// A claimed row still `PENDING` after `STALE_CLAIM_MS` is settled
+  /// INDETERMINATE and NEVER re-sent, for the reason that enum's own comment
+  /// gives: nobody here can claim the far end is unchanged. Null for every row
+  /// written before this column, which is correct — they are unclaimed and
+  /// claimable.
+  claimedAt DateTime?
+
   /// WHEN WE CONFIRMED THE GRANT THIS ROW CREATED HAD ACTUALLY GONE (#3416).
   ///
   /// Null until confirmed, which is what the expiry sweep selects on. NOT an
