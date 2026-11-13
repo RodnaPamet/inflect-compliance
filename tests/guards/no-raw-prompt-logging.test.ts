@@ -217,7 +217,7 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // conditional spread for `requestId` and earned a second hole ("spread of
     // an object whose keys are not in the source"); the spread was removed
     // instead, matching the sibling above. A hole that can be closed should be.
-    'src/lib/agentic/subagent-fanout-policy.ts — identifier bound elsewhere',
+    'src/lib/agentic/turn-caps-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/open-run-streams.ts — identifier bound elsewhere',
     'src/lib/agentic/openshell/executor.ts — identifier bound elsewhere',
     'src/lib/agentic/openshell/kill-drill.ts — identifier bound elsewhere',

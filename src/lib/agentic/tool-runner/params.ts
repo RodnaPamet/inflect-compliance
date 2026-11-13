@@ -11,9 +11,14 @@
  *                does not describe. `clientForRun`'s middleware also refuses a
  *                request carrying a thread, so dropping this line fails the
  *                run instead of storing it.
- *   tool_choice  auto, with `disable_parallel_tool_use`: one tool call per
- *                turn keeps the hash-chained TOOL_CALL order, cap charging and
- *                the guard latch exact.
+ *   tool_choice  auto. `disable_parallel_tool_use` follows the run's
+ *                tool-calls-per-turn cap (#4594): at 1, the default, it is
+ *                true and the value is today's byte for byte; above 1 it is
+ *                false and the model may ask for several calls in one turn.
+ *                Dispatch stays SERIAL either way (decision 2 of 2026-10-25):
+ *                the run's queue in `tools.ts` keeps the hash-chained TOOL_CALL
+ *                order, cap charging and the guard latch exact, and a call
+ *                past the cap is refused there.
  *   tools        the run's resolved, narrowed tools, and nothing else: no
  *                server tool, no `mcp_servers`. The client refuses both too.
  *   system       Inflect's fixed preamble, then the mounted skills'
@@ -108,6 +113,16 @@ export function maxIterationsFor(def: WorkflowDefinition, caps: EffectiveRunCaps
 }
 
 /**
+ * The `tool_choice` for a tool-calls-per-turn cap. At 1 (or anything that is
+ * not a number above 1, which reads as 1: the narrowest), today's serial
+ * request; above it, the model may ask for several calls in one turn.
+ */
+export function toolChoiceFor(toolCallsPerTurn: number): { type: 'auto'; disable_parallel_tool_use: boolean } {
+    const parallel = typeof toolCallsPerTurn === 'number' && Number.isFinite(toolCallsPerTurn) && toolCallsPerTurn > 1;
+    return { type: 'auto', disable_parallel_tool_use: !parallel };
+}
+
+/**
  * Every parameter of a runner. The run supplies only what differs per run: its
  * tools, its opening message, and its caps.
  */
@@ -119,6 +134,12 @@ export function lockedParams(input: {
     readonly fromSeq: number;
     /** The mounted skills' catalogue block (`skills.ts`), or null when the run mounted none. */
     readonly skillCatalogue?: string | null;
+    /**
+     * The tool calls one turn may make, as `readTurnCaps` resolved them for
+     * this segment (#4594). Required, so a caller cannot send a parallel
+     * request by forgetting it.
+     */
+    readonly toolCallsPerTurn: number;
 }): BetaToolRunnerParams & { stream: false } {
     const tier = input.def.profile?.modelTier ?? DEFAULT_TIER;
     const effort = input.def.profile?.effort ?? DEFAULT_EFFORT;
@@ -131,7 +152,7 @@ export function lockedParams(input: {
         system: systemBlocksFor(input.def, input.skillCatalogue ?? null),
         messages: [{ role: 'user', content: input.message }],
         tools: [...input.tools],
-        tool_choice: { type: 'auto', disable_parallel_tool_use: true },
+        tool_choice: toolChoiceFor(input.toolCallsPerTurn),
         thinking: { type: 'adaptive', display: 'summarized' },
         output_config: { effort },
         fallbacks: 'default',

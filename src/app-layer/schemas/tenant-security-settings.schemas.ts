@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { MAX_KEY_ROTATION_DAYS, MIN_KEY_ROTATION_DAYS } from '@/lib/agentic/credential-hygiene';
+import { DELEGATIONS_PER_TURN_MIN, TOOL_CALLS_PER_TURN_MIN, TURN_CAP_MAX } from '@/lib/agentic/turn-caps';
 
 const ROTATION_DAYS_MESSAGE =
     `apiKeyRotationDays must be a whole number of days from ${MIN_KEY_ROTATION_DAYS} to ` +
@@ -82,6 +83,26 @@ export const UpdateTenantSecuritySettingsInput = z
             .int(ROTATION_DAYS_MESSAGE)
             .min(MIN_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
             .max(MAX_KEY_ROTATION_DAYS, ROTATION_DAYS_MESSAGE)
+            .nullable()
+            .optional(),
+        /**
+         * The workspace's narrowing of the two per-turn caps (#4594). Null
+         * follows the organization's ceiling. The ranges are the CHECKs'; a
+         * value above the organization's CURRENT ceiling is refused by the
+         * usecase (`TURN_CAP_ABOVE_ORGANIZATION_CEILING`), which can read it.
+         */
+        agentMaxSubagentsPerTurn: z
+            .number()
+            .int()
+            .min(DELEGATIONS_PER_TURN_MIN)
+            .max(TURN_CAP_MAX)
+            .nullable()
+            .optional(),
+        agentMaxToolCallsPerTurn: z
+            .number()
+            .int()
+            .min(TOOL_CALLS_PER_TURN_MIN)
+            .max(TURN_CAP_MAX)
             .nullable()
             .optional(),
     })

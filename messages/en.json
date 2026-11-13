@@ -5690,6 +5690,28 @@
         "saved": "Rotation age saved. It applies from the next credential-hygiene pass.",
         "saveFailed": "Could not save the rotation age.",
         "unavailable": "The rotation age could not be loaded. Changing it requires security settings access."
+      },
+      "agentTurnCaps": {
+        "title": "Agent per-turn limits",
+        "description": "The most one agent turn may start in this workspace. Your organization sets the limit; this workspace can only lower it.",
+        "delegationsPerTurn": "Delegations per turn",
+        "toolCallsPerTurn": "Tool calls per turn",
+        "modeAria": "{cap}: follow the organization or set a lower limit",
+        "followOrg": "Follow the organization ({ceiling})",
+        "followNoOrg": "Use the product default ({ceiling})",
+        "custom": "Set a lower limit for this workspace",
+        "customDesc": "From {min} to {ceiling}.",
+        "applies": "{value} applies",
+        "basisOrganization": "Your organization's limit.",
+        "basisNoOrganization": "The product default: this workspace belongs to no organization.",
+        "basisWorkspace": "This workspace's own limit.",
+        "narrowedByOrg": "Narrowed by your organization: this workspace's setting of {stored} is above its limit of {ceiling}.",
+        "decrease": "Decrease",
+        "increase": "Increase",
+        "save": "Save",
+        "saved": "Saved.",
+        "saveFailed": "The change wasn't saved.",
+        "unavailable": "These limits could not be loaded."
       }
     },
     "agentDetail": {
@@ -15375,6 +15397,7 @@
       "actionAccessRefused": "Access refused",
       "actionWorkspaceDeleted": "Workspace deleted",
       "actionAgentSwitchesChanged": "Agent features changed",
+      "actionAgentTurnCapsChanged": "Per-turn limits changed",
       "actionOther": "Other event",
       "workspaceRole": {
         "OWNER": "Owner",
@@ -15602,6 +15625,32 @@
             "body": "The Tool Runner engine stops being available in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}). A workspace that chose it runs its agents on the built-in engine instead, and runs that use an agent profile are refused."
           },
           "confirm": "Turn off"
+        },
+        "turnCaps": {
+          "title": "Per-turn limits",
+          "description": "The most one agent turn may start, for every workspace in this organization. A workspace can set a lower limit for itself, never a higher one. Each change is recorded in the organization's audit log.",
+          "delegationsPerTurn": {
+            "label": "Delegations per turn",
+            "help": "How many sub-agents one turn may hand work to, from 0 to 10. 0 turns delegation off. A delegation is also a tool call, so while one tool call per turn is allowed, this limit only matters at 0."
+          },
+          "toolCallsPerTurn": {
+            "label": "Tool calls per turn",
+            "help": "How many tools one turn of the Tool Runner engine may call, from 1 to 10. A call past the limit is refused and the agent is told why. Calls still run one at a time."
+          },
+          "decrease": "Decrease",
+          "increase": "Increase",
+          "save": "Save",
+          "saved": "Saved. Runs pick up the new limit from their next step.",
+          "confirmLower": {
+            "delegationsPerTurn": {
+              "title": "Lower the delegations limit?"
+            },
+            "toolCallsPerTurn": {
+              "title": "Lower the tool calls limit?"
+            },
+            "body": "The limit goes from {from} to {to} in every workspace in {org} ({count, plural, one {# workspace} other {# workspaces}}), from the next step any run takes. A workspace that set a higher limit keeps its setting, and it applies again if you raise this limit.",
+            "confirm": "Lower limit"
+          }
         }
       },
       "evaluations": {

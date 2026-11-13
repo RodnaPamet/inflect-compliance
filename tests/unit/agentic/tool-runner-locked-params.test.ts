@@ -69,15 +69,30 @@ const PROFILE_DEF = {
 describe('the Tool Runner engine\'s locked parameters', () => {
     const tools = [tool('list_risks'), tool('list_controls')];
     const caps = resolveRunCaps(null);
-    const params = lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 0 });
+    const params = lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
 
     it('sends no server-held thread, and does not stream', () => {
         expect(params.thread).toBe(false);
         expect(params.stream).toBe(false);
     });
 
-    it('asks for one tool call per turn', () => {
+    it('asks for one tool call per turn at a cap of one, byte for byte the request it always sent', () => {
         expect(params.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+        // The serialised bytes, not only the value: the request on the wire is
+        // what the org-level cap's default must leave unchanged (#4594).
+        expect(JSON.stringify(params.tool_choice)).toBe('{"type":"auto","disable_parallel_tool_use":true}');
+    });
+
+    it('lets the model ask for several calls in one turn above a cap of one (#4594)', () => {
+        for (const cap of [2, 10]) {
+            const p = lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: cap });
+            expect(JSON.stringify(p.tool_choice)).toBe('{"type":"auto","disable_parallel_tool_use":false}');
+        }
+        // Anything that is not a number above one reads as one: never parallel by accident.
+        for (const cap of [0, -1, Number.NaN]) {
+            const p = lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: cap });
+            expect(p.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+        }
     });
 
     it('offers exactly the run\'s tools: no server tool, nothing added', () => {
@@ -94,7 +109,7 @@ describe('the Tool Runner engine\'s locked parameters', () => {
 
     it('bounds iterations by the run\'s step cap', () => {
         expect(params.max_iterations).toBe(caps.STEPS.limit);
-        expect(lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 3 }).max_iterations).toBe(caps.STEPS.limit - 3);
+        expect(lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 3, toolCallsPerTurn: 1 }).max_iterations).toBe(caps.STEPS.limit - 3);
     });
 
     it('opens the conversation with the run message alone', () => {
@@ -126,7 +141,7 @@ describe('the Tool Runner engine\'s locked parameters', () => {
     });
 
     it('a profile\'s instructions follow the preamble, fenced as the operator\'s, and its tier, effort and turns apply', () => {
-        const p = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 0 });
+        const p = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
         const [block] = p.system as Array<{ text: string; cache_control: unknown }>;
         expect(block.text.startsWith(TOOL_RUNNER_PREAMBLE)).toBe(true);
         const open = block.text.indexOf(OPERATOR_INSTRUCTIONS_OPEN);

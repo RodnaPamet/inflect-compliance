@@ -233,7 +233,15 @@ jest.unstable_mockModule('@/lib/agentic/flue/skills/tenant-mount', () => ({
         return conformanceSkillMount(mockState.skills);
     }),
 }));
-jest.unstable_mockModule('@/lib/agentic/subagent-fanout-policy', () => ({ readFanOutCap: jest.fn(async () => 1) }));
+// THE TURN CAPS' READ (#4594), and nothing else: the resolver is the real one.
+// One delegation and one tool call per turn, the serial request both engines
+// sent before the caps were the organization's.
+jest.unstable_mockModule('@/lib/agentic/turn-caps-policy', () => ({
+    readTurnCaps: jest.fn(async () => {
+        const { resolveTurnCaps } = await import('@/lib/agentic/turn-caps');
+        return resolveTurnCaps({ organization: null, workspace: { delegationsPerTurn: 1, toolCallsPerTurn: 1 } });
+    }),
+}));
 
 // ─── The wire, and nothing above it ─────────────────────────────────
 //
