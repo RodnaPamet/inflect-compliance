@@ -154,9 +154,20 @@ The system tolerates mixed state at every stage. A given environment can sit at 
         c. Per tenant, trigger rotation:
               POST /api/t/{tenantSlug}/admin/key-rotation
            The background job re-wraps the tenant DEK + re-encrypts
-           any remaining v1 ciphertexts under the new KEK.
-        d. When every tenant reports zero v1 rows remaining,
-           deploy with DATA_ENCRYPTION_KEY_PREVIOUS unset.
+           any remaining v1 ciphertexts under the new KEK, including
+           the TENANT-SCOPED pii-middleware columns (#5070).
+        c2. ONCE, for the GLOBAL PII columns the per-tenant job cannot
+           reach (User and Account carry no tenantId, so its sweep
+           skips them by design):
+              npx tsx scripts/rotate-global-pii.ts            # dry run
+              npx tsx scripts/rotate-global-pii.ts --execute
+           It exits non-zero if any row failed. Before #5070 nothing
+           re-encrypted these at all, so step d below removed the only
+           key that could still read them.
+        d. When every tenant reports zero v1 rows remaining AND the
+           global sweep reports zero, deploy with
+           DATA_ENCRYPTION_KEY_PREVIOUS unset. Both, not either: the
+           per-tenant report says nothing about the global tables.
 ```
 
 ## Runbooks
@@ -257,6 +268,7 @@ Success looks like:
 ```
 
 Post-flight, once every tenant is rotated:
+- [ ] Global PII columns swept once: `npx tsx scripts/rotate-global-pii.ts --execute` reports `errors=0` and a re-run reports zero rows. **`User` and `Account` are not covered by any per-tenant run** (#5070) — the per-tenant job's sweep skips a model with no `tenantId`, so its "zero v1 rows" says nothing about them.
 - [ ] Remove `DATA_ENCRYPTION_KEY_PREVIOUS` from env.
 - [ ] Rolling restart.
 - [ ] Verify smoke-test reads still work.
