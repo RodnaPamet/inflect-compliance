@@ -143,6 +143,51 @@ describe('what comes back is bounded and distrusted', () => {
         });
     });
 
+    it('BOUNDS a JSON-RPC error message, and strips its control characters', async () => {
+        // The rule the non-JSON test above states, applied to the other place
+        // a server supplies text. `error.message` was interpolated verbatim,
+        // and the body cap was its only limit — so most of a megabyte of
+        // arbitrary text could reach the thrown error, the API error response,
+        // the logs, and any run step or audit text built from them.
+        const flood = 'A'.repeat(5000);
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                error: { code: -32000, message: `head\u0007\u0000${flood}` },
+            })),
+        );
+
+        const err = await callTool(OPTS, 'nope', {}).catch((e: Error) => e);
+        expect(err).toBeInstanceOf(Error);
+        // Bounded: nowhere near the 5000 the server sent, and the ellipsis says
+        // it was cut rather than that the server was terse.
+        expect(err.message.length).toBeLessThan(400);
+        expect(err.message).toContain('…');
+        // The readable head survives — a bound that threw the diagnosis away
+        // would be worse than the flood.
+        expect(err.message).toContain('head');
+        // No control characters reach whatever reads this.
+        expect(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(err.message)).toBe(false);
+    });
+
+    it('keeps a short error message intact, and says so when there is none', async () => {
+        // The other side of the boundary: a bound that mangled ordinary
+        // messages would satisfy the test above while making every real
+        // refusal unreadable.
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'no such tool' } })),
+        );
+        await expect(callTool(OPTS, 'nope', {})).rejects.toThrow(/no such tool/);
+
+        // A server that sends no message at all is reported as that, rather
+        // than as a truncated-looking blank.
+        safeFetchMock.mockResolvedValue(
+            bodyOf(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32601 } })),
+        );
+        await expect(callTool(OPTS, 'nope', {})).rejects.toThrow(/\(no message\)/);
+    });
+
     it('refuses an initialize that names no protocol version', async () => {
         // A handshake that agreed nothing is not a handshake. Carrying on
         // would mean every later call assumed a dialect neither side stated.
