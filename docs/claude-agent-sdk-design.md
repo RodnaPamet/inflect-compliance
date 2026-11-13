@@ -775,7 +775,7 @@ done and the evidence table below bind all three.
 | --- | --- | --- | --- | --- |
 | 0 | Foundations | 0a, 0b, 0c, 0d, 0H | this document | — |
 | 1 | Agent builder | 1a, 1b, 1H | this document | 0H |
-| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent; 2e follows 2H) | `docs/claude-tool-runner-design.md` | 1H |
+| 2 | Tool Runner engine | 2a, 2b, 2c, 2d, 2H (2x is independent; 2e, 2f and 2g follow 2H) | `docs/claude-tool-runner-design.md` | 1H |
 | 3 | Connect agents customers run | 3a, 3b, 3H | this document | 0H (3a also needs 0d) |
 | 4 | Agent SDK engine (conditional) | 4a, 4b, 4c, 4H | this document | 2H, and a profile that needs it |
 | 5 | Managed Agents in the customer's workspace | 5a, 5b, 5c, 5d, 5e, 5H | `docs/claude-managed-agents-design.md` | 2H, 3H |
