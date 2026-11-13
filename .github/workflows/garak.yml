@@ -177,7 +177,7 @@ jobs:
           # The repository's ANTHROPIC_API_KEY is an ORGANISATION-level key:
           # Anthropic refuses its requests with HTTP 400 unless each names a
           # workspace (docs/implementation-notes/2026-10-17-anthropic-workspace-header.md),
-          # and skills-evaluate.yml sends vars.ANTHROPIC_WORKSPACE_ID for it.
+          # and skills-evaluate.yml sends the ANTHROPIC_WORKSPACE_ID variable for it.
           # This job sent none. Runs 43337664860 and 43380024012 read as that
           # refusal: every turn answered "the language model was unavailable"
           # at 0 tokens, which every detector scored a PASS. Sent only with that fallback key: the dedicated

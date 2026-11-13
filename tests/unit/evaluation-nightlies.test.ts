@@ -33,8 +33,14 @@ describe('1. the typed content matches the workflows it describes', () => {
         expect(cron).not.toBeNull();
         const [, minute, hour] = cron!;
         expect(n.scheduleUtc).toBe(`${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`);
-        // The ONE repository variable the workflow reads is the card's switch.
-        expect([...wf.matchAll(/\bvars\.([A-Z0-9_]+)/g)].map((m) => m[1])).toEqual([n.switchVariable]);
+        // The ONE repository variable the workflow reads is the card's switch,
+        // beside the workspace the shared (organisation-level) key needs,
+        // which is read only where the dedicated key is absent.
+        const vars = [...wf.matchAll(/\bvars\.([A-Z0-9_]+)/g)].map((m) => m[1]);
+        expect(vars.filter((v) => v !== 'ANTHROPIC_WORKSPACE_ID')).toEqual([n.switchVariable]);
+        for (const [line] of wf.matchAll(/^.*\bvars\.ANTHROPIC_WORKSPACE_ID\b.*$/gm)) {
+            expect(line).toContain(`\${{ secrets.${n.dedicatedKeySecret} == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}`);
+        }
         // The key: every place the workflow picks one names the dedicated
         // secret first and the shared one otherwise.
         const keyPairs = new Set([...wf.matchAll(/secrets\.(\w+) \|\| secrets\.(\w+)/g)].map((m) => `${m[1]}|${m[2]}`));
