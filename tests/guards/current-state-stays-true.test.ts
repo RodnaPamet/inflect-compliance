@@ -126,8 +126,21 @@ function regions(): ReadonlyArray<{ heading: string; start: number; end: number 
  * silently — work was made true and the Roadmap was not updated.
  */
 function residencyBullet(): string[] {
+    /*
+        Matches the bullet under EITHER claim. It read
+        `/model-calling AI features do not honour `aiResidency`/`, which located
+        the bullet only while some feature did not — so the moment the last gap
+        closed (#5073, #5192, #5445) the locator found nothing, this function
+        returned `[]`, and "every brancher is cited" failed with every brancher
+        unaccounted. A locator that only works while the news is bad cannot
+        check the claim "in both directions", which is what this guard is for.
+
+        Widened, not weakened: it still has to find a bullet about
+        model-calling AI features and `aiResidency` on ONE line, and everything
+        asserted about the bullet afterwards is unchanged.
+    */
     const start = designLines.findIndex((l) =>
-        /model-calling AI features do not honour `aiResidency`/.test(l),
+        /model-calling AI features? .*`aiResidency`/.test(l),
     );
     if (start < 0) return [];
     const out: string[] = [designLines[start]];

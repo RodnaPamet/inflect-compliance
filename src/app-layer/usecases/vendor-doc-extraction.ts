@@ -20,6 +20,9 @@ import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { createFinding } from './finding';
 import { sanitizeDocText, extractDocument, type DocExtraction } from '@/app-layer/ai/vendor-doc';
+import { enforceFeatureGate } from '@/app-layer/ai/risk-assessment/feature-gate';
+import { checkRateLimit } from '@/app-layer/ai/risk-assessment/rate-limiter';
+import { RESIDENCY_SELECT, residencyTermsFrom } from '@/lib/agentic/flue/model-selection';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-layer/ai/guard';
 import { getFileRecordText } from '@/app-layer/services/vendor-doc-text';
 import { controlEvidencesQuestion } from '@/app-layer/services/soc2-question-map';
@@ -60,8 +63,26 @@ export async function extractVendorDocument(
     assertCanWrite(ctx);
     const input = ExtractVendorDocSchema.parse(rawInput);
 
+    /*
+        THE AI SWITCHES THIS PATH NEVER ASKED (#5073).
+
+        `vendors.edit` was the only gate. The AI master switch
+        (`AI_RISK_ENABLED`), the per-tenant AI toggle and the per-tenant quota
+        were all unread, so a tenant that had turned AI off — which
+        `feature-gate.ts` describes as "no model processing of their data at
+        all" — still had its document text extracted by a model.
+
+        Gated as `'risk'` (owner decision): extraction rides the same switch as
+        risk suggestions rather than taking a column of its own, which would be
+        a migration. The order is the one `usecases/questionnaire.ts`
+        documents — enforceFeatureGate → checkRateLimit → runInTenantContext —
+        so a refused tenant costs no document read.
+    */
+    await enforceFeatureGate(ctx, 'risk');
+    await checkRateLimit(ctx.tenantId, ctx.userId);
+
     // ── Resolve text (OUTSIDE the tenant tx), sanitize, extract. ──
-    const { document, rawText } = await runInTenantContext(ctx, async (db) => {
+    const { document, rawText, residency } = await runInTenantContext(ctx, async (db) => {
         const doc = await db.vendorDocument.findFirst({
             where: { id: input.documentId, tenantId: ctx.tenantId },
             select: { id: true, vendorId: true, fileId: true },
@@ -71,7 +92,17 @@ export async function extractVendorDocument(
         if (!text && doc.fileId) {
             text = await getFileRecordText(db, ctx.tenantId, doc.fileId);
         }
-        return { document: doc, rawText: text ?? '' };
+        // Read on the `db` this block already holds, as
+        // `risk-suggestions.ts` does; only the mapping is shared (#3384).
+        const secSettings = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: RESIDENCY_SELECT,
+        });
+        return {
+            document: doc,
+            rawText: text ?? '',
+            residency: residencyTermsFrom(secSettings),
+        };
     });
 
     const sanitized = sanitizeDocText(rawText);
@@ -93,7 +124,7 @@ export async function extractVendorDocument(
     assertGuardAllowed(inputGuard);
     assertGuardAllowed(outboundGuard);
 
-    const extraction = await extractDocument(sanitized);
+    const extraction = await extractDocument(sanitized, residency);
     const e = extraction.data;
 
     // AI Guard — egress scan on the extracted structure before ANY proposal is
