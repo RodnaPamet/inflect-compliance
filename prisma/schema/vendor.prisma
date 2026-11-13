@@ -181,7 +181,10 @@ model QuestionnaireQuestion {
   required       Boolean                  @default(true)
   sortOrder      Int                      @default(0)
   template       QuestionnaireTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  answers        VendorAssessmentAnswer[]
+  /// #5068 — this model is NO LONGER the target of
+  /// `VendorAssessmentAnswer.questionId`, so it carries no answer back-relation.
+  /// Nothing in src/, prisma/ or scripts/ has ever written a row of this table,
+  /// so the FK it used to carry could not be satisfied by real data.
 
   @@index([templateId, section, sortOrder])
 }
@@ -313,6 +316,10 @@ model VendorAssessmentTemplateQuestion {
   template        VendorAssessmentTemplate        @relation(fields: [templateId, tenantId], references: [id, tenantId], onDelete: Cascade)
   section         VendorAssessmentTemplateSection @relation(fields: [sectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   answers         VendorAssessmentAnswer[]        @relation("AnswerByTemplateQuestion")
+  /// #5068 — the other side of `VendorAssessmentAnswer.questionId`, which holds
+  /// a template-question id and now says so. Separate from `answers` because
+  /// that one is the composite-key `[templateQuestionId, tenantId]` relation.
+  answersByLegacyQuestionId VendorAssessmentAnswer[] @relation("AnswerQuestionIdLegacy")
 
   @@index([tenantId, templateId, sortOrder])
   @@index([tenantId, sectionId, sortOrder])
@@ -443,7 +450,21 @@ model VendorAssessmentAnswer {
   createdAt              DateTime                          @default(now())
   updatedAt              DateTime                          @updatedAt
   assessment             VendorAssessment                  @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  question               QuestionnaireQuestion             @relation(fields: [questionId], references: [id])
+  /// #5068 — points at the template question the column actually holds.
+  /// `submitResponse` writes `questionId` and `templateQuestionId` from the
+  /// same value; this used to reference the legacy `QuestionnaireQuestion`
+  /// table, which nothing writes, so every G-3 submission raised P2003. The
+  /// constraint keeps its original NAME, so the migration leaves no
+  /// `migrate diff` residue.
+  ///
+  /// The FIELD KEEPS ITS NAME. `AssessmentRepository.listByAssessment` does
+  /// `include: { question: true }`, and the two models are interchangeable for
+  /// every live reader — `prompt`, `answerType`, `optionsJson`,
+  /// `riskPointsJson`, `required` and `sortOrder` all match. Only `section` (a
+  /// string on the legacy model) differs from the template's `sectionId`, and
+  /// nothing reads it off an answer. Renaming the field instead broke that
+  /// include and three vendor-doc tests, for no gain.
+  question               VendorAssessmentTemplateQuestion  @relation("AnswerQuestionIdLegacy", fields: [questionId], references: [id])
   templateQuestion       VendorAssessmentTemplateQuestion? @relation("AnswerByTemplateQuestion", fields: [templateQuestionId, tenantId], references: [id, tenantId])
   evidence               Evidence?                         @relation("VendorAnswerEvidence", fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant                 Tenant                            @relation(fields: [tenantId], references: [id])

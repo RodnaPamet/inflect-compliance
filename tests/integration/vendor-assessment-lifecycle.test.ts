@@ -13,13 +13,18 @@
  * Asserts every status transition and that the review engine produces
  * a numeric score.
  *
- * Seeding note: `VendorAssessmentAnswer.questionId` is a non-null FK to
- * the legacy `QuestionnaireQuestion` table, and `submitResponse` writes
- * the template-question id into BOTH `questionId` and the G-3
- * `templateQuestionId`. So the fixture creates a legacy
- * `QuestionnaireQuestion` and the G-3 `VendorAssessmentTemplateQuestion`
- * with the SAME explicit id — that shared id is what an answer row
- * references on submit, satisfying both foreign keys.
+ * Seeding note (#5068): `VendorAssessmentAnswer.questionId` is a non-null FK
+ * to `VendorAssessmentTemplateQuestion`, which is what `submitResponse`
+ * actually writes into it. It used to reference the legacy
+ * `QuestionnaireQuestion` table, which no path the product runs populates (the
+ * one seed that writes it, prisma/seed-vendor-questionnaire.ts, is unwired and
+ * run by hand; the container entrypoint runs the PLURAL
+ * scripts/seed-vendor-questionnaires.ts, which writes the G-3 tables) — so
+ * this fixture fabricated a matching legacy row with the same explicit id
+ * to satisfy it. That workaround is GONE: it was the only reason this suite
+ * passed while every real G-3 submission raised P2003, so the fixture was
+ * hiding the defect it should have caught. The template question is now the
+ * only question row created.
  *
  * RUN: npx jest tests/integration/vendor-assessment-lifecycle.test.ts
  */
@@ -44,8 +49,8 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
     const runId = randomUUID().slice(0, 12);
-    // Shared id for the legacy QuestionnaireQuestion + the G-3 template
-    // question (see the seeding note at the top of the file).
+    // The G-3 template question's id, which is what an answer references on
+    // submit (see the seeding note at the top of the file).
     const questionId = randomUUID();
     let tenantId = '';
     let userId = '';
@@ -95,18 +100,6 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
             data: { key: `g3-life-legacy-${runId}`, name: 'Legacy stub', isGlobal: true },
         });
         legacyTemplateId = legacy.id;
-        await prisma.questionnaireQuestion.create({
-            data: {
-                id: questionId,
-                templateId: legacy.id,
-                section: 'A',
-                prompt: 'Do you encrypt data at rest?',
-                answerType: 'YES_NO',
-                weight: 1,
-                riskPointsJson: { yes: 0, no: 10 },
-                sortOrder: 0,
-            },
-        });
 
         // Published G-3 template with one section + one required YES_NO
         // question (sharing the id above). `no` maps to 10 risk points so
@@ -387,5 +380,33 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
         expect(g3.templateName).toBeTruthy();
         expect(g3.sentAt).toBeTruthy();
         expect(g3.respondentEmail).toBe('respondent@example.test');
+    });
+
+    it('refuses an answer whose questionId is not a template question (#5068)', async () => {
+        // The re-point kept TEETH. Dropping the stale FK would have unblocked
+        // the feature too, and left `questionId` an unchecked string with
+        // nothing stopping an answer naming a question that does not exist —
+        // on the very column the upsert keys on.
+        const assessment = await prisma.vendorAssessment.findFirstOrThrow({
+            where: { tenantId },
+            select: { id: true },
+        });
+        // On the CODE, not the prose: P2003 is Prisma's foreign-key violation,
+        // and an error message is copy that can be reworded.
+        let code: unknown;
+        try {
+            await prisma.vendorAssessmentAnswer.create({
+                data: {
+                    tenantId,
+                    assessmentId: assessment.id,
+                    questionId: randomUUID(), // no such template question
+                    templateQuestionId: questionId,
+                    answerJson: { value: 'yes' },
+                },
+            });
+        } catch (err) {
+            code = (err as { code?: unknown }).code;
+        }
+        expect({ code }).toEqual({ code: 'P2003' });
     });
 });
