@@ -22,6 +22,9 @@ jest.mock('@/lib/prisma', () => ({
         control: {
             findMany: jest.fn(),
             update: jest.fn(),
+            // The batch "attempted" stamp (#5204) — one updateMany per batch,
+            // before any control is executed.
+            updateMany: jest.fn(),
         },
         integrationExecution: {
             findFirst: jest.fn(),
@@ -624,5 +627,112 @@ describe('reconcileFindingForCheck (via executeControlAutomation)', () => {
         // provider.mapResultToEvidence returned type 'CONFIGURATION', but the
         // runner forces the narrow Prisma EvidenceType.TEXT.
         expect(mPrisma.evidence.create.mock.calls[0][0].data.type).toBe('TEXT');
+    });
+});
+
+
+// ─── Starvation: a control whose check cannot run (#5204) ──────────────────
+
+describe('findDueAutomationControls — backoff and bootstrap (#5204)', () => {
+    /**
+     * WHAT THIS IS ABOUT. `nextDueAt` advances only on PASSED/FAILED, which is
+     * deliberate — a check that could not run must not report the control as
+     * freshly tested. The consequence nobody closed is that a control whose
+     * check can NEVER run keeps `nextDueAt` in the past for ever, sorts FIRST
+     * under `nextDueAt ASC`, and is never deduped (the dedupe counts only
+     * PASSED/FAILED/RUNNING, and four of the runner's failure paths write no
+     * execution row at all). At 500 of them the bounded batch holds nothing
+     * else and the whole fleet stops being checked.
+     */
+    const DAY = 24 * 60 * 60 * 1000;
+
+    test('excludes a control attempted within its own frequency window', async () => {
+        mPrisma.control.findMany.mockResolvedValue([
+            makeDueControl({ automationLastAttemptAt: new Date(NOW.getTime() - 60 * 1000) }),
+        ]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+
+        const result = await findDueAutomationControls(NOW);
+
+        expect(result).toEqual([]);
+        // The row is excluded on the ATTEMPT, not on an execution — there may
+        // be no execution row at all, which is the case that starved the batch.
+        expect(mPrisma.control.update).not.toHaveBeenCalled();
+    });
+
+    test('still returns a control whose last attempt is older than the window', async () => {
+        // The other half: the backoff must expire, or a transient outage would
+        // retire the control permanently.
+        mPrisma.control.findMany.mockResolvedValue([
+            makeDueControl({ id: 'due-again', automationLastAttemptAt: new Date(NOW.getTime() - 2 * DAY) }),
+        ]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+
+        const result = await findDueAutomationControls(NOW);
+
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({ id: 'due-again' });
+    });
+
+    test('a never-attempted control is due, because NULL is not a recent attempt', async () => {
+        mPrisma.control.findMany.mockResolvedValue([
+            makeDueControl({ id: 'fresh', automationLastAttemptAt: null }),
+        ]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+
+        expect(await findDueAutomationControls(NOW)).toHaveLength(1);
+    });
+
+    test('a NULL nextDueAt is given a first date and is NOT run this tick', async () => {
+        // `ASC` puts NULLs LAST in PostgreSQL, so these were the first thing
+        // starved despite the query's comment calling them "execute
+        // immediately". The sibling control-test-scheduler's bootstrap pattern:
+        // compute the first date, do not enqueue now.
+        mPrisma.control.findMany.mockResolvedValue([
+            makeDueControl({ id: 'never-scheduled', nextDueAt: null, automationLastAttemptAt: null }),
+        ]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+
+        const result = await findDueAutomationControls(NOW);
+
+        expect(result).toEqual([]);
+        const upd = mPrisma.control.update.mock.calls[0][0];
+        expect(upd.where).toEqual({ id: 'never-scheduled' });
+        expect(upd.data.nextDueAt).toBeInstanceOf(Date);
+        // Forward of now — a first date, not a backdated one that would make it
+        // due again immediately.
+        expect((upd.data.nextDueAt as Date).getTime()).toBeGreaterThan(NOW.getTime());
+    });
+});
+
+describe('runScheduledAutomations — the batch is stamped as attempted (#5204)', () => {
+    test('stamps EVERY control in the batch before executing, including one it skips', async () => {
+        // The skip path (`no registered provider`) returns before
+        // executeControlAutomation, so a per-outcome stamp would miss it — and
+        // an unregistered provider is exactly the permanent condition that
+        // starved the batch.
+        mPrisma.control.findMany.mockResolvedValue([
+            makeDueControl({ id: 'runnable' }),
+            makeDueControl({ id: 'no-provider', automationKey: 'nope.nothing' }),
+        ]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+        mRegistry.canHandle.mockImplementation((key: string) => key === 'github.branch_protection');
+
+        await runScheduledAutomations({ now: NOW });
+
+        const stamp = mPrisma.control.updateMany.mock.calls[0][0];
+        expect(stamp.where.id.in).toEqual(expect.arrayContaining(['runnable', 'no-provider']));
+        expect(stamp.data).toEqual({ automationLastAttemptAt: NOW });
+    });
+
+    test('a dry run stamps nothing', async () => {
+        // It reports what WOULD run; consuming the attempt would make a dry run
+        // defer the real one.
+        mPrisma.control.findMany.mockResolvedValue([makeDueControl()]);
+        mPrisma.integrationExecution.findFirst.mockResolvedValue(null);
+
+        await runScheduledAutomations({ now: NOW, dryRun: true });
+
+        expect(mPrisma.control.updateMany).not.toHaveBeenCalled();
     });
 });
