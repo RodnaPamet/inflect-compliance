@@ -245,6 +245,10 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     AUTH_SECRET: 'internal JWT/session signing secret',
     JWT_SECRET: 'internal JWT signing secret',
     DATA_ENCRYPTION_KEY: 'app master KEK (env-provided, not an external endpoint)',
+    LOOKUP_HASH_KEY:
+        'HMAC key material for the deterministic lookup hashes (env-provided, not an '
+        + 'external endpoint). Held apart from the master KEK so a rotation does not move '
+        + 'an index (#5071); nothing is sent anywhere.',
     DATA_ENCRYPTION_KEY_PREVIOUS: 'previous master KEK for rotation',
     AV_WEBHOOK_SECRET: 'internal HMAC secret for the AV webhook',
     // Operator config / URLs.
