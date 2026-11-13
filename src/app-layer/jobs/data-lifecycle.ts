@@ -510,16 +510,22 @@ export async function purgeIdentityArtefactsOlderThan(
             }
         }
 
+        // `blocked: 0` throughout: these purges delete by a date predicate,
+        // not row by row through a RESTRICT edge, so nothing here can be held
+        // down. Stated rather than omitted because the field is required —
+        // an absent count and a zero read the same to a caller.
         results.push({
             model: 'IdentityWriteJournal',
             scanned: journalTotal,
             purged: dryRun ? 0 : journalTotal,
+            blocked: 0,
             dryRun,
         });
         results.push({
             model: 'IntegrationExecution',
             scanned: execTotal,
             purged: dryRun ? 0 : execTotal,
+            blocked: 0,
             dryRun,
         });
 
@@ -794,12 +800,14 @@ export async function purgeLegacyAccessSnapshotsOlderThan(
                 model: 'LegacyAccessSnapshot',
                 scanned: snapshotsTotal,
                 purged: dryRun ? 0 : snapshotsTotal,
+                blocked: 0,
                 dryRun,
             },
             {
                 model: 'LegacyAccount',
                 scanned: accountsTotal,
                 purged: dryRun ? 0 : accountsTotal,
+                blocked: 0,
                 dryRun,
             },
         ];
