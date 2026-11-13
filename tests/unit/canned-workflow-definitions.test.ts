@@ -19,6 +19,7 @@
  */
 import { frameworkOnboardingWorkflow } from '@/lib/agentic/workflows/framework-onboarding';
 import { auditPrepWorkflow } from '@/lib/agentic/workflows/audit-prep';
+import { ProposedFindingSchema } from '@/lib/schemas';
 import type {
     ProposeStepDef,
     ReadStepDef,
@@ -417,11 +418,24 @@ describe('audit-prep — proposed findings', () => {
         expect(items).toStrictEqual([
             {
                 severity: 'MEDIUM',
-                type: 'Coverage Gap',
+                type: 'NONCONFORMITY',
                 title: 'Coverage gap: A.5.1',
                 description: 'Requirement A.5.1 (Policies) has no mapped control.',
             },
         ]);
+    });
+
+    it('every item is a finding the approve path accepts — its type a FindingType (#5181)', () => {
+        // 'Coverage Gap' passed the free-string schema and failed at the enum
+        // column when a person approved the proposal.
+        const items = step.buildItems(
+            ctx({ frameworkKey: 'SOC2' }, { gaps: { unmappedRequirements: [{ code: 'A.5.1' }, { code: 'A.5.2' }] } }),
+        );
+        expect(items).toHaveLength(2);
+        for (const item of items) {
+            expect(ProposedFindingSchema.safeParse(item).success).toBe(true);
+        }
+        expect(ProposedFindingSchema.safeParse({ ...items[0], type: 'Coverage Gap' }).success).toBe(false);
     });
 
     it('omits the parenthetical when the requirement has no title', () => {

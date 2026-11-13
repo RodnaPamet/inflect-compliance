@@ -62,6 +62,15 @@ export const sapTransactionReviewWorkflow: WorkflowDefinition = {
     readOnly: true,
     /** Both refused at admission when absent or blank — see `requiredInput` on the type. */
     requiredInput: ['question', 'facts'],
+    // Refused at admission when the facts do not validate (#5182), so a Flue
+    // run never judges a payload this module's reader would refuse: unknown
+    // keys, values out of bounds, or text that is not JSON.
+    validateInput: (input) => {
+        const facts = input['facts'];
+        if (typeof facts !== 'string') return null;
+        const reading = readSapTransactionFacts(facts);
+        return reading.ok ? null : `facts ${reading.reason}: ${reading.detail}`;
+    },
 
     // Advertised on the host-consumer card (#3862). This is the workflow the A2A
     // route exists for, so it is the one a host most needs to discover. Safe to
@@ -127,9 +136,10 @@ export const sapTransactionReviewWorkflow: WorkflowDefinition = {
                 const question = requiredString(ctx, 'question');
 
                 // A payload that does not validate is reported as such rather
-                // than judged. On Flue admission has already refused it; this
-                // arm is the static engine's, and it must not pretend to a
-                // review of something it could not read.
+                // than judged. Admission refuses it on every engine
+                // (`validateInput` above); this arm is the backstop for a run
+                // admitted before that check existed, and it must not pretend
+                // to a review of something it could not read.
                 if (!reading.ok) {
                     return {
                         text:

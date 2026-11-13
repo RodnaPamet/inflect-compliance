@@ -73,7 +73,7 @@ import {
 import { isLiveRunStatus, LIVE_RUN_STATUSES } from '@/lib/agentic/run-concurrency';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
-import { badRequest, notFound, forbidden } from '@/lib/errors/types';
+import { badRequest, notFound, forbidden, staleData } from '@/lib/errors/types';
 import { appendAuditEntry, appendAuditEntryOrQueue } from '@/lib/audit';
 import { assertRunStartNotByExchangeOnlyKey, enforceMcpCapability } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
@@ -233,18 +233,23 @@ function scannableInput(input: Record<string, unknown>): string {
  * learns the shape of the request one round trip at a time.
  */
 export function assertRequiredInputPresent(
-    def: Pick<WorkflowDefinition, 'key' | 'requiredInput'>,
+    def: Pick<WorkflowDefinition, 'key' | 'requiredInput' | 'validateInput'>,
     input: Record<string, unknown>,
 ): void {
     const missing = (def.requiredInput ?? []).filter((k) => {
         const v = input[k];
         return typeof v !== 'string' || v.trim() === '';
     });
-    if (missing.length === 0) return;
-    throw badRequest(
-        `Workflow ${def.key} requires a non-empty ${missing.join(', ')}. ` +
-            `Supply ${missing.length === 1 ? 'it' : 'them'} in the run input.`,
-    );
+    if (missing.length > 0) {
+        throw badRequest(
+            `Workflow ${def.key} requires a non-empty ${missing.join(', ')}. ` +
+                `Supply ${missing.length === 1 ? 'it' : 'them'} in the run input.`,
+        );
+    }
+    // Present is not readable (#5182): a definition that can tell a malformed
+    // value refuses it here, before the row, on every engine.
+    const refusal = def.validateInput?.(input) ?? null;
+    if (refusal !== null) throw badRequest(`Workflow ${def.key} cannot read its input: ${refusal}`);
 }
 
 export async function startWorkflowRun(
@@ -841,6 +846,23 @@ export async function resumeWorkflowRun(
 
     // Close the pending checkpoint step (the one that paused the run).
     const resumedFrom = await runInTenantContext(ctx, async (db) => {
+        // CLAIM FIRST (#5119). The status check above is a read; two resumes
+        // of one paused run both passed it, both moved it to RUNNING with an
+        // unconditional write, and both executed the remaining steps —
+        // duplicate tool calls, duplicate proposals. The transition is now
+        // conditional on the paused states, so exactly one resume wins, and
+        // the loser is refused before it closes the checkpoint or stamps a
+        // decision. `updateMany` returns no row, so it needs no
+        // `omit: { driver: true }` (#4241).
+        const claimed = await db.workflowRun.updateMany({
+            where: { id: runId, tenantId: ctx.tenantId, status: { in: ['AWAITING_APPROVAL', 'PAUSED'] } },
+            data: { status: 'RUNNING' },
+        });
+        if (claimed.count === 0) {
+            throw staleData('This run was resumed by someone else, or is no longer paused.', {
+                reason: 'RUN_ALREADY_RESUMED',
+            });
+        }
         const pending = await db.workflowStep.findFirst({
             where: { runId, tenantId: ctx.tenantId, status: 'PENDING' },
             orderBy: { seq: 'desc' },
@@ -851,15 +873,6 @@ export async function resumeWorkflowRun(
                 data: { status: 'DONE', actorUserId: ctx.userId },
             });
         }
-        // `omit: { driver: true }` on every record-returning `workflowRun`
-        // write here, for the reason `updateRun` gives (#4241): the returned
-        // row is mapped scalar by scalar, so an engine this build does not know
-        // fails the write after it ran.
-        await db.workflowRun.update({
-            where: { id: runId },
-            data: { status: 'RUNNING' },
-            omit: { driver: true },
-        });
         // ═══ ART 14: A RESUME IS AN ACCEPTANCE ═══
         //
         // The run is the reviewable event for a model call. A Flue run that the
