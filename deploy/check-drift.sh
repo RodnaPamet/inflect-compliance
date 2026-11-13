@@ -5,8 +5,8 @@
 #
 # "Config set", not "Compose set": it also watches host config that belongs to
 # a systemd service rather than to the compose project — today
-# /etc/google-cloud-ops-agent/config.yaml, which apply.sh pushes from its own
-# HOST_CONFIG_SET. Until that file was versioned it was the last piece of
+# /etc/google-cloud-ops-agent/config.yaml and the capacity recorder's script,
+# service and timer, which apply.sh pushes from its own HOST_CONFIG_SET. Until that file was versioned it was the last piece of
 # production config living only on the VM, which is the exact class of drift
 # #2849 built these two scripts to eliminate.
 #
@@ -94,6 +94,14 @@ APPLIABLE=(
     # mechanism differs.
     "${SCRIPT_DIR}/caddy/Caddyfile:${REMOTE_DIR}/caddy/Caddyfile"
     "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
+    # The capacity recorder (capacity budget C1b), host config too: apply.sh
+    # pushes these three from HOST_CONFIG_SET and enables the timer. Retired
+    # with the VM apply action `retire-capacity-recorder`; while these lines
+    # stand, a retired recorder reads here as drift, which is the reminder to
+    # remove them.
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.sh:/usr/local/lib/inflect-capacity/inflect-capacity-record.sh"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.service:/etc/systemd/system/inflect-capacity-record.service"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.timer:/etc/systemd/system/inflect-capacity-record.timer"
 )
 
 # UNRECONCILED: watched, reported, NOT pushed by apply.sh. Each entry owes a

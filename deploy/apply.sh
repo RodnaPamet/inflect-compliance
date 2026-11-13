@@ -23,6 +23,12 @@
 # host service rather than to the compose project:
 #
 #   deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+#   deploy/capacity/recorder/inflect-capacity-record.sh
+#                                   → /usr/local/lib/inflect-capacity/inflect-capacity-record.sh
+#   deploy/capacity/recorder/inflect-capacity-record.service
+#                                   → /etc/systemd/system/inflect-capacity-record.service
+#   deploy/capacity/recorder/inflect-capacity-record.timer
+#                                   → /etc/systemd/system/inflect-capacity-record.timer
 #
 # WHY THAT IS A SECOND SET AND NOT A FOURTH ROW OF THE FIRST. Four properties
 # differ, and each one would be wrong if the two were merged:
@@ -44,9 +50,15 @@
 # can afford to run is the mechanism that goes unused, and an unused apply
 # path is how #2849's 148-line divergence happened in the first place.
 #
-# This set has exactly one member today, so the agent-specific validate and
-# reload steps are named inline rather than carried as fields in the array.
-# A second member is the moment to generalise them, not before.
+# The set has TWO OWNERS since 2026-11-13: the ops agent (one file) and the
+# capacity recorder (a script, a service and a timer — capacity budget C1b).
+# Each file's owner is decided by its remote path (`host_config_owner`), and
+# each owner brings its own validation and activation: the ops agent is
+# validated by its engine, restarted and checked in its compiled config; the
+# recorder is checked with `bash -n` and `systemd-analyze verify`, trial-run
+# against this host's real cgroups into a throwaway directory, then enabled,
+# run once and checked for a row. A file whose path names no owner is refused
+# in preflight, so a third owner is a decision rather than a silent copy.
 #
 # WHAT IT DELIBERATELY DOES NOT PUSH:
 #
@@ -269,7 +281,19 @@ CANONICAL_SET=(
 # asserts the agreement in both directions.
 HOST_CONFIG_SET=(
     "${SCRIPT_DIR}/ops-agent-config.yaml:/etc/google-cloud-ops-agent/config.yaml"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.sh:/usr/local/lib/inflect-capacity/inflect-capacity-record.sh"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.service:/etc/systemd/system/inflect-capacity-record.service"
+    "${SCRIPT_DIR}/capacity/recorder/inflect-capacity-record.timer:/etc/systemd/system/inflect-capacity-record.timer"
 )
+
+# The capacity recorder (capacity budget C1b, deploy/capacity/recorder/): a
+# oneshot service its timer starts every 10 minutes, writing names and numbers
+# to day files under RECORDER_DATA_DIR, which `VM capacity`'s history mode
+# reads. Its three files above are pushed 0644 like every host config file:
+# the unit runs the script through /bin/bash, so nothing executable is placed.
+RECORDER_UNIT="inflect-capacity-record"
+RECORDER_SCRIPT="/usr/local/lib/inflect-capacity/inflect-capacity-record.sh"
+RECORDER_DATA_DIR="/var/lib/inflect-capacity"
 
 # ── The Caddyfile ──────────────────────────────────────────────────────────
 #
@@ -373,12 +397,28 @@ health_verify() {
 # need them, and because a preflight that cannot be run without applying is
 # not a preflight.
 
+# Which host service a host config file belongs to, by its remote path. The
+# owner decides how the file is validated and how it is activated; a path with
+# no owner is refused in preflight.
+host_config_owner() {
+    case "$1" in
+        /etc/google-cloud-ops-agent/*) echo ops-agent ;;
+        "${RECORDER_SCRIPT}" | "/etc/systemd/system/${RECORDER_UNIT}".service | "/etc/systemd/system/${RECORDER_UNIT}".timer) echo capacity-recorder ;;
+        *) echo none ;;
+    esac
+}
+
 host_config_preflight() {
-    local entry local_path remote_path base lsha rsha staged rc
+    local entry local_path remote_path base lsha rsha staged rc recorder=0
     log "host config set (pushed outside ${REMOTE_DIR}, reloads a host service):"
     for entry in "${HOST_CONFIG_SET[@]}"; do
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
         [ -f "$local_path" ] || { err "host config missing from the repo: $local_path"; return 1; }
+        case "$(host_config_owner "$remote_path")" in
+            ops-agent) ;;
+            capacity-recorder) recorder=1 ;;
+            *) err "no host service owns ${remote_path}: name its owner in host_config_owner"; return 1 ;;
+        esac
 
         lsha="$(sha256sum "$local_path" | first_sha)"
         rsha="$(ssh_vm "sudo sha256sum '${remote_path}' 2>/dev/null || true" | first_sha)"
@@ -389,6 +429,8 @@ host_config_preflight() {
         else
             log "    WOULD CHANGE ${remote_path}: repo ${lsha:0:12} → VM ${rsha:0:12}"
         fi
+        # The recorder's files are validated together, after this loop.
+        [ "$(host_config_owner "$remote_path")" = ops-agent ] || continue
 
         # Validate with the agent's OWN engine, against TEMP output dirs.
         #
@@ -429,6 +471,61 @@ host_config_preflight() {
         fi
         log "      config OK"
     done
+    if [ "$recorder" = 1 ]; then
+        recorder_preflight || return 1
+    fi
+}
+
+# The capacity recorder's three files, validated as they will run.
+#
+# Staged together in a throwaway directory under their real names, then:
+# `bash -n` parses the script; `systemd-analyze verify` loads both units (it
+# exits non-zero on an unknown section, a bad calendar spec or a missing
+# ExecStart binary); and the STAGED script runs one real pass against this
+# host's cgroups and docker, writing into that directory instead of
+# ${RECORDER_DATA_DIR}. That last step is the gate that matters: the cgroup
+# layout and docker's name format are facts about this host, and a recorder
+# that reads neither would write nothing, every ten minutes, and report
+# nothing wrong. It must write at least one well-formed row. What is printed
+# is counts; the rows themselves are removed with the directory.
+recorder_preflight() {
+    local entry local_path remote_path staged rc counts rows containers peaks
+    staged="/tmp/inflect-capacity-record.validate.${TS}"
+    log "    validating the capacity recorder (bash -n, systemd-analyze verify, one trial pass)"
+    ssh_vm "rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        local_path="${entry%%:*}"; remote_path="${entry#*:}"
+        [ "$(host_config_owner "$remote_path")" = capacity-recorder ] || continue
+        scp_vm "$local_path" "${staged}/$(basename "$remote_path")" >/dev/null
+    done
+    rc=0
+    ssh_vm "set -e
+        trap 'sudo rm -rf \"${staged}\"' EXIT
+        bash -n '${staged}/$(basename "$RECORDER_SCRIPT")'
+        rc=0
+        systemd-analyze verify '${staged}/${RECORDER_UNIT}.service' '${staged}/${RECORDER_UNIT}.timer' >'${staged}/verify.out' 2>&1 || rc=\$?
+        sed 's/^/      /' '${staged}/verify.out'
+        exit \$rc" 2>&1 | show diagnostics || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        err "the capacity recorder's script or units did NOT validate. The message is above."
+        err "  Nothing was changed."
+        return 1
+    fi
+    # The trial pass. Only three numbers come back: rows written, containers
+    # named, and rows carrying a memory.peak.
+    ssh_vm "rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
+    scp_vm "${SCRIPT_DIR}/capacity/recorder/$(basename "$RECORDER_SCRIPT")" "${staged}/trial.sh" >/dev/null
+    counts="$(ssh_vm "sudo env DATA_DIR='${staged}/data' bash '${staged}/trial.sh' >/dev/null 2>&1
+        sudo sh -c \"cat '${staged}'/data/capacity-*.tsv 2>/dev/null\" | awk -F'\t' '!/^#/ && NF == 9 { r++; n[\$3] = 1; if (\$6 ~ /^[0-9]+\$/) p++ } END { c = 0; for (k in n) c++; print \"counts\", r + 0, c, p + 0 }'
+        sudo rm -rf '${staged}'" 2>/dev/null | awk '$1 == "counts" && NF == 4 { print $2, $3, $4 }')" || counts=""
+    read -r rows containers peaks <<<"${counts:-0 0 0}"
+    if [ "${rows:-0}" -lt 1 ]; then
+        err "the capacity recorder's trial pass wrote NO row on this host. Either docker did"
+        err "  not answer or no container's cgroup was found where the script looks"
+        err "  (system.slice/docker-<id>.scope or docker/<id>). Nothing was changed."
+        return 1
+    fi
+    log "      trial pass OK: ${rows} row(s) for ${containers} container(s), memory.peak on ${peaks}"
 }
 
 # Report what a Caddyfile push would change, and refuse a config Caddy rejects.
@@ -581,9 +678,10 @@ caddy_apply() {
 }
 
 host_config_apply() {
-    local entry local_path remote_path base compiled
+    local entry local_path remote_path base owner owners=""
     for entry in "${HOST_CONFIG_SET[@]}"; do
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
+        case " $owners " in *" $(host_config_owner "$remote_path") "*) ;; *) owners="$owners $(host_config_owner "$remote_path")" ;; esac
 
         # Back up into ${REMOTE_DIR}, not beside the live file.
         #
@@ -601,41 +699,85 @@ host_config_apply() {
 
         log "pushing ${remote_path}"
         scp_vm "$local_path" "/tmp/${base}.new.${TS}"
-        # 644, matching the live mode: this file carries no credential, and the
-        # agent reads it as root anyway. The backup above is 600 regardless,
-        # because a dead copy has no reader to accommodate.
-        ssh_vm "sudo mv '/tmp/${base}.new.${TS}' '${remote_path}' \
+        # 644, matching the live mode: no file in this set carries a
+        # credential, and each is read by root. The backup above is 600
+        # regardless, because a dead copy has no reader to accommodate. The
+        # parent is made first: the recorder's script directory does not exist
+        # until its first push.
+        ssh_vm "sudo install -d -m 755 -o root -g root '$(dirname "$remote_path")' \
+            && sudo mv '/tmp/${base}.new.${TS}' '${remote_path}' \
             && sudo chown root:root '${remote_path}' && sudo chmod 644 '${remote_path}'"
-
-        log "restarting ${OPS_AGENT_UNIT} (no container is touched)"
-        if ! ssh_vm "sudo systemctl restart '${OPS_AGENT_UNIT}'"; then
-            err "${OPS_AGENT_UNIT} failed to restart after the push. Roll back with:"
-            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
-            return 1
-        fi
-
-        # WIRED IS NOT DELIVERED. `systemctl is-active` goes green for an agent
-        # that restarted while keeping its previous pipeline, so assert on the
-        # COMPILED collector config instead: the needle comes from the receiver
-        # in the file just pushed, so this fails if the push did not take.
-        log "verifying the push reached the collector (${OPS_AGENT_COMPILED})"
-        # `|| compiled=""` because `set -o pipefail` is on: a transient ssh
-        # failure here would otherwise abort the script through the command
-        # substitution, AFTER the compose stack has already been applied —
-        # killing the run at the one point where its output is what an operator
-        # needs. An empty read is UNKNOWN and falls into the failure branch
-        # below, which is the safe direction.
-        compiled="$(ssh_vm "sudo grep -c -F '${OPS_AGENT_COMPILED_NEEDLE}' '${OPS_AGENT_COMPILED}' 2>/dev/null || echo 0" | tr -d '[:space:]')" \
-            || compiled=""
-        if [ -z "$compiled" ] || [ "$compiled" = "0" ]; then
-            err "${OPS_AGENT_UNIT} restarted but the compiled collector config does not"
-            err "  mention '${OPS_AGENT_COMPILED_NEEDLE}'. The push did not take effect."
-            err "  Roll back with:"
-            err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
-            return 1
-        fi
-        log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
     done
+
+    # Each owner is activated once, after all its files are in place.
+    for owner in $owners; do
+        case "$owner" in
+            ops-agent) ops_agent_activate || return 1 ;;
+            capacity-recorder) recorder_activate || return 1 ;;
+        esac
+    done
+}
+
+ops_agent_activate() {
+    local entry remote_path="" base compiled
+    for entry in "${HOST_CONFIG_SET[@]}"; do
+        if [ "$(host_config_owner "${entry#*:}")" = ops-agent ]; then remote_path="${entry#*:}"; break; fi
+    done
+    [ -n "$remote_path" ] || return 0
+    base="$(basename "$remote_path")"
+    log "restarting ${OPS_AGENT_UNIT} (no container is touched)"
+    if ! ssh_vm "sudo systemctl restart '${OPS_AGENT_UNIT}'"; then
+        err "${OPS_AGENT_UNIT} failed to restart after the push. Roll back with:"
+        err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+        return 1
+    fi
+
+    # WIRED IS NOT DELIVERED. `systemctl is-active` goes green for an agent
+    # that restarted while keeping its previous pipeline, so assert on the
+    # COMPILED collector config instead: the needle comes from the receiver
+    # in the file just pushed, so this fails if the push did not take.
+    log "verifying the push reached the collector (${OPS_AGENT_COMPILED})"
+    # `|| compiled=""` because `set -o pipefail` is on: a transient ssh
+    # failure here would otherwise abort the script through the command
+    # substitution, AFTER the compose stack has already been applied —
+    # killing the run at the one point where its output is what an operator
+    # needs. An empty read is UNKNOWN and falls into the failure branch
+    # below, which is the safe direction.
+    compiled="$(ssh_vm "sudo grep -c -F '${OPS_AGENT_COMPILED_NEEDLE}' '${OPS_AGENT_COMPILED}' 2>/dev/null || echo 0" | tr -d '[:space:]')" \
+        || compiled=""
+    if [ -z "$compiled" ] || [ "$compiled" = "0" ]; then
+        err "${OPS_AGENT_UNIT} restarted but the compiled collector config does not"
+        err "  mention '${OPS_AGENT_COMPILED_NEEDLE}'. The push did not take effect."
+        err "  Roll back with:"
+        err "  sudo cp -a '${REMOTE_DIR}/${base}.bak.${TS}' '${remote_path}' && sudo systemctl restart ${OPS_AGENT_UNIT}"
+        return 1
+    fi
+    log "  OK   the receiver from ${base} is present in the compiled config (${compiled} ref(s))"
+}
+
+# Load the recorder's units, enable and start its timer, run one pass now, and
+# prove it: the timer enabled and active, that pass's result `success`, and at
+# least one row in today's file. A pushed unit nobody reloads is the
+# host-config version of an inert deploy.
+recorder_activate() {
+    local state enabled active result rows
+    log "loading ${RECORDER_UNIT}.service and .timer, enabling the timer, running one pass (no container is touched)"
+    if ! ssh_vm "sudo systemctl daemon-reload && sudo systemctl enable --now '${RECORDER_UNIT}.timer' \
+            && sudo systemctl start '${RECORDER_UNIT}.service'" 2>&1 | show diagnostics; then
+        err "${RECORDER_UNIT} did not start after the push. Stop and remove it with the"
+        err "  VM apply action retire-capacity-recorder; nothing else depends on it."
+        return 1
+    fi
+    state="$(ssh_vm "systemctl is-enabled '${RECORDER_UNIT}.timer' 2>/dev/null; systemctl is-active '${RECORDER_UNIT}.timer' 2>/dev/null; systemctl show -p Result --value '${RECORDER_UNIT}.service' 2>/dev/null; sudo sh -c \"grep -vc '^#' '${RECORDER_DATA_DIR}'/capacity-\$(date -u +%F).tsv 2>/dev/null || echo 0\"" | tr -d '\r' | tr '\n' ' ')" || state=""
+    read -r enabled active result rows <<<"${state:-unknown unknown unknown 0}"
+    log "    timer ${enabled:-unknown}/${active:-unknown}, last pass ${result:-unknown}, rows today ${rows:-0}"
+    case "${rows:-0}" in '' | *[!0-9]*) rows=0 ;; esac
+    if [ "$enabled" != enabled ] || [ "$active" != active ] || [ "$result" != success ] || [ "$rows" -lt 1 ]; then
+        err "${RECORDER_UNIT} is installed but not recording. Stop and remove it with the"
+        err "  VM apply action retire-capacity-recorder; nothing else depends on it."
+        return 1
+    fi
+    log "  OK   the capacity recorder is enabled and recording"
 }
 
 # Every mode below but DRY_RUN reaches the VM, and DRY_RUN never does.

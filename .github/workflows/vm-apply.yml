@@ -12,7 +12,7 @@
 #
 # A FIXED LIST, NOT A COMMAND. That identity is root on the VM, so the input is
 # a choice of named actions, each written out in `deploy/vm-apply/vm.sh` (and,
-# for the two that `deploy/apply.sh` has no mode for, `deploy/vm-apply/remote.sh`).
+# for the three that `deploy/apply.sh` has no mode for, `deploy/vm-apply/remote.sh`).
 # No input names a command, a path, a host or a compose argument: a free-text
 # input would make every push to this repository a way to run anything on
 # production. A new action is a pull request.
@@ -62,6 +62,7 @@ on:
                     - rollback
                     - retire-lab-containers
                     - recreate-legacy-mcp-proving
+                    - retire-capacity-recorder
 
 # One at a time: two applies to one VM at once would race on its compose
 # project. Its own group, not `vm-check`'s: VM check only reads and stages in

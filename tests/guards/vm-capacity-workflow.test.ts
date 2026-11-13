@@ -18,6 +18,7 @@
  * Parsed as YAML and as code lines, so each assertion is on a value, not on a
  * substring of the whole file.
  */
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
@@ -65,7 +66,14 @@ describe('the VM capacity workflow', () => {
         // vm.sh checks both are whole numbers.
         expect(steps.filter((s) => (s.run ?? '').includes('${{')).map((s) => s.name)).toEqual([]);
         const runs = steps.filter((s) => s.run).map((s) => s.run);
-        expect(runs).toEqual(['deploy/capacity/vm.sh "$SAMPLES" "$INTERVAL_SECONDS"']);
+        expect(runs).toEqual(['deploy/capacity/vm.sh "$MODE" "$SAMPLES" "$INTERVAL_SECONDS" "$HOURS"']);
+    });
+
+    it('its mode is a choice of snapshot or history, never free text', () => {
+        const inputs = (wf.on.workflow_dispatch as { inputs: Record<string, { type?: string; options?: string[] }> }).inputs;
+        expect(Object.keys(inputs).sort()).toEqual(['hours', 'interval_seconds', 'mode', 'samples']);
+        expect(inputs.mode.type).toBe('choice');
+        expect(inputs.mode.options).toEqual(['snapshot', 'history']);
     });
 });
 
@@ -75,7 +83,7 @@ const code = (rel: string) =>
         .split('\n')
         .filter((l) => l.trim() !== '' && !/^\s*#/.test(l));
 
-const SCRIPTS = ['deploy/capacity/remote.sh', 'deploy/capacity/vm.sh'];
+const SCRIPTS = ['deploy/capacity/remote.sh', 'deploy/capacity/vm.sh', 'deploy/capacity/history.sh', 'deploy/capacity/recorder/inflect-capacity-record.sh'];
 
 /** The `docker inspect` fields remote.sh may print, and no others. */
 const INSPECT_FIELDS = ['.Name', '.State.StartedAt', '.RestartCount', '.HostConfig.Memory', '.HostConfig.NanoCpus'];
@@ -119,6 +127,23 @@ describe('the scripts it runs', () => {
             (l.match(/\d?>>?\s*\S+/g) ?? []).filter((r) => !/>&2;?$|>\s*\/dev\/null;?$/.test(r)),
         );
         expect(writes).toEqual([]);
+    });
+
+    it('vm.sh stages and runs only remote.sh or history.sh, by mode, and refuses any other mode', () => {
+        const lines = code('deploy/capacity/vm.sh');
+        expect(lines.filter((l) => /^\s*SCRIPT=/.test(l)).map((l) => l.trim())).toEqual(['SCRIPT=history.sh', 'SCRIPT=remote.sh']);
+        const run = (args: string[]) => {
+            try {
+                execFileSync('bash', [path.join(REPO_ROOT, 'deploy/capacity/vm.sh'), ...args], { stdio: 'pipe', env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin' } });
+                return 0;
+            } catch (e) {
+                return (e as { status: number }).status;
+            }
+        };
+        // Refused before any gcloud call (none is on this PATH).
+        expect(run(['shell', '1', '60', '24'])).toBe(2);
+        expect(run(['history', '1', '60', '24;id'])).toBe(2);
+        expect(run(['snapshot', '1', '6O', '24'])).toBe(2);
     });
 
     it('vm.sh touches nothing on the VM but its own stage directory', () => {

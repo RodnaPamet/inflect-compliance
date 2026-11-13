@@ -156,7 +156,7 @@ describe('the action list is the same in the workflow and the script', () => {
 });
 
 describe('every write is preceded by its preflight, in the same run', () => {
-    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving'];
+    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder'];
     const isPreflight = (a: string) => a === 'preflight' || a.endsWith('-preflight');
 
     it('a preflight action never writes', () => {
@@ -192,9 +192,9 @@ describe('every write is preceded by its preflight, in the same run', () => {
         expect(code(VM_SH).filter((l) => l.includes('"$APPLY"'))).toHaveLength(3);
     });
 
-    it('the two remote actions run remote.sh, which has a branch for each and refuses anything else', () => {
+    it('the remote actions run remote.sh, which has a branch for each and refuses anything else', () => {
         const d = dispatch();
-        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(['on_vm', 'on_vm']);
+        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(['on_vm', 'on_vm', 'on_vm']);
         const branches = code(REMOTE_SH)
             .map((l) => /^([a-z][a-z-]*|\*)\)\s*$/.exec(l)?.[1])
             .filter((b): b is string => b !== undefined);
@@ -267,6 +267,45 @@ describe('the OrangeHRM lab', () => {
                 ),
             ).toEqual([]);
         }
+    });
+});
+
+describe('the capacity recorder is retired through the same path it was installed by', () => {
+    /** remote.sh's `retire-capacity-recorder)` branch, to its `;;`. */
+    const branch = () => {
+        const lines = code(REMOTE_SH);
+        const start = lines.findIndex((l) => l === 'retire-capacity-recorder)');
+        const end = lines.findIndex((l, i) => i > start && l.trim() === ';;');
+        if (start < 0 || end < 0) throw new Error('remote.sh has no retire-capacity-recorder branch');
+        return lines.slice(start + 1, end).map((l) => l.trim());
+    };
+
+    it('removes exactly the files apply.sh pushes for it, and its data directory', () => {
+        // The pushed set, read from apply.sh, so the two cannot disagree.
+        const pushed = read(APPLY_SH)
+            .split('\n')
+            .map((l) => /^\s*"\$\{SCRIPT_DIR\}\/capacity\/recorder\/[^:]+:(\/[^"]+)"\s*$/.exec(l)?.[1])
+            .filter((p): p is string => p !== undefined);
+        expect(pushed.length).toBe(3);
+        const unit = branch().filter((l) => l.startsWith('UNIT='));
+        expect(unit).toEqual(['UNIT=inflect-capacity-record']);
+        const files = branch().filter((l) => l.startsWith('FILES=('));
+        expect(files).toHaveLength(1);
+        const listed = [...files[0].slice('FILES=('.length, -1).matchAll(/"([^"]+)"|(\S+)/g)].map((m) =>
+            (m[1] ?? m[2]).replace('$UNIT', 'inflect-capacity-record'),
+        );
+        expect(listed.sort()).toEqual([...pushed].sort());
+        expect(branch().filter((l) => /^rm\s/.test(l))).toEqual(['rm -f "${FILES[@]}"', 'rm -rf "$rows_dir"']);
+        expect(branch().filter((l) => l.startsWith('rows_dir='))).toEqual(['rows_dir=/var/lib/inflect-capacity']);
+    });
+
+    it('stops and disables the timer, reloads systemd, and fails if anything is left', () => {
+        const b = branch();
+        expect(b.filter((l) => l.startsWith('systemctl disable --now "$UNIT.timer"'))).toHaveLength(1);
+        expect(b.filter((l) => l === 'systemctl daemon-reload')).toHaveLength(1);
+        expect(b[b.length - 1].startsWith('[ "$left" -eq 0 ] && [ ! -e "$rows_dir" ] ||')).toBe(true);
+        // It touches no container.
+        expect(b.filter((l) => /\bdocker\b/.test(l))).toEqual([]);
     });
 });
 

@@ -15,7 +15,7 @@
 # Every action that writes is preceded, in the same run, by its preflight: the
 # write runs only if the preflight exited 0 (`set -e`). For the `apply.sh`
 # actions that is a separate preflight-only invocation before the CONFIRM=1 one
-# (which preflights again, as apply.sh always does before it writes). The two
+# (which preflights again, as apply.sh always does before it writes). The
 # actions that run `remote.sh` check their preconditions on the VM before they
 # change anything.
 #
@@ -28,7 +28,7 @@ set -euo pipefail
 
 ACTION="${1:?action}"
 case "$ACTION" in
-    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving) ;;
+    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder) ;;
     *) echo "unknown action: $ACTION" >&2; exit 2 ;;
 esac
 
@@ -90,6 +90,7 @@ case "$ACTION" in
     rollback)                    preflight_then_write ROLLBACK=1 ;;
     retire-lab-containers)       on_vm ;;
     recreate-legacy-mcp-proving) on_vm ;;
+    retire-capacity-recorder)    on_vm ;;
 esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then

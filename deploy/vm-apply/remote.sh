@@ -3,9 +3,9 @@
 # NAMED CHANGES TO THE PRODUCTION VM — the VM half.
 #
 # Runs ON the VM, as root, from `vm.sh`, which the dispatch-only `VM apply`
-# workflow runs (.github/workflows/vm-apply.yml). It carries the two changes
-# `deploy/apply.sh` has no mode for, both from the capacity budget C1 runbook
-# (docs/implementation-notes/2026-11-12-capacity-c1.md):
+# workflow runs (.github/workflows/vm-apply.yml). It carries the three changes
+# `deploy/apply.sh` has no mode for, from the capacity budget C1 runbook
+# (docs/implementation-notes/2026-11-12-capacity-c1.md) and C1b:
 #
 #   remote.sh <action> <stage-dir>
 #
@@ -14,6 +14,11 @@
 #   recreate-legacy-mcp-proving  runbook step 5: install the repo's proving
 #                                overlay (staged in <stage-dir>) and recreate
 #                                that one service with its limits
+#   retire-capacity-recorder     C1b's rollback: stop and disable the capacity
+#                                recorder's timer, remove its unit files, its
+#                                script and its recorded rows. apply.sh's
+#                                host-config modes install it; a revert of
+#                                its HOST_CONFIG_SET entries keeps it gone
 #
 # Each checks its preconditions before it changes anything, and stops if one
 # fails.
@@ -140,6 +145,29 @@ recreate-legacy-mcp-proving)
     echo "$SERVICE: state $(docker inspect -f '{{.State.Status}}' "$id"), health $health"
     echo "$SERVICE: memory limit $(docker inspect -f '{{.HostConfig.Memory}}' "$id") bytes, CPU limit $(docker inspect -f '{{.HostConfig.NanoCpus}}' "$id") nano-CPUs"
     [ "$health" = "healthy" ] || { echo "$SERVICE is not healthy" >&2; exit 1; }
+    ;;
+
+retire-capacity-recorder)
+    # The recorder touches no container and nothing depends on it, so this
+    # stops it and removes every file it placed. It reports what it found and
+    # what is left, by name and count; the rows themselves are never printed.
+    UNIT=inflect-capacity-record
+    FILES=("/etc/systemd/system/$UNIT.timer" "/etc/systemd/system/$UNIT.service" /usr/local/lib/inflect-capacity/inflect-capacity-record.sh)
+    present() { local f n=0; for f in "${FILES[@]}"; do [ -e "$f" ] && n=$((n + 1)); done; echo "$n"; }
+    rows_dir=/var/lib/inflect-capacity
+    echo "recorder files before: $(present) of ${#FILES[@]}; day files: $(find "$rows_dir" -maxdepth 1 -name 'capacity-*.tsv' 2>/dev/null | wc -l)"
+    echo "timer before: $(systemctl is-enabled "$UNIT.timer" 2>/dev/null || true) / $(systemctl is-active "$UNIT.timer" 2>/dev/null || true)"
+    systemctl disable --now "$UNIT.timer" >/dev/null 2>&1 || true
+    systemctl stop "$UNIT.service" >/dev/null 2>&1 || true
+    rm -f "${FILES[@]}"
+    rmdir /usr/local/lib/inflect-capacity 2>/dev/null || true
+    rm -rf "$rows_dir"
+    systemctl daemon-reload
+    systemctl reset-failed "$UNIT.service" "$UNIT.timer" >/dev/null 2>&1 || true
+    left="$(present)"
+    echo "recorder files after: $left; data directory present: $([ -e "$rows_dir" ] && echo yes || echo no)"
+    echo "timer after: $(systemctl is-active "$UNIT.timer" 2>/dev/null || true)"
+    [ "$left" -eq 0 ] && [ ! -e "$rows_dir" ] || { echo "a recorder file is still present" >&2; exit 1; }
     ;;
 
 *)

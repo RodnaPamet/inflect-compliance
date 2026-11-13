@@ -244,7 +244,19 @@ compose project is pushed from a second array, `HOST_CONFIG_SET`:
 
 ```
 deploy/ops-agent-config.yaml    → /etc/google-cloud-ops-agent/config.yaml
+deploy/capacity/recorder/inflect-capacity-record.sh
+                                → /usr/local/lib/inflect-capacity/inflect-capacity-record.sh
+deploy/capacity/recorder/inflect-capacity-record.service
+                                → /etc/systemd/system/inflect-capacity-record.service
+deploy/capacity/recorder/inflect-capacity-record.timer
+                                → /etc/systemd/system/inflect-capacity-record.timer
 ```
+
+The set has two owners, decided by each file's remote path
+(`host_config_owner` in `apply.sh`): the ops agent, and the capacity recorder
+(see "The capacity recorder" below). A path with no owner is refused in
+preflight. Each owner brings its own validation and activation, and every
+owner is activated on every host-config apply, whichever file changed.
 
 That file is what ships the app container's logs to Cloud Logging. Until it
 was versioned it lived **only on the VM** — the last piece of production config
@@ -259,8 +271,8 @@ array rather than a fourth row of the first:
 | | compose set | host config set |
 | --- | --- | --- |
 | remote path | basename under `/opt/inflect` | absolute, outside it |
-| activation | `docker compose up -d` | `systemctl restart <unit>` |
-| validation | `docker compose config -q` | the service's own engine parses it |
+| activation | `docker compose up -d` | `systemctl restart <unit>` (ops agent); `daemon-reload`, `enable --now` the timer and one pass (recorder) |
+| validation | `docker compose config -q` | the service's own engine parses it (ops agent); `bash -n`, `systemd-analyze verify` and one trial pass into a throwaway directory (recorder) |
 | service window | yes — a 502 on `app` | **none**; no container is touched |
 
 The last row is why `HOST_CONFIG_ONLY=1 CONFIRM=1 deploy/apply.sh` exists. Were
@@ -278,6 +290,59 @@ compiles logging into `otel.yaml`, not into fluent-bit). And
 `apply.sh` pushes is something `check-drift.sh` watches, in both directions: a
 file pushed but unwatched drifts silently, and a file watched but unpushed is a
 standing warning nobody can action.
+
+### The capacity recorder
+
+Capacity budget step C1b needs `app`'s and `worker`'s memory peaks across the
+02:00–05:30 UTC nightly chain and the 00:15–01:45 UTC parser window. A `VM
+capacity` snapshot cannot give them: Watchtower recreates both containers on
+every merge to main, which resets their cgroup `memory.peak`, and a snapshot
+runs only when the owner approves it, which is never at night. So a timer on
+the VM records them (owner decision 2026-11-13).
+
+`inflect-capacity-record.timer` starts `inflect-capacity-record.service` every
+10 minutes on the clock. Each pass appends one tab-separated row per running
+container to `/var/lib/inflect-capacity/capacity-<UTC day>.tsv`: the time,
+the container's name and `StartedAt` (so a restart is visible), and the cgroup
+v2 files the snapshot reads — `memory.current`, `memory.peak`, `anon` and
+`file` from `memory.stat`, and `usage_usec` from `cpu.stat`. Names and
+numbers only: two docker calls per pass, `docker ps` and one `docker inspect`,
+each naming the fields it prints; nothing from a container's environment or
+command line, and nothing that touches a container. Docker down means a pass
+records nothing and exits 0.
+
+It cannot fill the disk. It keeps today and the eight days before it, by the
+date in the file name, and refuses to write when the day's file is 4 MiB, when
+the directory is 40 MiB, or when the filesystem has under 1 GiB free. A day is
+about 0.3 MB at today's container count. The unit runs at `Nice=10`, idle I/O,
+`CPUQuota=20%`, `MemoryMax=64M` and a 60-second timeout, with
+`NoNewPrivileges`, `ProtectSystem=full`, `ProtectHome` and a private `/tmp`;
+its only write is its systemd state directory (root, 0700).
+
+**Installing it** is the host config path: the `VM apply` action
+`host-config-preflight`, then `host-config-apply`. The preflight validates the
+three files and runs the staged script once against the VM's real cgroups,
+into a throwaway directory, and refuses if that pass writes no row — the cgroup
+layout is a fact about the host, and a recorder that cannot find it would
+write nothing every ten minutes without saying so. The apply pushes the files,
+enables the timer, runs one pass and checks for a row. `check-drift.sh` watches
+the three files.
+
+**Reading it** is `VM capacity` with `mode: history` and `hours` (1–192,
+default 24), which runs `deploy/capacity/history.sh` on the VM. It prints the
+window's coverage (first and last row, passes recorded against passes that
+fit, and every run of missed passes, so a gap reads as a gap and never as a
+quiet night), then per container the peak `memory.current`, the highest
+`memory.peak`, peak anonymous memory, restarts seen and average and peak
+10-minute CPU in cores, then the same memory figures for each day's parser and
+nightly windows with whether `memory.peak` rose inside the window. It reads the
+day files only and calls no docker.
+
+**Removing it** is the `VM apply` action `retire-capacity-recorder`: it stops
+and disables the timer, removes the unit files, the script and the recorded
+rows, and reloads systemd. Then revert its three `HOST_CONFIG_SET` and
+`APPLIABLE` entries, or the next host-config apply reinstalls it and
+`check-drift.sh` reports the files as absent.
 
 ### Interpolation scope is not `env_file`, and the difference bites
 
@@ -659,7 +724,7 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | Workflow | What it does |
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
-| `VM capacity` (`vm-capacity.yml`) | Prints memory, CPU and disk per container (`deploy/capacity/`). |
+| `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
 | `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`. |
 
 `VM check` is how a Claude Code session looks at production without holding a
@@ -736,6 +801,7 @@ owner's to make.
 | `rollback-preflight` / `rollback` | the same with `ROLLBACK=1`: the newest compose backup that differs from the live file, back into service |
 | `retire-lab-containers` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force` of the lab's three services, volumes kept, never `down` |
 | `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
+| `retire-capacity-recorder` | `deploy/vm-apply/remote.sh`: stops and disables the capacity recorder's timer and removes its units, script and rows (installed by `host-config-apply`) |
 
 Every action that writes runs its preflight first in the same run and writes
 only if it passed. The input is a choice, never a command, a path, a host or a
