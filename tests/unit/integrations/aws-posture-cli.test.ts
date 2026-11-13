@@ -97,11 +97,8 @@ describe('AwsPostureProvider — descriptor', () => {
 });
 
 describe('AwsPostureProvider.validateConnection', () => {
-    it('requires a role ARN or a complete access-key pair', async () => {
-        const err = {
-            valid: false,
-            error: 'Provide a read-only role ARN or an access-key pair.',
-        };
+    it('requires a complete access-key pair', async () => {
+        const err = { valid: false, error: 'Provide a read-only access-key pair.' };
         expect(await provider().validateConnection({}, {})).toEqual(err);
         // A half-pair is not enough.
         expect(
@@ -113,12 +110,40 @@ describe('AwsPostureProvider.validateConnection', () => {
         expect(execFileMock).not.toHaveBeenCalled();
     });
 
-    it('accepts a role ARN alone and probes the caller identity', async () => {
+    it('REFUSES a role ARN alone, and probes nothing (#5253)', async () => {
+        // This used to accept it and run the identity probe. Nothing ever
+        // assumed the role — AWS_ROLE_ARN needs a web-identity token file the
+        // collector does not write and AWS_EXTERNAL_ID is not an SDK variable —
+        // so the connection reached the CLI with NO AWS credential. On a host
+        // with an instance profile or ambient AWS_* it then authenticated as the
+        // PLATFORM and filed our own account's posture as the tenant's evidence.
+        //
+        // Deliberately queues NO cliResult: the refusal must come before the
+        // probe. (If it ever regresses to probing, the unconsumed queued
+        // implementation would leak into later tests through clearAllMocks,
+        // which does not reset a mockImplementationOnce queue — that is exactly
+        // how one changed branch produced 28 failures here.)
+        const res = await provider().validateConnection(
+            { region: 'eu-west-1' },
+            { roleArn: 'arn:aws:iam::1:role/R' },
+        );
+
+        expect(res.valid).toBe(false);
+        expect(res.error).toMatch(/Assume-role is not yet supported/);
+        // Names the tracking issue, so the operator can see where it went.
+        expect(res.error).toMatch(/#5542/);
+        expect(execFileMock).not.toHaveBeenCalled();
+    });
+
+    it('a role ARN alongside a real key pair is still accepted — the key pair is what authenticates', async () => {
+        // The refusal is about a connection with NO usable credential, not
+        // about the presence of the field. A tenant who pasted both must not be
+        // locked out.
         cliResult({ stdout: '{"Account":"123456789012"}' });
 
         const res = await provider().validateConnection(
             { region: 'eu-west-1' },
-            { roleArn: 'arn:aws:iam::1:role/R' },
+            { roleArn: 'arn:aws:iam::1:role/R', accessKeyId: 'AKIA_X', secretAccessKey: 'S' },
         );
 
         expect(res).toEqual({ valid: true });
@@ -219,8 +244,41 @@ describe('AwsPostureProvider.runCheck — collector invocation', () => {
         const [, args, opts] = execFileMock.mock.calls[0];
         expect(JSON.stringify(args)).not.toContain('AKIA_TEST_KEY');
         expect(opts.env.AWS_ACCESS_KEY_ID).toBe('AKIA_TEST_KEY');
-        expect(opts.env.AWS_ROLE_ARN).toBe('arn:aws:iam::1:role/R');
         expect(opts.env.AWS_REGION).toBe('us-east-1');
+
+        // NOT set, and that is the fix (#5253). This assertion used to require
+        // AWS_ROLE_ARN to be present, which pinned a variable that did nothing:
+        // the SDK reads it only with AWS_WEB_IDENTITY_TOKEN_FILE, and
+        // AWS_EXTERNAL_ID is not an SDK variable at all. Exporting them read as
+        // assume-role support where there was none.
+        expect(opts.env.AWS_ROLE_ARN).toBeUndefined();
+        expect(opts.env.AWS_EXTERNAL_ID).toBeUndefined();
+    });
+
+    it('does NOT inherit the ambient environment — no worker secret, no ambient credential (#5253)', async () => {
+        // The child used to be built as `{ ...process.env }`. That handed a
+        // third-party binary the master KEK and the database password, and — the
+        // sharp half — let an ambient AWS credential authenticate the scan, so a
+        // connection with no usable credential of its own silently benchmarked
+        // the PLATFORM's account and stored it as the tenant's evidence.
+        process.env.DATA_ENCRYPTION_KEY = 'kek-must-not-travel';
+        process.env.AWS_SESSION_TOKEN = 'ambient-token-must-not-travel';
+        try {
+            cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
+            await provider().runCheck(input({ region: 'us-east-1' }) as never);
+
+            const [, , opts] = execFileMock.mock.calls[0];
+            expect(opts.env.DATA_ENCRYPTION_KEY).toBeUndefined();
+            expect(opts.env.DATABASE_URL).toBeUndefined();
+            // The connection supplied no session token, so the ambient one must
+            // not stand in for it.
+            expect(opts.env.AWS_SESSION_TOKEN).not.toBe('ambient-token-must-not-travel');
+            // PATH still survives, or execFile could not find the binary.
+            expect(opts.env.PATH).toBe(process.env.PATH);
+        } finally {
+            delete process.env.DATA_ENCRYPTION_KEY;
+            delete process.env.AWS_SESSION_TOKEN;
+        }
     });
 });
 
