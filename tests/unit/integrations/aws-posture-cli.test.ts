@@ -53,6 +53,37 @@ const exitCode = (code: number) => Object.assign(new Error('exited'), { code });
 
 const provider = () => new AwsPostureProvider();
 
+/**
+ * Run `body` with these env vars set, then RESTORE whatever was there before.
+ *
+ * NOT `delete` in a finally, which is what this replaced and what broke
+ * `Test (shard 7/7)`: `DATA_ENCRYPTION_KEY` IS set in CI (ci.yml), so deleting
+ * it stripped the master KEK from every later test in the same worker. A
+ * variable that was unset before is removed again; one that was set is put
+ * back to its own value.
+ *
+ * `async` and awaited, because a sync `try/finally` around a function that
+ * returns a promise restores BEFORE the body has run.
+ */
+async function withAmbientEnv(
+    vars: Record<string, string>,
+    body: () => Promise<void> | void,
+): Promise<void> {
+    const saved = new Map<string, string | undefined>(
+        Object.keys(vars).map((k) => [k, process.env[k]]),
+    );
+    Object.assign(process.env, vars);
+    try {
+        await body();
+    } finally {
+        for (const [k, v] of saved) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+    }
+}
+
+
 const benchmarkJson = (controls: unknown[]) => JSON.stringify({ controls });
 /**
  * Controls in the REAL wire shape, from the source-cited builder. The inline
@@ -261,24 +292,25 @@ describe('AwsPostureProvider.runCheck — collector invocation', () => {
         // sharp half — let an ambient AWS credential authenticate the scan, so a
         // connection with no usable credential of its own silently benchmarked
         // the PLATFORM's account and stored it as the tenant's evidence.
-        process.env.DATA_ENCRYPTION_KEY = 'kek-must-not-travel';
-        process.env.AWS_SESSION_TOKEN = 'ambient-token-must-not-travel';
-        try {
-            cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
-            await provider().runCheck(input({ region: 'us-east-1' }) as never);
+        await withAmbientEnv(
+            {
+                DATA_ENCRYPTION_KEY: 'kek-must-not-travel',
+                AWS_SESSION_TOKEN: 'ambient-token-must-not-travel',
+            },
+            async () => {
+                cliResult({ stdout: benchmarkJson([control('c1', 'ok')]) });
+                await provider().runCheck(input({ region: 'us-east-1' }) as never);
 
-            const [, , opts] = execFileMock.mock.calls[0];
-            expect(opts.env.DATA_ENCRYPTION_KEY).toBeUndefined();
-            expect(opts.env.DATABASE_URL).toBeUndefined();
-            // The connection supplied no session token, so the ambient one must
-            // not stand in for it.
-            expect(opts.env.AWS_SESSION_TOKEN).not.toBe('ambient-token-must-not-travel');
-            // PATH still survives, or execFile could not find the binary.
-            expect(opts.env.PATH).toBe(process.env.PATH);
-        } finally {
-            delete process.env.DATA_ENCRYPTION_KEY;
-            delete process.env.AWS_SESSION_TOKEN;
-        }
+                const [, , opts] = execFileMock.mock.calls[0];
+                expect(opts.env.DATA_ENCRYPTION_KEY).toBeUndefined();
+                expect(opts.env.DATABASE_URL).toBeUndefined();
+                // The connection supplied no session token, so the ambient one
+                // must not stand in for it.
+                expect(opts.env.AWS_SESSION_TOKEN).not.toBe('ambient-token-must-not-travel');
+                // PATH still survives, or execFile could not find the binary.
+                expect(opts.env.PATH).toBe(process.env.PATH);
+            },
+        );
     });
 });
 

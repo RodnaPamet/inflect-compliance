@@ -96,6 +96,36 @@ const STRUCTURAL_BUILDERS: ReadonlyArray<{
 /** Checked behaviourally instead — see above. */
 const BEHAVIOURAL_PROVIDER = 'src/app-layer/integrations/aws-posture-provider.ts';
 
+/**
+ * Run `body` with these env vars set, then RESTORE whatever was there before.
+ *
+ * NOT `delete` in a finally, which is what this replaced and what broke
+ * `Test (shard 7/7)`: `DATA_ENCRYPTION_KEY` IS set in CI (ci.yml), so deleting
+ * it stripped the master KEK from every later test in the same worker. A
+ * variable that was unset before is removed again; one that was set is put back
+ * to its own value.
+ *
+ * `async` and awaited, because a sync `try/finally` around a function that
+ * returns a promise restores BEFORE the body has run.
+ */
+async function withAmbientEnv(
+    vars: Record<string, string>,
+    body: () => Promise<void> | void,
+): Promise<void> {
+    const saved = new Map<string, string | undefined>(
+        Object.keys(vars).map((k) => [k, process.env[k]]),
+    );
+    Object.assign(process.env, vars);
+    try {
+        await body();
+    } finally {
+        for (const [k, v] of saved) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+    }
+}
+
 const read = (f: string) => readFileSync(path.join(REPO_ROOT, f), 'utf8');
 
 describe('the posture collector population', () => {
@@ -198,21 +228,21 @@ describe('the allowlist itself', () => {
         }
     });
 
-    it('drops an ambient credential and keeps PATH', () => {
-        process.env.DATA_ENCRYPTION_KEY = 'kek-must-not-travel';
-        process.env.AWS_ACCESS_KEY_ID = 'AKIA_AMBIENT';
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = '/tmp/ambient.json';
-        try {
-            const env = baseCollectorEnv();
-            expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
-            expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
-            expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined();
-            expect(env.PATH).toBe(process.env.PATH);
-        } finally {
-            delete process.env.DATA_ENCRYPTION_KEY;
-            delete process.env.AWS_ACCESS_KEY_ID;
-            delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        }
+    it('drops an ambient credential and keeps PATH', async () => {
+        await withAmbientEnv(
+            {
+                DATA_ENCRYPTION_KEY: 'kek-must-not-travel',
+                AWS_ACCESS_KEY_ID: 'AKIA_AMBIENT',
+                GOOGLE_APPLICATION_CREDENTIALS: '/tmp/ambient.json',
+            },
+            () => {
+                const env = baseCollectorEnv();
+                expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
+                expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+                expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined();
+                expect(env.PATH).toBe(process.env.PATH);
+            },
+        );
     });
 
     it('omits an allowlisted variable that is unset rather than passing an empty string', () => {
@@ -236,24 +266,24 @@ describe('the allowlist itself', () => {
 });
 
 describe(`${BEHAVIOURAL_PROVIDER} — behaviourally, because its builder is exported`, () => {
-    it('returns no ambient credential and no worker secret, and keeps PATH', () => {
+    it('returns no ambient credential and no worker secret, and keeps PATH', async () => {
         // Stronger than a text scan: this would also catch
         // `{ ...process.env, ...baseCollectorEnv() }`, which reads as using the
         // allowlist while still inheriting everything.
-        process.env.DATA_ENCRYPTION_KEY = 'kek-must-not-travel';
-        process.env.AWS_ACCESS_KEY_ID = 'AKIA_AMBIENT';
-        process.env.AWS_SESSION_TOKEN = 'ambient-token';
-        try {
-            const env = buildCredentialEnv({}, {});
-            expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
-            expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
-            expect(env.AWS_SESSION_TOKEN).toBeUndefined();
-            expect(env.PATH).toBe(process.env.PATH);
-        } finally {
-            delete process.env.DATA_ENCRYPTION_KEY;
-            delete process.env.AWS_ACCESS_KEY_ID;
-            delete process.env.AWS_SESSION_TOKEN;
-        }
+        await withAmbientEnv(
+            {
+                DATA_ENCRYPTION_KEY: 'kek-must-not-travel',
+                AWS_ACCESS_KEY_ID: 'AKIA_AMBIENT',
+                AWS_SESSION_TOKEN: 'ambient-token',
+            },
+            () => {
+                const env = buildCredentialEnv({}, {});
+                expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
+                expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+                expect(env.AWS_SESSION_TOKEN).toBeUndefined();
+                expect(env.PATH).toBe(process.env.PATH);
+            },
+        );
     });
 
     it('still passes the connection\'s OWN credentials through', () => {

@@ -394,6 +394,36 @@ describe('summariseBenchmark', () => {
     });
 });
 
+/**
+ * Run `body` with these env vars set, then RESTORE whatever was there before.
+ *
+ * NOT `delete` in a finally, which is what this replaced and what broke
+ * `Test (shard 7/7)`: `DATA_ENCRYPTION_KEY` IS set in CI (ci.yml), so deleting
+ * it stripped the master KEK from every later test in the same worker. A
+ * variable that was unset before is removed again; one that was set is put
+ * back to its own value.
+ *
+ * `async` and awaited, because a sync `try/finally` around a function that
+ * returns a promise restores BEFORE the body has run.
+ */
+async function withAmbientEnv(
+    vars: Record<string, string>,
+    body: () => Promise<void> | void,
+): Promise<void> {
+    const saved = new Map<string, string | undefined>(
+        Object.keys(vars).map((k) => [k, process.env[k]]),
+    );
+    Object.assign(process.env, vars);
+    try {
+        await body();
+    } finally {
+        for (const [k, v] of saved) {
+            if (v === undefined) delete process.env[k];
+            else process.env[k] = v;
+        }
+    }
+}
+
 describe('buildCredentialEnv', () => {
     it('passes each supplied credential through the environment', () => {
         const env = buildCredentialEnv(
@@ -433,25 +463,23 @@ describe('buildCredentialEnv', () => {
         expect(env.PATH).toBe(process.env.PATH);
     });
 
-    it('does NOT inherit the parent environment wholesale (#5253)', () => {
+    it('does NOT inherit the parent environment wholesale (#5253)', async () => {
         // This test used to be called "inherits the parent environment", and it
         // was accurate: the env was `{ ...process.env }`. That handed the master
         // KEK and the database password to a third-party CLI, and let an ambient
         // AWS credential authenticate a scan whose connection had none — so the
         // benchmark ran against the PLATFORM's account and was filed as the
         // tenant's evidence.
-        process.env.DATA_ENCRYPTION_KEY = 'kek-must-not-travel';
-        process.env.AWS_ACCESS_KEY_ID = 'AKIA_AMBIENT';
-        try {
-            const env = buildCredentialEnv({}, {});
-            expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
-            // The ambient key must not stand in for a credential the connection
-            // did not supply.
-            expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
-        } finally {
-            delete process.env.DATA_ENCRYPTION_KEY;
-            delete process.env.AWS_ACCESS_KEY_ID;
-        }
+        await withAmbientEnv(
+            { DATA_ENCRYPTION_KEY: 'kek-must-not-travel', AWS_ACCESS_KEY_ID: 'AKIA_AMBIENT' },
+            () => {
+                const env = buildCredentialEnv({}, {});
+                expect(env.DATA_ENCRYPTION_KEY).toBeUndefined();
+                // The ambient key must not stand in for a credential the
+                // connection did not supply.
+                expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+            },
+        );
     });
 
     it('does not mutate process.env', () => {
