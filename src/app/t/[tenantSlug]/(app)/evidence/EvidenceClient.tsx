@@ -583,12 +583,21 @@ function EvidencePageInner({ initialEvidence, initialControls, controlsComplete,
     // query string) gets a background refetch.
     // Matches every cached evidence-list filter variant (the base URL
     // and any `?…` query-string sibling).
+    //
+    // And the RETENTION aggregate (#5165): the KPI cards and the
+    // archived-aware empty state read `/evidence/retention`, which is neither
+    // the list URL nor a `?…` sibling of it, so a create, edit, archive or
+    // delete left the tiles showing the old counts until a full reload.
     const evidenceKeyMatcher = useCallback(
         (key: unknown): key is string => {
             const prefix = apiUrl(CACHE_KEYS.evidence.list());
+            const retention = apiUrl(CACHE_KEYS.evidence.retention());
             return (
                 typeof key === 'string' &&
-                (key === prefix || key.startsWith(`${prefix}?`))
+                (key === prefix ||
+                    key.startsWith(`${prefix}?`) ||
+                    key === retention ||
+                    key.startsWith(`${retention}?`))
             );
         },
         [apiUrl],
