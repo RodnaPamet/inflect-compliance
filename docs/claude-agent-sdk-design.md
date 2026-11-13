@@ -683,6 +683,15 @@ the sub-processor change policy's 30-day notice, and for each tenant to opt in.
    of the three needs, the engine that serves it: this one, an extension of the
    Tool Runner, or Managed Agents. The spike and its recommendation are in
    `docs/implementation-notes/2026-11-13-spike-4a-agent-sdk.md`.
+
+   **Decided (owner, 2026-11-13): follow the spike.** No need adopts this
+   engine. Deferral to a person (1) and compaction (2) extend the Tool Runner,
+   as steps 2f (#5530) and 2g (#5531); deferral cannot resume without a durable
+   transcript, which Inflect would own either way, and the Tool Runner already
+   has compaction, off by choice. The workspace (3) is Managed Agents' Step 5e.
+   Phase 4 stays parked once the owner's `--real` run confirms the faux-mode
+   figures, and the Agent SDK remains the candidate second engine should a
+   later need be one the other two cannot serve.
 2. **The four #3351 questions, for instructions instead of compose text.**
    **Decided (owner, 2026-10-25): all four answers below are accepted as
    written.** Step 1a builds to them. *Recorded where:* encrypted on `AgentProfileVersion`, its hash pinned on every
