@@ -32,7 +32,10 @@ jest.mock('@/lib/security/encryption', () => ({
 }));
 
 const mockTx = {
-    externalWriteJournal: { findMany: jest.fn() },
+    // `updateMany` is the CLAIM (#5256), taken immediately before the send.
+    // Defaulted to a won race in `beforeEach`; a test that wants the lost-race
+    // path overrides it with `{ count: 0 }`.
+    externalWriteJournal: { findMany: jest.fn(), updateMany: jest.fn() },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({
@@ -78,8 +81,17 @@ const settled = () => {
 const writeWasSent = () =>
     callToolMock.mock.calls.some((c) => c[1] === 'set_alert_owner');
 
+/** The claim's WHERE, so a test can assert what it was conditioned on. */
+const claimWhere = () => {
+    const c = mockTx.externalWriteJournal.updateMany.mock.calls[0] as Array<{ where: unknown }> | undefined;
+    return c ? (c[0].where as Record<string, unknown>) : null;
+};
+/** Was a claim attempted at all? Every refusal must leave the row unclaimed. */
+const claimAttempted = () => mockTx.externalWriteJournal.updateMany.mock.calls.length > 0;
+
 beforeEach(() => {
     jest.clearAllMocks();
+    mockTx.externalWriteJournal.updateMany.mockResolvedValue({ count: 1 });
     mockTx.externalWriteJournal.findMany.mockResolvedValue([journalRow()]);
     mockTx.integrationConnection.findMany.mockResolvedValue([connectionRow()]);
     getPriorStateReadMock.mockResolvedValue({ writeToolName: WRITE, readToolName: READ });
@@ -279,5 +291,69 @@ describe('ASYNC_DELIVERY_TOOLS tracks what the endpoint actually advertises', ()
                 expect(ASYNC_DELIVERY_TOOLS.has(m![1])).toBe(true);
             }
         }
+    });
+});
+
+describe('the claim — one send per row, however many passes (#5256)', () => {
+    it('claims the row before sending, conditioned on it being PENDING and unclaimed', async () => {
+        await runExternalWriteDispatch({ tenantId: T });
+        // The condition IS the mechanism: without both terms two overlapping
+        // passes would each come back with count 1 and both would send.
+        expect(claimWhere()).toEqual({
+            id: 'jrn_1',
+            tenantId: T,
+            outcome: 'PENDING',
+            claimedAt: null,
+        });
+    });
+
+    it('sends NOTHING when another pass won the claim', async () => {
+        // count 0 is the losing pass. That the write does not leave is also the
+        // proof the claim is taken BEFORE the send rather than after it — were
+        // the order reversed, this row would already be gone.
+        mockTx.externalWriteJournal.updateMany.mockResolvedValue({ count: 0 });
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        expect(writeWasSent()).toBe(false);
+        expect(r.inFlight).toBe(1);
+        expect(r.applied).toBe(0);
+        // Not settled either: the row belongs to the pass that won it.
+        expect(settleWriteMock).not.toHaveBeenCalled();
+    });
+
+    it('leaves a row a LIVE pass holds completely alone', async () => {
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([
+            journalRow({ claimedAt: new Date(Date.now() - 60_000) }),
+        ]);
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        expect(writeWasSent()).toBe(false);
+        expect(r.inFlight).toBe(1);
+        // Neither settled nor re-stamped — its owner is still working on it.
+        expect(settleWriteMock).not.toHaveBeenCalled();
+        expect(claimAttempted()).toBe(false);
+    });
+
+    it('settles a STALE claim INDETERMINATE and never re-sends it', async () => {
+        mockTx.externalWriteJournal.findMany.mockResolvedValue([
+            journalRow({ claimedAt: new Date(Date.now() - 61 * 60_000) }),
+        ]);
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        // The whole point of the finding: this is the row a crash after a
+        // successful `callTool` leaves behind, and re-sending it is what applied
+        // an approved grant or disable twice.
+        expect(writeWasSent()).toBe(false);
+        expect(settled()!.outcome).toBe('INDETERMINATE');
+        expect(settled()!.detail).toMatch(/NOT re-sent/);
+        expect(r.indeterminate).toBe(1);
+        expect(r.inFlight).toBe(0);
+    });
+
+    it('a refusal leaves the row UNCLAIMED, so it stays freely retryable', async () => {
+        // The claim sits after every check on purpose. A row refused for drift
+        // provably never reached the far end, so it must not inherit the
+        // "may have been sent" treatment a claim implies.
+        callToolMock.mockResolvedValue({ owner: 'carol', tier: 2 });
+        const r = await runExternalWriteDispatch({ tenantId: T });
+        expect(r.refused).toBe(1);
+        expect(claimAttempted()).toBe(false);
     });
 });

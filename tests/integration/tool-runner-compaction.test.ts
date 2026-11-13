@@ -190,8 +190,12 @@ describeFn('context compaction on the Tool Runner engine (real DB, fake model)',
         expect(bodies).toHaveLength(3);
         expect(bodies[1].tool_choice).toEqual({ type: 'none' });
         const next = JSON.stringify(bodies[2].messages);
-        expect(next).toContain(RUN_STATE_OPEN.replace(/"/g, '\\"'));
-        expect(next).toContain(RUN_SUMMARY_OPEN.replace(/"/g, '\\"'));
+        // The markers as they appear inside the JSON text: JSON's own escaping,
+        // so a backslash or control character is encoded exactly as the
+        // serialiser encodes it (CodeQL: a hand-rolled quote-only escape).
+        const inJson = (s: string) => JSON.stringify(s).slice(1, -1);
+        expect(next).toContain(inJson(RUN_STATE_OPEN));
+        expect(next).toContain(inJson(RUN_SUMMARY_OPEN));
         expect(next).toContain(SUMMARY.A);
     });
 

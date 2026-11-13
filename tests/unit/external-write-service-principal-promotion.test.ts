@@ -49,8 +49,12 @@ jest.mock('@/lib/security/encryption', () => ({
     decryptField: (s: string) => s,
 }));
 const mockTx = {
-    // `updateMany` is the visit stamp both passes write (#5259).
-    externalWriteJournal: { findMany: jest.fn(), updateMany: jest.fn(async () => ({ count: 0 })) },
+    // `updateMany` serves TWO writes on this path, and the count matters to one
+    // of them. It is the visit stamp both reconcile passes write (#5259), whose
+    // return nobody reads — and it is the dispatch's CLAIM (#5256), where
+    // `count: 0` means "another pass owns this row" and the write is not sent.
+    // So it must answer 1 here, or every send below is skipped as a lost race.
+    externalWriteJournal: { findMany: jest.fn(), updateMany: jest.fn(async () => ({ count: 1 })) },
     integrationConnection: { findMany: jest.fn() },
 };
 jest.mock('@/lib/db-context', () => ({

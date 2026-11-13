@@ -1066,6 +1066,12 @@ export const authOptions: NextAuthOptions = {
             // treats the session as invalid and every server gate sees none
             // (src/lib/auth/session-revoked.ts). Returning the token with an
             // `error` flag, as this did, kept every claim and refused nothing.
+            //
+            // Two of the row's facts are needed further down, by the claims
+            // refresh (#5246), so they are declared out here rather than inside
+            // the block that reads them.
+            let claimsReadDue = false;
+            let sessionRowFound = false;
             if (typeof token.userSessionId === 'string' && token.userSessionId) {
                 let revoked = false;
                 try {
@@ -1076,6 +1082,10 @@ export const authOptions: NextAuthOptions = {
                         token.userSessionId,
                     );
                     revoked = result.revoked;
+                    // The only 5-minute cadence on this path that survives a
+                    // request (#5246) — see the claims refresh below.
+                    claimsReadDue = result.touched;
+                    sessionRowFound = result.rowId !== null;
                 } catch {
                     // Helper already logs; fail-open on telemetry-side
                     // failures so a transient DB blip doesn't sign every
@@ -1133,8 +1143,7 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
-            // Throttled revocation check AND membership-claims refresh
-            // (5-minute interval, one shared timestamp).
+            // Throttled revocation check AND membership-claims refresh.
             //
             // The refresh is here because it is the only place it can be.
             // Membership claims are minted at sign-in and re-minted on
@@ -1145,12 +1154,35 @@ export const authOptions: NextAuthOptions = {
             // `/api/auth/session`. Every other way a membership appears —
             // org auto-provisioning, an accepted invite, an admin adding you to
             // a tenant — happens in a request the affected user is not making,
-            // so no client-side refresh can ever reach it. Before this, those
-            // memberships were invisible to the Edge gate and to the workspace
-            // switcher until a full re-login, with nothing on screen to say so:
-            // the org page rendered (it is DB-gated server-side) while the
-            // switcher, which reads only the token, said the user belonged to
-            // no organizations.
+            // so no client-side refresh can ever reach it.
+            //
+            // ── WHAT THIS REACHES, AND WHAT IT DOES NOT (#5246) ─────────────
+            //
+            // It reaches every SERVER-SIDE reader of the token in this request:
+            // the workspace switcher (which previously said the user belonged
+            // to no organizations while the DB-gated org page rendered),
+            // `getTenantCtx`, and the server gates.
+            //
+            // It does NOT reach the EDGE. This comment used to claim it did —
+            // that those memberships were "invisible to the Edge gate … until a
+            // full re-login", and below, that the refresh "SHRINKS the token"
+            // so the Edge stops authorizing a removed slug. Both are false, for
+            // the reason stated two blocks up and in
+            // `lib/auth/refresh-session-cookie.ts`: in the App Router a server
+            // read never writes the re-signed cookie back, and the middleware
+            // reads ONLY the cookie (`getToken`). So:
+            //
+            //   • a membership added while signed in stays invisible to
+            //     `checkTenantAccess`, which returns `cross_tenant` for its
+            //     slug and sends the person to `/no-tenant` — where a button
+            //     now calls the NextAuth session route, the one path that does
+            //     rewrite the cookie;
+            //   • a REVOKED membership likewise stays in the cookie, so the
+            //     Edge keeps admitting its slug. The authoritative server-side
+            //     gate refuses it, so this is stale defence-in-depth rather
+            //     than a breach — which is what the old comment said, correctly,
+            //     about the state BEFORE the refresh. The refresh did not
+            //     change it.
             //
             // Revocation is checked BEFORE the refresh, because the refresh
             // overwrites `token.sessionVersion` with the value it is compared
@@ -1175,15 +1207,39 @@ export const authOptions: NextAuthOptions = {
                     // Outside the try, for the same reason as the row check above.
                     if (versionBumped) throw new SessionRevokedError('session_version_bumped');
                     try {
-                        // Claims re-read from the database on the same cadence.
-                        // This also SHRINKS the token when a membership is
-                        // revoked: previously a removed membership stayed in the
-                        // JWT until re-login, so the Edge gate kept authorizing
-                        // the slug (the authoritative server-side gate refused
-                        // it, so this was stale defence-in-depth rather than a
-                        // breach — but the gate was answering from a token that
-                        // no longer described reality).
-                        if (token.email) {
+                        // ── THE CLAIMS RE-READ, ON A CADENCE THAT PERSISTS ──
+                        //
+                        // Gated on the session row's own touch rather than on
+                        // `token.sessionVersionCheckedAt` (#5246). That
+                        // timestamp lives in the token, and in the App Router
+                        // the re-signed cookie is never written back — so it
+                        // persisted exactly ONCE, at sign-in, where the cookie
+                        // IS written. Five minutes later every server request
+                        // re-ran this: a joined user+memberships+orgs query plus
+                        // a `tenantsEnforcingSso` query, on every page render,
+                        // for the life of the session. The outer throttle was
+                        // not throttling anything.
+                        //
+                        // `claimsReadDue` is true only when
+                        // `verifyAndTouchSession` actually stamped
+                        // `lastActiveAt`, which is DB state on a row this
+                        // callback already reads — a real 5-minute cadence for
+                        // no extra query and no new column.
+                        //
+                        // With NO session row (`!sessionRowFound` — a token
+                        // minted before session tracking, or a flow that writes
+                        // none) there is no persisted signal, so fall back to
+                        // the old timing rather than never refreshing.
+                        //
+                        // The REVOCATION check above is deliberately NOT gated
+                        // this way: it stays on the token's timing, so it keeps
+                        // running at least as often as it does today. Narrowing
+                        // it would make a `sessionVersion` bump take up to five
+                        // minutes to notice, and that is a security cadence, not
+                        // a performance one. Per-session revocation is
+                        // unaffected either way — `verifyAndTouchSession` reads
+                        // `revokedAt` on EVERY pass, unthrottled.
+                        if (token.email && (claimsReadDue || !sessionRowFound)) {
                             const before = membershipTenantIds(token);
                             const primary = { tenantId: token.tenantId, pending: token.mfaPending === true };
                             await applyMembershipClaims(token);

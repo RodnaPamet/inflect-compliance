@@ -128,7 +128,8 @@ existing Postgres: the vectors sit in a tenant-scoped table under RLS and the
 repository's `tenantId` filter, in the same backups, purged by the same tenant
 purge, with no new service to deploy, secure or watch. Similarity is cosine
 over an HNSW index, one partial expression index per embedding model, so two
-models can be indexed side by side while D-L4-3 benchmarks them.
+models can be indexed side by side during a model change. D-L4-3 chose
+`intfloat/multilingual-e5-small` (384 dimensions) on 2026-11-13.
 
 **Adopted (D-L4-2, 2026-11-11): the vectors-only rule.** Chunk text lives in
 exactly one place: `KnowledgeChunk.text`, a Postgres column in the encryption
@@ -259,8 +260,8 @@ vector column.
       vector_cosine_ops) WHERE "embeddingModel" = '<id>'`. The `vector` type
       indexes at most 2,000 dimensions (`halfvec` at most 4,000), so a model
       emitting 2,048 (Nemotron embed's default) is either truncated to a
-      supported Matryoshka size or stored as `halfvec`; the D-L4-3 benchmark
-      names which. `CREATE INDEX` runs in the migration's transaction, so not
+      supported Matryoshka size or stored as `halfvec`. D-L4-3's choice
+      (2026-11-13), `multilingual-e5-small`, emits 384, so it is `vector`. `CREATE INDEX` runs in the migration's transaction, so not
       `CONCURRENTLY` (the `pg_trgm` migration's note says why). **The CI
       fresh-DB schema-drift gate sees each of these indexes.** Prisma cannot
       declare a partial expression index with an operator class, so

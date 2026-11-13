@@ -16,6 +16,8 @@ import {
     parseScoringConfig,
     type ScoringConfig,
 } from '@/app-layer/services/vendor-assessment-scoring-engine';
+import ddFixture from '../../prisma/fixtures/vendor-questionnaire-supplier-due-diligence.json';
+import saFixture from '../../prisma/fixtures/vendor-questionnaire-supplier-security-assessment.json';
 
 const Q = (id: string, weight = 1, required = false) => ({
     id,
@@ -285,5 +287,58 @@ describe('parseScoringConfig', () => {
             { rating: 'LOW', minScore: 0, maxScore: 1 },
             { rating: 'HIGH', minScore: 3 },
         ]);
+    });
+});
+
+
+// ─── The shipped templates rate for real (#5066) ───────────────────
+
+describe.each([
+    { label: 'Supplier Due Diligence', raw: ddFixture.scoringConfig },
+    { label: 'Supplier Security Assessment', raw: saFixture.scoringConfig },
+])('$label — the SHIPPED scoring config', ({ raw }) => {
+    // The REAL fixture, not a hand-written copy: removing `thresholdScale`
+    // from the JSON must fail these, which a local literal would not notice.
+    const config = parseScoringConfig(raw);
+
+    const badlyAnswered = {
+        // Points measure RISK in these fixtures (a `NO` on a control question
+        // scores high), so a vendor with poor answers scores HIGH.
+        questions: [Q('q1'), Q('q2'), Q('q3')],
+        answers: [A('q1', 8), A('q2', 8), A('q3', 8)],
+    };
+
+    test('survives parseScoringConfig with its scale intact', () => {
+        expect(config).not.toBeNull();
+        expect(config!.thresholdScale).toBe('PERCENT');
+    });
+
+    test('rates a badly-answered assessment CRITICAL, not LOW', () => {
+        // 8 points per unit weight → 80% of the 10-point maximum → the 76-100
+        // bucket. This is the assertion the defect broke: whatever the vendor
+        // answered, the suggestion came back LOW.
+        const r = scoreAssessment({ ...badlyAnswered, config });
+        expect(r.score).toBe(8);
+        expect(r.suggestedRating).toBe('CRITICAL');
+    });
+
+    test('still rates a well-answered assessment LOW — the scale did not invert anything', () => {
+        // The other half: a change that made everything CRITICAL would pass the
+        // test above and be just as wrong.
+        const r = scoreAssessment({
+            questions: [Q('q1'), Q('q2'), Q('q3')],
+            answers: [A('q1', 1), A('q2', 2), A('q3', 0)],
+            config,
+        });
+        expect(r.suggestedRating).toBe('LOW');
+    });
+
+    test('WITHOUT the scale the same answers collapse to LOW — the defect, reproduced', () => {
+        // The counterfactual, so this file records the mechanism rather than
+        // just the fixed value: an absent scale reads as RAW, and a raw
+        // points-per-weight average of 8 falls in the 0-25 bucket.
+        const withoutScale: ScoringConfig = { ...config!, thresholdScale: undefined };
+        const r = scoreAssessment({ ...badlyAnswered, config: withoutScale });
+        expect(r.suggestedRating).toBe('LOW');
     });
 });

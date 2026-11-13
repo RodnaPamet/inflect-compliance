@@ -24,6 +24,7 @@ import type {
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
 import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
+import { baseCollectorEnv } from '../collector-child-env';
 
 export interface GcpPostureConfig {
     benchmark?: string;
@@ -192,7 +193,12 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
         // Write the SA key to a restricted temp file for the GCP plugin.
         let credPath: string | null = null;
         let dir: string | null = null;
-        const env: NodeJS.ProcessEnv = { ...process.env };
+        // An ALLOWLIST, not `process.env` (#5253) — see collector-child-env.ts.
+        // An inherited ambient GOOGLE_APPLICATION_CREDENTIALS or CLOUDSDK_* would
+        // let a benchmark run as the platform and be stored as this tenant's
+        // evidence, and the worker's own secrets have no business reaching the
+        // CLI. TMPDIR is allowlisted because the key file below lives under it.
+        const env: NodeJS.ProcessEnv = baseCollectorEnv();
         if (cfg.projectId) env.CLOUDSDK_CORE_PROJECT = cfg.projectId;
         try {
             // `!exec` means "the on-host execFile path", which is the

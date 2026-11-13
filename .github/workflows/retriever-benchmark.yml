@@ -139,13 +139,26 @@ jobs:
           path: retriever-failures
           merge-multiple: true
 
+      # The markdown goes to the step summary AND the job log (owner decision
+      # 2026-11-13): tooling that reads job logs cannot read a step summary or
+      # an artifact. pipefail keeps a failing summarize failing the step.
       - name: Recompute every figure and apply the D-L4-3 rule
         run: |
           set -euo pipefail
           npx tsx scripts/retriever-benchmark/run.ts summarize \
             --records retriever-records \
             --failures retriever-failures \
-            --out retriever-summary.json >> "$GITHUB_STEP_SUMMARY"
+            --out retriever-summary.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # retriever-summary.json's figures, compactly, in the log: per pipeline
+      # recall@10 (overall and bg), latency, declared size and the runner's
+      # memory; per reranker group the pipeline D-L4-3 keeps.
+      - name: Print the summary's figures to the log
+        run: |
+          set -euo pipefail
+          npx tsx scripts/retriever-benchmark/run.ts log-view \
+            --summary retriever-summary.json \
+            --records retriever-records
 
       - name: Upload the summary
         uses: actions/upload-artifact@v7
