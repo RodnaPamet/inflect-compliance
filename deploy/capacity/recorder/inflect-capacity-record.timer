@@ -1,0 +1,17 @@
+#
+# Every 10 minutes on the clock (:00, :10, …), so the rows fall on the same
+# minutes every day and the 00:15–01:45 and 02:00–05:30 UTC windows each hold
+# a whole number of passes. Installed by deploy/apply.sh's host config set,
+# which enables and starts it.
+#
+[Unit]
+Description=Run the capacity recorder every 10 minutes (C1b)
+
+[Timer]
+OnCalendar=*-*-* *:00/10:00 UTC
+AccuracySec=10s
+Persistent=false
+Unit=inflect-capacity-record.service
+
+[Install]
+WantedBy=timers.target

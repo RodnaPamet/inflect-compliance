@@ -8,8 +8,16 @@
 # the `production` environment's required reviewer approves every run. This
 # workflow reuses that identity and that gate. It reads no secret.
 #
-# READ-ONLY. `deploy/capacity/remote.sh` reads /proc, the cgroup files and
-# `docker inspect` / `docker stats` fields it names, and changes nothing.
+# READ-ONLY. Two modes, each a script run as root on the VM that changes
+# nothing:
+#
+#   snapshot  `deploy/capacity/remote.sh` reads /proc, the cgroup files and the
+#             `docker inspect` / `docker stats` fields it names: the VM now.
+#   history   `deploy/capacity/history.sh` reads the rows the capacity recorder
+#             wrote (capacity budget C1b; installed by `deploy/apply.sh`'s host
+#             config set through `VM apply`'s `host-config-apply`) over the last
+#             `hours`: the peaks a snapshot cannot see, because Watchtower
+#             resets them on every merge and nobody approves a run at night.
 #
 # THE LOGS ARE PUBLIC, because the repository is. The report holds container
 # names and numbers only: never an environment file, a compose file, a
@@ -20,6 +28,14 @@ name: VM capacity
 on:
     workflow_dispatch:
         inputs:
+            mode:
+                description: snapshot (the VM now) or history (what the capacity recorder wrote over the last `hours`)
+                required: true
+                default: snapshot
+                type: choice
+                options:
+                    - snapshot
+                    - history
             samples:
                 description: How many `docker stats` samples to take (1-72)
                 required: true
@@ -29,6 +45,11 @@ on:
                 description: Seconds between samples (10-600)
                 required: true
                 default: '60'
+                type: string
+            hours:
+                description: history mode only — how many hours back to read (1-192)
+                required: true
+                default: '24'
                 type: string
 
 # One at a time: two runs staging the script on the VM at once would race.
@@ -42,7 +63,7 @@ permissions:
 
 jobs:
     vm-capacity:
-        name: VM capacity snapshot
+        name: VM capacity (${{ inputs.mode }})
         if: github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         environment: production
@@ -62,8 +83,10 @@ jobs:
             - name: Set up gcloud
               uses: google-github-actions/setup-gcloud@v3
 
-            - name: Take the snapshot on the VM
+            - name: Read capacity on the VM
               env:
+                  MODE: ${{ inputs.mode }}
                   SAMPLES: ${{ inputs.samples }}
                   INTERVAL_SECONDS: ${{ inputs.interval_seconds }}
-              run: deploy/capacity/vm.sh "$SAMPLES" "$INTERVAL_SECONDS"
+                  HOURS: ${{ inputs.hours }}
+              run: deploy/capacity/vm.sh "$MODE" "$SAMPLES" "$INTERVAL_SECONDS" "$HOURS"
