@@ -48,6 +48,7 @@ import type {
 } from '../../identity-provisioner';
 import { randomBytes } from 'node:crypto';
 import { resilientFetch } from '../../http-resilience';
+import { createBoundedFetch } from '../../bounded-fetch';
 import { graphHeaders } from '@/lib/http/graph-headers';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
@@ -73,6 +74,15 @@ export interface EntraIdProvisionerOptions {
     readonly doFetch?: typeof fetch;
 }
 
+/**
+ * A write that got no answer — a 5xx, or a transport failure the helper
+ * reports as status 0 (#5097). The write MAY have landed, so it is
+ * INDETERMINATE, never refused: refused asserts the directory is unchanged.
+ */
+function unanswered(status: number): boolean {
+    return status >= 500 || status === 0;
+}
+
 function bodyOf(res: Response, text: string): string {
     // Graph error bodies are `{ error: { code, message } }`. The code is the
     // part worth quoting — the message often embeds the object id, which this
@@ -90,6 +100,14 @@ export function createEntraIdProvisioner(
 ): DirectoryProvisioner & { close(): Promise<void> } {
     const connection = options.connection;
     const doFetch = options.doFetch ?? resilientFetch;
+    // Writes go out ONCE (#5097). The retrying transport re-sent a POST /users
+    // after a 5xx: the first may already have created the account, so the
+    // second came back "already exists" and the create was reported REFUSED
+    // while an account stood in the directory. A write is sent once and a lost
+    // answer is reported as unknown; only reads retry. The bounded transport,
+    // built the way the Entra writer builds its own: deadline, no retry, no
+    // throttle absorption, because absorbing a throttle IS a retry.
+    const writeFetch = options.doFetch ?? createBoundedFetch();
 
     // FAIL CLOSED ON THE JOINER FIELD, before anything else is read. A
     // different key from the leaver's, compared strictly, and asked for
@@ -111,13 +129,25 @@ export function createEntraIdProvisioner(
         body?: unknown,
     ): Promise<{ ok: boolean; status: number; text: string }> {
         const t = await auth();
-        const res = await doFetch(`${GRAPH}${path}`, {
+        const init: RequestInit = {
             method,
             headers: graphHeaders(t, {
                 ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
             }),
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        });
+        };
+        if (method === 'GET') {
+            const res = await doFetch(`${GRAPH}${path}`, init);
+            const text = res.status === 204 ? '' : await res.text().catch(() => '');
+            return { ok: res.ok, status: res.status, text };
+        }
+        let res: Response;
+        try {
+            res = await writeFetch(`${GRAPH}${path}`, init);
+        } catch {
+            // No answer: the request may or may not have been applied.
+            return { ok: false, status: 0, text: '' };
+        }
         const text = res.status === 204 ? '' : await res.text().catch(() => '');
         return { ok: res.ok, status: res.status, text };
     }
@@ -319,7 +349,7 @@ export function createEntraIdProvisioner(
                 const code = bodyOf({ status: res.status } as Response, res.text);
                 // A create that got no answer is INDETERMINATE, not failed: the
                 // account may exist. Saying refused would assert it does not.
-                if (res.status >= 500 || res.status === 0) {
+                if (unanswered(res.status)) {
                     return { kind: 'indeterminate', detail: `Graph did not report the create (${code}).` };
                 }
                 return { kind: 'refused', detail: `Graph refused the create (${code}).` };
@@ -353,7 +383,7 @@ export function createEntraIdProvisioner(
                 return { kind: 'applied', detail: 'The account was already a member of the group.' };
             }
             const code = bodyOf({ status: res.status } as Response, res.text);
-            if (res.status >= 500) return { kind: 'indeterminate', detail: `Graph did not report the group add (${code}).` };
+            if (unanswered(res.status)) return { kind: 'indeterminate', detail: `Graph did not report the group add (${code}).` };
             return { kind: 'refused', detail: `Graph refused the group add (${code}).` };
         },
 
@@ -395,7 +425,7 @@ export function createEntraIdProvisioner(
                 };
             }
             const code = bodyOf({ status: res.status } as Response, res.text);
-            if (res.status >= 500) return { kind: 'indeterminate', detail: `Graph did not report the credential (${code}).` };
+            if (unanswered(res.status)) return { kind: 'indeterminate', detail: `Graph did not report the credential (${code}).` };
             return { kind: 'refused', detail: `Graph refused the credential (${code}).` };
         },
 
@@ -447,7 +477,7 @@ export function createEntraIdProvisioner(
             const res = await graph('PATCH', `/users/${encodeURIComponent(id)}`, { accountEnabled: true });
             if (res.ok) return { kind: 'applied' };
             const code = bodyOf({ status: res.status } as Response, res.text);
-            if (res.status >= 500) return { kind: 'indeterminate', detail: `Graph did not report the enable (${code}).` };
+            if (unanswered(res.status)) return { kind: 'indeterminate', detail: `Graph did not report the enable (${code}).` };
             return { kind: 'refused', detail: `Graph refused the enable (${code}).` };
         },
 
