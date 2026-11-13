@@ -1665,6 +1665,10 @@ enum TenantRegion {
   US_EAST_1
   EU_WEST_1
   AP_SOUTHEAST_1
+  /// GCP europe-west1 (Belgium), where production runs (#5288). Added in its
+  /// own deploy, before any row carries it: a running container whose Prisma
+  /// client predates a value fails every Tenant read that meets it.
+  EUROPE_WEST1
 }
 
 /// DSAR request type — GDPR Art. 15 (export) vs Art. 17 (erasure).

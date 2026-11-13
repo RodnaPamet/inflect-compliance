@@ -36,6 +36,8 @@ export const PLANNED_REGIONS: Readonly<Record<string, string>> = {
         'Planned (EU residency): needs EU-resident RDS/S3/KMS + a per-region Helm deploy + DNS routing + EU-only sub-processor options. See docs/data-residency.md.',
     AP_SOUTHEAST_1:
         'Planned (APAC residency): needs AP-resident infrastructure + per-region deploy + DNS routing.',
+    EUROPE_WEST1:
+        'Where production runs (GCP europe-west1, Belgium). Declared one deploy ahead of use (#5288): the next deploy makes it the default and the provisioned region and moves every tenant to it.',
 };
 
 /** Is this region backed by live infrastructure right now? */
