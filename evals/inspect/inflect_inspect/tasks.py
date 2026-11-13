@@ -14,7 +14,9 @@ the ENGINE's, which the product calls through its own funnel, guards, caps and
 ledger. The solver never calls Inspect's model; it starts a run on the product
 and awaits it (``runner.run_sample``). The scorer reads only the facts the
 solver stored, and the record writer (``record.py``) keeps those facts and no
-verdict.
+verdict. A sample whose facts are missing is never a crash and never a pass:
+the scorer answers NOT_RUN / INCOMPLETE (``verdicts.inspect_outcome``) and the
+record module refuses the record, naming the task.
 
 Configuration comes from the environment the workflow sets, never from a task
 argument Inspect would echo into its log: ``INSPECT_PRODUCT_URL`` (loopback),
@@ -30,6 +32,7 @@ run binds.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
@@ -41,7 +44,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 
 from inflect_inspect import verdicts
 from inflect_inspect.product import HttpProduct
-from inflect_inspect.runner import SeedManifest, agent_key_env, run_sample, seed_for
+from inflect_inspect.runner import RunNotObserved, SeedManifest, agent_key_env, run_sample, seed_for
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_SET = json.loads((ROOT / "task-set.json").read_text(encoding="utf-8"))
@@ -51,7 +54,10 @@ TENANT_SLUG = {
     ("local-only", "flue"): "inspect-local-flue",
     ("local-only", "tool-runner"): "inspect-local-tool-runner",
 }
-VALUE = {"PASS": CORRECT, "FAIL": INCORRECT, "VACUOUS": NOANSWER}
+# PASS and FAIL only are scored; VACUOUS and every no-verdict answer
+# (verdicts.NOT_RUN / INCOMPLETE / UNSCORABLE) are NOANSWER, never a pass.
+VALUE = {"PASS": CORRECT, "FAIL": INCORRECT}
+log = logging.getLogger("inflect_inspect")
 
 
 def _tenant(task_def: Dict[str, Any], engine: str) -> str:
@@ -77,11 +83,27 @@ def _seed_for(slug: str, task_def: Dict[str, Any], engine: str) -> SeedManifest:
 def governed_run(engine: str):
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_def = state.metadata["task"]
-        slug = _tenant(task_def, engine)
-        seed = _seed_for(slug, task_def, engine)
-        sample = run_sample(_product_for(slug, seed.agent_id), task_def, state.metadata["inputId"], engine, seed)
-        state.metadata["sample"] = {**sample, "epoch": state.epoch}
         state.completed = True
+        try:
+            slug = _tenant(task_def, engine)
+            seed = _seed_for(slug, task_def, engine)
+            product = _product_for(slug, seed.agent_id)
+        except (KeyError, ValueError, OSError) as err:
+            # Configuration (a seed or a credential the workflow did not hand
+            # over): nothing started, so the next sample may still run.
+            state.metadata["harnessError"] = f"not started: {type(err).__name__}: {err}"
+            log.warning("%s: %s", task_def["id"], state.metadata["harnessError"])
+            return state
+        try:
+            sample = run_sample(product, task_def, state.metadata["inputId"], engine, seed)
+        except RunNotObserved as err:
+            # Stored as read, claiming no run: the record refuses it
+            # FACTS_INCOMPLETE, naming the task. PassMustStop is let through.
+            state.metadata["sample"] = {**err.sample, "epoch": state.epoch}
+            state.metadata["harnessError"] = err.reason
+            log.warning("%s", err)
+            return state
+        state.metadata["sample"] = {**sample, "epoch": state.epoch}
         return state
 
     return solve
@@ -90,9 +112,12 @@ def governed_run(engine: str):
 @scorer(metrics=[accuracy()])
 def ledger_scorer(engine: str):
     async def score(state: TaskState, target: Target) -> Score:
-        sample = state.metadata["sample"]
-        verdict = verdicts.score(sample["taskId"], sample["facts"], engine)
-        return Score(value=VALUE[verdict], answer=verdict, explanation=f"{sample['taskId']}: {verdict} (facts only)")
+        # Inspect also scores a sample its own limit or a TimeoutError stopped,
+        # with whatever the state holds: no sample, here, is NOT_RUN.
+        answer, explanation = verdicts.inspect_outcome(
+            state.metadata.get("sample"), engine, state.metadata.get("harnessError")
+        )
+        return Score(value=VALUE.get(answer, NOANSWER), answer=answer, explanation=explanation)
 
     return score
 

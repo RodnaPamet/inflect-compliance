@@ -167,12 +167,20 @@ jobs:
           mkdir -p inspect-out
           npx tsx scripts/inspect-seed.ts --manifest inspect-out/seed-manifest.json --agent-keys "$RUNNER_TEMP/inspect-agent-keys.json"
 
+      # The worker runs from the ESM bundle production runs (dist/worker.mjs,
+      # the compose `worker` service), never `tsx scripts/worker.ts`: under tsx
+      # the sources load as CommonJS, and @flue/runtime exports `./node` under
+      # the `import` condition only, so every Flue run the worker picked up
+      # threw ERR_PACKAGE_PATH_NOT_EXPORTED, BullMQ retried it three times and
+      # the run sat RUNNING until the harness's deadline (run 43380027909).
       - name: Build app
         if: steps.key.outputs.present == 'true'
         env:
           NODE_ENV: production
           NODE_OPTIONS: "--max-old-space-size=8192"
-        run: npm run build
+        run: |
+          npm run build
+          npm run build:worker
 
       - name: Start app + worker (background)
         if: steps.key.outputs.present == 'true'
@@ -181,9 +189,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
         run: |
           npm start > /tmp/app.log 2>&1 &
-          npx tsx scripts/worker.ts > /tmp/worker.log 2>&1 &
+          node dist/worker.mjs > /tmp/worker.log 2>&1 &
+          worker_pid=$!
           for i in $(seq 1 60); do
-            if curl -fsS http://localhost:3008/api/health > /dev/null 2>&1; then echo "App is up after ${i}s"; exit 0; fi
+            if curl -fsS http://localhost:3008/api/health > /dev/null 2>&1; then
+              echo "App is up after ${i}s"
+              # A worker that died at boot leaves every reasoning run RUNNING.
+              if ! kill -0 "$worker_pid" 2>/dev/null; then echo "::error::the worker exited at boot"; tail -n 50 /tmp/worker.log | cut -c1-400 || true; exit 1; fi
+              exit 0
+            fi
             sleep 1
           done
           echo "App failed to start within 60s."; tail -n 100 /tmp/app.log || true; exit 1
@@ -268,6 +282,14 @@ jobs:
           done
           echo "Measured recorded spend: \$$(spent_usd) against a cap of \$$(node -p 'require("./evals/inspect/budget.json").nightlyCapUsd')" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # A run that never settles is decided in the worker, whose log no other
+      # step shows. Warnings and errors only, each line cut short.
+      - name: Worker log (warnings and errors)
+        if: always() && steps.key.outputs.present == 'true'
+        run: |
+          grep -E '"level":(40|50|60)' /tmp/worker.log | tail -n 100 | cut -c1-400 || true
+          grep -vE '^\{' /tmp/worker.log | tail -n 40 | cut -c1-400 || true
 
       - name: Upload records + Inspect logs
         if: always() && steps.key.outputs.present == 'true'
