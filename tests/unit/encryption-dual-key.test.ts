@@ -18,6 +18,7 @@
 import {
     encryptField,
     decryptField,
+    hashForLookup,
     _resetKeyCache,
 } from '@/lib/security/encryption';
 
@@ -34,13 +35,107 @@ function setKeys(primary?: string, previous?: string): void {
     _resetKeyCache();
 }
 
+function setLookupKey(key?: string): void {
+    if (key === undefined) delete process.env.LOOKUP_HASH_KEY;
+    else process.env.LOOKUP_HASH_KEY = key;
+    _resetKeyCache();
+}
+
 const savedEnv = {
     primary: process.env.DATA_ENCRYPTION_KEY,
     previous: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+    lookup: process.env.LOOKUP_HASH_KEY,
 };
 
 afterAll(() => {
+    setLookupKey(savedEnv.lookup);
     setKeys(savedEnv.primary, savedEnv.previous);
+});
+
+/**
+ * A LOOKUP HASH IS AN INDEX, SO A ROTATION MUST NOT MOVE IT (#5071).
+ *
+ * `decryptField` falls back to DATA_ENCRYPTION_KEY_PREVIOUS, so a rotation
+ * leaves ciphertext readable. A hash has no such fallback: `User.emailHash`
+ * IS the lookup key, and a miss reads as "no such row". While the HMAC key
+ * derived from DATA_ENCRYPTION_KEY, the documented rotation therefore broke
+ * every email-based sign-in, SSO/OAuth account match and invite redemption
+ * from the first request.
+ */
+describe('lookup hashes across a master-KEK rotation (#5071)', () => {
+    const EMAIL = 'person@example.com';
+
+    test('with LOOKUP_HASH_KEY pinned, rotating the KEK moves no hash', () => {
+        // The property the fix exists for, and the whole migration path: pin
+        // the lookup key to the key the hashes were computed under, then the
+        // KEK is free to move.
+        setLookupKey(OLD_KEY);
+        setKeys(OLD_KEY);
+        const before = hashForLookup(EMAIL);
+
+        setKeys(NEW_KEY, OLD_KEY);
+        const after = hashForLookup(EMAIL);
+
+        expect(after).toBe(before);
+    });
+
+    test('ciphertext still rotates while the hash stays put', () => {
+        // The two must not be coupled in EITHER direction: pinning the lookup
+        // key must not pin the data key, or the rotation would do nothing.
+        setLookupKey(OLD_KEY);
+        setKeys(OLD_KEY);
+        const ct = encryptField('secret');
+        const hash = hashForLookup(EMAIL);
+
+        setKeys(NEW_KEY, OLD_KEY);
+        expect(decryptField(ct)).toBe('secret');     // read via the previous key
+        expect(hashForLookup(EMAIL)).toBe(hash);     // index unmoved
+        expect(decryptField(encryptField('fresh'))).toBe('fresh'); // new key writes
+    });
+
+    test('UNPINNED, a KEK change does move every hash — which is why boot refuses', () => {
+        // Not a wish, a fact: the fallback keeps today's derivation, so an
+        // operator who rotates without setting LOOKUP_HASH_KEY gets exactly
+        // the #5071 breakage. `checkProductionEncryptionKey` refuses to boot in
+        // that state; this records what it is protecting against, so the
+        // fallback cannot be mistaken for safety.
+        setLookupKey(undefined);
+        setKeys(OLD_KEY);
+        const before = hashForLookup(EMAIL);
+
+        setKeys(NEW_KEY, OLD_KEY);
+        expect(hashForLookup(EMAIL)).not.toBe(before);
+    });
+
+    test('an untouched deployment hashes exactly as it did before', () => {
+        // The compatibility guarantee: unset LOOKUP_HASH_KEY must reproduce the
+        // KEK-derived hash byte for byte, or upgrading would itself break
+        // every sign-in.
+        setKeys(OLD_KEY);
+        setLookupKey(undefined);
+        const fallback = hashForLookup(EMAIL);
+
+        setLookupKey(OLD_KEY);
+        expect(hashForLookup(EMAIL)).toBe(fallback);
+    });
+
+    test('a DIFFERENT lookup key yields a different hash', () => {
+        // The control that proves the pin is read at all, rather than the
+        // tests above passing because nothing varies.
+        setKeys(OLD_KEY);
+        setLookupKey(OLD_KEY);
+        const a = hashForLookup(EMAIL);
+        setLookupKey(NEW_KEY);
+        expect(hashForLookup(EMAIL)).not.toBe(a);
+    });
+
+    test('a too-short LOOKUP_HASH_KEY is ignored, not accepted', () => {
+        setKeys(OLD_KEY);
+        setLookupKey(undefined);
+        const fallback = hashForLookup(EMAIL);
+        setLookupKey('a'.repeat(31));
+        expect(hashForLookup(EMAIL)).toBe(fallback);
+    });
 });
 
 describe('Dual-KEK decrypt (Epic B.3)', () => {

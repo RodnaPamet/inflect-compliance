@@ -277,6 +277,22 @@ export const env = createEnv({
         // remaining v1 rows under the previous key.
         DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
 
+        // #5071 — the key the DETERMINISTIC LOOKUP HASHES derive from.
+        //
+        // `hashForLookup` is an index, not a ciphertext: `User.emailHash` IS
+        // the lookup key, so a changed HMAC key makes every sign-in miss and
+        // there is no previous-key fallback to soften it. Deriving it from
+        // DATA_ENCRYPTION_KEY meant the documented master-KEK rotation broke
+        // every email-based login from the first request.
+        //
+        // Absent, it falls back to DATA_ENCRYPTION_KEY's material — the exact
+        // previous derivation — so no deployment changes by upgrading. Set it
+        // to the CURRENT DATA_ENCRYPTION_KEY value BEFORE a rotation and the
+        // hashes are unchanged while the KEK is free to move. A DIFFERENT
+        // value is valid but rewrites every hash, so it needs a backfill of
+        // every *Hash column first.
+        LOOKUP_HASH_KEY: z.string().min(32).optional(),
+
         // Web Bot Auth (docs/ai-architecture/web-bot-auth.md Phase 1, D-L1-5):
         // ONE Ed25519 signing seed for the DEPLOYMENT, never per tenant — a
         // monitored vendor must not learn which customer monitors it. Both are
@@ -915,6 +931,8 @@ export const env = createEnv({
         AV_WEBHOOK_SECRET: process.env.AV_WEBHOOK_SECRET,
         AV_SCAN_MODE: process.env.AV_SCAN_MODE,
         CLAMAV_HOST: process.env.CLAMAV_HOST,
+
+        LOOKUP_HASH_KEY: process.env.LOOKUP_HASH_KEY,
 
         PIPELOCK_PUBLIC_KEY: process.env.PIPELOCK_PUBLIC_KEY,
         PIPELOCK_STRICT_MODE: process.env.PIPELOCK_STRICT_MODE,
