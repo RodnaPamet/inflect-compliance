@@ -240,8 +240,24 @@ async function rpc(
     }
 
     if ('error' in parsed && parsed.error) {
+        // BOUNDED and control-character-stripped, for the reason the catch four
+        // lines up already gives about the raw body: this is attacker-influenced
+        // text of unknown shape, and an error string is one of the few places in
+        // this codebase that reliably reaches a log.
+        //
+        // It used to be interpolated verbatim. The body cap is the only limit a
+        // JSON-RPC `error.message` had, so a hostile or merely broken server
+        // could put most of a megabyte of arbitrary text into the thrown error
+        // — and from there into the API error response, the logs, and any run
+        // step or audit text built from it. Control characters could break the
+        // line structure of whatever read it.
+        //
+        // The same call `describeAuthChallenge` makes below, and for the same
+        // stated reason: "a hostile server could otherwise put a megabyte into a
+        // header and have us paste it into every log line." The CODE is passed
+        // through untouched — it is a number, and it is the part worth acting on.
         throw new McpClientError(
-            `MCP server refused ${method}: ${parsed.error.message}`,
+            `MCP server refused ${method}: ${boundedServerText(parsed.error.message)}`,
             parsed.error.code,
         );
     }
@@ -310,6 +326,26 @@ function sseReplyTo(body: string, requestId: string): string | null {
  * and "the server said something I could not read" both mean there is nothing
  * to add, and a half-parsed challenge would be worse than none.
  */
+/**
+ * The most of a server-supplied string we are willing to repeat.
+ *
+ * 200 characters, matching `describeAuthChallenge`'s bound below rather than
+ * inventing a second number, and control characters removed with the strip the
+ * AI and CSP paths already use. Long enough for a real diagnosis ("tool not
+ * found", "rate limited, retry in 30s"), short enough that it cannot be used to
+ * flood a log line or an error response.
+ *
+ * Returns a fixed placeholder rather than an empty string when there is nothing
+ * usable: `refused tools/call: ` reads like the message was lost on our side,
+ * and "the server said nothing" is itself worth knowing.
+ */
+function boundedServerText(message: unknown): string {
+    if (typeof message !== 'string' || message.length === 0) return '(no message)';
+    const clean = message.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+    if (clean.length === 0) return '(no message)';
+    return clean.length > 200 ? `${clean.slice(0, 200)}…` : clean;
+}
+
 export function describeAuthChallenge(header: string | null | undefined): string | null {
     if (!header) return null;
     const scheme = header.trim().split(/[\s,]/, 1)[0];
