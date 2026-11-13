@@ -20,14 +20,12 @@ describe('ISO 27001 → SOC 2 guidance mappings', () => {
         expect(unlisted).toEqual([]);
     });
 
-    it('reaches every Common Criterion but the three no ISO edge names', () => {
+    it('gives every Common Criterion in the catalogue at least one ISO control', () => {
         const covered = new Set(mappings.flatMap((m) => m.soc2Codes));
         const ccWithout = [...listed].filter((c) => c.startsWith('CC') && !covered.has(c));
-        // CC2.1 (quality information), CC6.5 (asset and media disposal) and
-        // CC6.6 (boundary protection) have no ISO guidance edge: #5174
-        // re-pointed the existing edges and added none. Every other Common
-        // Criterion in the catalogue is reached.
-        expect(ccWithout.sort()).toEqual(['CC2.1', 'CC6.5', 'CC6.6']);
+        // CC2.1, CC6.5 and CC6.6 had no ISO edge after #5174; A.8.15/A.8.16,
+        // A.7.14/A.8.10 and A.8.20/A.8.22 now reach them.
+        expect(ccWithout).toEqual([]);
     });
 
     it('maps access control to the access criteria it supports', () => {
