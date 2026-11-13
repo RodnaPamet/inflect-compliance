@@ -292,6 +292,12 @@ jobs:
               inflect-garak:ci --config /cfg/config.yaml --report_prefix "garak-${role}" \
               || garak_exit=$?
             echo "$garak_exit" > "garak-out/${role}/garak-exit"
+            # The scanner runs as root in its container, so what it wrote is
+            # root's: the runner user could not read it, and both the
+            # summary and the artifact upload failed with EACCES on the
+            # first keyed run (43337664860). Hand it back before anything
+            # on the runner reads it.
+            sudo chown -R "$(id -u):$(id -g)" "garak-out/${role}"
             if [ "$garak_exit" != "0" ]; then echo "::error::garak exited ${garak_exit} for ${role}"; status=1; fi
 
             kill "$proxy" 2>/dev/null || true
