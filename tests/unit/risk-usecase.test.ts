@@ -34,6 +34,11 @@
 
 const mockDb = {
     tenant: { findUnique: jest.fn() },
+    // The RESTRICT child `deleteRisk` now checks before soft-deleting
+    // (#5083): a treatment plan holds the risk down at the 90-day purge. The
+    // usecase THROWS on a missing delegate rather than reading absence as
+    // "nothing blocks", so omitting this fails loudly by design.
+    riskTreatmentPlan: { count: jest.fn(async () => 0) },
     user: { findMany: jest.fn() },
     risk: { findFirst: jest.fn(), findMany: jest.fn() },
     // create/updateRisk + bulkAssignRisk verify a supplied ownerUserId is an
