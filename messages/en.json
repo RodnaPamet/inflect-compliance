@@ -15966,6 +15966,7 @@
       "empty": "No new suggestions — your enabled rules already cover the obvious gaps.",
       "draftCreated": "Draft created",
       "createDraft": "Create draft",
+      "createFailed": "The draft rule could not be created.",
       "dismiss": "Dismiss",
       "events": {
         "CONTROL_STATUS_CHANGED": "Control Status Changed",

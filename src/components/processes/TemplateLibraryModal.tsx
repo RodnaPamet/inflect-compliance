@@ -38,7 +38,6 @@ function buildAllTags(t: (key: string) => string): { value: string; label: strin
         { value: 'risk', label: t('tagRisk') },
         { value: 'control', label: t('tagControl') },
         { value: 'task', label: t('tagTask') },
-        { value: 'issue', label: t('tagIssue') },
         { value: 'notify', label: t('tagNotify') },
         { value: 'webhook', label: t('tagWebhook') },
     ];

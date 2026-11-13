@@ -1,7 +1,7 @@
 /**
  * VR-9 — the Control-page AI suggestions rail renders ranked cards + actions.
  */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
 const mockSWR = jest.fn();
@@ -13,7 +13,10 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     // No <SessionProvider> in the app — the current user id comes from the
     // server-resolved tenant context, not useSession().
     useCurrentUserId: () => 'u1',
+    // Creating a rule is the server's coarse admin tier (#5172).
+    useTenantContext: () => ({ permissions: { canAdmin: mockCanAdmin() } }),
 }));
+const mockCanAdmin = jest.fn(() => true);
 
 import { AutomationSuggestionsRail } from '@/components/automation/AutomationSuggestionsRail';
 
@@ -59,6 +62,32 @@ describe('AutomationSuggestionsRail', () => {
         expect(
             screen.queryByText('Notify the team when a control test fails'),
         ).not.toBeInTheDocument();
+    });
+
+    it('offers Create draft only to a member the server lets create rules (#5172)', () => {
+        mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
+        mockCanAdmin.mockReturnValue(false);
+        render(<AutomationSuggestionsRail />);
+        expect(screen.queryByRole('button', { name: 'Create draft' })).toBeNull();
+        // Reading the suggestions, and dismissing them, stays open to all.
+        expect(screen.getAllByText('Dismiss')).toHaveLength(2);
+        mockCanAdmin.mockReturnValue(true);
+    });
+
+    it('says why a create was refused instead of doing nothing (#5172)', async () => {
+        mockSWR.mockReturnValue({ data: { suggestions: SUGGESTIONS }, isLoading: false });
+        (globalThis as { fetch?: unknown }).fetch = jest.fn(async () => ({
+            ok: false,
+            status: 403,
+            json: async () => ({ error: { message: 'Requires ADMIN role.' } }),
+        })) as unknown as typeof fetch;
+        render(<AutomationSuggestionsRail />);
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Create draft' })[0]);
+
+        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Requires ADMIN role.'));
+        expect(screen.queryByText('Draft created')).toBeNull();
+        delete (globalThis as { fetch?: unknown }).fetch;
     });
 
     it('shows an empty hint when there are no suggestions', () => {
