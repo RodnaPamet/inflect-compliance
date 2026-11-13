@@ -146,6 +146,17 @@ export function SharePointFilePicker({
         void loadFolder(undefined);
     }, [driveId, loadFolder, t]);
 
+    // A SITE CHANGE MOVES TO THAT SITE'S LIBRARY (#5173). Setting the site
+    // alone left `driveId`, the listing and the path on the previous site's
+    // library, so the picker went on browsing it and "Use folder" returned
+    // its drive under the new site's name.
+    const selectSite = (next: string) => {
+        setSiteId(next);
+        setDriveId(drives[next]?.[0]?.value ?? '');
+        setItems([]);
+        setPath([{ name: t('library') }]);
+    };
+
     const enterFolder = (f: SpBrowseItem) => {
         setPath((p) => [...p, { id: f.id, name: f.name }]);
         void loadFolder(f.id);
@@ -195,7 +206,7 @@ export function SharePointFilePicker({
                         id="sp-site"
                         options={sites}
                         selected={sites.find((o) => o.value === siteId) ?? null}
-                        setSelected={(o) => setSiteId(o?.value ?? '')}
+                        setSelected={(o) => selectSite(o?.value ?? '')}
                         placeholder={t('site')}
                         matchTriggerWidth
                     />

@@ -62,6 +62,27 @@ describe('SharePointClient — auth + endpoints', () => {
         expect(sites.map((s) => s.id)).toEqual(['s1', 's2']);
     });
 
+    it('listSites follows @odata.nextLink so a site past the first page is listed (#5215)', async () => {
+        const f = jest
+            .fn()
+            .mockResolvedValueOnce(
+                jsonRes({ value: [{ id: 's1' }], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/sites?search=*&$skiptoken=2' }),
+            )
+            .mockResolvedValueOnce(jsonRes({ value: [{ id: 's2' }] }));
+        const sites = await client(f).listSites();
+        expect(sites.map((s) => s.id)).toEqual(['s1', 's2']);
+        expect(f.mock.calls[1][0]).toContain('skiptoken=2');
+    });
+
+    it('listSites stops at its page bound rather than walking for ever', async () => {
+        const f = jest.fn().mockImplementation(async () =>
+            jsonRes({ value: [{ id: 'x' }], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/sites?search=*&$skiptoken=n' }),
+        );
+        const sites = await client(f).listSites(3);
+        expect(f).toHaveBeenCalledTimes(3);
+        expect(sites).toHaveLength(3);
+    });
+
     it('listDrives hits the site drives endpoint', async () => {
         const f = jest.fn().mockResolvedValue(jsonRes({ value: [{ id: 'drv1' }] }));
         await client(f).listDrives('site-1');
