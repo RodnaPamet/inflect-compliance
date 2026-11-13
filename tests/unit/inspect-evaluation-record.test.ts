@@ -16,6 +16,7 @@ import {
     inspectTaskSetHash,
     InspectTaskSetSchema,
     kindsCoveredOn,
+    missingFacts,
     scoreSample,
     taskVerdict,
     type InspectEngine,
@@ -25,7 +26,10 @@ import {
 
 const ROOT = path.resolve(__dirname, '../..');
 const SET = JSON.parse(readFileSync(path.join(ROOT, 'evals/inspect/task-set.json'), 'utf8'));
-const GOLDEN: { cases: Array<{ name: string; taskId: InspectTaskId; engine: InspectEngine; expected: string; facts: LedgerFacts }> } =
+const GOLDEN: {
+    requiredFacts: Record<InspectTaskId, string[]>;
+    cases: Array<{ name: string; taskId: InspectTaskId; engine: InspectEngine; expected: string; facts: LedgerFacts }>;
+} =
     JSON.parse(readFileSync(path.join(ROOT, 'evals/inspect/fixtures/verdict-cases.json'), 'utf8'));
 
 /** A PASS case for the task, preferring one written for Flue (some facts are engine-specific). */
@@ -103,6 +107,16 @@ describe('the task set', () => {
 describe('the scorers agree with the golden file shared with the Python scorers', () => {
     it.each(GOLDEN.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
         expect(scoreSample(c.taskId, c.facts, c.engine)).toBe(c.expected);
+    });
+
+    it('names the facts each task needs exactly as the Python scorers do (requiredFacts)', () => {
+        // The harness's Inspect scorer reports a sample lacking one INCOMPLETE
+        // instead of scoring it; this module refuses it FACTS_INCOMPLETE.
+        const unread: LedgerFacts = {
+            admission: null, run: null, steps: [], kill: null, entityCounts: null,
+            decisionRows: null, markerSeenAfter: null, residencyBefore: null, grantsBefore: null,
+        };
+        expect(Object.fromEntries(INSPECT_TASK_IDS.map((id) => [id, missingFacts(id, unread)]))).toEqual(GOLDEN.requiredFacts);
     });
 
     it('holds a PASS and a FAIL case for every task, so the file exercises both sides of each scorer', () => {
