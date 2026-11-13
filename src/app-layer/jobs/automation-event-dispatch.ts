@@ -246,6 +246,9 @@ export async function runAutomationEventDispatch(
                         entityId: event.entityId,
                         actorUserId: event.actorUserId,
                         data: event.data as Record<string, unknown> | undefined,
+                        // The row just claimed: an INVOKE_AGENT run or an
+                        // INVOKE_SUBFLOW entry names it as its parent (#3537).
+                        executionId,
                     });
                     // `updateMany` scoped to status RUNNING, not `update` by id.
                     //

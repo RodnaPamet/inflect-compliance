@@ -471,7 +471,11 @@ export function AgentRunDetailClient({
                         {actionError}
                     </InlineNotice>
                 )}
-                {run.parentExecutionId ? (
+                {/* `!== null`, not truthiness: a run a directly fired rule
+                    started before the lineage fix recorded `''` — a rule DID
+                    cause it, only the execution was lost — and reading that as
+                    "no parent" credited the rule's owner as the starter. */}
+                {run.parentExecutionId !== null ? (
                     <p
                         className="text-sm text-content-muted"
                         data-testid="run-caused-by"

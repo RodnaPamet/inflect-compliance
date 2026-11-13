@@ -123,6 +123,9 @@ export async function runRuleChainDispatch(
                           entityType: payload.entityType,
                           entityId: payload.entityId,
                           data: { ...data, __parentExecutionId: parentExecutionId },
+                          // THIS step's execution, not its parent: a run or a
+                          // sub-flow it starts belongs to this rule (#3537).
+                          executionId: claimedId,
                       })
                     : { ok: true, summary: 'Condition not met — took the else branch' };
 

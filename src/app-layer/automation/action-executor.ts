@@ -149,6 +149,25 @@ export interface ActionEvent {
     entityId?: string;
     actorUserId?: string | null;
     data?: Record<string, unknown>;
+    /**
+     * The `AutomationExecution` this action is being taken FOR — the row the
+     * calling dispatcher claimed for this rule (direct event, chain step or
+     * sub-flow entry alike).
+     *
+     * It is the parent an action names when it starts something downstream
+     * (`INVOKE_AGENT`'s run, `INVOKE_SUBFLOW`'s entry execution), because the
+     * readers walk `execution -> ruleId`: the process canvas's agent view
+     * (`listCanvasAgentRuns`) and the run page's "caused by rule" line both
+     * attribute the child to the rule of the execution it names. It used to
+     * be read from `data.__parentExecutionId`, which a chain step and a
+     * sub-flow entry set to THEIR OWN parent and a directly fired rule did not
+     * set at all, so a direct firing's run recorded `''` and a chained one
+     * named the upstream rule.
+     *
+     * Typed, not a `data` marker, on purpose: `data` is the event payload, and
+     * a WEBHOOK posts it verbatim.
+     */
+    executionId?: string;
 }
 
 // A loose Prisma surface — the dispatchers pass the singleton client or a tx.
@@ -621,7 +640,11 @@ async function invokeAgent(rule: ExecutableRule, event: ActionEvent): Promise<Ac
         // which input key, so what reaches prompt assembly is bounded by the
         // event's shape rather than by what someone typed into a rule.
         inputMapping: cfg.inputMapping ?? {},
-        parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
+        // THE EXECUTION THAT TOOK THIS ACTION, which is what the run's
+        // `parentExecutionId` means (#3537). `''` only when a caller supplied
+        // no execution — kept as the empty string, not null, because NULL is
+        // "nothing caused this run" and a rule did.
+        parentExecutionId: event.executionId ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
         depth: (Number.isFinite(currentDepth) ? currentDepth : 0) + 1,
@@ -633,7 +656,8 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
     const cfg = rule.actionConfigJson as { targetGroupId?: string };
     if (!cfg?.targetGroupId) return { ok: false, summary: 'No sub-flow target configured' };
     // The chained execution is created by the subflow-dispatch job; here we
-    // only enqueue it. parentExecutionId is wired by the caller via the event.
+    // only enqueue it. Its parent is the execution taking THIS action
+    // (`event.executionId`), which also keys the sub-flow's claim (#5103).
     // Carry the recursion depth forward. `__subflowDepth` is stamped by
     // subflow-dispatcher on the data it hands to `executeAction`; absent on
     // the first hop, so an initial invoke enqueues depth 1. The dispatcher
@@ -643,7 +667,7 @@ async function invokeSubflow(rule: ExecutableRule, event: ActionEvent): Promise<
     await enqueue('subflow-dispatch', {
         tenantId: event.tenantId,
         targetGroupId: cfg.targetGroupId,
-        parentExecutionId: (event.data?.__parentExecutionId as string) ?? '',
+        parentExecutionId: event.executionId ?? '',
         triggerEvent: event.event,
         data: event.data ?? {},
         // The invoking execution's entity, so the sub-flow's actions act on
