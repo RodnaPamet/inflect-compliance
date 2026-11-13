@@ -188,19 +188,29 @@ export const PASS_AUTOMATION_SUFFIX: Readonly<Record<IdentityDirection, string>>
  * enforced ceiling are one value and cannot drift. Whoever flips the flag no
  * longer has to remember a second edit.
  *
- * `joiner` is nevertheless still FALSE, and the reason changed with it. It is no
- * longer "nothing reads `identityJoinerMode`" — `planJoinerPass` reads it at its
- * own gate 1. It is that a plan it produces cannot be acted on yet. This list
- * held TWO reasons; #2687 closed the first, and the second alone is enough:
+ * `joiner` IS NOW TRUE (#2949), and this paragraph claimed it was false until
+ * #5566 — 130 lines above the constant that says otherwise. Every reason it
+ * gave has since been built: the create verb (#2923), the Entra provisioner
+ * (#2940), the entitlement map's reader (#2713) and its writer (#2839), the
+ * dispatcher and schedule (#2687) and the run route that the bullet below calls
+ * "NOT in this diff". The clamp it cited as `DRY_RUN` is `AUTOMATIC` (#2954).
+ *
+ * The history is kept because the shape is the lesson, and this file already
+ * states it one bullet down: *"The sentence was specific enough to be believed
+ * and to stop a reader checking."* That is what this paragraph then did about
+ * itself. What follows is the record of what held the flag down, each item now
+ * closed:
  *
  *   • NO TRIGGER — MOSTLY CLOSED BY #2687. This used to read "there is no joiner
  *     job, no schedule and no run route". TWO of those three now exist:
  *     `identity-joiner-pass` and its `identity-joiner-dispatch` fan-out in
  *     `jobs/identity-joiner.ts`, and the 04:30 UTC entry in `jobs/schedules.ts`.
- *     The OWNER-only run route is NOT in this diff: it ships in the route half of
- *     #2687, split out because two new API routes push the CI Build over the
- *     runner's memory ceiling (#2698) and the engine should not wait on that.
- *     So a joiner pass fires on schedule today and cannot yet be fired off it.
+ *     The OWNER-only run route was NOT in #2687: it shipped in that issue's route
+ *     half, split out because two new API routes pushed the CI Build over the
+ *     runner's memory ceiling (#2698). It EXISTS now, at
+ *     `admin/identity-joiner-passes/run` — so the clause "a joiner pass fires on
+ *     schedule today and cannot yet be fired off it", which this bullet carried
+ *     until #5566, names nothing that is still true.
  *     Owner decision 9 of 2026-09-19 — dispatch
  *     on the TENANT's timezone — is not satisfied and is not pretended to be:
  *     `dispatchJobId` floors on UTC buckets and `schedules.ts` records why a
@@ -234,9 +244,12 @@ export const PASS_AUTOMATION_SUFFIX: Readonly<Record<IdentityDirection, string>>
  *     the writer landed: it went red pointing at these paragraphs, which is
  *     the coupling that was missing the first time round.
  *
- *     `wouldCreate` is still 0, but for the OTHER reason now — the create verb
- *     is unwired and `JOINER_MAX_MODE` is DRY_RUN. This condition no longer
- *     holds the flag down on its own.
+ *     That sentence was then superseded twice. It next read "`wouldCreate` is
+ *     still 0, but for the OTHER reason now — the create verb is unwired and
+ *     `JOINER_MAX_MODE` is DRY_RUN", and BOTH halves have since gone false:
+ *     #2923 wired the verb and #2954 raised the clamp to `AUTOMATIC`. Nothing
+ *     here holds the flag down any more, which is why it is true.
+ *     clamp-claim-allow: quotes the two superseded wordings this bullet had
  *
  * SO THE TRIGGER LANDING IS NOT THE CONDITION FOR FLIPPING THIS. That is what
  * this paragraph used to say — "when the trigger lands, this flips in the same

@@ -62,35 +62,40 @@
  * the other here; they are two separate statements about one credential.
  *
  * ═══════════════════════════════════════════════════════════════════
- * WHY THE JOINER FIELD IS NOT ON THE CONNECTION FORM YET
+ * THE JOINER FIELD IS ON THE FORM, AND THIS SECTION SAID OTHERWISE
  * ═══════════════════════════════════════════════════════════════════
  *
- * `ENTRA_JOINER_WRITES_FIELD` is spelled here and read here, and is
- * DELIBERATELY absent from `EntraIdProvider.configSchema.configFields`.
- * `tests/unit/entra-write-direction-split.test.ts` pins that absence so
- * adding it is a reviewed diff rather than a copy-paste.
+ * `ENTRA_JOINER_WRITES_FIELD` is spelled here and read here, and IS declared
+ * in `EntraIdProvider.configSchema.configFields` as "Allow joiner credential
+ * issuance", off by default. `tests/unit/entra-write-direction-split.test.ts`
+ * asserts that PRESENCE. Until #5566 this section said the opposite — that the
+ * field was "DELIBERATELY absent" and that the same test "pins that absence" —
+ * while the test six screens away already checked the other thing.
  *
- * The reasoning is `providers/hris/write-back.ts`'s, one vendor along: *"A
- * checkbox is a question put to a customer."* There is no create verb
- * behind this direction — `JOINER_MAX_MODE` is `DRY_RUN` and the live arm
- * waits on #2608 — so a box ticked
- * today would authorise nothing today and would ALREADY BE TICKED on the
- * day the create verb makes it mean something. A grant collected before
- * the capability exists is not a grant to that capability; it is the same
- * accidental consent read across time instead of across directions.
+ * Three facts it rested on moved, each in its own reviewed diff:
  *
- * This paragraph used to add "no dispatcher calls the planner" as a third
- * reason. #2687 landed the dispatcher and the schedule (the run route ships in its
- * route half, held back by the CI memory ceiling #2698), so
- * that clause is gone rather than left to rot. The argument is unaffected:
- * what makes a joiner-writes checkbox premature is the absent CREATE VERB,
- * not the absent trigger. A DRY_RUN pass that plans and stops authorises
- * nothing, so the box would still be a grant to a capability that does not
- * exist yet.
+ *   • THE CREATE VERB EXISTS. `provisioner.ts` is real and `entra-id` is a
+ *     member of `LIVE_PROVISIONER_PROVIDERS` (#2878 f11). The old text said the
+ *     live arm "waits on #2608".
+ *   • THE CLAMP LIFTED. `JOINER_MAX_MODE` is `AUTOMATIC` (#2954), so the joiner
+ *     ladder refuses no rung a tenant can reach. The old text named it as
+ *     `DRY_RUN` and reasoned from a pass that "plans and stops".
+ *   • THE CONSENT QUESTION WAS ANSWERED. An Entra joiner needs a Temporary
+ *     Access Pass, which needs `Policy.Read.All`; nobody had decided whether to
+ *     ask customers for it. That decision was made, the permission is in the
+ *     setup guide, and the per-connection opt-in is the question put to the
+ *     customer — which is `providers/hris/write-back.ts`'s rule, *"A checkbox
+ *     is a question put to a customer,"* honoured rather than deferred.
  *
- * So the joiner's switch arrives in the diff that ships the joiner's write,
- * and until then this direction refuses for everyone — which is the narrow
- * reading applied to itself.
+ * So the switch did arrive in the diff that shipped the write, exactly as the
+ * old paragraph promised. What it did not do was come back and say so here.
+ *
+ * WHAT STILL HOLDS, AND IS NOW THE WHOLE OF IT: the two directions are
+ * separate grants over one credential, read strictly against the boolean
+ * `true`. A leaver grant is not a joiner grant and the converse holds too. An
+ * Entra create therefore needs the box ticked on THIS connection AND an
+ * administrator's consent to `User.ReadWrite.All` + `Policy.Read.All` AND a
+ * tenant at `AUTOMATIC` — three deliberate acts, none of them a clamp.
  *
  * ═══════════════════════════════════════════════════════════════════
  * WHAT THIS MODULE DELIBERATELY DOES NOT TOUCH
@@ -245,15 +250,22 @@ export function readDirectionWritesEnabled(
  * Telling a joiner operator to look at a checkbox and re-save would be two
  * false statements in one sentence.
  *
- * Splitting this is precaution rather than a bug fix: the joiner sentence is
- * UNREACHABLE today, twice over, and both reasons are checked by tests.
- * `directionWriteRefusal(config, 'joiner')` has no production caller at all —
- * the only call site in `src/` is `writer.ts`'s constructor, which passes
- * `'leaver'` — and even given one, `CONFIG_FIELD_RULES['entra-id']` does not
- * list `joinerWritesEnabled`, so `validateProviderConfig` throws `Unknown
- * configuration field` before such a value could be stored. It is split now
- * because the day the create verb lands is the day this ships to an operator,
- * and a wrong sentence discovered then is discovered in a support ticket.
+ * THIS SENTENCE IS LIVE OPERATOR COPY. The paragraph here used to call it
+ * "UNREACHABLE today, twice over, and both reasons are checked by tests", and
+ * both reasons have since gone false — which is why the remedy below carries
+ * its own correction note for #2878 f11, recorded in one place while this
+ * paragraph kept the old claim:
+ *
+ *   • `directionWriteRefusal(config, 'joiner')` HAS a production caller:
+ *     `provisioner.ts`'s constructor. The old text said the only call site in
+ *     `src/` was `writer.ts`, which passes `'leaver'`.
+ *   • `CONFIG_FIELD_RULES['entra-id']` DOES list `joinerWritesEnabled` (as
+ *     `inert`), so a value stores through the ordinary form rather than
+ *     throwing `Unknown configuration field`.
+ *
+ * So an operator can reach this sentence by ticking the box and storing a
+ * string-shaped value, and the wording is worth the same care as the leaver's
+ * rather than being precaution against a future that has already arrived.
  */
 const DIRECTION_STORED_VALUE_REMEDY: Readonly<Record<IdentityDirection, string>> = {
     leaver:
