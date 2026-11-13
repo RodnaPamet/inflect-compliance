@@ -159,6 +159,8 @@ jest.mock('@/lib/agentic/drivers/deferral-store', () => ({
     readDecidedDeferral: jest.fn(async () => null),
     readDeferredProposal: jest.fn(async () => null),
     markDeferralResumedInTx: jest.fn(() => async () => undefined),
+    readCallProposals: jest.fn(async () => []),
+    parkRun: jest.fn(async () => 'PARKED'),
 }));
 jest.mock('@/lib/agentic/drivers/run-store', () => ({
     getRunRow: jest.fn(async () => ({

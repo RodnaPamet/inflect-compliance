@@ -97,7 +97,7 @@
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
  */
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import type Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
@@ -118,6 +118,8 @@ import {
 } from '@/lib/agentic/drivers/run-settlement';
 import {
     markDeferralResumedInTx,
+    parkRun,
+    readCallProposals,
     readDecidedDeferral,
     readDeferredProposal,
 } from '@/lib/agentic/drivers/deferral-store';
@@ -157,12 +159,14 @@ import {
 } from './compaction';
 import { delegateTool, type ChildLoopResult } from './delegate';
 import { recordToolRunnerDecision } from './model-decision';
-import { compactionParams, DEFAULT_TIER, lockedParams } from './params';
+import { compactionParams, DEFAULT_TIER, lockedParams, toolDefinitionOf } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
 import {
+    TRANSCRIPT_FORMAT,
     decisionResult,
     openTranscript,
     resumedMessages,
+    sealTranscript,
     type DeferralTranscript,
 } from './transcript';
 import {
@@ -173,6 +177,7 @@ import {
     subagentGuardSource,
     subagentOf,
     toolRunnerToolsFor,
+    type LatchedDeferral,
     type RunStop,
     type ToolRunBinding,
 } from './tools';
@@ -297,6 +302,8 @@ interface LoopRuntime {
     noteCompactionFailed(): void;
     /** Latch the skill-pin stop a compaction found, and abort the request in flight. */
     stopAtPinMismatch(): void;
+    /** The parent's turn a deferral latched in (Step 2f): kept to park on. */
+    captureParkedTurn(turn: ParkedTurn): void;
     /**
      * A RESUMED segment's mark (Step 2f), taken ONCE, by the first MODEL_CALL
      * step the segment records: it moves the deferral to RESUMED and clears
@@ -734,6 +741,13 @@ async function runModelLoop(
             // reuses the tool response it caches here, so nothing runs twice.
             if (asksForAnotherCall(reply.stop_reason) && calls < maxIterations) {
                 const toolResults = await runner.generateToolResponse();
+                // A DEFERRAL latched in this turn (Step 2f): the turn is kept to
+                // park on, and nothing is sent after it. Only the parent's loop
+                // parks; a child's calls never defer.
+                const deferralLatched = rt.binding.stopped()?.kind === 'DEFER';
+                if (deferralLatched && spec.subagent === null && toolResults !== null) {
+                    rt.captureParkedTurn({ request, reply, toolResults });
+                }
                 // Compaction (Step 2g): only after a complete tool round, and
                 // before the next call's own kill, breaker and STEPS charge.
                 const estimatedNextRequest =
@@ -743,6 +757,7 @@ async function runModelLoop(
                     estimatedNextRequest,
                     toolRoundComplete: reply.stop_reason === 'tool_use' && toolResults !== null,
                     stepsRemaining: budget.remaining('STEPS'),
+                    deferralLatched,
                     stopLatched: rt.binding.stopped() !== null,
                     compactedLastTurn: compactedAtCall === calls - 1,
                     failedThisSegment: rt.compactionFailed(),
@@ -773,6 +788,46 @@ async function runModelLoop(
         }
     }
     return { calls, namedStop, lastStopReason, failure, lastText, failureApi };
+}
+
+/**
+ * A deferral latched, with no turn captured to park on (Step 2f): the call
+ * queued its proposal but the run could not keep the conversation, so it does
+ * not wait for nothing. The proposal stays in the queue as an ordinary one.
+ */
+export const DEFERRAL_NOT_PARKED_MESSAGE =
+    'tool_runner_deferral_not_parked: a call that waits for a person queued its proposal, but the run could not ' +
+    'keep the conversation to resume from. The proposal stays in the queue; the run does not continue.';
+
+/** The turn a deferral parks on: the request, the reply that made the call, and that turn's tool results. */
+interface ParkedTurn {
+    readonly request: BetaToolRunnerParams;
+    readonly reply: BetaMessage;
+    readonly toolResults: BetaMessageParam;
+}
+
+/**
+ * THE TRANSCRIPT A DEFERRAL PARKS ON ("3. The transcript"): the request's
+ * `system` and tool definitions as sent, every message, the reply that made the
+ * call as returned (thinking blocks and signatures included, in order), and the
+ * turn's tool results with the deferred call's slot left open. The SDK's own
+ * objects, through `JSON.stringify` and nothing else.
+ */
+export function transcriptOfTurn(turn: ParkedTurn, toolUseId: string): DeferralTranscript {
+    const results = Array.isArray(turn.toolResults.content) ? turn.toolResults.content : [];
+    return {
+        format: TRANSCRIPT_FORMAT,
+        model: turn.reply.model,
+        system: turn.request.system,
+        tools: turn.request.tools.map(toolDefinitionOf),
+        messages: [...turn.request.messages, { role: 'assistant', content: turn.reply.content }],
+        pendingResults: results.map((block) =>
+            block.type === 'tool_result' && block.tool_use_id === toolUseId
+                ? { type: 'tool_result', tool_use_id: toolUseId, content: '' }
+                : block,
+        ) as DeferralTranscript['pendingResults'],
+        toolUseId,
+    };
 }
 
 /** A DECIDED deferral, opened for the resume: its transcript, and the result its open slot takes. */
@@ -896,6 +951,7 @@ export async function executeToolRunnerRun(
         return { status, stepFailures: 0 };
     }
 
+    const clockStartMs = resume ? Date.now() - resume.elapsedMsAtPark : runStartMs;
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
     const caps = resolveRunCaps(invocation.policyCard?.inForce.value ?? null);
     const budget = createRunBudget({
@@ -906,7 +962,7 @@ export async function executeToolRunnerRun(
         // parked, so a person's deliberation is never charged to RUNTIME_MS.
         // The worker's `runStartMs` is not used for it: it is the run's start,
         // or the decision's clock base, and either would charge the queue.
-        startedAtMs: resume ? Date.now() - resume.elapsedMsAtPark : runStartMs,
+        startedAtMs: clockStartMs,
         spent: {
             STEPS: fromSeq,
             TOOL_CALLS: fromSeq,
@@ -947,6 +1003,8 @@ export async function executeToolRunnerRun(
         worstRuleIds: readonly string[];
         pinMismatch: boolean;
         compactionFailed: boolean;
+        deferral: LatchedDeferral | null;
+        parkedTurn: ParkedTurn | null;
     } = {
         capHalt: null,
         killVerdict: null,
@@ -959,6 +1017,8 @@ export async function executeToolRunnerRun(
         worstRuleIds: [],
         pinMismatch: false,
         compactionFailed: false,
+        deferral: null,
+        parkedTurn: null,
     };
     const seen = new Map<string, StepGuardObservation>();
     const origins = new Map<string, number>();
@@ -977,6 +1037,9 @@ export async function executeToolRunnerRun(
         if (state.capHalt) return { kind: 'CAP', halt: state.capHalt };
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
         if (state.pinMismatch) return { kind: 'SKILL_PIN_MISMATCH' };
+        // The deferral LAST (Step 2f): every other stop outranks it, and a run
+        // stopped by one of them settles by that reason.
+        if (state.deferral) return { kind: 'DEFER' };
         return null;
     };
 
@@ -1083,6 +1146,14 @@ export async function executeToolRunnerRun(
             stepFailures += 1;
         },
         admitToolCall: () => turnCalls.admit('parent', parentCalls),
+        // The calls that wait for a person (Step 2f): the version's own list.
+        // Admission refuses a version naming any on an engine that does not
+        // park on them, so a run that reaches here may.
+        deferredTools: new Set(def.profile?.deferredToolNames ?? []),
+        latchDeferral: (d) => {
+            if (state.deferral === null) state.deferral = d;
+            controller.abort();
+        },
     };
 
     // Taken by the first MODEL_CALL step of a resumed segment, and only by it.
@@ -1119,6 +1190,9 @@ export async function executeToolRunnerRun(
         stopAtPinMismatch: () => {
             state.pinMismatch = true;
             controller.abort();
+        },
+        captureParkedTurn: (turn) => {
+            if (state.parkedTurn === null) state.parkedTurn = turn;
         },
         takeResumeMark: () => {
             const mark = resumeMark;
@@ -1317,6 +1391,37 @@ export async function executeToolRunnerRun(
     if (state.pinMismatch) {
         const status = await failRun(ctx, runId, SKILL_PIN_MISMATCH_MESSAGE);
         return { status, stepFailures: stepFailures + 1 };
+    }
+    // ── THE PARK (Step 2f): nothing else latched, so the run waits ─────────
+    // One transaction: the transcript, the PENDING checkpoint and the run's
+    // conditional move to AWAITING_APPROVAL with the proposal's deadline. The
+    // wall clock's unattended time so far is kept, so the wait is never
+    // charged. An operator's ABORTED stands.
+    if (state.deferral) {
+        if (!state.parkedTurn) {
+            const status = await failRun(ctx, runId, DEFERRAL_NOT_PARKED_MESSAGE);
+            return { status, stepFailures: stepFailures + 1 };
+        }
+        const proposal = (await readCallProposals(ctx, runId, state.deferral.stepSeq)).find(
+            (p) => p.id === state.deferral?.proposalId,
+        );
+        const sealed = sealTranscript(transcriptOfTurn(state.parkedTurn, state.deferral.toolUseId));
+        const parked = await parkRun(ctx, {
+            deferralId: randomUUID(),
+            runId,
+            stepSeq: state.deferral.stepSeq,
+            checkpointSeq: binding.nextSeq(),
+            toolUseId: state.deferral.toolUseId,
+            toolCalled: state.deferral.toolCalled,
+            proposalId: state.deferral.proposalId,
+            transcriptJson: sealed.json,
+            transcriptHash: sealed.hash,
+            model: state.parkedTurn.reply.model,
+            elapsedMsAtPark: Math.max(Date.now() - clockStartMs, 0),
+            approvalExpiresAt: proposal?.expiresAt ?? null,
+            costTokens,
+        });
+        return { status: parked === 'PARKED' ? 'AWAITING_APPROVAL' : 'ABORTED', stepFailures };
     }
     if (parent.failure !== null) {
         // THE API REFUSED THE RESUMED CONVERSATION (Step 2f): its first request,

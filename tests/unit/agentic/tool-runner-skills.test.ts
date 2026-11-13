@@ -88,6 +88,8 @@ function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | nu
         forgetOrigin: () => undefined,
         onFailure: () => undefined,
         admitToolCall: () => turnCalls.admit('parent', 1),
+        deferredTools: new Set<string>(),
+        latchDeferral: () => undefined,
     };
     return { binding, halts };
 }

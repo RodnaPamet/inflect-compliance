@@ -13507,6 +13507,7 @@
         "effort": "Effort",
         "maxTurns": "Turn limit",
         "compaction": "Summarise long conversations",
+        "deferral": "Wait for a person",
         "outputKind": "Output",
         "triggers": "Allowed triggers",
         "subagents": "Sub-agents: each one's tools, skills, turn limit and every word of its instructions"
@@ -13534,6 +13535,9 @@
         "off": "Off",
         "lower": "At a lower threshold",
         "atTokens": "At {count} tokens"
+      },
+      "deferral": {
+        "none": "None: every call queues its proposal and the run goes on"
       },
       "inForce": {
         "heading": "In force",
@@ -13609,6 +13613,7 @@
         "effortHint": "How much the model reasons before it answers.",
         "maxTurnsHint": "The most model turns a run may take, from 1 to {max}.",
         "compactionHint": "When a run's next request would pass the threshold, the model summarises the earlier turns and the run carries on from the summary. The instructions, the skills it activated, refused calls, proposals and the last turn's results are always kept word for word. By default this happens at about {tokens} tokens. A version can turn it off or lower the threshold, never raise it.",
+        "deferralHint": "A call to a tool ticked here waits for a person: the run stops until the proposal it queued is approved or rejected in the proposals queue, then carries on with the decision. Only the version's own propose tools can wait, and a sub-agent cannot use one.",
         "compactionThresholdLabel": "Threshold, in tokens",
         "compactionThresholdHint": "From {min} to {max} tokens.",
         "outputKindHint": "Proposals are never applied by the agent. A person decides each one.",

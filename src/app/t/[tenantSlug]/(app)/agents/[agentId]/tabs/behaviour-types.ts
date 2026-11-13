@@ -51,6 +51,11 @@ export interface ProfileVersionView {
      * 0 turns compaction off, any other number lowers it.
      */
     compactionThresholdTokens: number | null;
+    /**
+     * The propose tools whose calls wait for a person (Step 2f). Absent reads
+     * as none, for a view built before the field existed.
+     */
+    deferredToolNames?: string[];
     outputKind: ProfileOutputKind;
     allowedTriggers: ProfileTrigger[];
     author: ProfilePerson;

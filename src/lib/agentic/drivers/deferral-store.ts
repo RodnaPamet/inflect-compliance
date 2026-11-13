@@ -21,6 +21,9 @@
 import type { RequestContext } from '@/app-layer/types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { appendAuditEntry } from '@/lib/audit';
+
+import { recordStep } from './step-recorder';
 
 /** The statuses in which a deferral still holds its run: it has not resumed or settled. */
 export const OPEN_DEFERRAL_STATUSES = ['WAITING', 'DECIDED'] as const;
@@ -226,4 +229,132 @@ export async function settleOpenDeferralsInTx(db: PrismaTx, ctx: RequestContext,
 /** `settleOpenDeferralsInTx` in a transaction of its own. */
 export async function settleOpenDeferrals(ctx: RequestContext, runId: string): Promise<number> {
     return runInTenantContext(ctx, (db) => settleOpenDeferralsInTx(db, ctx, runId));
+}
+
+// ─── The park (Step 2f, deploy 2) ───────────────────────────────────
+
+/**
+ * The proposals one propose call queued, by the step that made it: what a
+ * deferred call waits on. Bounded to two, because a deferred call carries one
+ * item, so a second row is itself the answer "not one".
+ */
+export async function readCallProposals(
+    ctx: RequestContext,
+    runId: string,
+    stepSeq: number,
+): Promise<Array<{ id: string; status: string; expiresAt: Date | null }>> {
+    return runInTenantContext(ctx, (db) =>
+        db.agentProposal.findMany({
+            where: { tenantId: ctx.tenantId, runId, stepSeq },
+            select: { id: true, status: true, expiresAt: true },
+            orderBy: { createdAt: 'asc' },
+            take: 2,
+        }),
+    );
+}
+
+/** What parking writes, beside the checkpoint step. */
+export interface ParkInput {
+    readonly deferralId: string;
+    readonly runId: string;
+    /** The deferred call's TOOL_CALL seq. */
+    readonly stepSeq: number;
+    /** The HUMAN_CHECKPOINT's seq: the step after the run's last. */
+    readonly checkpointSeq: number;
+    readonly toolUseId: string;
+    readonly toolCalled: string;
+    readonly proposalId: string;
+    readonly transcriptJson: string;
+    readonly transcriptHash: string;
+    readonly model: string;
+    readonly elapsedMsAtPark: number;
+    /** The proposal's own window: the wait's one clock. */
+    readonly approvalExpiresAt: Date | null;
+    readonly costTokens: number;
+}
+
+/** Raised inside the park's transaction when the run is no longer RUNNING, so nothing is written. */
+class RunNoLongerRunning extends Error {
+    constructor() {
+        super('the run is no longer RUNNING');
+    }
+}
+
+/**
+ * PARK THE RUN, in ONE transaction ("2. The deferred call, and the parked
+ * run"): the transcript is written; the HUMAN_CHECKPOINT step is recorded
+ * PENDING, labelled `deferral`, naming the deferral, the proposal, the tool and
+ * the call (never the transcript); and the run moves RUNNING → AWAITING_APPROVAL
+ * CONDITIONALLY, with `approvalExpiresAt` the proposal's own deadline. An
+ * operator's ABORTED stands: then nothing is written and this returns
+ * `ABORTED`. `WORKFLOW_RUN_DEFERRED` is audited after the commit, carrying the
+ * proposal id, the tool and the step seq only.
+ */
+export async function parkRun(ctx: RequestContext, input: ParkInput): Promise<'PARKED' | 'ABORTED'> {
+    try {
+        await recordStep(
+            ctx,
+            input.runId,
+            input.checkpointSeq,
+            'HUMAN_CHECKPOINT',
+            {
+                status: 'PENDING',
+                label: 'deferral',
+                input: {
+                    deferralId: input.deferralId,
+                    proposalId: input.proposalId,
+                    toolCalled: input.toolCalled,
+                    toolUseId: input.toolUseId,
+                },
+            },
+            undefined,
+            async (db) => {
+                await db.workflowRunDeferral.create({
+                    data: {
+                        id: input.deferralId,
+                        tenantId: ctx.tenantId,
+                        runId: input.runId,
+                        stepSeq: input.stepSeq,
+                        toolUseId: input.toolUseId,
+                        toolCalled: input.toolCalled,
+                        proposalId: input.proposalId,
+                        transcriptJson: input.transcriptJson,
+                        transcriptHash: input.transcriptHash,
+                        model: input.model,
+                        elapsedMsAtPark: input.elapsedMsAtPark,
+                    },
+                });
+                const moved = await db.workflowRun.updateMany({
+                    where: { id: input.runId, tenantId: ctx.tenantId, status: 'RUNNING' },
+                    data: {
+                        status: 'AWAITING_APPROVAL',
+                        approvalExpiresAt: input.approvalExpiresAt,
+                        stepCount: input.checkpointSeq + 1,
+                        costTokens: input.costTokens,
+                    },
+                });
+                if (moved.count === 0) throw new RunNoLongerRunning();
+            },
+        );
+    } catch (err) {
+        if (err instanceof RunNoLongerRunning) return 'ABORTED';
+        throw err;
+    }
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'WorkflowRun',
+        entityId: input.runId,
+        action: 'WORKFLOW_RUN_DEFERRED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            proposalId: input.proposalId,
+            tool: input.toolCalled,
+            stepSeq: input.stepSeq,
+            deferralId: input.deferralId,
+        },
+    }).catch(() => undefined);
+    return 'PARKED';
 }

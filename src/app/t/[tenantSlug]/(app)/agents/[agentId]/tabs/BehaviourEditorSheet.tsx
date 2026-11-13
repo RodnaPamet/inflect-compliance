@@ -63,6 +63,7 @@ import {
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    isProfileProposeTool,
     type ProfileEffort,
     type ProfileModelTier,
     type ProfileOutputKind,
@@ -78,7 +79,7 @@ import {
     type SubagentDraft,
 } from './BehaviourSubagentsSection';
 
-type Field = 'instructions' | 'tools' | 'skills' | 'subagents' | 'compaction';
+type Field = 'instructions' | 'tools' | 'skills' | 'subagents' | 'compaction' | 'deferral';
 
 /** The three answers to "Summarise long conversations" (Step 2g). */
 type CompactionMode = 'default' | 'off' | 'lower';
@@ -105,6 +106,10 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     SUBAGENT_MAX_TURNS_ABOVE_VERSION: 'subagents',
     COMPACTION_THRESHOLD_BELOW_MINIMUM: 'compaction',
     COMPACTION_THRESHOLD_ABOVE_TIER: 'compaction',
+    DEFERRED_TOOL_NOT_IN_VERSION: 'deferral',
+    DEFERRED_TOOL_NOT_A_PROPOSE_TOOL: 'deferral',
+    DEFERRED_TOOLS_WITH_FLOW: 'deferral',
+    SUBAGENT_TOOL_DEFERRED: 'deferral',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -159,6 +164,10 @@ export function BehaviourEditorSheet({
             : view.limits.compactionThreshold.engineDefaultByTier[from?.modelTier ?? 'balanced'],
     );
     const [outputKind, setOutputKind] = useState<ProfileOutputKind>(from?.outputKind ?? 'ANSWER_ONLY');
+    // The propose tools whose calls wait for a person (Step 2f), from the
+    // starting version. Only a tool still selected and still a propose tool is
+    // offered or sent: the picker is over the version's own propose tools.
+    const [deferredTools, setDeferredTools] = useState<string[]>(from?.deferredToolNames ?? []);
     const [triggers, setTriggers] = useState<ProfileTrigger[]>(from?.allowedTriggers ?? ['TEST_RUN']);
     // The starting version's sub-agents, kept as written: a sub-agent naming
     // something the version has since lost is marked in place, never trimmed.
@@ -219,6 +228,10 @@ export function BehaviourEditorSheet({
         compactionReady;
 
     const fieldError = (field: Field) => (error?.field === field ? error.message : undefined);
+    // "Wait for a person" is over the version's selected propose tools, and a
+    // version that only answers, or carries a flow, proposes nothing to wait on.
+    const deferrable = flow === null && outputKind !== 'ANSWER_ONLY' ? toolNames.filter(isProfileProposeTool) : [];
+    const deferredToSend = deferrable.filter((n) => deferredTools.includes(n));
 
     const save = async () => {
         if (!canSave) return;
@@ -240,6 +253,8 @@ export function BehaviourEditorSheet({
                 compactionMode === 'default' ? null : compactionMode === 'off' ? 0 : compactionThreshold,
             outputKind,
             allowedTriggers: PROFILE_TRIGGERS.filter((x) => triggers.includes(x)),
+            // The calls that wait for a person (Step 2f): sent only when there are any.
+            ...(deferredToSend.length > 0 ? { deferredToolNames: deferredToSend } : {}),
             // Sent only when there are any, and never beside a flow.
             ...(flow === null && subagents.length > 0
                 ? {
@@ -504,6 +519,35 @@ export function BehaviourEditorSheet({
                             ))}
                         </RadioGroup>
                     </FormField>
+
+                    {deferrable.length > 0 ? (
+                        <div className="space-y-tight" data-testid="behaviour-editor-deferral">
+                            <FormField label={t('field.deferral')} description={t('editor.deferralHint')}>
+                                <div className="space-y-tight" role="group" aria-label={t('field.deferral')}>
+                                    {deferrable.map((tool) => (
+                                        <label key={tool} htmlFor={`behaviour-deferral-${tool}`} className="flex items-center gap-compact text-sm">
+                                            <Checkbox
+                                                id={`behaviour-deferral-${tool}`}
+                                                checked={deferredTools.includes(tool)}
+                                                disabled={busy}
+                                                onCheckedChange={(checked) =>
+                                                    setDeferredTools((prev) =>
+                                                        checked === true ? [...prev.filter((x) => x !== tool), tool] : prev.filter((x) => x !== tool),
+                                                    )
+                                                }
+                                            />
+                                            <span>{tool}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </FormField>
+                            {fieldError('deferral') ? (
+                                <p className="text-xs text-content-error" role="alert" data-testid="behaviour-editor-deferral-error">
+                                    {fieldError('deferral')}
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
 
                     <FormField label={t('field.triggers')} description={t('editor.triggersHint')} required>
                         <div className="space-y-tight" role="group" aria-label={t('field.triggers')}>

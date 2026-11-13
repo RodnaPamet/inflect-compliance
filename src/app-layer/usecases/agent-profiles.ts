@@ -100,6 +100,7 @@ import {
     PROFILE_MAX_SUBAGENTS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
+    checkProfileDeferredTools,
     checkProfileSubagents,
     parseStoredProfileSubagents,
     profileNamesNoReadTool,
@@ -110,6 +111,7 @@ import {
     type ProfileSkillRef,
     type ProfileSubagent,
     type ProfileSubagentRefusal,
+    type ProfileDeferredToolRefusal,
 } from '@/lib/agentic/agent-profile';
 import { compactionThresholdFor } from '@/lib/agentic/tool-runner/compaction';
 import { COMPACTION_THRESHOLD_TOKENS } from '@/lib/agentic/tool-runner/params';
@@ -172,7 +174,8 @@ export type AgentProfileRefusal =
     | ProfileSubagentRefusal
     | 'SUBAGENTS_UNREADABLE'
     | 'COMPACTION_THRESHOLD_BELOW_MINIMUM'
-    | 'COMPACTION_THRESHOLD_ABOVE_TIER';
+    | 'COMPACTION_THRESHOLD_ABOVE_TIER'
+    | ProfileDeferredToolRefusal;
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     PROFILES_DISABLED: 404,
@@ -233,6 +236,10 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     SUBAGENTS_UNREADABLE: 409,
     COMPACTION_THRESHOLD_BELOW_MINIMUM: 400,
     COMPACTION_THRESHOLD_ABOVE_TIER: 400,
+    DEFERRED_TOOL_NOT_IN_VERSION: 400,
+    DEFERRED_TOOL_NOT_A_PROPOSE_TOOL: 400,
+    DEFERRED_TOOLS_WITH_FLOW: 400,
+    SUBAGENT_TOOL_DEFERRED: 400,
 };
 
 /** A refusal carrying its reason as `details.reason`, beside a sentence for the person who asked. */
@@ -339,6 +346,8 @@ interface PreparedVersion {
     readonly maxTurns: number;
     /** NULL takes the engine's threshold, 0 turns compaction off (Step 2g). */
     readonly compactionThresholdTokens: number | null;
+    /** The propose tools whose calls wait for a person (Step 2f): sorted, checked. */
+    readonly deferredToolNames: string[];
     readonly outputKind: AgentProfileVersionInput['outputKind'];
     readonly allowedTriggers: string[];
 }
@@ -365,6 +374,20 @@ function assertCompactionThreshold(value: number | null, tier: string): void {
             { tier, max: max ?? null, value },
         );
     }
+}
+
+/**
+ * THE VERSION'S DEFERRED TOOLS (Step 2f): checked by the pure rule, refused by
+ * name, never dropped. Asked at save and again at approval, where the stored
+ * list must also be the canonical one this build would have written.
+ */
+function assertDeferredTools(
+    names: readonly string[],
+    version: Parameters<typeof checkProfileDeferredTools>[1],
+): string[] {
+    const checked = checkProfileDeferredTools(names, version);
+    if (!checked.ok) throw refuse(checked.reason, checked.message, checked.tool ? { tool: checked.tool } : {});
+    return checked.deferredToolNames;
 }
 
 /**
@@ -412,6 +435,11 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
     const subagentsJson = serializeProfileSubagents(subagents);
     const compactionThresholdTokens = input.compactionThresholdTokens ?? null;
     assertCompactionThreshold(compactionThresholdTokens, input.modelTier);
+    const deferredToolNames = assertDeferredTools(input.deferredToolNames ?? [], {
+        toolNames,
+        subagents,
+        hasFlow: flow !== null,
+    });
     return {
         instructions,
         instructionsHash: profileContentHash(instructions, flowJson, subagentsJson),
@@ -428,6 +456,7 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
         effort: input.effort,
         maxTurns: input.maxTurns,
         compactionThresholdTokens,
+        deferredToolNames,
         outputKind: input.outputKind,
         allowedTriggers: [...new Set(input.allowedTriggers)].sort(),
     };
@@ -750,6 +779,7 @@ async function insertVersion(db: PrismaTx, ctx: RequestContext, profileId: strin
             effort: v.effort,
             maxTurns: v.maxTurns,
             compactionThresholdTokens: v.compactionThresholdTokens,
+            deferredToolNames: v.deferredToolNames,
             outputKind: v.outputKind,
             allowedTriggers: v.allowedTriggers,
             authoredByUserId: ctx.userId,
@@ -821,6 +851,7 @@ export async function createAgentProfile(
                         effort: prepared.effort,
                         maxTurns: prepared.maxTurns,
                         compactionThresholdTokens: prepared.compactionThresholdTokens,
+                        deferredToolNames: prepared.deferredToolNames,
                         outputKind: prepared.outputKind,
                         allowedTriggers: prepared.allowedTriggers,
                     },
@@ -914,6 +945,7 @@ export async function createAgentProfileVersion(
                         effort: prepared.effort,
                         maxTurns: prepared.maxTurns,
                         compactionThresholdTokens: prepared.compactionThresholdTokens,
+                        deferredToolNames: prepared.deferredToolNames,
                         outputKind: prepared.outputKind,
                         allowedTriggers: prepared.allowedTriggers,
                         supersededVersion: open?.version ?? null,
@@ -953,6 +985,8 @@ const VERSION_SELECT = {
     // Read so approval can hold the compaction threshold to the tier again (Step 2g).
     modelTier: true,
     compactionThresholdTokens: true,
+    // Read so approval can re-check the deferred tools (Step 2f).
+    deferredToolNames: true,
     authoredByUserId: true,
 } as const;
 
@@ -1066,6 +1100,16 @@ export async function approveAgentProfileVersion(
         // Asked again (Step 2g): a deploy may have lowered the tier's engine
         // threshold while the version waited, and a version never raises it.
         assertCompactionThreshold(v.compactionThresholdTokens, v.modelTier);
+        // Asked again (Step 2f), every rule by name, and the stored list must be
+        // the canonical one: the approver approves the waits a run will make.
+        const deferred = assertDeferredTools(v.deferredToolNames, {
+            toolNames: v.toolNames,
+            subagents,
+            hasFlow: v.flowJson !== null,
+        });
+        if (deferred.join('\n') !== v.deferredToolNames.join('\n')) {
+            throw refuse('DEFERRED_TOOL_NOT_IN_VERSION', 'The stored deferred tools are not in the form this build writes.');
+        }
         await assertToolsGranted(db, ctx, agentId, v.toolNames);
         // Re-priced at APPROVAL, not just at save (#4523): a deploy between the
         // two can lengthen a shipped skill's description, and approving a tenant
@@ -1121,6 +1165,8 @@ export async function approveAgentProfileVersion(
                     },
                     // What the approver approved about compaction (Step 2g).
                     compactionThresholdTokens: v.compactionThresholdTokens,
+                    // …and which calls wait for a person (Step 2f).
+                    deferredToolNames: v.deferredToolNames,
                     supersededVersion: inForce?.version ?? null,
                 },
             },
@@ -1263,6 +1309,12 @@ export interface AgentProfileVersionView {
      * of the version may summarise its own history.
      */
     compactionThresholdTokens: number | null;
+    /**
+     * The propose tools whose calls wait for a person (Step 2f). Shown to the
+     * approver, so "this agent waits for a person on propose_finding" is part
+     * of what is approved.
+     */
+    deferredToolNames: string[];
     outputKind: string;
     allowedTriggers: string[];
     author: AgentProfilePerson;
@@ -1469,6 +1521,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             effort: true,
             maxTurns: true,
             compactionThresholdTokens: true,
+            deferredToolNames: true,
             outputKind: true,
             allowedTriggers: true,
             authoredByUserId: true,
@@ -1527,6 +1580,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             effort: r.effort,
             maxTurns: r.maxTurns,
             compactionThresholdTokens: r.compactionThresholdTokens,
+            deferredToolNames: r.deferredToolNames,
             outputKind: r.outputKind,
             allowedTriggers: r.allowedTriggers,
             author: person(r.authoredByUserId),
