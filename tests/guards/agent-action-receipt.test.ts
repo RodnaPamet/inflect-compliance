@@ -14,7 +14,7 @@
  *      Apache-2.0 CORE; the verifier documents the Apache-core boundary.
  */
 import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import * as yaml from 'js-yaml';
 import { codeOf, interfaceBodyOf } from '../helpers/source-blocks';
 import { collectorSandboxPolicy } from '@/lib/agentic/openshell/collector-policy';
@@ -288,11 +288,15 @@ describe('pipelock license boundary', () => {
     });
 
     it('verifier documents the Apache-core boundary', () => {
-        // The verifier is the contract package's (scanent #26);
-        // src/lib/mcp/receipt-verification.ts re-exports it.
-        const mod = readFileSync(require.resolve('@rodnapamet/scanent-contract/receipt-verification'), 'utf8');
-        expect(mod).toMatch(/Apache-2\.0/);
-        expect(mod).toMatch(/CORE/);
+        // The verifier is the contract package's (scanent #26), and
+        // src/lib/mcp/receipt-verification.ts re-exports it. The boundary is
+        // a licence statement, so it is read where the package states it: its
+        // NOTICE file, which names the CORE format and excludes the Elastic
+        // features. Each needle occurs in that file exactly once.
+        const pkgDir = dirname(require.resolve('@rodnapamet/scanent-contract/package.json'));
+        const notice = readFileSync(join(pkgDir, 'NOTICE'), 'utf8');
+        expect(notice).toContain('Agent-action receipts — pipelock (Apache License 2.0 CORE)');
+        expect(notice).toContain('Elastic License 2.0 are NOT used by this product.');
     });
 });
 
