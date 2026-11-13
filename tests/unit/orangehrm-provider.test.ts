@@ -216,7 +216,14 @@ describe('the fixture is inside the HRIS allowlist, not beside it', () => {
         // three things without which the connector cannot be configured at all,
         // and those are the same three the setup guide has always named.
         expect(p.setupGuide).toMatch(/ORANGEHRM_HOSTS/);
-        expect(p.setupGuide).toMatch(/client-credentials/i);
+        // The grant is authorization-code since #3594; the guide said
+        // client-credentials until #5201, and an operator who followed it
+        // registered a client that can never obtain a token.
+        expect(p.setupGuide).toMatch(/authorization-code/i);
+        expect(p.setupGuide).not.toMatch(/client-credentials/i);
+        expect(p.description).not.toMatch(/client-credentials/i);
+        expect(p.setupGuide).toMatch(/\/api\/integrations\/orangehrm\/callback/);
+        expect(p.setupGuide).toMatch(/Authorize/);
         expect(p.setupGuide).toMatch(/client id and secret/i);
         // And it must not have regrown a disclaimer by accident, in EITHER of
         // the two phrasings that were used — checked case-insensitively,
