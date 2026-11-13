@@ -24,8 +24,9 @@
  * Each activation is one step of the run: it is charged against the step cap
  * and written to the ledger as a TOOL_CALL step naming `activate_skill`. It is
  * not a funnel call (it reaches no tenant data and no tool the register
- * grants), so it charges no tool-call allowance. It is reported to the register
- * as an engine-supplied tool (`supplied-tools.ts`).
+ * grants), so it charges no tool-call allowance. It is a tool call of its
+ * turn, though, so it counts against the turn's tool-call cap (#4594). It is
+ * reported to the register as an engine-supplied tool (`supplied-tools.ts`).
  */
 import type { BetaRunnableTool, BetaToolRunContext } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
 
@@ -36,7 +37,7 @@ import type { MountedSkillPin } from '@/lib/agentic/flue/skills/mount-gate';
 import type { ResolvedSkillDocument } from '@/lib/agentic/flue/skills/resolve';
 
 import { ACTIVATE_SKILL_TOOL_NAME } from './supplied-tools';
-import { stoppedMessage, type SerialQueue, type ToolRunBinding } from './tools';
+import { refuseOverTurnCap, stoppedMessage, type SerialQueue, type ToolRunBinding } from './tools';
 
 /** What a run mounted, as the resolver returned it, with the pins its row recorded. */
 export interface RunSkills {
@@ -135,6 +136,11 @@ async function activate(binding: ToolRunBinding, skills: RunSkills, args: Record
         binding.stopAtCap(halt);
         throw new Error(halt.message);
     }
+    // An activation is a tool call of the turn, and counts against the turn's
+    // tool-call cap as every tool does (#4594). Refused with no name recorded:
+    // the name the model sent is the model's.
+    const turn = binding.admitToolCall();
+    if (!turn.allowed) return refuseOverTurnCap(binding, ACTIVATE_SKILL_TOOL_NAME, turn);
 
     const seq = binding.nextSeq();
     const selected = selectSkillToActivate(skills, args);

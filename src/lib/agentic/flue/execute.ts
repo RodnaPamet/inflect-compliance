@@ -42,7 +42,7 @@ import { SkillLoadError } from './skills/index';
 import { skillPinDrift } from './skills/resolve';
 import { resolveRunSkillMount } from './skills/tenant-mount';
 import { bindRun, releaseRun } from './run-binding';
-import { readFanOutCap } from '@/lib/agentic/subagent-fanout-policy';
+import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
 import { releaseDelegationCounts, DELEGATION_TOOL_NAME } from './delegation-gate';
 import {
     resolveKillState,
@@ -750,10 +750,15 @@ export async function executeFlueRun(
     // driver reads the number and the enforcement compares against what it was
     // handed — the same shape as every other authority term in this binding.
     //
-    // Never throws and never resolves to "unlimited": see
-    // `subagent-fanout-policy` for why a failed read here takes the opposite
-    // direction to the concurrent-run cap's.
-    const maxSubagentsPerTurn = await readFanOutCap(ctx.tenantId, ctx.requestId);
+    // The value is the delegations half of the org-level turn caps (#4594):
+    // the lower of the organization's ceiling and the workspace's narrowing.
+    // Tool calls per turn is the Tool Runner's alone: Flue's runtime
+    // dispatches the model's tool calls itself and offers no per-turn bound.
+    //
+    // Never throws and never resolves to "unlimited": see `turn-caps-policy`
+    // for why a failed read here takes the opposite direction to the
+    // concurrent-run cap's.
+    const maxSubagentsPerTurn = (await readTurnCaps(ctx.tenantId, ctx.requestId)).delegationsPerTurn.value;
 
     bindRun(runId, {
         tools,

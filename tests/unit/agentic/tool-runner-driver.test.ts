@@ -62,6 +62,11 @@ const mockState = {
     skills: undefined as ConformanceRun['skills'],
     /** The pins the run's row recorded at admission. */
     pinnedSkills: [] as unknown[],
+    /**
+     * The organization's tool-call ceiling the turn caps read (#4594), or null
+     * for a workspace with no organization: the product default, one.
+     */
+    orgToolCallsPerTurn: null as number | null,
 };
 
 function recordedSettlement(): MockSettlement | null {
@@ -161,6 +166,20 @@ jest.mock('@/lib/agentic/flue/skills/tenant-mount', () => ({
 }));
 
 jest.mock('@/lib/agentic/circuit-breaker-store', () => ({ latchOnGuardBlock: jest.fn(async () => null) }));
+
+// THE TURN CAPS' READ (#4594), and nothing else: the resolver is the real one.
+jest.mock('@/lib/agentic/turn-caps-policy', () => ({
+    readTurnCaps: jest.fn(async () => {
+        const { resolveTurnCaps } = jest.requireActual('@/lib/agentic/turn-caps') as typeof import('@/lib/agentic/turn-caps');
+        return resolveTurnCaps({
+            organization:
+                mockState.orgToolCallsPerTurn === null
+                    ? null
+                    : { delegationsPerTurn: 3, toolCallsPerTurn: mockState.orgToolCallsPerTurn },
+            workspace: null,
+        });
+    }),
+}));
 
 jest.mock('@/lib/mcp/auth', () => ({
     resolveMcpInvocation: jest.fn(async (ctx: unknown) => ({
@@ -403,6 +422,7 @@ function reset(
     mockState.decisionSummaries = [];
     mockState.funnelCalls = [];
     mockState.funnelDelayMs = {};
+    mockState.orgToolCallsPerTurn = null;
     mockState.settlement = null;
     mockState.updates = [];
     wire.turns = [...turns];
@@ -415,9 +435,11 @@ async function drive(
     turns: readonly FauxTurn[] = run.turns,
     def: WorkflowDefinition = DEFINITION,
     funnelDelayMs: Record<string, number> = {},
+    orgToolCallsPerTurn: number | null = null,
 ) {
     reset(run, turns);
     mockState.funnelDelayMs = { ...funnelDelayMs };
+    mockState.orgToolCallsPerTurn = orgToolCallsPerTurn;
     const runId = `run-${Math.random().toString(36).slice(2)}`;
     const startedAt = Date.now() - (run.alreadySpent?.elapsedMs ?? 0);
     const outcome = await runToolRunnerDriver(context(), runId, def, 0, startedAt);
@@ -479,7 +501,9 @@ describe('Step 2b hardening', () => {
 
     it('dispatches tool calls one at a time, in the order the model asked, when one turn asks for three', async () => {
         // The runner starts all three at once. The first is the slowest, so
-        // concurrent dispatch would finish, and record, them in reverse.
+        // concurrent dispatch would finish, and record, them in reverse. The
+        // organization allows three calls a turn (#4594), so none is refused
+        // and the request asks for them in parallel: dispatch stays serial.
         const slowestFirst = { list_controls: 30, list_risks: 15, list_assets: 0 };
         await drive(
             { tools: [LIST_RISKS, LIST_CONTROLS, LIST_ASSETS], turns: [] },
@@ -495,7 +519,9 @@ describe('Step 2b hardening', () => {
             ],
             DEFINITION,
             slowestFirst,
+            3,
         );
+        expect(wire.bodies[0].tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: false });
         const toolSteps = mockState.ledger.filter((s) => s.kind === 'TOOL_CALL').map((s) => s.rec.toolCalled);
         expect(toolSteps).toEqual(['list_controls', 'list_risks', 'list_assets']);
         expect(slowestFirst).toEqual(mockState.funnelDelayMs);
@@ -610,6 +636,58 @@ describe('Step 2b hardening', () => {
         expect(wire.bodies).toHaveLength(1);
         expect(mockState.funnelCalls).toEqual([]);
         expect(recordedSettlement()).toEqual({ status: 'FAILED', reason: KILL_UNREADABLE_MESSAGE, cap: null });
+    });
+});
+
+describe('tool calls per turn (#4594): the cap the organization and the workspace set', () => {
+    const TWO_IN_ONE_TURN: readonly FauxTurn[] = [
+        { toolCalls: [{ name: 'list_risks', args: {} }, { name: 'list_controls', args: {} }] },
+        { text: 'done' },
+    ];
+
+    it('at a cap of one, a turn asking for two runs the first and refuses the second, named and recorded', async () => {
+        await drive({ tools: [LIST_RISKS, LIST_CONTROLS], turns: [] }, TWO_IN_ONE_TURN);
+
+        // The request asked for one call: today's request, byte for byte.
+        expect(JSON.stringify(wire.bodies[0].tool_choice)).toBe('{"type":"auto","disable_parallel_tool_use":true}');
+        // The funnel was asked once; the second call never reached it.
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks']);
+        const toolSteps = mockState.ledger.filter((s) => s.kind === 'TOOL_CALL').map((s) => s.rec);
+        expect(toolSteps).toHaveLength(2);
+        expect(toolSteps[0]).toMatchObject({ toolCalled: 'list_risks', status: 'DONE' });
+        expect(toolSteps[1]).toMatchObject({
+            toolCalled: 'list_controls',
+            status: 'FAILED',
+            output: { refused: 'TOOL_CALLS_PER_TURN_EXCEEDED', cap: 1, madeThisTurn: 1 },
+        });
+        // The model read why, as the second call's tool error, in the next request.
+        const followUp = JSON.stringify(wire.bodies[1].messages);
+        expect(followUp).toContain('tool_calls_per_turn_exceeded: this turn has already made 1 tool call');
+        // A refusal is the model's to work around; the run carries on and completes.
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('at a cap of two, both calls of the turn run, and the request lets the model ask for both', async () => {
+        await drive({ tools: [LIST_RISKS, LIST_CONTROLS], turns: [] }, TWO_IN_ONE_TURN, DEFINITION, {}, 2);
+
+        expect(wire.bodies[0].tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: false });
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks', 'list_controls']);
+        const toolSteps = mockState.ledger.filter((s) => s.kind === 'TOOL_CALL').map((s) => s.rec);
+        expect(toolSteps.map((r) => [r.toolCalled, r.status])).toEqual([
+            ['list_risks', 'DONE'],
+            ['list_controls', 'DONE'],
+        ]);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('the count is per turn: a cap of one admits one call in each of two turns', async () => {
+        await drive({ tools: [LIST_RISKS, LIST_CONTROLS], turns: [] }, [
+            { toolCalls: [{ name: 'list_risks', args: {} }] },
+            { toolCalls: [{ name: 'list_controls', args: {} }] },
+            { text: 'done' },
+        ]);
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks', 'list_controls']);
+        expect(mockState.ledger.filter((s) => s.kind === 'TOOL_CALL').every((s) => s.rec.status === 'DONE')).toBe(true);
     });
 });
 
