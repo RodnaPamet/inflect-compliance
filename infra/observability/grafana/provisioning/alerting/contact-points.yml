@@ -5,11 +5,11 @@
 # GRAFANA_ALERT_WEBHOOK env var, and a default notification policy that routes
 # everything to it.
 #
-# NOTE on alert RULES: this stack defines alert *rules* in Prometheus
-# (prometheus/rules/alerting-rules.yml), not in Grafana. This file only
-# provisions the *delivery* side (contact point + policy) so that, should you
-# also author Grafana-native alert rules later, notifications are already
-# wired. If GRAFANA_ALERT_WEBHOOK is empty the webhook simply no-ops.
+# The alert RULES are Grafana-managed and live beside this file
+# (alert-rules.yml, #5238); this file provisions their delivery: the contact
+# point and the policy that routes every rule to it. Grafana routes only rules
+# it evaluates itself, which is why the rules moved here from Prometheus. If
+# GRAFANA_ALERT_WEBHOOK is empty the webhook simply no-ops.
 # =============================================================================
 apiVersion: 1
 

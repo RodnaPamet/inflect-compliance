@@ -1,4 +1,5 @@
 import { codeOf } from '../helpers/source-blocks';
+import { readGrafanaAlertRules } from '../helpers/grafana-alert-rules';
 import { headingLines, mdSection } from '../helpers/markdown-regions';
 /**
  * Epic 19 Coherence Guards — Observability & Operational Readiness
@@ -20,7 +21,6 @@ import { headingLines, mdSection } from '../helpers/markdown-regions';
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
@@ -33,7 +33,8 @@ const readAll = (dir: string, ext: string): string =>
         .join('\n');
 const OBS_DASHBOARDS = readAll('infra/observability/grafana/dashboards', '.json');
 const OBS_RULES = readAll('infra/observability/prometheus/rules', '.yml');
-const ALERTING_RULES_PATH = 'infra/observability/prometheus/rules/alerting-rules.yml';
+// The alert rules are Grafana-managed since #5238.
+const ALERT_RULES = readGrafanaAlertRules(ROOT);
 
 // ─── 1. Metric Emission ↔ Dashboard/Alert Coherence ────────────────────
 
@@ -57,7 +58,7 @@ describe('Epic 19 Coherence: metric names', () => {
     // rule file it reads. infra/dashboards/ and infra/alerts/rules.yml stood
     // here until 2026-10-26; nothing ever loaded either.
     const dashboardContent = OBS_DASHBOARDS;
-    const alertContent = OBS_RULES;
+    const alertContent = [OBS_RULES, ...ALERT_RULES.map((r) => r.expr)].join('\n');
 
     it('should emit all 6 metrics referenced in infra configs', () => {
         const expectedMetrics = [
@@ -176,13 +177,8 @@ describe('Epic 19 Coherence: metric names', () => {
 // moved to the rule file the Prometheus stack reads, and this holds them there.
 
 describe('Epic 19 Coherence: alert rules', () => {
-    type Rule = { alert?: string; record?: string; labels?: Record<string, string> };
-    type Group = { name: string; rules: Rule[] };
-    const groups = (yaml.load(fs.readFileSync(path.join(ROOT, ALERTING_RULES_PATH), 'utf-8')) as {
-        groups: Group[];
-    }).groups;
     const alertsIn = (group: string): string[] =>
-        (groups.find((g) => g.name === group)?.rules ?? []).flatMap((r) => (r.alert ? [r.alert] : []));
+        ALERT_RULES.filter((r) => r.group === group).map((r) => r.alert);
 
     // Fire when a security control STOPS applying, or could not be verified,
     // while the system stays otherwise healthy: the condition nothing else
@@ -215,10 +211,9 @@ describe('Epic 19 Coherence: alert rules', () => {
     });
 
     it('every alert carries a warning or critical severity', () => {
-        const bad = groups.flatMap((g) =>
-            g.rules
-                .filter((r) => r.alert && !['warning', 'critical'].includes(r.labels?.severity ?? ''))
-                .map((r) => `${g.name}/${r.alert}: severity ${r.labels?.severity ?? '(none)'}`),
+        expect(ALERT_RULES.length).toBeGreaterThan(0);
+        const bad = ALERT_RULES.filter((r) => !['warning', 'critical'].includes(r.labels.severity ?? '')).map(
+            (r) => `${r.group}/${r.alert}: severity ${r.labels.severity ?? '(none)'}`,
         );
         expect(bad).toEqual([]);
     });

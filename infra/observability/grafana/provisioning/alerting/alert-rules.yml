@@ -1,0 +1,773 @@
+# =============================================================================
+# Grafana-managed alert rules — inflect-compliance (#5238).
+# -----------------------------------------------------------------------------
+# These were Prometheus alerting rules (prometheus/rules/alerting-rules.yml).
+# Prometheus evaluated them and sent them nowhere: this stack runs no
+# Alertmanager, and Grafana's contact points route only GRAFANA-managed rules.
+# Owner decision (2026-11-13): convert them to Grafana-managed rules on the
+# existing contact point (contact-points.yml), with no Alertmanager container.
+#
+# Each rule is the same PromQL, evaluated by Grafana against the Prometheus
+# datasource (uid `prometheus`) as an instant query, refId A. The expression
+# already filters to the series that breach, so any series it returns fires:
+# condition C is `$A * 0 + 1`, which is 1 for every returned series and keeps
+# its labels. A query that returns nothing is OK, not NoData, because "no
+# breaching series" is the healthy state. `for`, labels and annotations are
+# the Prometheus rule's own. In an annotation `{{ with $values.A }}{{ .Value }}{{ end }}` stands where
+# Prometheus wrote `{{ $value }}`; the `with` keeps a rule whose query returned
+# nothing from failing to render.
+#
+# Every alert carries `severity` (warning|critical) and the annotations
+# `summary` and `description`. An alert carries `runbook_url` only where a doc
+# in this repository says what to do about it.
+# tests/unit/prometheus-rules-match-emitted-metrics.test.ts reads every `expr`
+# here, and fails if a rule selects a metric, label or value the stack does not
+# export, or if a runbook_url names a doc or heading the repository lacks.
+# =============================================================================
+apiVersion: 1
+
+groups:
+
+  # ===========================================================================
+  # STACK HEALTH — the observability pipeline.
+  # ===========================================================================
+  - orgId: 1
+    name: stack_health
+    folder: Inflect
+    interval: 30s
+    rules:
+
+      # --- A canary that ALWAYS fires. If this alert ever STOPS arriving, the
+      # --- delivery path (Grafana rule evaluation -> contact point -> webhook)
+      # --- is broken. Wire a *missing-DeadMansSwitch* monitor downstream.
+      - uid: dead-mans-switch
+        title: DeadMansSwitch
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: vector(1)
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: Alerting pipeline canary (expected to always fire)
+          description: This alert always fires by design. If it is NOT present in the downstream receiver, the alert delivery path is broken.
+
+      # --- A scrape target is down.
+      - uid: observability-target-down
+        title: ObservabilityTargetDown
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: up{job=~"otel-collector-app-metrics|otel-collector-self|prometheus|grafana|tempo"} == 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Observability target {{ $labels.job }} is down
+          description: Prometheus has been unable to scrape {{ $labels.job }} ({{ $labels.instance }}) for 5 minutes.
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/observability/04-production-hardening.md#failure-modes-and-runbooks
+
+      # --- Collector failing to EXPORT data (to Prometheus exporter or Tempo).
+      - uid: collector-export-failures
+        title: CollectorExportFailures
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (exporter) (rate(otelcol_exporter_send_failed_spans_total[5m])) > 0 or sum by (exporter) (rate(otelcol_exporter_send_failed_metric_points_total[5m])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: OTel Collector exporter {{ $labels.exporter }} is failing sends
+          description: The collector exporter {{ $labels.exporter }} has had send failures for 10 minutes. Traces or metrics are being lost.
+
+      # --- Collector REFUSING data: memory_limiter shedding load. The app's
+      # --- OTLP exporter gets a retryable error and, once its retries run
+      # --- out, drops what it sent. Collector 0.123.0 has no
+      # --- otelcol_processor_dropped_* series; memory_limiter's refused
+      # --- counters (label `processor`) are the signal.
+      - uid: collector-dropping-data
+        title: CollectorDroppingData
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (processor) (rate(otelcol_processor_refused_spans_total[5m])) > 0 or sum by (processor) (rate(otelcol_processor_refused_metric_points_total[5m])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: OTel Collector processor {{ $labels.processor }} is refusing data
+          description: The collector processor {{ $labels.processor }} has refused telemetry for 10 minutes — memory_limiter shedding load. Check collector mem_limit and ingest volume.
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/observability/04-production-hardening.md#collector-memory-pressure
+
+  # ===========================================================================
+  # APP HEALTH — inflect-compliance application signals.
+  # ===========================================================================
+  - orgId: 1
+    name: app_health
+    folder: Inflect
+    interval: 30s
+    rules:
+
+      # --- 5xx ratio elevated: responses with a 5xx status, thrown or
+      # --- returned, over all responses. Uses the recording rule.
+      - uid: api-high5xx-ratio
+        title: ApiHigh5xxRatio
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: job:api_request:5xx_ratio5m > 0.05
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: API 5xx ratio above 5% for {{ $labels.service_name }}
+          description: '{{ $labels.service_name }} has served a 5xx error ratio of {{ with $values.A }}{{ .Value | humanizePercentage }}{{ end }} over the last 10 minutes.'
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#common-first-steps-every-incident
+
+      # --- API p95 latency SLO breach (SLO: p95 < 750 ms).
+      - uid: api-latency-slo-breach
+        title: ApiLatencySloBreach
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: job:api_request_duration_ms:p95 > 750
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: API p95 latency SLO breach for {{ $labels.service_name }}
+          description: 'p95 request latency for {{ $labels.service_name }} is {{ with $values.A }}{{ .Value | humanize }}{{ end }}ms (SLO: 750ms) over the last 15 minutes.'
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#common-first-steps-every-incident
+
+      # --- Job failure rate elevated.
+      - uid: job-failure-rate-high
+        title: JobFailureRateHigh
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: job:job_execution:failure_ratio5m > 0.10
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Background job failure rate above 10%
+          description: '{{ $labels.service_name }} background jobs are failing at {{ with $values.A }}{{ .Value | humanizePercentage }}{{ end }} over the last 15 minutes.'
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#4-queue-backlog
+
+      # --- BullMQ backlog above 500 and still growing.
+      # --- The backlog is `waiting` plus `prioritized`: jobs ready to run that
+      # --- no worker has taken (BullMQ keeps a job added with a priority in
+      # --- `prioritized`, not `waiting`). Not `delayed`, which never falls
+      # --- below the number of job schedulers because each keeps its next run
+      # --- there, nor `active` or `failed`. 500 is about ten minutes of the
+      # --- worker's limiter (50 jobs a minute, scripts/worker.ts). `deriv > 0`
+      # --- keeps a fan-out burst that is draining from firing. A backlog that
+      # --- sits flat above 500 does not fire it either; a worker that stopped
+      # --- taking jobs is what the worker's healthcheck (its heartbeat) reports.
+      - uid: job-queue-depth-growing
+        title: JobQueueDepthGrowing
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: |-
+              sum by (queue_name) (job:job_queue_depth:max{queue_state=~"waiting|prioritized"}) > 500
+              and
+              deriv(sum by (queue_name) (job:job_queue_depth:max{queue_state=~"waiting|prioritized"})[30m:]) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: BullMQ queue {{ $labels.queue_name }} backlog is growing
+          description: Queue {{ $labels.queue_name }} has {{ with $values.A }}{{ .Value | humanize }}{{ end }} jobs waiting to run, more than 500, and the backlog has grown over the last 30 minutes. Work is arriving faster than the worker takes it.
+          runbook_url: https://github.com/RodnaPamet/inflect-compliance/blob/main/docs/incident-response.md#4-queue-backlog
+
+      # --- COMPLIANCE-CRITICAL: audit-stream delivery to tenant SIEMs failing.
+      # --- A sustained failure means audit events are not reaching customer
+      # --- SIEMs — a contractual/compliance exposure, not just an ops issue.
+      - uid: audit-stream-delivery-failing
+        title: AuditStreamDeliveryFailing
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: job:audit_stream_delivery_failures:rate5m > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: critical
+          compliance: 'true'
+        annotations:
+          summary: 'COMPLIANCE: audit-stream delivery failures rising'
+          description: Audit-stream batch deliveries to tenant SIEMs have been failing for 10 minutes ({{ with $values.A }}{{ .Value | humanize }}{{ end }} failures/s). Audit events may not be reaching customer SIEMs — treat as a compliance incident, not a routine ops alert.
+
+  # ===========================================================================
+  # SECURITY CONTROLS — a control stopped applying, or could not be verified.
+  # These fire when a control LAPSES. A control acting (a guard block, a kill)
+  # is not one of them; that is in agentic_runs.
+  # ===========================================================================
+  - orgId: 1
+    name: security_controls
+    folder: Inflect
+    interval: 30s
+    rules:
+
+      # --- Sign-ins proceeding with no session caps. The session tracker is
+      # --- non-blocking on purpose: a policy read that fails (after one retry)
+      # --- lets the sign-in through with NO concurrent-session cap and NO
+      # --- lifetime cap, rather than turning a database blip into a sign-in
+      # --- outage. Two controls lapse silently, so any sustained rate alerts.
+      - uid: session-policy-resolution-failing
+        title: SessionPolicyResolutionFailing
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum(rate(session_policy_resolution_total{outcome="failed"}[10m])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Tenant session policy not applying for some sign-ins
+          description: '{{ with $values.A }}{{ .Value | humanize }}{{ end }}/s of sign-ins could not read their tenant''s session policy and proceeded with no concurrent-session limit and no session-lifetime cap. Sign-in is not blocked by design, which is why this alerts. Check database reachability from the auth path.'
+
+      # --- A workflow run halted because its context failed verification.
+      # --- Zero in normal operation, so any occurrence fires: a rate threshold
+      # --- would hide the single event that matters. CONTEXT_CHAIN_BROKEN and
+      # --- CONTEXT_REPLAYED mean something wrote to the database underneath a
+      # --- running agent; CONTEXT_SIZE_CAP_EXCEEDED is the benign one.
+      - uid: agentic-workflow-context-integrity-halt
+        title: AgenticWorkflowContextIntegrityHalt
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (code) (increase(agentic_workflow_context_integrity_halt_total[15m])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: Agent workflow context failed integrity verification ({{ $labels.code }})
+          description: 'A workflow run halted because its context could not be verified (code {{ $labels.code }}). Find the run: WorkflowRun with status FAILED and errorMessage starting "context integrity halt". Its WORKFLOW_CONTEXT_INTEGRITY_HALTED audit row carries the sequence numbers and hashes, never content. For CONTEXT_REPLAYED, compare WorkflowStep.contextSeq (append-only) with the run''s envelope seq. Rule out a database restore or a manual UPDATE before escalating.'
+
+      # --- The scheduled kill-switch drill FAILED: a kill was in force and
+      # --- the tool boundary let a call through, or refused it for the wrong
+      # --- reason. The stop control is not stopping.
+      - uid: agentic-kill-switch-drill-failed
+        title: AgenticKillSwitchDrillFailed
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum(increase(agentic_kill_switch_drill_total{outcome="FAILED"}[24h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Agent kill-switch drill FAILED: the boundary did not refuse a killed agent'
+          description: 'Read the newest AgentKillSwitchDrill row (scopesHonoured, scopesFailed, boundaryRefusalReason); the CRITICAL Finding raised on a failed drill carries the same detail. Do not wait for the next drill: engage a kill on a canary agent by hand and confirm the boundary refuses.'
+
+      # --- The drill proved nothing. ERROR: it could not run. SWEPT_NOBODY: it
+      # --- found no agent to drill, which is expected on a deployment with no
+      # --- registered agents and a filter gap anywhere else. Either way the
+      # --- kill switch is unverified, not known broken.
+      - uid: agentic-kill-switch-drill-unverified
+        title: AgenticKillSwitchDrillUnverified
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (outcome) (increase(agentic_kill_switch_drill_total{outcome=~"ERROR|SWEPT_NOBODY"}[24h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: Agent kill-switch drill did not verify the kill switch ({{ $labels.outcome }})
+          description: 'The drill reported {{ $labels.outcome }}, so the kill switch went untested. ERROR: read the drill job''s log for the failure. SWEPT_NOBODY: the worker log line "kill-switch drill swept ZERO tenants" says whether any tenant has only placeholder agents.'
+
+      # --- An agent's behavioural circuit breaker latched OPEN, halting it at
+      # --- the tool boundary. A claim about CHANGE, not volume. TOOL_MIX (the
+      # --- agent started doing a kind of thing it has never done) is the
+      # --- rogue-agent shape; GUARD_BLOCK is the content guard's own latch.
+      - uid: agentic-circuit-breaker-tripped
+        title: AgenticCircuitBreakerTripped
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (signal, risk_tier) (increase(agentic_circuit_breaker_trip_total[1h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: An agent's circuit breaker tripped ({{ $labels.signal }}, risk tier {{ $labels.risk_tier }})
+          description: 'An agent''s recent behaviour diverged from its own baseline and the breaker halted it, reads included. Find what changed: a new workflow, a new tool grant, a widened policy card, or a compromise. The agent''s Circuit breaker tab shows the latch and the signals. Closing it is a decision: "Accepted as the new baseline" adopts the behaviour, "Resolved" keeps the old baseline.'
+
+      # --- A fan-out stopped with members never attempted: silent work loss.
+      # --- Isolated member failures are a different series
+      # --- (agentic_fanout_member_failed_total) and are expected.
+      - uid: agentic-fan-out-halted
+        title: AgenticFanOutHalted
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum by (component, kind) (increase(agentic_fanout_halted_total[1h])) > 0
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: An agentic fan-out halted with members unattempted ({{ $labels.component }}, {{ $labels.kind }})
+          description: A fan-out in {{ $labels.component }} stopped on a fatal failure ({{ $labels.kind }}) instead of isolating it. The members behind it are not retried by the same tick; the next scheduled run reaches them.
+
+  # ===========================================================================
+  # AGENTIC RUNS — is agentic work finishing, being stopped, or accumulating.
+  # Rates, not totals: a tenant that runs more agents has more failures in
+  # absolute terms and is not less healthy for it.
+  # ===========================================================================
+  - orgId: 1
+    name: agentic_runs
+    folder: Inflect
+    interval: 30s
+    rules:
+
+      # --- More than a quarter of settled runs failing. The denominator is
+      # --- guarded so a deployment with no agentic traffic does not page.
+      - uid: agentic-run-failure-rate-warning
+        title: AgenticRunFailureRateWarning
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: |-
+              (
+                sum(rate(agent_run_settled_total{outcome="failed"}[15m]))
+                /
+                (sum(rate(agent_run_settled_total[15m])) > 0)
+              ) > 0.25
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Over 25% of agentic runs are failing ({{ with $values.A }}{{ .Value | humanizePercentage }}{{ end }})
+          description: 'A run fails when its walk threw, or when the reaper settled it as having no executor. The second means a deploy stranded runs, which looks identical here and is not a model problem: check the deployment timeline first. /agents/runs lists failures with their error messages. outcome="aborted" is a run stopped on purpose (a guard block or a kill) and is not counted here.'
+
+      # --- The content guard QUARANTINED more than five runs in an hour.
+      # --- FLAGGED (parked for human review) is the control working and is
+      # --- not counted. Three blocks in a window also latch an agent's breaker.
+      - uid: agentic-guard-blocks-rising
+        title: AgenticGuardBlocksRising
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum(increase(agent_guard_blocks_total{guard_verdict="QUARANTINED"}[1h])) > 5
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels:
+          severity: warning
+        annotations:
+          summary: The content guard blocked more than 5 agentic runs in an hour
+          description: Either an agent is reaching for something it should not, or a guard rule is too broad for a tenant's content. Nothing was committed. Each blocked run's error message names the rule ids that fired; the content that matched is not recorded anywhere.
+
+      # --- More than 20 runs executing at once, for 30 minutes. A per-process
+      # --- gauge, summed across processes. Runs parked at a human checkpoint
+      # --- are not executing and are not counted.
+      - uid: agentic-runs-in-flight-sustained
+        title: AgenticRunsInFlightSustained
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: sum(agent_runs_in_flight_ratio) > 20
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 20 agentic runs in flight for 30 minutes
+          description: The per-tenant cap (TenantSecuritySettings.agentMaxConcurrentRuns) bounds one tenant, so a number this high with no tenant near its cap means many tenants at once. The steps-per-run histogram distinguishes slower runs from more runs.
+
+      # --- Runs starting faster than they settle, for an hour. A standing gap
+      # --- is normal (runs parked at a checkpoint have started and not
+      # --- settled); a sustained rate difference is runs going missing.
+      - uid: agentic-runs-started-not-settling
+        title: AgenticRunsStartedNotSettling
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: |-
+              (
+                sum(rate(agent_run_started_total[30m]))
+                - sum(rate(agent_run_settled_total[30m]))
+              ) > 0.05
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Agentic runs have been starting faster than they settle for an hour
+          description: A run settles on COMPLETED, FAILED or ABORTED, not when it parks at a checkpoint or is paused by a deploy. The in-flight gauge says whether the unsettled runs are executing or parked; the governance pack's runs.awaiting_approval and runs.paused give per-status counts.
+
+  # ===========================================================================
+  # RESOURCE — Prometheus' own storage and scraping health.
+  # ===========================================================================
+  - orgId: 1
+    name: resource
+    folder: Inflect
+    interval: 30s
+    rules:
+
+      # --- TSDB head series cardinality explosion.
+      - uid: prometheus-head-series-high
+        title: PrometheusHeadSeriesHigh
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: prometheus_tsdb_head_series > 1500000
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Prometheus head series above 1.5M
+          description: Prometheus is holding {{ with $values.A }}{{ .Value | humanize }}{{ end }} active series in the TSDB head — likely a high-cardinality label. Investigate before memory pressure causes restarts.
+
+      # --- Scrapes approaching the timeout. prometheus.yml sets
+      # --- scrape_timeout: 10s, so a scrape that takes longer has already
+      # --- failed (up == 0, ObservabilityTargetDown). The threshold sits at
+      # --- 80% of the timeout so this fires BEFORE that.
+      - uid: prometheus-slow-scrapes
+        title: PrometheusSlowScrapes
+        condition: C
+        data:
+        - refId: A
+          relativeTimeRange:
+            from: 600
+            to: 0
+          datasourceUid: prometheus
+          model:
+            refId: A
+            expr: scrape_duration_seconds > 8
+            instant: true
+            range: false
+        - refId: C
+          datasourceUid: __expr__
+          model:
+            refId: C
+            type: math
+            expression: $A * 0 + 1
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Slow scrape of {{ $labels.job }}
+          description: Scraping {{ $labels.job }} ({{ $labels.instance }}) is taking {{ with $values.A }}{{ .Value | humanize }}{{ end }}s, near the 10s scrape timeout. The target may be overloaded or exposing too many series.

@@ -16,14 +16,17 @@ global:
   external_labels:
     monitor: inflect-observability
 
-# Recording + alerting rules. All *.yml files in rules/ are loaded.
+# Recording rules. All *.yml files in rules/ are loaded. Alert rules are
+# Grafana-managed (grafana/provisioning/alerting/alert-rules.yml, #5238): a rule
+# Prometheus evaluated here reached no receiver, because no Alertmanager runs.
 rule_files:
   - /etc/prometheus/rules/*.yml
 
 # -----------------------------------------------------------------------------
-# Alertmanager — not deployed in this stack. Grafana unified alerting handles
-# notification routing (see grafana/provisioning/alerting/). Uncomment and
-# point at an Alertmanager instance if you prefer Prometheus-native routing.
+# Alertmanager — not deployed in this stack, by owner decision (#5238). Grafana
+# evaluates the alert rules itself and routes them through its own contact
+# point (grafana/provisioning/alerting/). Prometheus fires no alerts, so there
+# is nothing for an Alertmanager to receive.
 # -----------------------------------------------------------------------------
 # alerting:
 #   alertmanagers:

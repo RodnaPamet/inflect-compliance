@@ -147,7 +147,7 @@ GET + HEAD requests through `withApiErrorHandling`. Per-route exclusions identic
 
 - **Primary**: `api_request_duration` histogram, filtered by `http_method=~"GET|HEAD"`
 - **Dashboard**: `inflect-api-overview` ("Latency percentiles (p95 / p99 / mean)")
-- **Alert**: none in production. `ApiLatencySloBreach` in `infra/observability/prometheus/rules/alerting-rules.yml` fires when p95 over all requests is above 750ms for 15 minutes: looser than this SLO, and not split by method. The stack that would evaluate it is not recorded as running; see [`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
+- **Alert**: none in production. `ApiLatencySloBreach` in `infra/observability/grafana/provisioning/alerting/alert-rules.yml` fires when p95 over all requests is above 750ms for 15 minutes: looser than this SLO, and not split by method. The stack that would evaluate it is not recorded as running; see [`observability/03-prometheus-grafana.md`](observability/03-prometheus-grafana.md).
 
 ---
 
