@@ -287,6 +287,11 @@ describe('updateRisk — sanitizeOptional three-state', () => {
     });
 });
 
+/** A db double whose RESTRICT-child counts are all zero. */
+function noBlockers() {
+    return { riskTreatmentPlan: { count: async () => 0 } };
+}
+
 describe('deleteRisk', () => {
     it('rejects EDITOR — delete requires canAdmin (separation from canWrite)', async () => {
         await expect(
@@ -298,7 +303,11 @@ describe('deleteRisk', () => {
     });
 
     it('emits SOFT_DELETE audit on success', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        // `riskTreatmentPlan.count` is the RESTRICT-child check `deleteRisk`
+        // now makes (#5083). Zero means nothing blocks; the usecase THROWS on
+        // a missing delegate rather than reading absence as zero, so a bare
+        // `{}` fails loudly instead of passing quietly.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(noBlockers() as never));
         mockDelete.mockResolvedValueOnce({ id: 'r1' } as never);
 
         await deleteRisk(makeRequestContext('ADMIN'), 'r1');
@@ -311,7 +320,7 @@ describe('deleteRisk', () => {
     });
 
     it('throws notFound when repo.delete returns null', async () => {
-        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({} as never));
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(noBlockers() as never));
         mockDelete.mockResolvedValueOnce(null as never);
 
         await expect(

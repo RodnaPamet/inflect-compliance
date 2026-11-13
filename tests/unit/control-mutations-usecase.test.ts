@@ -27,6 +27,13 @@
 const mockDb = {
     controlKeySequence: { upsert: jest.fn() },
     control: { delete: jest.fn() },
+    // The RESTRICT children `deleteControl` now checks (#5083). Present and
+    // returning zero, which is what "nothing blocks" looks like — the usecase
+    // THROWS on a missing delegate rather than reading absence as zero, so a
+    // double that omitted them would fail loudly instead of passing quietly.
+    controlException: { count: jest.fn(async () => 0) },
+    controlTestPlan: { count: jest.fn(async () => 0) },
+    controlTestRun: { count: jest.fn(async () => 0) },
     tenantMembership: { findFirst: jest.fn() },
 } as any;
 
