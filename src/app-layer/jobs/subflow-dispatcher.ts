@@ -134,6 +134,9 @@ export async function runSubflowDispatch(
                     // depth+1. Without this the cap below would never be reached
                     // and the guard would be decorative.
                     data: { ...data, __parentExecutionId: parentExecutionId, __subflowDepth: depth },
+                    // The entry rule's own execution, which a run or a nested
+                    // sub-flow it starts names as its parent (#3537).
+                    executionId,
                 });
                 // Settled from RUNNING only, so an operator's cancel stands.
                 await prisma.automationExecution.updateMany({

@@ -722,6 +722,15 @@ describe('what caused the run', () => {
         expect(screen.getByTestId('run-caused-by')).toHaveTextContent(/automation rule, not by a person/i);
     });
 
+    it("reads a stored '' as a rule cause whose execution was lost, never as a person's start", () => {
+        // A directly fired rule's run recorded `''` until the lineage fix: a
+        // rule caused it, but no execution was named. Truthiness read that as
+        // "no parent" and credited the rule's owner as the person who started it.
+        renderDetail([step()], { ...RUN, parentExecutionId: '', startedBy: 'Ana Petrova' });
+        expect(screen.getByTestId('run-caused-by')).toHaveTextContent(/automation rule, not by a person/i);
+        expect(screen.queryByTestId('run-started-by')).toBeNull();
+    });
+
     it('names the person who started a run nothing else caused', () => {
         renderDetail([step()], { ...RUN, parentExecutionId: null, startedBy: 'Ana Petrova' });
         expect(screen.getByTestId('run-started-by')).toHaveTextContent('Started by Ana Petrova.');

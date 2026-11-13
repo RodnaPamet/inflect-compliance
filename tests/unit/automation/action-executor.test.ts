@@ -881,9 +881,12 @@ describe('INVOKE_SUBFLOW', () => {
     });
 
     it('enqueues the sub-flow dispatch with the trigger context', async () => {
+        // The parent is the execution TAKING the action (`executionId`), not a
+        // `data` marker: a chain step's `__parentExecutionId` is its OWN
+        // parent, and a directly fired rule carries none (#3537).
         const res = await invoke(
             { targetGroupId: 'g-1' },
-            { data: { __parentExecutionId: 'exec-9', foo: 'bar' } },
+            { executionId: 'exec-9', data: { __parentExecutionId: 'exec-upstream', foo: 'bar' } },
         );
 
         expect(enqueue).toHaveBeenCalledWith('subflow-dispatch', {
@@ -891,7 +894,7 @@ describe('INVOKE_SUBFLOW', () => {
             targetGroupId: 'g-1',
             parentExecutionId: 'exec-9',
             triggerEvent: 'risk.created',
-            data: { __parentExecutionId: 'exec-9', foo: 'bar' },
+            data: { __parentExecutionId: 'exec-upstream', foo: 'bar' },
             // The invoking execution's entity rides along (#5248).
             entityType: 'Risk',
             entityId: 'e-1',
@@ -903,6 +906,24 @@ describe('INVOKE_SUBFLOW', () => {
 
     it('defaults the parent execution id when the event carries none', async () => {
         await invoke({ targetGroupId: 'g-1' }, { data: {} });
+        expect(enqueue.mock.calls[0][1].parentExecutionId).toBe('');
+    });
+});
+
+describe('INVOKE_AGENT', () => {
+    const invoke = (e: Record<string, unknown>) =>
+        run({ actionType: 'INVOKE_AGENT', actionConfigJson: { agentId: 'ag-1', workflowKey: 'wf-1' } }, e);
+
+    it('names the execution taking the action as the run parent, not a data marker (#3537)', async () => {
+        await invoke({ executionId: 'exec-9', data: { __parentExecutionId: 'exec-upstream' } });
+        expect(enqueue).toHaveBeenCalledWith(
+            'agent-invoke-dispatch',
+            expect.objectContaining({ parentExecutionId: 'exec-9' }),
+        );
+    });
+
+    it("keeps '' (a rule caused it, execution unknown) rather than null when no execution is given", async () => {
+        await invoke({ data: {} });
         expect(enqueue.mock.calls[0][1].parentExecutionId).toBe('');
     });
 });
