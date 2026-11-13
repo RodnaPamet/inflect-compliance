@@ -259,7 +259,13 @@ describe('a collection that cannot name its tenant refuses (#5251)', () => {
         });
     });
 
-    it('reaches ERROR through the collectors own ladder, not a new path', async () => {
+    it('reaches ERROR with the REASON an operator reads off the execution', async () => {
+        // `errorMessage` is persisted on IntegrationExecution and served to the
+        // browser (powerpipe-core.ts), so asserting the reason survives to it is
+        // the operator-visible half of the owner's decision. Asserting only
+        // `status === 'ERROR'` would not discriminate: with no gateway the
+        // pre-fix shared-provider path also errors, so that assertion passed
+        // under the mutation and detected nothing.
         mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
         const exec = collectorExecForDeploy();
         const r = await runPowerpipeBenchmark({
@@ -269,6 +275,7 @@ describe('a collection that cannot name its tenant refuses (#5251)', () => {
             exec: exec!,
         });
         expect(r.status).toBe('ERROR');
+        expect(r.errorMessage ?? '').toContain('#5251');
     });
 
     it('names no credential, account or provider in what it reports', async () => {
@@ -277,6 +284,10 @@ describe('a collection that cannot name its tenant refuses (#5251)', () => {
         mockEnv.SANDBOX_EXECUTION_ENABLED = '1';
         const exec = collectorExecForDeploy();
         const r = await exec!('powerpipe', [BENCHMARK], { NODE_ENV: 'test' }, [], []);
+        // Both directions: the refusal IS named (so this is not vacuous under a
+        // mutation that restores the shared default) and the provider's name is
+        // NOT, because this string reaches the browser.
+        expect(r.stderr).toContain('#5251');
         expect(r.stderr).not.toContain(COLLECTOR_PROVIDER_NAME);
         expect(r.stdout).toBe('');
     });
