@@ -21,7 +21,14 @@ describe('rankRuleSuggestions', () => {
         expect(out.find((s) => s.triggerEvent === 'RISK_CREATED')).toBeUndefined();
         expect(out.find((s) => s.triggerEvent === 'TEST_RUN_FAILED')).toBeUndefined();
         // non-covered ones survive
-        expect(out.find((s) => s.triggerEvent === 'ISSUE_CREATED')).toBeDefined();
+        expect(out.find((s) => s.triggerEvent === 'RISK_STATUS_CHANGED')).toBeDefined();
+    });
+
+    it('suggests no trigger that nothing emits (#5122)', () => {
+        // 'Turn new issues into tracked tasks' was on ISSUE_CREATED, which no
+        // code emits: a rule made from it could never fire.
+        const out = rankRuleSuggestions({ activeRiskCount: 0, coveredEvents: new Set() });
+        expect(out.map((s) => s.triggerEvent)).not.toContain('ISSUE_CREATED');
     });
 
     it('more active risk raises the risk-driven suggestion confidence', () => {
