@@ -27,6 +27,7 @@ import { PrismaTx } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
 import { staleData, badRequest } from '@/lib/errors/types';
+import { withDeleted } from '@/lib/soft-delete';
 import type {
     ProcessNodeInput,
     ProcessEdgeInput,
@@ -509,10 +510,16 @@ export class ProcessMapRepository {
             // Bounded by `referencedControlIds`, which is derived from the
             // caller's own edge list. A `take:` here would silently truncate the
             // owned set and reject legitimate controls as foreign.
-            const owned = await db.control.findMany({ // guardrail-allow: unbounded
+            //
+            // `withDeleted`: a control the tenant soft-deleted is still the
+            // tenant's (#5105). Its gate row survives the soft delete (the FK
+            // cascade fires only on a hard delete), the canvas sends it back,
+            // and the default read hid it, so every save of the map was refused
+            // as "foreign" until somebody found and removed the gate by hand.
+            const owned = await db.control.findMany(withDeleted({ // guardrail-allow: unbounded
                 where: { id: { in: referencedControlIds }, tenantId: ctx.tenantId },
                 select: { id: true },
-            });
+            }));
             const ownedIds = new Set(owned.map((c: { id: string }) => c.id));
             const foreign = referencedControlIds.filter((cid) => !ownedIds.has(cid));
             if (foreign.length > 0) {

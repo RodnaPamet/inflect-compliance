@@ -33,6 +33,7 @@ import { logEvent } from '../events/audit';
 import { UNSET_TRIGGER_EVENT } from '../automation/rule-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { RULE_OWNING_KINDS } from './canvas-rule-link';
+import { HYDRATED_DISPLAY_KEYS } from '@/lib/processes/canvas-rule-wiring';
 
 /** Rule names are capped at 200 by the rule schema. */
 const MAX_RULE_NAME = 200;
@@ -99,13 +100,9 @@ export interface SyncResult {
     ruleIdByNodeKey: Record<string, string>;
 }
 
-/**
- * The display-only fields `hydrateCanvasFromRules` merges into a step's
- * `dataJson` on load. They describe the rule as it was when the map was read,
- * so a save must not store them on the node: they are the rule's facts, and a
- * copy on the node goes stale the moment the rule changes.
- */
-export const HYDRATED_DISPLAY_KEYS = ['ruleStatus', 'executionCount', 'ruleSubtitle'] as const;
+// The display-only keys a save strips live with the client-safe wiring
+// constants, so the canvas's version diff strips the same set (#5285).
+export { HYDRATED_DISPLAY_KEYS };
 
 interface SavedNodeLike {
     nodeKey: string;

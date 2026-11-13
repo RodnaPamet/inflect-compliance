@@ -23,7 +23,7 @@ import {
     type UpdateAutomationRuleInput,
 } from '../automation';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, conflict } from '@/lib/errors/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ACTION_CONFIG_BY_TYPE } from '../schemas/automation.schemas';
@@ -239,6 +239,17 @@ export async function updateAutomationRule(
             nextRuleId: input.nextRuleId,
             elseRuleId: input.elseRuleId,
         });
+
+        // An ARCHIVED rule's status does not move through this edit (#5284).
+        // The toggle refuses an archived rule; this PUT took any status, so the
+        // canvas inspector's switch, which used it, re-enabled archived rules.
+        if (input.status !== undefined) {
+            const current = await AutomationRuleRepository.getById(db, ctx, id);
+            if (!current) throw notFound('Automation rule not found');
+            if (current.status === 'ARCHIVED' && input.status !== 'ARCHIVED') {
+                throw conflict('This rule is archived. An archived rule cannot be enabled or disabled.');
+            }
+        }
 
         // Cross-field action validation against the EFFECTIVE type.
         //
