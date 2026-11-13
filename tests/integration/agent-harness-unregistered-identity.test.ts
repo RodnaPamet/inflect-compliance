@@ -276,18 +276,23 @@ describe('3. the matrix lists it in a section of its own, held to no bar', () =>
         await scan(T1, [principal(IDENTITY)]);
         const view = await getHarnessMatrix(ctxFor(T1));
         const rows = view.sections.flatMap((s) => s.rows);
-        expect(rows.find((r) => r.discoveredId === IDENTITY)).toMatchObject({
-            registered: null,
-            unregisteredIdentity: true,
+        const identityRow = rows.find((r) => r.matrix.discoveredId === IDENTITY);
+        expect(identityRow).toMatchObject({ registered: null, acceptAffordance: 'NONE' });
+        // The shared model's row: held to no bar, so never a shortfall, while
+        // it still says where its level stands against the bar its reach
+        // would carry.
+        expect(identityRow?.matrix).toMatchObject({
+            classification: 'UNREGISTERED_IDENTITY',
             level: 'H0',
-            belowBar: false,
-            acceptAffordance: 'NONE',
+            heldToBar: false,
+            countsAsShortfall: false,
         });
-        expect(rows.find((r) => r.discoveredId === SHADOW)).toMatchObject({
-            registered: null,
-            unregisteredIdentity: false,
-            belowBar: true,
-            acceptAffordance: 'REGISTER_FIRST',
+        const shadowRow = rows.find((r) => r.matrix.discoveredId === SHADOW);
+        expect(shadowRow).toMatchObject({ registered: null, acceptAffordance: 'REGISTER_FIRST' });
+        expect(shadowRow?.matrix).toMatchObject({
+            classification: 'SHADOW_AGENT',
+            heldToBar: true,
+            countsAsShortfall: true,
         });
         // Both lists rest on the same evidence.
         expect(view.unregisteredIdentities.basis).toBe(view.shadow.basis);

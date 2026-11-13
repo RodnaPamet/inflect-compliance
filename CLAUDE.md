@@ -2002,8 +2002,15 @@ through their own routes. Rules that are easy to undo:
 - **Rows are the worst of a WHOLE latest scan, or none** (`rowsUnread`): the
   latest scans' items are read on their own, never in one bounded read with the
   previous scans', which only drift needs.
-- **A cell is the ladder's `criterionState` over `collapseVerdicts`**; do not
-  re-implement it in a component. A pointer is a link only when it is an
+- **A cell is the shared model's state** (owner decision 2026-11-13: one shared
+  table model). Each row is `buildHarnessMatrix`'s from
+  `@rodnapamet/scanent-contract/harness-matrix-model`, the module scanent's
+  results are built from, and rows are ordered by `compareHarnessMatrixRows`
+  (not judged, then below the bar, then at it; lowest level first; then id).
+  The usecase passes the stored verdicts and sources (`null` when they do not
+  re-read: NOT JUDGED, no level), the class on record, and no readers; Inflect's
+  own columns are joined by `discoveredId`. Do not re-derive a cell, a level or
+  a bar standing in a component. A pointer is a link only when it is an
   absolute http(s) URL — a scanner-chosen `/path` must not become an in-app link.
 - **The accept button and `acceptHarnessShortfall` share
   `shortfallAcceptanceRefusal`** (`src/lib/agentic/harness-acceptance-rules.ts`).

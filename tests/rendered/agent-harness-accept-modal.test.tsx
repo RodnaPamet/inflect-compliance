@@ -99,6 +99,7 @@ import type {
     HarnessScannerSection,
     MatrixRow,
 } from '@/lib/agentic/harness-read-model';
+import { matrixRowFixture, type MatrixRowFixture } from '../helpers/harness-matrix-row';
 
 const H = (
     jest.requireActual('../../messages/en.json') as {
@@ -122,25 +123,8 @@ const LATEST: HarnessScanRow = {
     sources: [{ kind: 'entra-sp', status: 'COMPLETE', rows: 10, reason: null }],
 };
 
-const row = (over: Partial<MatrixRow>): MatrixRow => ({
-    discoveredAgentId: 'da_1',
-    discoveredId: 'entra:sp:one',
-    discoveredVia: ['entra-sp'],
-    registered: { agentId: 'agt_1', name: 'Reconciler' },
-    unregisteredIdentity: false,
-    level: 'H2',
-    reach: 'WRITE_OR_EXTERNAL',
-    belowBar: true,
-    bar: 'H3',
-    blockingNextRung: [],
-    verdicts: [],
-    verdictsUnreadable: false,
-    models: { state: 'NOT_REPORTED' },
-    latestIngestedLevel: null,
-    acceptance: null,
-    acceptAffordance: 'ACCEPT',
-    ...over,
-});
+/** Built through the shared table model (`tests/helpers/harness-matrix-row.ts`). */
+const row = (over: MatrixRowFixture): MatrixRow => matrixRowFixture({ acceptAffordance: 'ACCEPT', ...over });
 
 const RENEWABLE = row({
     discoveredAgentId: 'da_owned',

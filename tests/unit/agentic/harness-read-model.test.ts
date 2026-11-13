@@ -1,9 +1,10 @@
 /**
  * The harness matrix's pure rules (#3687): what "complete" means, what drift
- * is, which evidence pointers may render as links, and the matrix order.
+ * is, and which evidence pointers may render as links. The matrix's cells,
+ * judgement and order are the shared table model's, tested where it is used
+ * (`tests/integration/agent-harness-matrix.test.ts`).
  */
 import {
-    compareMatrixRows,
     computeHarnessDrift,
     evidenceHrefOf,
     redactPointerCredentials,
@@ -156,19 +157,6 @@ describe('evidenceHrefOf — a pointer is a link only when it is an absolute htt
         ['null', null],
     ])('%s → text, never a link', (_label, pointer) => {
         expect(evidenceHrefOf(pointer)).toBeNull();
-    });
-});
-
-describe('compareMatrixRows — the worst rung first', () => {
-    it('orders by rung, then below-bar first, then discovered id', () => {
-        const rows = [
-            { level: 'H3' as const, belowBar: false, discoveredId: 'a' },
-            { level: 'H2' as const, belowBar: false, discoveredId: 'b' },
-            { level: 'H2' as const, belowBar: true, discoveredId: 'z' },
-            { level: 'H0' as const, belowBar: true, discoveredId: 'y' },
-            { level: 'H2' as const, belowBar: true, discoveredId: 'c' },
-        ];
-        expect([...rows].sort(compareMatrixRows).map((r) => r.discoveredId)).toEqual(['y', 'c', 'z', 'b', 'a']);
     });
 });
 
