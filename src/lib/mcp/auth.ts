@@ -85,6 +85,7 @@ import {
     systemClock,
 } from './token-exchange';
 import { isKnownMcpTool, MCP_TOOL_NAMES } from './tool-catalogue';
+import { parseExternalToolName } from './external-tool-name';
 import { admitsMcpEndpoint } from './endpoint-scope';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import { resolveExternalReadTools } from './tools/external-tools';
@@ -722,13 +723,22 @@ export async function exchangeMcpToken(
     const audience = [...new Set(request.audience)];
     for (const entry of audience) {
         if (entry === MCP_RESOURCES_AUDIENCE) continue;
-        if (!isKnownMcpTool(entry)) {
+        // An external tool is named `mcp__<connectionId>__<tool>` (#5234). It
+        // is never in this build's catalogue, and it is reachable only through
+        // a grant, so it needs one here even where no grant list applies.
+        const external = parseExternalToolName(entry) !== null;
+        if (!external && !isKnownMcpTool(entry)) {
             throw badRequest(
-                `"${entry}" is not an MCP tool. An audience names tool names, or ` +
+                `"${entry}" is not an MCP tool. An audience names tool names, ` +
+                    `external tool names (mcp__<connection>__<tool>), or ` +
                     `"${MCP_RESOURCES_AUDIENCE}" for the resources surface.`,
             );
         }
-        if (invocation.grantedTools !== null && !invocation.grantedTools.has(entry)) {
+        const notGranted =
+            invocation.grantedTools === null
+                ? external
+                : !invocation.grantedTools.has(entry);
+        if (notGranted) {
             await denyToolCall(invocation.ctx, 'tool_not_granted', {
                 tool: entry,
                 agentId: invocation.agentId,

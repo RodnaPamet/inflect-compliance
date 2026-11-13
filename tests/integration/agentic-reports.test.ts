@@ -763,6 +763,31 @@ describe('agent inventory', () => {
         expect(a3?.riskTierScoredAt).toBeNull();
     });
 
+    it('reads each agent\'s latest assessment, however many newer ones another agent has (#5140)', async () => {
+        // The read took the 500 newest assessments tenant-wide, so one agent
+        // re-assessed often pushed every other agent's latest out of the read
+        // and reported it NEVER_ASSESSED. 500 newer rows for A4 here.
+        const a4 = seeded[T1].agents.A4;
+        await prisma.agentRiskAssessment.createMany({
+            data: Array.from({ length: 500 }, (_, i) => ({
+                tenantId: T1, agentId: a4, status: 'COMPLETED' as const,
+                scoredTier: 'LOW' as const, completedAt: new Date(ago(1).getTime() + i * 1000),
+                staleAt: null, staleTriggers: [],
+            })),
+        });
+        try {
+            const report = await buildAgentInventoryReport(ctxFor(T1));
+            const byName = new Map(report.body.agents.map((a) => [a.name, a]));
+            expect(byName.get('Ops agent')?.assessmentState).toBe('ASSESSED');
+            expect(byName.get('Nightly sweeper')?.assessmentState).toBe('ASSESSED_STALE');
+            expect(byName.get('Vendor bot')?.assessmentState).toBe('NEVER_ASSESSED');
+        } finally {
+            await prisma.agentRiskAssessment.deleteMany({
+                where: { tenantId: T1, agentId: a4, completedAt: { gte: ago(1) } },
+            });
+        }
+    });
+
     it('keeps the kill axis, the card and the tool grants distinct per agent', async () => {
         const report = await buildAgentInventoryReport(ctxFor(T1));
         const byName = new Map(report.body.agents.map((a) => [a.name, a]));
