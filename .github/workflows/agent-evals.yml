@@ -152,20 +152,20 @@ jobs:
       # The four seed tenants of the Phase 0 note, kept apart from acme-corp:
       # the injection and secret fixtures and the kill switch must not reach
       # any other job. The seed writes a manifest with ids and synthetic
-      # markers only (no secrets), and each tenant's agent-bound API key to a
-      # SEPARATE file under RUNNER_TEMP, which is never uploaded and is masked
-      # before use. It fails closed while the seed is unbuilt.
+      # markers only (no secrets) to --manifest, and every seed agent's bound
+      # API key, as { slug: { agentId: key } }, to a SEPARATE file under
+      # RUNNER_TEMP, which is never uploaded and is masked before use. Neither
+      # goes to stdout, which the usecases' own log lines share. A Tool Runner
+      # tenant has one eval agent per profile (a profile runs as its own agent),
+      # so it has one key per profile. The seed exits non-zero, naming the
+      # tenant and the step, on anything it cannot complete.
       - name: Apply migrations + seed the Inspect tenants
         if: steps.key.outputs.present == 'true'
         run: |
           set -euo pipefail
           npx prisma migrate deploy
-          if [ ! -f scripts/inspect-seed.ts ]; then
-            echo "::error::scripts/inspect-seed.ts is not built yet (inspect.md Phase 1 remainder); the four seed tenants cannot be created."
-            exit 1
-          fi
           mkdir -p inspect-out
-          npx tsx scripts/inspect-seed.ts --agent-keys "$RUNNER_TEMP/inspect-agent-keys.json" > inspect-out/seed-manifest.json
+          npx tsx scripts/inspect-seed.ts --manifest inspect-out/seed-manifest.json --agent-keys "$RUNNER_TEMP/inspect-agent-keys.json"
 
       - name: Build app
         if: steps.key.outputs.present == 'true'
@@ -230,10 +230,16 @@ jobs:
             echo "::add-mask::$session"
             var="$(echo "$slug" | tr 'a-z-' 'A-Z_')"
             cookie_env+=(-e "INSPECT_SESSION_${var}=next-auth.session-token=${session}")
-            agent_key="$(node -e 'const k=require(process.argv[1])[process.argv[2]];process.stdout.write(typeof k==="string"?k:"")' "$RUNNER_TEMP/inspect-agent-keys.json" "$slug")"
-            case "$agent_key" in iflk_*) ;; *) echo "::error::no agent-bound API key for ${slug}"; exit 1 ;; esac
-            echo "::add-mask::$agent_key"
-            cookie_env+=(-e "INSPECT_AGENT_KEY_${var}=${agent_key}")
+            # One key per seed agent: INSPECT_AGENT_KEY_<SLUG>_<AGENT ID>, the
+            # name runner.agent_key_env reads.
+            keys_for_slug=0
+            while IFS=$'\t' read -r agent_id agent_key; do
+              case "$agent_key" in iflk_*) ;; *) echo "::error::a seed key for ${slug} is not an agent-bound API key"; exit 1 ;; esac
+              echo "::add-mask::$agent_key"
+              cookie_env+=(-e "INSPECT_AGENT_KEY_$(echo "${slug}_${agent_id}" | tr 'a-z-' 'A-Z_')=${agent_key}")
+              keys_for_slug=$((keys_for_slug + 1))
+            done < <(node -e 'const k=require(process.argv[1])[process.argv[2]]||{};for(const [a,v] of Object.entries(k))process.stdout.write(`${a}\t${typeof v==="string"?v:""}\n`)' "$RUNNER_TEMP/inspect-agent-keys.json" "$slug")
+            if [ "$keys_for_slug" -eq 0 ]; then echo "::error::no agent-bound API key for ${slug}"; exit 1; fi
           done
           for engine in flue tool-runner; do
             spent="$(spent_usd)"
