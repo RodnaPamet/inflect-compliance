@@ -769,7 +769,12 @@ export async function executeFlueRun(
         // flagged answer trips the same latch a flagged tool result does and
         // settles the run `AWAITING_APPROVAL`.
         guardDelegateOutput: (text, taskId) =>
-            guardDelegateAnswer(ctx, text, taskId, noteVerdict),
+            // THE RUN'S OWN LATCH (#5290), not a bare observer: `offered.review`
+            // is the one latch `runGuardedTool` consults, so a flagged answer
+            // now refuses every later read and propose call in this dispatch
+            // instead of only this re-entry. It carries `noteVerdict` as its
+            // observer, so the verdict is still reported exactly once.
+            guardDelegateAnswer(ctx, text, taskId, offered.review),
         // THE KILL SWITCH AND THE CAPS, before every model call (#4196).
         beforeModelCall,
         // THE DELEGATION, IN THE LEDGER (#3473 part 3).

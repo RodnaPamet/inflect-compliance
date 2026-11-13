@@ -111,16 +111,11 @@
 import type * as v from 'valibot';
 
 import type { RequestContext } from '@/app-layer/types';
-import {
-    guardUntrustedInput,
-    assertGuardAllowed,
-    assertNoReviewRequired,
-} from '@/app-layer/ai/guard';
+import { guardUntrustedInput } from '@/app-layer/ai/guard';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import {
     offerToolSet,
     runGuardedTool as runEngineGuardedTool,
-    stepVerdictOf,
     ReviewLatch,
     type GuardObserver,
     type OfferedToolSet,
@@ -261,20 +256,28 @@ export async function guardDelegateAnswer(
     ctx: RequestContext,
     text: string,
     taskId: string | undefined,
-    observe: GuardObserver | undefined,
+    review: ReviewLatch,
 ): Promise<void> {
     const outcome = await guardUntrustedInput(ctx, text, {
         source: `flue-delegate-answer:${taskId ?? 'unknown'}`,
     });
-    observe?.({
-        toolCallId: taskId ?? 'standalone',
-        tool: 'task',
-        slice: 'result',
-        verdict: stepVerdictOf(outcome),
-        ruleIds: [...(outcome.ruleIds ?? [])],
-    });
-    assertGuardAllowed(outcome);
-    assertNoReviewRequired(outcome);
+    // THROUGH THE RUN'S LATCH, NOT PAST IT (#5290).
+    //
+    // This used to observe the verdict and then throw its own two assertions,
+    // which reported the flag and stopped THIS re-entry but left
+    // `ReviewLatch.recorded` empty. `runGuardedTool` refuses a later call only
+    // through `assertNotTripped`, which reads that array — so the parent model
+    // carried on in the same dispatch: more read tools, whose tenant content
+    // still reached the model provider, and propose tools, which queued
+    // PENDING proposals. The run only parked at AWAITING_APPROVAL at the end.
+    // That is exactly the routing-around the latch exists to stop, and the
+    // docblock above claimed it was already stopped.
+    //
+    // `check` is the whole sandwich in the right order — observe, record,
+    // then assert — so it replaces the manual `observe?.()` rather than
+    // joining it. Calling both would record the verdict twice in the ledger,
+    // because this run's latch was constructed with that same observer.
+    review.check(outcome, 'task', 'result', taskId ?? 'standalone');
 }
 
 /**
