@@ -110,4 +110,11 @@ URL (its own manifest and lockfile), copies no application module, and its
   scanent's release notes say when a contract id, a limit or the ladder moves.
 - **Moving to a new release by hand**: replace the version in both URLs, then
   `npm install` in the root and in `packages/agent-harness-scanner/container`;
-  check `npm ls zod` still shows one copy (the package pins `zod` exactly).
+  check `npm ls zod` still shows one copy (the package pins `zod` exactly);
+  and move the version in `license:check`'s `--excludePackages` entry
+  (`@rodnapamet/scanent-contract@<version>`). The package is BUSL-1.1, which
+  that check refuses in a dependency; the entry excludes this first-party
+  package (the licensor is the same, Inflect Ltd.) by name AND version, the
+  pattern `docs/shared-ui-package-design.md` §5.9 set for `@inflect/ui`, so a
+  bumped version stops matching and the check fails until somebody moves the
+  pin on purpose.
