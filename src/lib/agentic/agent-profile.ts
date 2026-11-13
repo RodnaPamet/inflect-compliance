@@ -51,6 +51,17 @@ export type ProfileOutputKind = (typeof PROFILE_OUTPUT_KINDS)[number];
  */
 export const PROFILE_MAX_TURNS: number = ENGINE_CAPS.MAX_STEPS;
 
+/**
+ * A version's compaction threshold, in tokens (Step 2g of
+ * `docs/claude-tool-runner-design.md`): NULL takes the engine's, `0` turns
+ * compaction off, and any other value is this minimum to this maximum, pinned
+ * by the CHECK `AgentProfileVersion_compaction_threshold_bounded`. The writer
+ * also refuses a value above the TIER's engine threshold
+ * (`COMPACTION_THRESHOLD_ABOVE_TIER`): a profile may lower it, never raise it.
+ */
+export const PROFILE_COMPACTION_THRESHOLD_MIN = 10_000;
+export const PROFILE_COMPACTION_THRESHOLD_MAX = 150_000;
+
 /** The instructions' size cap, after sanitising. */
 export const PROFILE_INSTRUCTIONS_MAX_CHARS = 16_000;
 

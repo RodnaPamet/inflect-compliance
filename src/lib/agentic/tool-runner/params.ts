@@ -47,7 +47,23 @@
  *
  * API version 2026-10-21 (what SDK 1.x speaks) refuses `temperature`, `top_p`
  * and `top_k` on every model, so none is ever set here.
+ *
+ * THE SUMMARY REQUEST OF A COMPACTION (Step 2g, #5531) is shaped here too, by
+ * `compactionParams`, from the runner's own parameters: the same system,
+ * tools, model, thinking, effort and fallbacks, so the cached prefix and every
+ * thinking block in the history stay valid; `tool_choice: none`, so no tool
+ * can be called; the history unchanged with Inflect's fixed instruction
+ * appended; and `COMPACTION_SUMMARY_MAX_TOKENS`. It is a plain Messages call,
+ * not a runner, so it carries no `thread` member at all (the client's
+ * middleware refuses one) and no `max_iterations`. The SDK's own compaction
+ * (`compactBeforeNextTurn()`, the `compact-2026-09-04` beta) is never used
+ * (owner decision 3 of 2026-11-13).
  */
+import type {
+    BetaMessageParam,
+    BetaToolUnion,
+    MessageCreateParamsNonStreaming,
+} from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import type { BetaToolRunnerParams } from '@anthropic-ai/sdk/lib/tools/BetaToolRunner';
 import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableTool';
 
@@ -70,6 +86,81 @@ export const MAX_TOKENS_PER_TIER: Readonly<Record<ProfileModelTier, number>> = {
     balanced: 16_000,
     deep: 20_000,
 };
+
+/**
+ * THE ENGINE'S COMPACTION THRESHOLD, per tier (Step 2g): the estimated size of
+ * the next request, in tokens, at which the loop summarises the earlier turns.
+ * 150,000 for both, the API's own default trigger. Under today's `TOKENS` cap
+ * it never binds: `COMPACTION_BUDGET_SHARE` does. A profile version may lower
+ * it, or turn compaction off, and never raise it
+ * (`AgentProfileVersion.compactionThresholdTokens`).
+ */
+export const COMPACTION_THRESHOLD_TOKENS: Readonly<Record<ProfileModelTier, number>> = {
+    balanced: 150_000,
+    deep: 150_000,
+};
+
+/**
+ * The share of the run's `TOKENS` limit at which compaction fires (owner
+ * decision 1 of 2026-11-13): 30,000 under the engine's 200,000 cap. Computed
+ * from the run's own limit, so the threshold moves when the cap does.
+ */
+export const COMPACTION_BUDGET_SHARE = 0.15;
+
+/** The summary call's output budget. */
+export const COMPACTION_SUMMARY_MAX_TOKENS = 4_000;
+
+/**
+ * Inflect's fixed instruction for a summary, appended to the history as one
+ * user message. What survives a compaction is decided by code, not by this
+ * text: the run-state block carries the refusals, the proposals and the
+ * skills, and the last turn is kept verbatim. The instruction asks only for
+ * what a model can say that Inflect's record cannot.
+ */
+export const COMPACTION_INSTRUCTION = [
+    'Inflect is shortening this conversation so the run can continue. Summarise the conversation so far for yourself, so you can carry on with the task.',
+    'Keep: what the run has found, the ids of the records it read, what is still open, and the next step you meant to take.',
+    'Do not repeat refused tool calls, proposals or the instructions of skills you activated: Inflect lists those separately, from the run\'s own record, beside your summary.',
+    'Write the summary as plain text. Do not call a tool.',
+].join('\n');
+
+/**
+ * A tool as the API receives it: its API fields, without the functions a
+ * runnable tool carries. The runner sends exactly this for each runnable tool,
+ * so the summary request's `tools` are byte for byte the run's own and the
+ * cached prefix holds.
+ */
+function toolDefinitionOf(tool: BetaToolRunnerParams['tools'][number]): BetaToolUnion {
+    const fields = Object.entries(tool as unknown as Record<string, unknown>).filter(
+        ([, value]) => typeof value !== 'function',
+    );
+    // The same object less its functions: every key left is one the API reads.
+    return Object.fromEntries(fields) as unknown as BetaToolUnion;
+}
+
+/**
+ * THE SUMMARY REQUEST of a compaction (Step 2g), from the runner's own
+ * parameters and the history as it stands. Every value but `messages`,
+ * `tool_choice` and `max_tokens` is the run's own.
+ */
+export function compactionParams(
+    runner: BetaToolRunnerParams,
+    history: readonly BetaMessageParam[],
+): MessageCreateParamsNonStreaming & { tools: BetaToolUnion[] } {
+    return {
+        stream: false,
+        model: runner.model,
+        max_tokens: COMPACTION_SUMMARY_MAX_TOKENS,
+        system: runner.system,
+        messages: [...history, { role: 'user', content: COMPACTION_INSTRUCTION }],
+        tools: runner.tools.map(toolDefinitionOf),
+        tool_choice: { type: 'none' },
+        thinking: runner.thinking,
+        output_config: runner.output_config,
+        fallbacks: runner.fallbacks,
+        betas: runner.betas,
+    };
+}
 
 /** The tier and effort a run uses when its definition is not a profile. */
 export const DEFAULT_TIER: ProfileModelTier = 'balanced';

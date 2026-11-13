@@ -46,6 +46,11 @@ export interface ProfileVersionView {
     modelTier: ProfileModelTier;
     effort: ProfileEffort;
     maxTurns: number;
+    /**
+     * The version's compaction threshold (Step 2g): null takes the engine's,
+     * 0 turns compaction off, any other number lowers it.
+     */
+    compactionThresholdTokens: number | null;
     outputKind: ProfileOutputKind;
     allowedTriggers: ProfileTrigger[];
     author: ProfilePerson;
@@ -73,6 +78,12 @@ export interface ProfileView {
         maxTurns: number;
         rejectionReasonMaxChars: number;
         skillCatalogueBudgetBytes: number;
+        /** What a version's compaction threshold may be (Step 2g). */
+        compactionThreshold: {
+            min: number;
+            maxByTier: Record<ProfileModelTier, number>;
+            engineDefaultByTier: Record<ProfileModelTier, number>;
+        };
     };
 }
 

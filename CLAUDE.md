@@ -3550,6 +3550,26 @@ the pure `src/lib/agentic/connect-wizard.ts` are easy to undo:
   carries the key. It lives only in the sheet's state and goes when the sheet
   unmounts.
 
+**Compaction is Inflect's, and what a run must keep is never summarised**
+(Step 2g, #5531, `src/lib/agentic/tool-runner/compaction.ts`). A long run's
+earlier turns are summarised by Inflect's own model call in `runModelLoop`,
+shaped by `compactionParams()` (the run's own system and tools, `tool_choice:
+none`), never by the SDK's `compactBeforeNextTurn()` or the
+`compact-2026-09-04` beta: its opaque server summary would decide what survives,
+and nothing new is asked of the sub-processor. The request after it is rebuilt
+BY CODE: the opening message verbatim, a run-state block built from the run's
+own ledger (activated skills' pinned text re-hashed, refusals by code, proposals,
+delegations, the guard tally), the summary fenced as model-written data, and the
+last turn verbatim with only its thinking blocks dropped. So the instructions,
+the opening message, the skills, the refusals, the proposals and the pending
+results never pass through the summary; do not "simplify" any of them into it.
+The summary call is a model call like every other (kill switch, breaker and one
+`STEPS` before it; `TOKENS` after; egress and injection scans; a `MODEL_CALL`
+step with `purpose: 'compaction'` and its own Art 12 row), and the ledger keeps
+every original step. A profile version's `compactionThresholdTokens` only
+LOWERS the engine's threshold or turns it off (`0`); a value above the tier is
+refused at save and at approval, and the run takes the lowest anyway.
+
 ## Testing Conventions
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use the `makeRequestContext(role, overrides)` helper from `tests/helpers/make-context.ts` to construct test contexts.

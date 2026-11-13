@@ -109,6 +109,7 @@ function version(over: Partial<ProfileVersionView> = {}): ProfileVersionView {
         modelTier: 'balanced',
         effort: 'medium',
         maxTurns: 10,
+        compactionThresholdTokens: null,
         outputKind: 'ANSWER_ONLY',
         allowedTriggers: ['TEST_RUN'],
         author: { label: 'Avery Author', isViewer: false },
@@ -135,7 +136,17 @@ function view(versions: ProfileVersionView[], over: Partial<ProfileView> = {}): 
             skills: [{ origin: 'repository', name: 'risk-register-review', catalogueBytes: 300 }],
         },
         testRun: { available: false, reason: 'ENGINE_DOES_NOT_RUN_PROFILES', engine: 'STATIC' },
-        limits: { instructionsMaxChars: 16_000, maxTurns: 50, rejectionReasonMaxChars: 1_000, skillCatalogueBudgetBytes: 2_048 },
+        limits: {
+            instructionsMaxChars: 16_000,
+            maxTurns: 50,
+            rejectionReasonMaxChars: 1_000,
+            skillCatalogueBudgetBytes: 2_048,
+            compactionThreshold: {
+                min: 10_000,
+                maxByTier: { balanced: 150_000, deep: 150_000 },
+                engineDefaultByTier: { balanced: 30_000, deep: 30_000 },
+            },
+        },
         ...over,
     };
 }
@@ -458,6 +469,7 @@ describe('the editor', () => {
             modelTier: 'balanced',
             effort: 'medium',
             maxTurns: 10,
+            compactionThresholdTokens: null,
             outputKind: 'ANSWER_ONLY',
             allowedTriggers: ['TEST_RUN'],
         });
@@ -627,6 +639,56 @@ describe('the editor', () => {
         expect(screen.queryByTestId('behaviour-editor-supersedes')).toBeNull();
         // No tool chosen yet: nothing can be saved.
         expect((screen.getByTestId('behaviour-editor-save') as HTMLButtonElement).disabled).toBe(true);
+    });
+});
+
+describe('Summarise long conversations (Step 2g, #5531)', () => {
+    it('the approval view shows the version\'s choice: the engine default, off, or the lower threshold', () => {
+        renderTab(
+            view([
+                SUBMITTED({ compactionThresholdTokens: 12_000 }),
+                version({ compactionThresholdTokens: 0 }),
+            ]),
+        );
+        expect(screen.getAllByTestId('behaviour-version-2-compaction')[0].textContent).toBe(copy('compaction.atTokens', { count: 12000 }));
+        expect(screen.getAllByTestId('behaviour-version-1-compaction')[0].textContent).toBe(copy('compaction.off'));
+    });
+
+    it('a version that leaves it to the engine says so', () => {
+        renderTab(view([version()]));
+        expect(screen.getAllByTestId('behaviour-version-1-compaction')[0].textContent).toBe(copy('compaction.default'));
+    });
+
+    it('the editor keeps the starting version\'s lower threshold, bounded by the tier, and saves the value chosen', async () => {
+        renderTab(view([version({ compactionThresholdTokens: 12_000 })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).getByTestId('behaviour-editor-compaction').textContent).toContain(
+            copy('editor.compactionThresholdHint', { min: 10000, max: 150000 }),
+        );
+        const input = within(editor).getByRole('spinbutton', { name: copy('editor.compactionThresholdLabel') });
+        expect(input).toHaveValue('12000');
+        fireEvent.change(input, { target: { value: '11000' } });
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).compactionThresholdTokens).toBe(11_000);
+    });
+
+    it('a version that turned it off saves 0, and a refusal is shown beside the control', async () => {
+        renderTab(view([version({ compactionThresholdTokens: 0 })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).queryByRole('spinbutton', { name: copy('editor.compactionThresholdLabel') })).toBeNull();
+        const message = 'A version may lower the engine\'s compaction threshold, never raise it.';
+        fetchMock.mockResolvedValue(refused('COMPACTION_THRESHOLD_ABOVE_TIER', message));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).compactionThresholdTokens).toBe(0);
+        expect(within(editor).getByTestId('behaviour-editor-compaction-error').textContent).toBe(message);
+        expect(screen.queryByTestId('behaviour-editor-error')).toBeNull();
     });
 });
 

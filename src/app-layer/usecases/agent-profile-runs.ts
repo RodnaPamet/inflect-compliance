@@ -143,6 +143,7 @@ const VERSION_SELECT = {
     modelTier: true,
     effort: true,
     maxTurns: true,
+    compactionThresholdTokens: true,
     outputKind: true,
     allowedTriggers: true,
     profile: { select: { id: true, agentId: true, currentApprovedVersion: true } },
@@ -161,6 +162,7 @@ interface VersionRow {
     modelTier: string;
     effort: string;
     maxTurns: number;
+    compactionThresholdTokens: number | null;
     outputKind: string;
     allowedTriggers: string[];
     profile: { id: string; agentId: string; currentApprovedVersion: number | null };
@@ -224,6 +226,10 @@ function compileProfileDefinition(
         allowedTriggers: triggers.filter((t): t is NonNullable<typeof t> => t !== null),
         ...(flow ? { flow } : {}),
         ...(subagents ? { subagents } : {}),
+        // The version's compaction threshold (Step 2g): absent takes the
+        // engine's, 0 turns it off. The engine takes the lowest, so a value
+        // here can only lower the engine's threshold.
+        ...(row.compactionThresholdTokens !== null ? { compactionThresholdTokens: row.compactionThresholdTokens } : {}),
     };
 
     return {

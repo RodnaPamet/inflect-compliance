@@ -28,6 +28,11 @@
  * out of the body, as the sheet used to, wrote a version with no flow and
  * retired the open one that had it, which nobody had asked for.
  *
+ * COMPACTION (Step 2g, #5531): "Summarise long conversations" is the engine's
+ * default, off, or a lower threshold in a stepper bounded by the tier's engine
+ * threshold. The server refuses a value below the minimum or above the tier,
+ * by name, and the refusal is shown beside the control.
+ *
  * SUB-AGENTS (Step 2e, #4594) are written in their own section
  * (`BehaviourSubagentsSection`), whose pickers offer only the tools and skills
  * this version has selected. A version with a drawn flow carries none (owner
@@ -73,7 +78,11 @@ import {
     type SubagentDraft,
 } from './BehaviourSubagentsSection';
 
-type Field = 'instructions' | 'tools' | 'skills' | 'subagents';
+type Field = 'instructions' | 'tools' | 'skills' | 'subagents' | 'compaction';
+
+/** The three answers to "Summarise long conversations" (Step 2g). */
+type CompactionMode = 'default' | 'off' | 'lower';
+const COMPACTION_MODES: readonly CompactionMode[] = ['default', 'off', 'lower'];
 
 /** Which field a refusal from the save concerns. Any other reason is shown above the form. */
 const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
@@ -94,6 +103,8 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     SUBAGENT_TOOL_NOT_IN_VERSION: 'subagents',
     SUBAGENT_SKILL_NOT_IN_VERSION: 'subagents',
     SUBAGENT_MAX_TURNS_ABOVE_VERSION: 'subagents',
+    COMPACTION_THRESHOLD_BELOW_MINIMUM: 'compaction',
+    COMPACTION_THRESHOLD_ABOVE_TIER: 'compaction',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -138,6 +149,15 @@ export function BehaviourEditorSheet({
     const [modelTier, setModelTier] = useState<ProfileModelTier>(from?.modelTier ?? 'balanced');
     const [effort, setEffort] = useState<ProfileEffort>(from?.effort ?? 'medium');
     const [maxTurns, setMaxTurns] = useState(from?.maxTurns ?? 10);
+    const startingThreshold = from?.compactionThresholdTokens ?? null;
+    const [compactionMode, setCompactionMode] = useState<CompactionMode>(
+        startingThreshold === null ? 'default' : startingThreshold === 0 ? 'off' : 'lower',
+    );
+    const [compactionThreshold, setCompactionThreshold] = useState<number>(
+        startingThreshold !== null && startingThreshold > 0
+            ? startingThreshold
+            : view.limits.compactionThreshold.engineDefaultByTier[from?.modelTier ?? 'balanced'],
+    );
     const [outputKind, setOutputKind] = useState<ProfileOutputKind>(from?.outputKind ?? 'ANSWER_ONLY');
     const [triggers, setTriggers] = useState<ProfileTrigger[]>(from?.allowedTriggers ?? ['TEST_RUN']);
     // The starting version's sub-agents, kept as written: a sub-agent naming
@@ -182,6 +202,12 @@ export function BehaviourEditorSheet({
     const subagentsReady = subagents.every((s) =>
         subagentDraftReady(s, { toolNames, skillKeys, maxTurns }, max),
     );
+    // The stepper's bounds: never below the minimum, never above the tier's
+    // engine threshold. A version may lower the threshold, never raise it.
+    const compactionMin = view.limits.compactionThreshold.min;
+    const compactionMax = view.limits.compactionThreshold.maxByTier[modelTier];
+    const compactionReady =
+        compactionMode !== 'lower' || (compactionThreshold >= compactionMin && compactionThreshold <= compactionMax);
     const canSave =
         !busy &&
         instructions.trim().length > 0 &&
@@ -189,7 +215,8 @@ export function BehaviourEditorSheet({
         (flow !== null || toolNames.length > 0) &&
         triggers.length > 0 &&
         !overBudget &&
-        subagentsReady;
+        subagentsReady &&
+        compactionReady;
 
     const fieldError = (field: Field) => (error?.field === field ? error.message : undefined);
 
@@ -209,6 +236,8 @@ export function BehaviourEditorSheet({
             modelTier,
             effort,
             maxTurns,
+            compactionThresholdTokens:
+                compactionMode === 'default' ? null : compactionMode === 'off' ? 0 : compactionThreshold,
             outputKind,
             allowedTriggers: PROFILE_TRIGGERS.filter((x) => triggers.includes(x)),
             // Sent only when there are any, and never beside a flow.
@@ -413,6 +442,53 @@ export function BehaviourEditorSheet({
                             ariaLabel={t('field.maxTurns')}
                         />
                     </FormField>
+
+                    <div className="space-y-tight" data-testid="behaviour-editor-compaction">
+                        <FormField
+                            label={t('field.compaction')}
+                            description={t('editor.compactionHint', {
+                                tokens: view.limits.compactionThreshold.engineDefaultByTier[modelTier],
+                            })}
+                        >
+                            <RadioGroup
+                                value={compactionMode}
+                                onValueChange={(v) => setCompactionMode(v as CompactionMode)}
+                                aria-label={t('field.compaction')}
+                            >
+                                {COMPACTION_MODES.map((mode) => (
+                                    <label key={mode} htmlFor={`behaviour-compaction-${mode}`} className="flex items-center gap-compact text-sm">
+                                        <RadioGroupItem id={`behaviour-compaction-${mode}`} value={mode} size="sm" disabled={busy} />
+                                        <span>{t(`compaction.${mode}`)}</span>
+                                    </label>
+                                ))}
+                            </RadioGroup>
+                        </FormField>
+                        {compactionMode === 'lower' ? (
+                            <FormField
+                                label={t('editor.compactionThresholdLabel')}
+                                description={t('editor.compactionThresholdHint', { min: compactionMin, max: compactionMax })}
+                            >
+                                <NumberStepper
+                                    id="behaviour-compaction-threshold"
+                                    value={compactionThreshold}
+                                    onChange={setCompactionThreshold}
+                                    min={compactionMin}
+                                    max={compactionMax}
+                                    step={1_000}
+                                    disabled={busy}
+                                    ariaLabel={t('editor.compactionThresholdLabel')}
+                                />
+                            </FormField>
+                        ) : null}
+                        {/* The refusal beside the control, as plain text: a
+                            FormField error would set `invalid` on the radio
+                            group's root, which renders it onto a div. */}
+                        {fieldError('compaction') ? (
+                            <p className="text-xs text-content-error" role="alert" data-testid="behaviour-editor-compaction-error">
+                                {fieldError('compaction')}
+                            </p>
+                        ) : null}
+                    </div>
 
                     <FormField label={t('field.outputKind')} description={t('editor.outputKindHint')}>
                         <RadioGroup

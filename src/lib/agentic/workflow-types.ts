@@ -311,6 +311,14 @@ export interface ProfileRunSpec {
      * entry is true is admitted to run a version that has any.
      */
     readonly subagents?: readonly ProfileSubagent[];
+    /**
+     * The version's compaction threshold (Step 2g of
+     * `docs/claude-tool-runner-design.md`): ABSENT takes the engine's
+     * threshold, `0` turns compaction off, and any other value can only lower
+     * the engine's (the lowest of the three wins). Not in the content hash: an
+     * older worker that does not read it does not compact, today's behaviour.
+     */
+    readonly compactionThresholdTokens?: number;
 }
 
 /**

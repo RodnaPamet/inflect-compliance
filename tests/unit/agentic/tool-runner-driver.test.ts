@@ -49,7 +49,11 @@ const mockState = {
     /** Make the kill-switch read throw once this many model calls are answered. */
     killReadFailsAfterModelCalls: null as number | null,
     modelCalls: 0,
-    ledger: [] as Array<{ kind: string; rec: Record<string, unknown> }>,
+    ledger: [] as Array<{ kind: string; rec: Record<string, unknown>; seq?: number }>,
+    /** The run's proposals, as the compaction record read returns them (Step 2g). */
+    proposals: [] as Array<{ id: string; kind: string; status: string; stepSeq: number | null }>,
+    /** Engage the kill switch when a compaction reads the run's record (Step 2g). */
+    killOnCompactionRead: false,
     decisionRows: [] as Array<{ inputDigest: string }>,
     decisionInputs: [] as unknown[],
     decisionSummaries: [] as Array<string | null | undefined>,
@@ -115,8 +119,8 @@ jest.mock('@/lib/observability/metrics', () => ({
 }));
 
 jest.mock('@/lib/agentic/drivers/step-recorder', () => ({
-    recordStep: jest.fn(async (_ctx: unknown, _runId: string, _seq: number, kind: string, rec: Record<string, unknown>) => {
-        mockState.ledger.push({ kind, rec });
+    recordStep: jest.fn(async (_ctx: unknown, _runId: string, seq: number, kind: string, rec: Record<string, unknown>) => {
+        mockState.ledger.push({ kind, rec, seq });
     }),
 }));
 
@@ -158,6 +162,26 @@ jest.mock('@/lib/agentic/drivers/run-store', () => ({
         mountedSkills: mockState.pinnedSkills,
     })),
     proposedItemsSoFar: jest.fn(async () => 0),
+    // The ledger the fakes recorded, as the database would return it (Step 2g).
+    readCompactionRecord: jest.fn(async (_ctx: unknown, _runId: string, fromSeq: number) => {
+        if (mockState.killOnCompactionRead) mockState.killAfterModelCalls = 0;
+        return {
+            complete: true,
+            steps: mockState.ledger
+                .filter((s) => (s.seq ?? -1) >= fromSeq)
+                .map((s) => ({
+                    seq: s.seq ?? -1,
+                    kind: s.kind,
+                    toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+                    status: String(s.rec.status),
+                    subagentName: typeof s.rec.subagent === 'string' ? s.rec.subagent : null,
+                    guardVerdict: typeof s.rec.guardVerdict === 'string' ? s.rec.guardVerdict : null,
+                    inputJson: s.rec.input === undefined ? null : JSON.stringify(s.rec.input),
+                    outputJson: s.rec.output === undefined ? null : JSON.stringify(s.rec.output),
+                })),
+            proposals: [...mockState.proposals],
+        };
+    }),
 }));
 
 // THE DATABASE READ of the skill mount, and nothing else (Step 2d): the run's
@@ -328,11 +352,23 @@ import { catalogBytes, loadSkill, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/l
 import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
 import { TOOL_RUNNER_PREAMBLE } from '@/lib/agentic/tool-runner/params';
 import { SKILL_CATALOGUE_CLOSE, SKILL_CATALOGUE_OPEN } from '@/lib/agentic/tool-runner/skills';
+import { createHash } from 'crypto';
+import { COMPACTION_INSTRUCTION, COMPACTION_SUMMARY_MAX_TOKENS } from '@/lib/agentic/tool-runner/params';
+import { RUN_STATE_CLOSE, RUN_STATE_OPEN, RUN_SUMMARY_OPEN, runSummaryText } from '@/lib/agentic/tool-runner/compaction';
 
 // ─── The wire ───────────────────────────────────────────────────────
 
 /** A turn as the faux model answers it: the conformance script, or raw content for a hardening case. */
-type FauxTurn = ScriptedTurn | { readonly raw: { content: unknown[]; stop_reason: string } };
+type FauxTurn =
+    | ScriptedTurn
+    | {
+          readonly raw: {
+              content: unknown[];
+              stop_reason: string;
+              /** A usage figure for this one reply (Step 2g): the compaction trigger reads it. */
+              usage?: { input_tokens: number; output_tokens: number };
+          };
+      };
 
 const wire = {
     turns: [] as FauxTurn[],
@@ -342,7 +378,7 @@ const wire = {
 
 const originalFetch = global.fetch;
 
-function fauxResponse(turn: FauxTurn | undefined, n: number): { content: unknown[]; stop_reason: string } {
+function fauxResponse(turn: FauxTurn | undefined, n: number): { content: unknown[]; stop_reason: string; usage?: unknown } {
     if (turn === undefined) return { content: [{ type: 'text', text: 'done' }], stop_reason: 'end_turn' };
     if ('raw' in turn) return turn.raw;
     if (turn.toolCalls) {
@@ -439,6 +475,8 @@ function reset(
     mockState.killReadFailsAfterModelCalls = null;
     mockState.modelCalls = 0;
     mockState.ledger = [];
+    mockState.proposals = [];
+    mockState.killOnCompactionRead = false;
     mockState.decisionRows = [];
     mockState.decisionInputs = [];
     mockState.decisionSummaries = [];
@@ -1247,5 +1285,270 @@ describe('Step 2e: inline sub-agents on the Tool Runner engine', () => {
         const marker = mockState.ledger.find((st) => st.rec.toolCalled === 'delegate');
         expect((marker?.rec.output as { outcome: string }).outcome).toBe('SUBAGENT_HAS_NO_TOOLS');
         expect((marker?.rec.input as { toolsLost: unknown }).toolsLost).toEqual([{ name: 'list_controls', reason: 'PROFILE_TOOL_NOT_GRANTED' }]);
+    });
+});
+
+// ─── Step 2g: context compaction ────────────────────────────────────
+
+describe('Step 2g: compaction on the Tool Runner engine (#5531)', () => {
+    /** A tool round whose reply reports `inputTokens`, so the next request's estimate is near it. */
+    const bigRound = (inputTokens: number, names: readonly string[] = ['list_risks'], withThinking = false): FauxTurn => ({
+        raw: {
+            content: [
+                ...(withThinking ? [{ type: 'thinking', thinking: 'I should read the risks first.', signature: 'sig_abc' }] : []),
+                { type: 'text', text: 'Reading.' },
+                ...names.map((name, j) => ({ type: 'tool_use', id: `toolu_big_${j}`, name, input: {} })),
+            ],
+            stop_reason: 'tool_use',
+            usage: { input_tokens: inputTokens, output_tokens: 5 },
+        },
+    });
+    const SUMMARY = 'Read the risks: r1 is open. Next: answer.';
+    const summaryTurn = (text = SUMMARY, stopReason = 'end_turn'): FauxTurn => ({
+        raw: { content: [{ type: 'text', text }], stop_reason: stopReason },
+    });
+    const isSummaryRequest = (b: Record<string, unknown>) => JSON.stringify(b.tool_choice) === '{"type":"none"}';
+    const compactionSteps = () =>
+        mockState.ledger.filter((s) => s.kind === 'MODEL_CALL' && (s.rec.input as { purpose?: unknown }).purpose === 'compaction');
+    const messagesOf = (b: Record<string, unknown>) => b.messages as Array<{ role: string; content: unknown }>;
+    /** A profile run over scripted wire turns, raw ones included. */
+    const driveFaux = (def: WorkflowDefinition, tools: ConformanceRun['tools'], turns: readonly FauxTurn[]) => {
+        reset({ tools }, turns);
+        return runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, def, 0, Date.now());
+    };
+
+    it('fires at the threshold and not below it: 15% of the run\'s TOKENS limit, 30,000 under the engine cap', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(29_000), { text: 'done' }]);
+        expect(wire.bodies).toHaveLength(2);
+        expect(wire.bodies.some(isSummaryRequest)).toBe(false);
+        expect(compactionSteps()).toEqual([]);
+
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(30_000), summaryTurn(), { text: 'done' }]);
+        expect(wire.bodies).toHaveLength(3);
+        expect(isSummaryRequest(wire.bodies[1])).toBe(true);
+        expect(compactionSteps()).toHaveLength(1);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('the summary request is the run\'s own request with tool_choice none and Inflect\'s instruction appended', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(40_000, ['list_risks'], true), summaryTurn(), { text: 'done' }]);
+        const [first, summary] = wire.bodies;
+        for (const key of ['model', 'system', 'tools', 'thinking', 'output_config', 'fallbacks']) {
+            expect({ key, value: summary[key] }).toEqual({ key, value: first[key] });
+        }
+        expect(summary.tool_choice).toEqual({ type: 'none' });
+        expect(summary.max_tokens).toBe(COMPACTION_SUMMARY_MAX_TOKENS);
+        expect(summary).not.toHaveProperty('thread');
+        // The history unchanged, thinking block included, then the instruction.
+        const msgs = messagesOf(summary);
+        expect(msgs[0]).toEqual(messagesOf(first)[0]);
+        expect(JSON.stringify(msgs[1])).toContain('"signature":"sig_abc"');
+        expect(msgs.at(-1)).toEqual({ role: 'user', content: COMPACTION_INSTRUCTION });
+    });
+
+    it('rebuilds the next request by code: the opening message, the run-state block, the summary, and the last turn verbatim with thinking dropped', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(40_000, ['list_risks'], true), summaryTurn(), { text: 'done' }]);
+        const [first, summary, next] = wire.bodies;
+        const history = messagesOf(summary).slice(0, -1);
+        const msgs = messagesOf(next);
+        expect(msgs).toHaveLength(5);
+        // 1. The opening message, byte for byte.
+        expect(JSON.stringify(msgs[0])).toBe(JSON.stringify(messagesOf(first)[0]));
+        // 2. Inflect's block, from the ledger: one tool call, clean.
+        expect(msgs[1]).toEqual({
+            role: 'user',
+            content: [
+                'Inflect wrote the block below from this run\'s own record. It is complete for the conversation so far, and the summary after it does not repeat it.',
+                RUN_STATE_OPEN,
+                'Skills activated: none.',
+                'Refused tool calls: none.',
+                'Proposals made: none.',
+                'Delegations: none.',
+                'Guard verdicts: 1 clean. Any other verdict stops the run, so there is none.',
+                RUN_STATE_CLOSE,
+            ].join('\n'),
+        });
+        // 3. The summary, fenced as the model's.
+        expect(msgs[2]).toEqual({ role: 'user', content: runSummaryText(SUMMARY) });
+        // 4. The last assistant turn: every block as sent, but the thinking block.
+        const lastAssistant = history[1] as { content: Array<{ type: string }> };
+        expect(lastAssistant.content.map((b) => b.type)).toEqual(['thinking', 'text', 'tool_use']);
+        expect(msgs[3]).toEqual({ role: 'assistant', content: lastAssistant.content.filter((b) => b.type !== 'thinking') });
+        // 5. The turn's tool results, exactly as the runner produced them.
+        expect(JSON.stringify(msgs[4])).toBe(JSON.stringify(history[2]));
+        expect(toolResultsOf(next).map((r) => r.content)).toEqual([LIST_RISKS.result]);
+        // System and tools are unchanged on the request after it.
+        expect(next.system).toEqual(first.system);
+        expect(next.tools).toEqual(first.tools);
+    });
+
+    it('a refusal and a pending proposal reach the model through the run-state block, never only through the summary', async () => {
+        // Two calls in one turn at a cap of one: the second is refused.
+        reset({ tools: [LIST_RISKS, LIST_CONTROLS] }, [
+            bigRound(40_000, ['list_risks', 'list_controls']),
+            summaryTurn('The run read r1.'),
+            { text: 'done' },
+        ]);
+        mockState.proposals = [{ id: 'prop_pending_1', kind: 'FINDING', status: 'PENDING', stepSeq: 1 }];
+        await runToolRunnerDriver(context(), 'run-refusal', DEFINITION, 0, Date.now());
+        const block = String(messagesOf(wire.bodies[2])[1].content);
+        expect(block.startsWith('Inflect wrote the block below')).toBe(true);
+        expect(block).toContain('- step 3: list_controls (TOOL_CALLS_PER_TURN_EXCEEDED)');
+        expect(block).toContain('- prop_pending_1: FINDING, PENDING');
+        // And the refusal's tool error is still in the last turn, verbatim.
+        expect(toolResultsOf(wire.bodies[2]).map((r) => r.is_error === true)).toEqual([false, true]);
+    });
+
+    it('an activated skill\'s pinned text is re-taught verbatim after a compaction', async () => {
+        const SKILL = loadSkill(MOUNTABLE_REPOSITORY_SKILL);
+        await drive(
+            { tools: [LIST_RISKS], turns: [], skills: { repository: [SKILL.name] } },
+            [{ toolCalls: [{ name: 'activate_skill', args: { name: SKILL.name } }] }, bigRound(40_000), summaryTurn(), { text: 'done' }],
+        );
+        expect(wire.bodies).toHaveLength(4);
+        const block = String(messagesOf(wire.bodies[3])[1].content);
+        expect(block).toContain(
+            `<skill name="${SKILL.name}" version="${SKILL.metadata.version}" content_hash="${skillContentHash(SKILL.instructions)}">\n${SKILL.instructions}\n</skill>`,
+        );
+    });
+
+    it('the summary call is charged one STEPS and its tokens', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(40_000), summaryTurn(), { text: 'done' }]);
+        const [step] = compactionSteps();
+        // Three model calls of 10/5 or 40,000/5 tokens each: the summary's 15 counted.
+        expect(step.rec.tokens).toBe(15);
+        expect(mockState.updates.at(-1)?.costTokens).toBe(40_005 + 15 + 15);
+        // Steps: call, tool, summary, call: four charged, four recorded.
+        expect(mockState.ledger).toHaveLength(4);
+        expect(mockState.updates.at(-1)?.stepCount).toBe(4);
+    });
+
+    it('does not compact with fewer than two STEPS left: the summary and one call after it', async () => {
+        const limit = ENGINE_CAPS.MAX_STEPS;
+        // Two left after the call and its tool: it compacts.
+        reset({ tools: [LIST_RISKS] }, [bigRound(40_000), summaryTurn(), { text: 'done' }]);
+        await runToolRunnerDriver(context(), 'run-two-left', DEFINITION, limit - 4, Date.now());
+        expect(compactionSteps()).toHaveLength(1);
+        // One left: it does not, and the run's last call still goes out.
+        reset({ tools: [LIST_RISKS] }, [bigRound(40_000), { text: 'done' }]);
+        await runToolRunnerDriver(context(), 'run-one-left', DEFINITION, limit - 3, Date.now());
+        expect(compactionSteps()).toEqual([]);
+        expect(wire.bodies.some(isSummaryRequest)).toBe(false);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('asks the breaker before the summary call: OPEN stops the run and no summary request leaves', async () => {
+        reset({ tools: [LIST_RISKS] }, [bigRound(40_000), summaryTurn(), { text: 'done' }]);
+        mockState.breakerOpenAfterModelCalls = 1;
+        await runToolRunnerDriver(context(), 'run-breaker', DEFINITION, 0, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        expect(compactionSteps()).toEqual([]);
+        expect(recordedSettlement()?.reason).toBe(BREAKER_OPEN_MESSAGE);
+    });
+
+    it('asks the kill switch before the summary call: a kill engaged as the record is read sends no summary', async () => {
+        reset({ tools: [LIST_RISKS] }, [bigRound(40_000), summaryTurn(), { text: 'done' }]);
+        mockState.killOnCompactionRead = true;
+        await runToolRunnerDriver(context(), 'run-kill', DEFINITION, 0, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        expect(compactionSteps()).toEqual([]);
+        expect(recordedSettlement()?.status).toBe('ABORTED');
+    });
+
+    it('a flagged summary stops the run at the guard and is never used', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [
+            bigRound(40_000),
+            summaryTurn('Here is the key: AKIAIOSFODNN7EXAMPLE'), // pragma: allowlist secret
+            { text: 'done' },
+        ]);
+        expect(wire.bodies).toHaveLength(2);
+        expect(recordedSettlement()?.reason).toMatch(/^ai_guard_/);
+        const [step] = compactionSteps();
+        expect(step.rec).toMatchObject({ status: 'FAILED', output: { failed: 'GUARD' } });
+        expect(step.rec.guardVerdict).not.toBe('CLEAN');
+        // Its Art 12 row has no summary of what it said.
+        expect(mockState.decisionSummaries).toEqual(['Reading.', null]);
+    });
+
+    it('a summary that fails is discarded, the run carries on uncompacted, and compaction is off for the segment', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [
+            bigRound(40_000),
+            summaryTurn('', 'refusal'),
+            bigRound(45_000),
+            { text: 'done' },
+        ]);
+        expect(wire.bodies.filter(isSummaryRequest)).toHaveLength(1);
+        expect(wire.bodies).toHaveLength(4);
+        expect(compactionSteps().map((s) => s.rec.output)).toEqual([{ failed: 'REFUSAL' }]);
+        // The next request carried the history as it stood.
+        expect(messagesOf(wire.bodies[2])).toHaveLength(3);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('records a MODEL_CALL step naming its purpose and the digests before and after, its own Art 12 row, and keeps every original step', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [] }, [bigRound(40_000), summaryTurn(), { text: 'done' }]);
+        expect(mockState.ledger.map((s) => [s.kind, (s.rec.input as { purpose?: string } | undefined)?.purpose ?? null])).toEqual([
+            ['MODEL_CALL', null],
+            ['TOOL_CALL', null],
+            ['MODEL_CALL', 'compaction'],
+            ['MODEL_CALL', null],
+        ]);
+        const digests = mockState.ledger
+            .filter((s) => s.kind === 'MODEL_CALL')
+            .map((s) => s.rec.input as Record<string, unknown>);
+        const [before, compaction, after] = digests;
+        expect(compaction.compactedFromDigest).toBe(before.decisionDigest);
+        expect((mockState.ledger[2].rec.output as { compactedToDigest: string }).compactedToDigest).toBe(after.decisionDigest);
+        expect(compaction.summaryDigest).toBe(`sha256:${createHash('sha256').update(SUMMARY, 'utf8').digest('hex')}`);
+        expect(compaction).toMatchObject({ modelCalls: 1, messagesSummarised: 3, estimatedTokensBefore: expect.any(Number) });
+        // One Art 12 row per model call, the summary's included, over the request that left.
+        expect(mockState.decisionRows.map((r) => r.inputDigest)).toEqual(digests.map((d) => d.decisionDigest));
+        expect(computeInputDigest(mockState.decisionInputs[1])).toBe(compaction.decisionDigest);
+        expect(mockState.decisionSummaries[1]).toBe(SUMMARY);
+        // The summary's text never reaches the ledger.
+        expect(JSON.stringify(mockState.ledger)).not.toContain(SUMMARY);
+    });
+
+    it('a profile version that turns compaction off is never compacted, and one that lowers the threshold is compacted sooner', async () => {
+        const withThreshold = (value: number) =>
+            ({ ...profileDef([], ['list_risks']), profile: { ...profileDef([], ['list_risks']).profile, compactionThresholdTokens: value } }) as WorkflowDefinition;
+        await driveFaux(withThreshold(0), [LIST_RISKS], [bigRound(40_000), { text: 'done' }]);
+        expect(compactionSteps()).toEqual([]);
+        await driveFaux(withThreshold(12_000), [LIST_RISKS], [bigRound(12_500), summaryTurn(), { text: 'done' }]);
+        expect(compactionSteps()).toHaveLength(1);
+        // Positive control: the engine's threshold alone would not have fired.
+        await driveFaux(profileDef([], ['list_risks']), [LIST_RISKS], [bigRound(12_500), { text: 'done' }]);
+        expect(compactionSteps()).toEqual([]);
+    });
+
+    it('a sub-agent compacts its own history on the run\'s one budget, and never touches its parent\'s', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks', 'list_controls']);
+        await driveFaux(def, [LIST_RISKS, LIST_CONTROLS], [
+            delegate('risk_reader'),
+            bigRound(40_000),
+            summaryTurn(),
+            { text: 'One risk: r1.' },
+            { text: 'done' },
+        ]);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+        expect(wire.bodies).toHaveLength(5);
+        // The summary request is the CHILD's: its system prompt and its task.
+        const summary = wire.bodies[2];
+        expect(isSummaryRequest(summary)).toBe(true);
+        expect(summary.system).toEqual(wire.bodies[1].system);
+        expect(JSON.stringify(messagesOf(summary)[0])).toBe(JSON.stringify(messagesOf(wire.bodies[1])[0]));
+        // The child's next request carries its own block, which names no delegation.
+        const childBlock = String(messagesOf(wire.bodies[3])[1].content);
+        expect(childBlock).toContain(RUN_STATE_OPEN);
+        expect(childBlock).not.toContain('Delegations');
+        // The step is the child's, and the parent's history is not compacted.
+        const [step] = compactionSteps();
+        expect(step.rec.subagent).toBe('risk_reader');
+        const parentNext = JSON.stringify(wire.bodies[4].messages);
+        expect(parentNext).not.toContain(RUN_STATE_OPEN);
+        expect(parentNext).not.toContain(RUN_SUMMARY_OPEN);
+        expect(messagesOf(wire.bodies[4])).toHaveLength(3);
+        // One budget: every call's tokens, the child's summary included.
+        expect(mockState.updates.at(-1)?.costTokens).toBe(15 + 40_005 + 15 + 15 + 15);
     });
 });

@@ -19,6 +19,11 @@ import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableT
 import { resolveRunCaps } from '@/lib/agentic/run-caps';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import {
+    COMPACTION_BUDGET_SHARE,
+    COMPACTION_INSTRUCTION,
+    COMPACTION_SUMMARY_MAX_TOKENS,
+    COMPACTION_THRESHOLD_TOKENS,
+    compactionParams,
     lockedParams,
     OPERATOR_INSTRUCTIONS_CLOSE,
     OPERATOR_INSTRUCTIONS_OPEN,
@@ -201,6 +206,43 @@ describe('a sub-agent\'s runner is shaped by the same function (Step 2e, #4594)'
         expect(
             lockedParams({ def: PROFILE_DEF, tools, message: '', caps, fromSeq: nearlySpent, toolCallsPerTurn: 1, subagent: SUB }).max_iterations,
         ).toBe(2);
+    });
+});
+
+describe('the summary request of a compaction is shaped here too, and pinned (Step 2g, #5531)', () => {
+    const tools = [tool('list_risks'), tool('activate_skill')];
+    const caps = resolveRunCaps(null);
+    const runner = lockedParams({ def: PROFILE_DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
+    const history = [
+        { role: 'user' as const, content: 'Go.' },
+        { role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 't1', name: 'list_risks', input: {} }] },
+        { role: 'user' as const, content: [{ type: 'tool_result' as const, tool_use_id: 't1', content: '{}' }] },
+    ];
+    const summary = compactionParams(runner, history);
+
+    it('pins the threshold constants: 150,000 per tier, 15% of TOKENS, a 4,000-token summary', () => {
+        expect(COMPACTION_THRESHOLD_TOKENS).toEqual({ balanced: 150_000, deep: 150_000 });
+        expect(COMPACTION_BUDGET_SHARE).toBe(0.15);
+        expect(COMPACTION_SUMMARY_MAX_TOKENS).toBe(4_000);
+        expect(COMPACTION_INSTRUCTION.split('\n').at(-1)).toBe('Write the summary as plain text. Do not call a tool.');
+    });
+
+    it('keeps the run\'s system, tools, model, thinking, effort and fallbacks, so the cached prefix and every thinking block hold', () => {
+        for (const key of ['model', 'system', 'thinking', 'output_config', 'fallbacks', 'betas', 'stream'] as const) {
+            expect({ key, value: summary[key] }).toEqual({ key, value: runner[key] });
+        }
+        // The tools as the API receives them: every API field, no function.
+        expect(JSON.stringify(summary.tools)).toBe(JSON.stringify(runner.tools));
+        expect(summary.tools.every((t) => Object.values(t).every((v) => typeof v !== 'function'))).toBe(true);
+    });
+
+    it('calls no tool, holds no thread, and appends Inflect\'s instruction to the history unchanged', () => {
+        expect(summary.tool_choice).toEqual({ type: 'none' });
+        expect(summary.max_tokens).toBe(COMPACTION_SUMMARY_MAX_TOKENS);
+        expect(summary.messages).toEqual([...history, { role: 'user', content: COMPACTION_INSTRUCTION }]);
+        expect(Object.keys(summary).sort()).toEqual(
+            ['betas', 'fallbacks', 'max_tokens', 'messages', 'model', 'output_config', 'stream', 'system', 'thinking', 'tool_choice', 'tools'].sort(),
+        );
     });
 });
 

@@ -96,6 +96,14 @@ export interface RunStepFeedRow {
      */
     subagent: string | null;
     /**
+     * WHEN THIS STEP IS A COMPACTION (Step 2g, #5531): the summary call the
+     * Tool Runner engine made to shorten a long conversation, with the
+     * estimated size of the request before it and, when the summary was used,
+     * after it. Null for every other step. Read from `inputJson` /
+     * `outputJson`, where the engine records `purpose: 'compaction'`.
+     */
+    compaction: { estimatedTokensBefore: number | null; estimatedTokensAfter: number | null } | null;
+    /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
      * constraint.
@@ -163,6 +171,36 @@ export function decisionDigestOf(inputJson: string | null): string | null {
         // reason to fail the page.
         return null;
     }
+}
+
+/**
+ * A compaction step's sizes (Step 2g), or null for any step that is not one.
+ * A MODEL_CALL whose input says `purpose: 'compaction'`; each figure is a
+ * finite number or null, so a malformed blob costs the figure and not the row.
+ */
+export function compactionOf(
+    kind: string,
+    inputJson: string | null,
+    outputJson: string | null,
+): { estimatedTokensBefore: number | null; estimatedTokensAfter: number | null } | null {
+    if (kind !== 'MODEL_CALL' || !inputJson) return null;
+    const read = (json: string | null): Record<string, unknown> | null => {
+        if (!json) return null;
+        try {
+            const parsed: unknown = JSON.parse(json);
+            return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+        } catch {
+            return null;
+        }
+    };
+    const input = read(inputJson);
+    if (input?.purpose !== 'compaction') return null;
+    const output = read(outputJson);
+    const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    return {
+        estimatedTokensBefore: num(input.estimatedTokensBefore),
+        estimatedTokensAfter: num(output?.estimatedTokensAfter),
+    };
 }
 
 /**
@@ -295,6 +333,8 @@ export function projectRunSteps(
             delegation: delegationOf(s.kind, tool, s.inputJson),
             // WHOSE STEP, from its own column (Step 2e). Null for the parent.
             subagent: s.subagentName ?? null,
+            // A COMPACTION, labelled as such on the run page (Step 2g).
+            compaction: compactionOf(s.kind, s.inputJson, s.outputJson),
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the

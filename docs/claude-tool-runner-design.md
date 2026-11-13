@@ -131,6 +131,32 @@ Inflect would host it in the worker, the same way it hosts Flue.
   `delegate` marker closes the span the run page groups. `RUNS_SUBAGENTS` is
   true for this engine alone; any other engine refuses such a version
   `PROFILE_SUBAGENTS_NOT_RUNNABLE`.
+- **A long run's earlier turns are summarised (Step 2g, #5531).** At loop-body
+  step 9 of `runModelLoop`, after a complete tool round, a run whose next
+  request is estimated at or above its threshold (the lowest of
+  `COMPACTION_THRESHOLD_TOKENS[tier]`, 15% of its `TOKENS` limit, which is
+  30,000 today, and the profile version's `compactionThresholdTokens`) sends
+  Inflect's own summary call (`compactionParams`, `tool_choice: none`), after the
+  kill switch, the breaker and one `STEPS`. Its tokens are charged to `TOKENS`;
+  its text is egress- and injection-scanned, and any verdict but clean stops the
+  run at the guard with the summary unused. It is recorded as a `MODEL_CALL`
+  step with `purpose: 'compaction'` and the digests before and after, with its
+  own Art 12 row. The next request is rebuilt by `tool-runner/compaction.ts`:
+  the opening message verbatim, Inflect's run-state block (activated skills'
+  pinned text re-hashed, refusals by code, proposals, delegations, the guard
+  tally), the summary fenced as model-written, and the last turn verbatim with
+  its thinking blocks dropped. Never mid tool round, not with fewer than two
+  `STEPS` left, not twice in a row, and not again in a segment whose summary
+  failed. A sub-agent compacts its own history on the run's one budget. A
+  version may set `compactionThresholdTokens` to `0` (off) or a lower value, and
+  never above the tier's constant (`COMPACTION_THRESHOLD_ABOVE_TIER`, at save and
+  at approval). The SDK's `compactBeforeNextTurn()` is never used.
+- **A resumed segment starts its conversation again.** The run keeps no
+  transcript between segments: `lockedParams` sends the opening message alone,
+  and the turn counters are per segment. So a run resumed after a guard flag,
+  or after a SIGTERM moved it to `PAUSED`, starts from the opening message with
+  the steps, tool calls, proposals and tokens it has already spent, and does
+  not remember its earlier turns.
 - **The engine has run in production (Step 2H, 2026-11-11).** A profile's Test
   run completed in the proving tenant, a second was stopped by the kill switch
   and settled Aborted, and a `LOCAL_ONLY` tenant's run was refused
@@ -249,7 +275,8 @@ Two things are deliberately **not** used in v1. The MCP connector
 so the worker could not run the egress guard, charge caps or check the kill
 switch before the call; it is also outside ZDR. Compaction stays off too,
 because `max_iterations` bounds the run, and compaction would be a separate
-step with its own preserved-thinking checks.
+step with its own preserved-thinking checks. Step 2g's design (**Compaction**
+below) keeps this helper off and adds Inflect's own summary call instead.
 
 ### Every Inflect control, mapped
 
@@ -886,6 +913,698 @@ drawn to them.
    parent run may now halt at `STEPS` sooner than Step 2H's production evidence
    showed.
 
+## Deferral to a person
+
+This section is the design for Step 2f (#5530), written before any code under
+that step's Part 1. It carries out the owner's decision of 2026-11-13 on the
+Step 4a spike (#5529): a tool call that waits for a person mid-run is built on
+this engine, on a transcript Inflect stores, and not on the Agent SDK's hook.
+The points that needed the owner are listed at the end, under **Owner
+decisions (2f, 2026-11-13)**. The owner took every recommendation, and the
+design below is drawn to them.
+
+### What exists, and what is missing
+
+- **A run can already park.** `AWAITING_APPROVAL` is a live status, a
+  `HUMAN_CHECKPOINT` step marks where, `WorkflowRun.approvalExpiresAt` pins the
+  deadline, and `resumeWorkflowRun` continues the run for a person. The static
+  engine parks at a checkpoint, and a guard flag parks a reasoning run.
+- **A run can already propose.** A propose tool queues a `PENDING`
+  `AgentProposal` through `runProposeTool`, carrying its origin (`runId`,
+  `stepSeq`), and the queue decides it: `approveAgentProposal` with the kind's
+  key (`approvePermissionFor`), the signatures `resolveApprovalRequirement`
+  asks for, the composer and owner exclusions, the window (`expiresAt`) and
+  the `baseDigest` re-check.
+- **What is missing is the continuation.** A Tool Runner segment keeps its
+  conversation in memory only. Every resumed segment, after a guard flag or a
+  SIGTERM, starts again from the opening message: `lockedParams` sends
+  `[{ role: 'user', content: message }]`, and `TurnCallCounter`'s docstring
+  says "a resumed run starts its turns afresh". So a run that proposed cannot
+  be told what the person decided, and a run that resumed has forgotten what it
+  did before.
+- **The SDK does not fill the gap.** SDK 1.6.0 (the pinned version) has
+  `deferToolCall()`, but it holds a call only until the end of the loop body,
+  needs `runToolsEagerly` and streaming, and keeps nothing past the process.
+  The Agent SDK's `defer` needs a stored session (the spike note, "The three
+  needs"), which global rule 6 rules out at Anthropic.
+
+### 1. Which calls can be deferred
+
+**A deferred call is a proposal the run waits for** (owner point 1).
+
+- Only an Inflect propose tool (the surface `runProposeTool` serves) can be
+  deferred. A read is never deferred: a read's gate is the grant, and a person
+  releasing a read would be a second approval path with no queue, no kind key
+  and a new permission key (rule 13). An external write tool is not deferred in
+  v1: its own ladder (`DISABLED`, `DRY_RUN`, `PROPOSE_ONLY`, `AUTOMATIC`)
+  already decides whether a person approves it, and an approved external write
+  is sent later by the dispatch pass, so the run could be told "approved and
+  queued" and never the result.
+- **Which propose tools defer is the profile version's choice**:
+  `AgentProfileVersion.deferredToolNames`, a sorted, deduplicated subset of the
+  version's `toolNames`, each one a propose tool. A call to any other propose
+  tool is an ordinary proposal and the run carries on, as today. The approver
+  reads the list on the approval view, so "this agent waits for a person on
+  `propose_finding`" is part of what is approved.
+- Each rule is a refusal by name at save and again at approval, never a silent
+  drop: `DEFERRED_TOOL_NOT_IN_VERSION`, `DEFERRED_TOOL_NOT_A_PROPOSE_TOOL`,
+  `DEFERRED_TOOLS_WITH_FLOW` (a flow carries its own checkpoints) and
+  `SUBAGENT_TOOL_DEFERRED` (see **5. Sub-agents**).
+- `RUNS_DEFERRALS`, a `Record<AgentDriver, boolean>` beside `RUNS_SUBAGENTS`,
+  is true for this engine alone. Admission refuses a version with deferred
+  tools on any other engine (`PROFILE_DEFERRALS_NOT_RUNNABLE`) before the run
+  row exists, so a version is never run as though it had no deferrals.
+- **A deferred call carries exactly one item.** A propose call can carry many
+  (`proposedItemCount`). A deferred one with more than one is refused before
+  the funnel with a tool error naming the rule (`DEFERRED_CALL_ONE_ITEM`),
+  charged one `STEPS` and recorded as a `FAILED` `TOOL_CALL`, so the model can
+  call again with one. One item means one decision on one screen, and one
+  answer to the run.
+
+**How it sits beside the existing gates.** Deferral adds a wait and grants
+nothing.
+
+- The autonomy ceiling, the policy card, the key's scopes and the grants decide
+  whether the propose tool is offered at all (`offerToolSet`), exactly as for a
+  propose call that does not wait. A tool the ceiling withholds is never
+  offered, so it can never be deferred.
+- `PROPOSE_ONLY` is a rung of the external write ladder, set on a connection.
+  It is unrelated: v1 defers no external tool.
+- The proposal queue is the only place the decision is taken, the rule
+  `run-checkpoint-review.ts` states ("no second approval path"). The run page
+  and the canvas link to the proposal; neither approves.
+- A read-only run (a Test run, an `ANSWER_ONLY` version) is offered no propose
+  tool, so it never defers.
+- A run an A2A peer or a host consumer started keeps its clamp
+  (`ctx.a2aInbound`). It may defer, because a deferral only narrows: the call
+  waits for a person instead of queueing and moving on.
+
+### 2. The deferred call, and the parked run
+
+In order, inside the parent's serial queue (`ledgeredCall` in `tools.ts`):
+
+1. Everything a propose call does today: the latched-stop check, `STEPS`, the
+   turn cap, `TOOL_CALLS`, the wall clock, `PROPOSALS` for its one item, then
+   `runGuardedTool` (the egress scan on the arguments, `runProposeTool`, the
+   scans on the result) and the `TOOL_CALL` step.
+2. If the funnel refused the call, or the proposal guard quarantined the item,
+   nothing waits. The call returns its error as today and the run goes on. A
+   quarantined proposal is never reviewed, so waiting for it would wait for
+   nothing.
+3. Otherwise the call latches a new stop, `{ kind: 'DEFER', proposalId,
+   toolUseId }`, and the run's signal is aborted, so no further request leaves
+   in this segment.
+4. A later call in the same turn (possible only when the tool-calls-per-turn
+   cap is above 1) is not run. Its result, sent when the run resumes, says it
+   was held behind a call waiting for a person and may be made again.
+
+**Settlement keeps today's order and puts the deferral last.** An operator's
+abort, a kill, the breaker, a cap and a guard verdict all outrank it. A run
+stopped by any of them in the same turn settles by that reason, and its
+proposal stays in the queue as an ordinary proposal. Only a run with nothing
+else latched parks.
+
+**Parking** is one transaction in the deferral store (point 3):
+
+- the transcript is written;
+- a `HUMAN_CHECKPOINT` step is recorded `PENDING`, `label: 'deferral'`, input
+  `{ deferralId, proposalId, toolCalled, toolUseId }`;
+- the run moves `RUNNING` to `AWAITING_APPROVAL` conditionally (an operator's
+  ABORTED stands, as in `updateRun`), with `approvalExpiresAt` set to the
+  proposal's own `expiresAt`, so the wait has one clock and the runs list
+  already shows it.
+
+**No new run status** (owner point 2). `AWAITING_APPROVAL` already means "a
+person must act before this run continues", every reader knows it, and
+`LIVE_RUN_STATUSES` counts it. A new value would say the same thing more
+narrowly, at the price of two deploys and a branch in every reader. What tells
+a deferral apart from a guard flag or a static checkpoint is its row in
+`WorkflowRunDeferral`, not the status.
+
+**What holds its place** is the run's `stepCount` (the next seq) and the
+deferral row. A parked run holds no worker, no process and no memory.
+
+**The caps while parked:**
+
+- `STEPS`, `TOOL_CALLS`, `PROPOSALS` and `TOKENS` are not touched by the wait,
+  and keep accumulating across segments as they do today (`fromSeq`,
+  `costTokens`, `proposedItemsSoFar`).
+- **The wall clock does not run while the run waits.** `RUNTIME_MS` bounds
+  unattended execution, and a wait for a person is its opposite. The deferral
+  row stores `elapsedMsAtPark` (the segment's `Date.now() - runStartMs` when it
+  parks), and the resumed segment starts its clock at
+  `Date.now() - elapsedMsAtPark`. It must not take the worker's
+  `row.startedAt`, which is what every queued segment is given today (see
+  **Finding** at the end of this section).
+- The tenant's concurrent-run cap counts a parked run, because it counts
+  `LIVE_RUN_STATUSES`, a list with one definition shared with the replay tail.
+  A tenant with many runs waiting on decisions can be refused a new run, and
+  the refusal already names the cap.
+- Nothing is charged to the monthly token budget while the run waits.
+
+### 3. The transcript
+
+**One new table, `WorkflowRunDeferral`**, one row per deferral. It is written
+only by `src/lib/agentic/drivers/deferral-store.ts` (the engine's store, as
+`run-store.ts` and `step-recorder.ts` are, so no engine module holds a Prisma
+call) and by the decision usecase in point 4, and a single-write-seam guard
+holds the two. A column on `WorkflowRun` was considered and declined:
+`getWorkflowRun` and the run list read that row whole, and a transcript can be
+hundreds of kilobytes.
+
+| Column | Meaning |
+| --- | --- |
+| `id`, `tenantId`, `runId` | FK to the run by `[runId, tenantId]`, `onDelete: Cascade` |
+| `stepSeq` | the seq of the deferred call's `TOOL_CALL` step |
+| `toolUseId` | the model's `tool_use` id, whose result is left open |
+| `proposalId` | the one proposal waited for; unique with `tenantId`, so it is waited for once |
+| `status` | `WAITING`, `DECIDED`, `RESUMED` or `SETTLED`. TEXT with a CHECK, not a Prisma enum, and one-way by trigger |
+| `decision` | `ACCEPTED`, `EDITED`, `REJECTED`, `EXPIRED` or `NOT_RESUMED`, CHECKed TEXT, set once |
+| `transcriptJson` | the request the run would send next, with the deferred result left open. Encrypted |
+| `transcriptHash` | hex SHA-256 of the plaintext, a separate column as `WorkflowRun.contextHash` is: encryption protects confidentiality, and the hash says the blob is the one that was written. A digest, so not encrypted |
+| `model` | the model id the transcript was produced on, pinned for the resume |
+| `elapsedMsAtPark` | the unattended milliseconds the run had spent when it parked |
+| `parkedAt`, `decidedAt`, `resumedAt`, `settledAt` | one-way stamps |
+
+**What the transcript holds** is exactly what the model saw and will see: the
+request's `system` blocks and `tools` definitions as sent, every message of
+`runner.params.messages`, the assistant reply that made the call as returned
+(text, `tool_use` and `thinking` blocks with their signatures, in order, which
+is the Step 2x lesson), and the user message of that turn's tool results with
+the deferred call's slot open. It is byte-faithful: written with
+`JSON.stringify` over the SDK's own objects and read back with `JSON.parse`,
+never sanitised, never re-serialised through a schema and never trimmed.
+Sanitising would change the bytes the thinking signatures bind.
+
+**Nothing is stored at Anthropic.** Every request stays `thread: false`, and
+the resume sends the whole history again, as every request of this engine
+does. No new data category reaches Anthropic: the transcript is the
+conversation that already went there.
+
+**Encryption.** `src/lib/security/encrypted-fields.ts` gains
+`WorkflowRunDeferral: ['transcriptJson']`. In `sanitize-rich-text-coverage` the
+model goes in `NON_RICH_TEXT_MODELS`, with the reason that the column holds
+exact API bytes, is never rendered, and would break thinking signatures if
+sanitised. As with `PeerAgentMessage.body`, the column is never sanitised or
+re-serialised. The one-way trigger on `transcriptJson` and `transcriptHash`
+admits the DEK and KEK sweeps' re-wrap (ciphertext to `v2:` ciphertext, every
+other column unchanged), the clear described below, and nothing else.
+
+**Retention** (owner point 3). `docs/data-retention.md` gains a row:
+**Operational**, hard-deleted by `CASCADE` from its run and the tenant, and
+purged with the tenant. **DSAR-relevant: the transcript holds tool results,
+which can name a person.** The transcript is cleared (set to `NULL`) when the
+row moves to `RESUMED` or `SETTLED`, and `transcriptHash` stays, so what was
+resumed is still provable and nothing is kept that the run no longer needs. The
+record of what the run did is the step ledger and the Art 12 rows, which keep
+every step.
+
+**The tenant-table checklist** (global rule 7): the RLS triple,
+`@@index([tenantId, runId])`, the unique `[tenantId, proposalId]`, a
+two-tenant behavioural test registered in
+`tenant-isolation-forward-lock.test.ts`, the retention row and the manifest
+decision above. `app_user` holds no `DELETE` on the table.
+
+### 4. Who decides, and how the run settles
+
+**The decision is the proposal queue's, unchanged**: `approveAgentProposal`,
+with or without edits, `rejectAgentProposal` and `bulkRejectAgentProposals`.
+With them come, and the design adds nothing to:
+
+- `assertCanWrite` and the kind's key from `approvePermissionFor`
+  (`findings.create`, `risks.create`, and the rest);
+- the number of distinct signatures `resolveApprovalRequirement` asks for (the
+  card's rung, the risk tier and the autonomy level, the strictest wins), and
+  the accountable owner's exclusion where it applies;
+- the composer exclusion, the quarantine refusal, the window read against the
+  clock and the `baseDigest` re-check.
+
+No new permission key. The person who started a run may decide its deferral,
+as they may decide any of its proposals today.
+
+**The decision hook.** After a decision commits, the queue calls one function,
+`settleDeferralForProposal(ctx, proposal)`, in a new usecase
+`usecases/workflow-run-deferrals.ts`. It does nothing for a proposal no
+deferral waits on. For one that is waited on:
+
+- **Accepted, edited or rejected** (a decision a person took): the deferral
+  moves `WAITING` to `DECIDED` with the decision; the run is claimed
+  `AWAITING_APPROVAL` to `RUNNING` conditionally (the claim
+  `resumeWorkflowRun` makes since #5119, so two decisions cannot resume it
+  twice); the `HUMAN_CHECKPOINT` step is closed `DONE` with the decider as
+  `actorUserId`; `WORKFLOW_RUN_RESUMED` is audited with
+  `reason: 'DEFERRAL_DECIDED'`; and `agent-run-execute` is enqueued. A signature
+  that does not yet complete the requirement is not a decision and moves
+  nothing.
+- **Expired**, by the `agent-proposal-expiry` sweep (00:40 UTC daily) or by
+  retirement's cascade, which expires the agent's pending proposals: nobody
+  decided, so the run is not continued (owner point 4). It settles `FAILED`
+  with `tool_runner_deferral_expired: nobody decided the proposal this run was
+  waiting for before its window closed.` (or `tool_runner_deferral_agent_retired`
+  from the cascade), and the deferral is `SETTLED` with its transcript cleared.
+
+`resumeWorkflowRun` refuses a run with a `WAITING` deferral (400,
+`RUN_WAITS_ON_A_PROPOSAL`, naming the proposal id), so the generic Resume
+cannot continue it without a decision. `abortWorkflowRun` works as today, and
+in the same transaction settles the deferral `SETTLED` / `NOT_RESUMED` and
+clears its transcript. The proposal stays in the queue.
+
+**A kill switch, a suspension or a retirement while the run waits** settles it
+at its next touch, never later than the proposal's window (owner point 4).
+Retirement settles it at once, through the cascade above. A kill or a
+suspension is a read at a boundary, not a write to every run, so it settles the
+run when the decision arrives (step 1 below) or when the window closes,
+whichever comes first.
+
+**The resumed segment** goes through the worker (`executeQueuedWorkflowRun`,
+then `executeFrom`, then this engine). `executeToolRunnerRun` asks the store
+for a `DECIDED` deferral of the run before it builds an opening message. When
+there is one, before anything is sent:
+
+1. **The kill switch, the breaker and the agent's status**, as at the top of
+   every segment, with `runAgentStillInService`. A run whose agent was killed,
+   suspended or retired while it waited settles by that reason. The person's
+   decision is already recorded on the proposal, and an approved record stands:
+   a person created it with their own authority.
+2. **The skill pins and the profile pin**, as every segment checks them
+   (`skill_pin_drift`, `resolvePinnedRunDefinition`).
+3. **The transcript's seal**: `sha256(transcriptJson)` must equal
+   `transcriptHash`, or the run halts `tool_runner_deferral_transcript_unsealed`,
+   as `CONTEXT_UNSEALED` halts. Nothing is repaired.
+4. **The invocation is re-resolved** (`resolveMcpInvocation`) and the tools are
+   offered again through `offerToolSet`, as in every segment. The request sends
+   the transcript's `system` and `tools` as stored, so the prefix the thinking
+   signatures bind is unchanged. Each stored tool name takes its runnable from
+   the new offer. A name the new offer no longer carries gets a runnable that
+   refuses (`TOOL_WITHDRAWN_DURING_WAIT`, a `FAILED` step), and a tool the new
+   offer adds is not added. Authority only narrows across the wait.
+5. **The deferred call's result** is written into the open slot from the
+   proposal row, never from the transcript: "A person approved this proposal.
+   It was created as <kind> <createdEntityId>.", the same sentence for an
+   approval with changes saying so, or "A person rejected this proposal. Nothing
+   was created." as an error result. The rejection's reason is not passed: it
+   is a person's free text, and the model needs the fact, not the prose.
+6. **The held calls' results** say they were not run.
+7. **The runner starts** with the stored model, `messages` set to the stored
+   messages plus that user message, and every other parameter from
+   `lockedParams`, which stays the one function that shapes a request. It gains
+   a `resume` option, and its guard pins that a resume sends the stored
+   `system`, `tools` and `model`. The wall clock starts at
+   `Date.now() - elapsedMsAtPark`. The deferral moves to `RESUMED` and its
+   transcript is cleared, in the same transaction as the segment's first step.
+
+**What "re-checked, never trusted from before the wait" means here.** The item
+is checked at the call: the propose funnel's schema, the guard on the arguments
+and the per-item proposal guard. At the decision the create usecase runs as
+the approver, against the record as it then stands (`baseDigest`), which is
+after the wait. At the resume the run's own authority is re-resolved before
+anything else is sent. Nothing the run held before the wait is executed after
+it on the strength of the wait. The only thing carried across is the
+conversation, and the only new thing in it is the queue's decision. Owner
+point 1 sets out the alternative, in which the held call itself would run
+through the funnel at resume.
+
+**The API refusing a resumed transcript** (a 400 naming a thinking block bound
+to another conversation, organisation or model, for example after the
+deployment's key moved to another Anthropic organisation) settles the run
+`tool_runner_resume_transcript_refused`, with the API's error type. The engine
+never strips thinking blocks and retries, and never sets
+`prefix_mismatch_behavior: 'drop_block'`. A silent degrade is what global
+rule 4 forbids.
+
+### 5. Sub-agents
+
+A delegation runs its child loop inside the parent's `delegate` call. Parking
+there would need two transcripts, the child's and the parent's with an open
+`delegate` result, and a resume that re-enters a nested loop. v1 does not do
+it: a sub-agent's `toolNames` may not include a deferred tool
+(`SUBAGENT_TOOL_DEFERRED`, at save and at approval), so a child's set never
+carries one. The parent may defer, and a child cannot.
+
+### 6. The ledger, Art 12 and the UI
+
+- **Steps.** The deferred call is the usual `TOOL_CALL` step, `DONE`, output
+  `{ deferred: true, proposalId }`. Parking records the `HUMAN_CHECKPOINT` step
+  `PENDING`, and the decision closes it `DONE` with the decider and output
+  `{ decision, proposalId }`. The resumed segment's steps follow at the next
+  seq. A call refused by the one-item rule and a call to a withdrawn tool are
+  `FAILED` `TOOL_CALL` steps naming their reason. No step is rewritten, and no
+  model text enters the ledger.
+- **Art 12.** Every model call keeps its own decision row, the resumed
+  segment's included, and its digest is over the request actually sent: the
+  stored history plus the result. The proposal's own decision stamps (keyed by
+  the proposal's digest) apply as today. A deferral's decision does not stamp
+  the run's model-call rows: the person decided one proposal, not the run.
+- **Audit rows.** `WORKFLOW_RUN_DEFERRED` at parking (proposal id, tool, step
+  seq), `WORKFLOW_RUN_RESUMED` with `reason: 'DEFERRAL_DECIDED'` at a decision,
+  and the settlement row at expiry, retirement or abort. None carries
+  transcript content.
+- **The run page** shows a parked run as waiting for a decision, with the
+  proposal's kind, its deadline and a link to it on `/agents/proposals`. Its
+  timeline marks the checkpoint as deferred to a person and, once decided, who
+  decided and when.
+- **The proposals page** marks a proposal a run is waiting on, linking to the
+  run, so the reviewer knows the decision continues work.
+- **The runs list** offers "Open proposal" in place of Resume.
+- **The Behaviour editor** gains a "Wait for a person" picker over the
+  version's selected propose tools, and the approval view lists the deferred
+  tools.
+- Strings go in `messages/en.json` and `messages/bg.json`.
+
+### 7. The migration and the deploys
+
+One migration, additive and forward-only:
+
+1. `WorkflowRunDeferral`, with its CHECKs, indexes, FK, RLS triple, grants and
+   its one-way trigger.
+2. `AgentProfileVersion.deferredToolNames TEXT[] NOT NULL DEFAULT '{}'`, and
+   `CREATE OR REPLACE FUNCTION agent_profile_version_lifecycle()` freezing it
+   with the rest of the version, in the same migration, as Step 2e did for
+   `subagentsJson`. Tool names are not secret, so the column needs no manifest
+   entry.
+
+**No enum value is added, so the enum rule does not bind. It still ships in
+two deploys**, because every reader must know what a parked row means before
+any row exists:
+
+- **Deploy 1, the readers**: the table and the column; `resumeWorkflowRun`'s
+  refusal; `abortWorkflowRun`'s settlement; the decision hook; the resume
+  branch in `executeToolRunnerRun`; the worker's clock from `elapsedMsAtPark`;
+  the run page and the proposals page. Nothing can write a deferral yet,
+  because the save and approval schemas still refuse `deferredToolNames`.
+- **Deploy 2, the writer**: the editor, the save and approval checks,
+  `RUNS_DEFERRALS['tool-runner'] = true`, and the parking path. During its
+  roll, an older container meets a parked run only through code deploy 1
+  taught, and rolling deploy 2 back leaves parked runs that deploy 1 still
+  resumes or settles.
+
+**Change class:** Significant, for the new table holding an encrypted
+transcript and the security-relevant resume path.
+
+### Owner decisions (2f, 2026-11-13)
+
+The owner took the recommendation on every point. The options are kept as
+written, so the reasons stay beside the choice.
+
+1. **Which calls can be deferred.**
+   (a) Inflect propose tools the version names, decided in the existing
+   proposal queue, the run resuming with the decision. (b) Any tool, reads and
+   external writes included, through a new "release" approval in which the held
+   call runs through the funnel at resume as the agent. That needs a new
+   approval surface and a new permission key, and for a propose tool it means
+   two approvals, the release and then the proposal. (c) As (a), but every
+   propose call of a version that opts in, with no per-tool list.
+   **Decided (owner, 2026-11-13): (a).** It reuses the queue's four-eyes, kind keys,
+   window and staleness check, and adds no second approval path.
+2. **The parked run's status.** (a) Reuse `AWAITING_APPROVAL`, told apart by
+   the deferral row. (b) A new `WorkflowRunStatus` value. **Decided (owner, 2026-11-13):
+   (a).** Every reader already handles it, and (b) costs two deploys and a
+   branch in every reader for a distinction the row already makes.
+3. **How long the transcript is kept.** (a) Cleared when the run resumes or
+   settles, keeping its hash. (b) Kept with the run, Operational, until the run
+   is deleted. (c) Retained as a regulatory artefact that survives the tenant
+   purge. **Decided (owner, 2026-11-13): (a).** The ledger and the Art 12 rows are the
+   record; the transcript is working state holding tenant data, and the hash
+   still proves what was resumed.
+4. **An expired wait, and a kill while waiting.** (a) An expiry settles the
+   run `FAILED`; a kill or suspension settles it at the decision or the
+   window's end, whichever comes first. (b) An expiry resumes the run with an
+   "expired" result, so the model can finish its answer without the write.
+   (c) As (a), and engaging a kill switch also settles that agent's parked runs
+   at once. **Decided (owner, 2026-11-13): (a).** Nobody decided, so nothing should continue
+   unattended days later, and (c) would make the kill switch write to runs,
+   which it has never done.
+5. **The same transcript for the other resumes.** Today a guard flag's resume
+   and a SIGTERM's restart the conversation (see **What exists**). (a) 2f
+   stores a transcript for deferrals only, and the other resumes are a
+   separate issue. (b) 2f also stores one when a guard flag parks the run.
+   (c) The run stores its transcript after every turn, so a SIGTERM resume
+   continues too, at the cost of one encrypted write per turn.
+   **Decided (owner, 2026-11-13): (a)**, and the restart is recorded in Current state now.
+
+### Finding: a reasoning run resumed by a person is charged its wait
+
+`resumeWorkflowRun` re-bases the wall clock for the inline static path only,
+and its comment says the queued path is "a SIGTERM retry of a RUNNING row".
+But a person's resume of a reasoning run (Flue or this engine, after a guard
+flag) is enqueued to `agent-run-execute`, and `executeQueuedWorkflowRun`
+passes `row.startedAt.getTime()`. So a flagged run approved more than
+`ENGINE_CAPS.WALL_CLOCK_MS` (one hour) after it started halts at `RUNTIME_MS`
+as soon as it resumes: the defect `approval-window.ts` describes, on the path
+its fix did not reach. Step 2f does not inherit it (its clock comes from `elapsedMsAtPark`),
+and the existing path needs its own fix: #5534.
+
+## Compaction
+
+This section is the design for Step 2g (#5531), written before any code under
+that step's Part 1. It carries out the owner's decision of 2026-11-13 on the
+Step 4a spike (#5529): context compaction for long runs is built on this
+engine, not by adopting the Agent SDK. The points that need the owner are
+listed at the end, under **Owner decisions (2g, 2026-11-13)**; the owner took
+every recommendation. The first of them comes before everything else, because
+the caps change what compaction is for.
+
+### What the caps already decide
+
+- `ENGINE_CAPS.MAX_TOKENS` is 200,000 per run, and no policy card can raise it
+  (`resolveRunCaps` takes the engine's value for `TOKENS`). The engine charges
+  `TOKENS` with every call's whole input, cache reads and writes included
+  (`tokensOf` in `execute.ts`), plus its output.
+- Both models the engine uses, Sonnet 5.5 and Opus 5.5, have a 1M-token
+  context window.
+- So a run's last request can never be larger than the run's total charge,
+  and the total stops at 200,000. **No Tool Runner run can reach the context
+  window under today's caps.** A long run stops at `TOKENS`, or at `STEPS`
+  (50, every model call included), first, and
+  `tool_runner_context_exhausted` cannot be reached. The production Test run
+  spent 25,119 tokens on three model calls.
+
+What compaction can do on this engine today is make each later call smaller,
+so the same `TOKENS` budget pays for more turns. A rough measure: a run whose
+context starts near 8,000 tokens and grows by 4,000 a turn has spent about
+200,000 tokens by its ninth call, when its context is near 40,000 tokens. A
+threshold has to sit well below that to fire at all, and each compaction costs
+a summary call. That is owner point 1. The design below is correct whichever
+way it is decided: it computes the threshold from the run's own `TOKENS` limit,
+so it moves if the cap moves.
+
+### 1. When it triggers
+
+- **Where.** In `runModelLoop`, at loop-body step 9, after the turn's tools
+  have run (`runner.generateToolResponse()`) and before the kill switch, the
+  breaker and the `STEPS` charge that precede the next call. Never mid tool
+  round, and never on a reply that does not ask for another call.
+- **The measure** is an estimate of the next request: the reply's input tokens
+  (cache reads and writes included), its output tokens, and the turn's tool
+  results at `estimateTokens` (four characters a token). It is an estimate on
+  purpose: the exact count would need a `count_tokens` call per turn, which is
+  another request to Anthropic for a number this rule does not need exactly.
+- **The threshold** is the lowest of three values:
+  - `COMPACTION_THRESHOLD_TOKENS[tier]`: 150,000 for both tiers, the API's own
+    default trigger, which binds only if `TOKENS` is raised;
+  - `COMPACTION_BUDGET_SHARE` (0.15) of the run's `TOKENS` limit, which is
+    30,000 under the engine's cap;
+  - the profile version's own value, when it has lowered it.
+  All three constants live in `params.ts` beside `MAX_TOKENS_PER_TIER`, and its
+  guard pins them.
+- **A profile may turn compaction off or lower its threshold, and never raise
+  it** (owner point 2): `AgentProfileVersion.compactionThresholdTokens`,
+  nullable `INT`. `NULL` takes the engine's threshold, `0` turns compaction off,
+  and any other value is 10,000 to 150,000 (a CHECK). A value above the tier's
+  constant is refused at save and at approval
+  (`COMPACTION_THRESHOLD_ABOVE_TIER`). The approval view shows it, so an
+  approver knows whether a run of the version may summarise its own history.
+- **It does not trigger** when fewer than two `STEPS` remain (the summary and
+  at least one call after it), when a stop is latched, when a deferral is
+  latched (the run parks with its history as it stands, see **Deferral to a
+  person**), or right after a compaction. If the compacted request is still
+  over the threshold, the run carries on and `TOKENS` decides. A summary that
+  fails (below) turns compaction off for the rest of the segment, so a model
+  that will not summarise is not asked again every turn.
+
+### 2. What a summary is
+
+**Inflect's own summary call, not the SDK's helper** (owner point 3). The SDK's
+`compactBeforeNextTurn()` stays off, as the locked-parameters table says.
+
+The summary request is shaped by `compactionParams()` in `params.ts`, so that
+file stays the one place a request is shaped and its guard pins the values:
+
+- the same `system`, `tools`, `model`, `thinking`, `output_config`,
+  `fallbacks`, `thread: false` and `stream: false` as the run's own requests.
+  Unchanged `system` and `tools` keep the cached prefix, and keep the history's
+  thinking blocks valid: leaving the tools out of one request would invalidate
+  every thinking block the API checks after it;
+- `tool_choice: { type: 'none' }`, so no tool can be called. A tool choice is
+  not part of the prefix the thinking signatures bind;
+- `messages`: the current history unchanged, plus one appended user message
+  holding Inflect's fixed instruction (`COMPACTION_INSTRUCTION`): what to keep
+  (what the run has found, the record ids it read, what is still open, and the
+  next step it meant to take), that Inflect lists refusals, proposals and
+  skills separately so they need not be repeated, and a closing sentence,
+  "Write the summary as plain text. Do not call a tool.";
+- `max_tokens`: `COMPACTION_SUMMARY_MAX_TOKENS`, 4,000.
+
+**Its accounting is a model call's:**
+
+- before it is sent, `stoppedBeforeModelCall`: the kill switch, the breaker and
+  one `STEPS`, as before every model call in both loops;
+- its usage is added to `costTokens` and charged to `TOKENS`, and the token
+  and wall-clock caps are read after it, as after every reply;
+- its text gets the egress scan (`<prefix>-compaction-output:<runId>:<n>`) and
+  the injection scan (`guardUntrustedInput`,
+  `<prefix>-compaction-summary:<runId>:<n>`), where the prefix is
+  `tool-runner` or the sub-agent's source. The injection scan is there because
+  the summary is written from tool results and goes back into the model's
+  context. Any verdict but CLEAN is noted as a model-output verdict is, the
+  run stops at the guard, and the summary is never used;
+- it is recorded as a `MODEL_CALL` step (labelled with the sub-agent in a
+  child), with input `purpose: 'compaction'`, `decisionDigest` over the summary
+  request, `compactedFromDigest` (the digest of the last request sent with the
+  full history), `summaryDigest` (SHA-256 of the summary text),
+  `messagesSummarised` and `estimatedTokensBefore`, and output
+  `{ compactedToDigest }`, the digest of the rebuilt history. No
+  `WorkflowStepKind` value is added: `purpose` tells the step apart, and a new
+  enum value would cost two deploys and a branch in every reader;
+- it has its own Art 12 row, as every model call does, whose output summary is
+  the summary text only when both scans were clean.
+
+**A summary that fails** (a `refusal`, `max_tokens`, no text, or a fallback
+model's refusal) is discarded. Its step is recorded `FAILED` with the stop
+reason, the run carries on with its history uncompacted, and compaction is off
+for the rest of the segment.
+
+### 3. What survives
+
+The request after a compaction is built by code, in a new
+`tool-runner/compaction.ts`, and never by the model. In order:
+
+1. **`system`, unchanged**: the preamble, the skill catalogue and the
+   operator's instructions, fenced. They were never in `messages`, so a summary
+   cannot touch them, and the version's content hash and the run's
+   `profileInstructionsHash` describe them exactly as before.
+2. **`tools`, unchanged.**
+3. **The opening user message, verbatim**: the run's declared input, fenced as
+   `agent.run-input`, as `runMessage` built it. In a child, the delegated task,
+   fenced as the delegating agent's.
+4. **Inflect's run-state block**, one user message fenced
+   `<run_state source="inflect">`, built from the run's own state:
+   - **activated skills**: for each skill the loop activated, its pinned
+     instructions, re-hashed against the row's pin and fenced exactly as
+     `activate_skill` returns them. A mismatch stops the run
+     (`SKILL_PIN_MISMATCH`). A summary never paraphrases a skill;
+   - **refusals**: each `FAILED` tool call of the loop so far, by tool name and
+     refusal code, never content;
+   - **proposals**: each proposal the run made, by id, kind and status, read
+     through `drivers/run-store.ts` with a bound. A summary can never drop a
+     pending proposal, because it is not the summary that carries it;
+   - **delegations** (the parent only): each sub-agent's name and outcome;
+   - **verdicts**: the guard's tally. By construction every verdict is CLEAN,
+     because any other has already stopped the run, and the block says so.
+5. **The summary**, fenced `<run_summary source="model">`, with a line saying
+   the model wrote it from the earlier turns and that it is data, not
+   instructions.
+6. **The last turn, verbatim**: the assistant message's text and `tool_use`
+   blocks, and the user message with that turn's tool results exactly as the
+   runner produced them, so the pending results reach the model unsummarised.
+   The assistant message's `thinking` blocks are removed: the API refuses a
+   retained turn's thinking once the history before it has changed, and a
+   compaction is such a change. Removing them is the documented compatible
+   form; editing them is not.
+
+**The review latch and the verdicts** are never in the conversation. The latch
+is one object per run, held by the run, and a compaction neither reads nor
+resets it. A compaction never runs with it tripped, because a tripped latch is
+a latched stop.
+
+The runner continues on the rebuilt history through `setMessagesParams`. The
+cached prefix (`tools` and `system`) survives, and the messages after it are
+written to the cache once.
+
+### 4. Audit, and resume
+
+- **The ledger keeps every original step.** A compaction adds one
+  `MODEL_CALL` step, and deletes and rewrites nothing. Compaction changes what
+  the model sees, never what is recorded.
+- **Art 12 stays complete.** Every later model call's row is digested over the
+  compacted request it actually sent, and the compaction step names the
+  digests before and after, so a reviewer can follow which history each call
+  saw. Model text never enters the ledger: the summary reaches only the
+  decision row's bounded, sanitised summary, and a deferral's transcript while
+  that exists.
+- **Resume.** The issue asks that `executeFrom` rebuild the same compacted
+  state. On this engine a resumed segment keeps no conversation: it starts
+  again from the opening message (see **Deferral to a person**, "What exists,
+  and what is missing"). So a guard flag's or a SIGTERM's resume has no
+  compacted state to rebuild, and the design does not invent one. The one
+  resume that continues a conversation is a deferral's, and it continues from
+  the stored transcript, which holds the compacted messages exactly as sent:
+  byte-faithful, not re-derived. Everything in the run-state block is
+  deterministic given the ledger and the pins (ordered by seq), so a test
+  rebuilds the block from a fixture ledger and compares bytes. The summary is
+  the one part a model wrote, and it is stored, never generated again.
+
+### 5. Sub-agents
+
+Compaction lives in `runModelLoop`, so it applies to both loops: one body with
+one behaviour, as owner decision 4 of 2026-11-13 requires. A child compacts its
+own messages, independently of its parent. Its opening message is its task,
+its run-state block lists its own activations and refusals, and its summary
+call is charged to the run's one budget and labelled with the sub-agent's name.
+A child's compaction never touches the parent's history, which receives only
+the child's answer. A child starts from its task alone and is bounded by its
+`maxTurns`, so it reaches the threshold rarely, and it takes the same
+threshold as its parent.
+
+### 6. The migration, the sub-processor and the UI
+
+- **One column**, `AgentProfileVersion.compactionThresholdTokens INT NULL`,
+  with its CHECK, and `CREATE OR REPLACE FUNCTION
+  agent_profile_version_lifecycle()` freezing it, in the same migration. A
+  number, so no manifest entry. **One deploy**: an older client never selects
+  the column, and an older worker running a version that sets it does not
+  compact, which is today's behaviour.
+- **No new data category reaches Anthropic.** The summary request carries the
+  history that already went there, and the `compact-2026-09-04` beta is not
+  used, so no new Anthropic feature's retention terms apply. The pull request
+  says so and quotes the Anthropic row of `docs/sub-processors.md`.
+- **The run page** labels a compaction step "Conversation summarised", with
+  the estimated tokens before and the request size after. **The Behaviour
+  editor** gains "Summarise long conversations": the default, off, or a lower
+  threshold in a `NumberStepper` bounded by the tier. The approval view shows
+  it. Strings go in `messages/en.json` and `messages/bg.json`.
+- **Change class:** Significant, because the design adds a column (the issue's
+  own rule).
+
+### Owner decisions (2g, 2026-11-13)
+
+The owner took the recommendation on every point. The options are kept as
+written, so the reasons stay beside the choice.
+
+1. **What compaction is for, under today's caps.** (a) Build it as a
+   token-budget measure, with the threshold at 15% of the run's `TOKENS` limit
+   (30,000 today), and decide the cap separately. (b) First change how
+   `TOKENS` is counted or bounded (for example, cache reads at their billed
+   weight, or a larger engine cap for profile runs), so that a run can grow
+   towards the context window, and then build compaction for that. Raising a
+   cap is a widening, so it is the owner's alone. (c) Hold 2g until a profile
+   is seen to stop at `TOKENS`. **Decided (owner, 2026-11-13): (a)**, recording that it buys
+   a few turns per run today, and taking (b) as its own decision: the threshold
+   rule is right under either answer.
+2. **A profile's control.** (a) A column on the version: off, or a lower
+   threshold, never higher. (b) No control in v1: the engine's threshold for
+   every profile, and no column, which keeps 2g Standard. **Decided (owner, 2026-11-13):
+   (a).** Turning it off is the safe direction for a profile whose answer needs
+   its whole history, and the approver should see it.
+3. **The mechanism.** (a) Inflect's own summary call and rebuild, as above.
+   (b) The SDK's `compactBeforeNextTurn()` with the `compact-2026-09-04` beta:
+   the server summarises the whole of `messages`, the last turn's tool results
+   and the activated skills' text included, and returns an opaque
+   `encrypted_content` the model reads and Inflect cannot. Its retention terms
+   were not found. **Decided (owner, 2026-11-13): (a).** What survives is decided by code
+   Inflect can test, the pending results reach the model unsummarised, and
+   nothing new is asked of the sub-processor.
+
 ## Decisions for the owner
 
 1. **Make this the builder's first engine.** **Decided (owner, 2026-10-25):
@@ -923,6 +1642,8 @@ step (1H) is merged.
 | 2d | Skills on the Tool Runner engine | 2c | Standard (delivered, #4151) |
 | 2H | Phase 2 hardening | 2a–2d | Standard |
 | 2e | Inline sub-agents (delegation) | 2H | Significant — schema migration, new engine-supplied tool |
+| 2f | Defer a tool call to a person mid-run | 2e | Significant — new tenant table holding an encrypted transcript, schema migration |
+| 2g | Context compaction for long runs | 2e | Significant — schema migration (one column) |
 | 2x | Carry thinking blocks through the assistant's loop | — (independent) | Standard (delivered by #4183) |
 
 ### Phase 2 — Tool Runner engine
@@ -1310,6 +2031,131 @@ call, decision 4 applies both to the parent's loop as well.
 - [ ] Every child tool call is in the ledger under the parent run, labelled with the sub-agent (integration test).
 
 **Exit.** A customer can give their agent sub-agents, and each one can do less than its parent, never more.
+
+#### Step 2f — Defer a tool call to a person mid-run
+
+**Goal.** A profile version can name propose tools whose calls wait for a
+person. The run parks on Inflect's own encrypted transcript, the person
+decides in the proposal queue, and the run continues with the decision. This is
+need (1) of the Phase 4 trigger, which the owner placed on this engine on
+2026-11-13 (#5529).
+
+```text
+You are implementing Step 2f of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, and this document's Current state and its
+section "Deferral to a person", including its "Owner decisions (2f,
+2026-11-13)". Read src/lib/agentic/tool-runner/
+(execute.ts, tools.ts, params.ts, delegate.ts), src/lib/agentic/drivers/,
+src/app-layer/usecases/workflow-runs.ts (resumeWorkflowRun, abortWorkflowRun,
+executeQueuedWorkflowRun) and src/app-layer/usecases/agent-proposals.ts.
+Step 2e is merged.
+
+Part 1 is done: the design section above. If a step below would have to
+deviate from it, stop and ask.
+
+Goal: a deferred call parks the run and a person's decision continues it.
+
+1. Deploy 1 (readers). One migration: WorkflowRunDeferral with its RLS triple,
+   CHECKs, one-way trigger (admitting the key-rotation re-wrap and the clear),
+   no app_user DELETE; AgentProfileVersion.deferredToolNames and the replaced
+   lifecycle function. The manifest entry, the retention row and the
+   sanitize-coverage classification. resumeWorkflowRun refuses a run with a
+   WAITING deferral; abortWorkflowRun settles it; settleDeferralForProposal is
+   called after every queue decision and by the expiry sweep and the
+   retirement cascade; the resume branch in executeToolRunnerRun, with the
+   wall clock from elapsedMsAtPark. The run page and the proposals page.
+2. Deploy 2 (the writer). deferredToolNames in the save and approval schemas
+   with every refusal named in the design; RUNS_DEFERRALS; the DEFER stop and
+   the parking transaction in the engine; the one-item rule; the Behaviour
+   editor and the approval view.
+3. lockedParams gains the resume option, and its guard pins that a resume
+   sends the stored system, tools and model.
+
+Tests: a deferred call parks the run and no request leaves after it; an
+approval resumes it with the created id and a rejection with an error result,
+both through the queue's own usecases; a second decision cannot resume twice;
+an expiry and a retirement settle it; a kill engaged while it waits settles it
+at the decision; a tool withdrawn during the wait is refused at resume and a
+tool granted during it is not offered; a tampered transcript halts the run; the
+resumed request's system, tools and earlier messages are byte-identical to the
+parked one; the wall clock does not count the wait; a two-tenant test.
+
+Deliver per the Definition of done. This step is Significant.
+```
+
+**Hardening**
+
+- [ ] A deferred call parks the run with no request sent after it, and a person's decision in the proposal queue is the only way it continues (integration test).
+- [ ] The resumed request's `system`, `tools` and earlier messages, thinking blocks included, are byte-identical to the transcript, and the stored transcript is encrypted at rest (test reads the raw column).
+- [ ] Authority only narrows across the wait: a withdrawn tool is refused at resume, and a newly granted one is not offered (tests).
+- [ ] An expired proposal, a retirement and a kill switch each settle a parked run with a named reason, and an abort settles its deferral (tests).
+- [ ] The wall clock does not count the wait, and the other caps keep accumulating across it (tests).
+- [ ] A sub-agent cannot name a deferred tool, and an engine whose `RUNS_DEFERRALS` entry is false refuses such a version before the run row exists (tests).
+- [ ] The two-tenant test, the RLS coverage and the single-write-seam guard pass for `WorkflowRunDeferral`; mutation: removing the conditional claim lets two decisions resume one run.
+
+**Exit.** An agent can ask a person mid-run and carry on with the answer, and
+nothing it held before the wait runs on the strength of the wait.
+
+#### Step 2g — Context compaction for long runs
+
+**Goal.** A run whose next request would cross the compaction threshold has its
+earlier turns summarised by Inflect's own model call, with the instructions,
+the skills, the pending results, the refusals and the proposals kept outside
+the summary. This is need (2) of the Phase 4 trigger, which the owner placed on
+this engine on 2026-11-13 (#5529).
+
+```text
+You are implementing Step 2g of the roadmap in docs/claude-tool-runner-design.md.
+Read the global rules and definition of done in the Roadmap of
+docs/claude-agent-sdk-design.md, and this document's Current state and its
+section "Compaction", including its "Owner decisions (2g,
+2026-11-13)". Read src/lib/agentic/tool-runner/ (execute.ts,
+params.ts, skills.ts, delegate.ts) and src/lib/agentic/run-caps.ts.
+Step 2e is merged.
+
+Part 1 is done: the design section above. If a step below would have to
+deviate from it, stop and ask.
+
+Goal: compaction inside runModelLoop, for the parent and every sub-agent.
+
+1. params.ts: COMPACTION_THRESHOLD_TOKENS, COMPACTION_BUDGET_SHARE,
+   COMPACTION_SUMMARY_MAX_TOKENS, COMPACTION_INSTRUCTION and
+   compactionParams(), pinned by the locked-params guard.
+2. tool-runner/compaction.ts: the trigger, the run-state block and the rebuilt
+   history, as the design orders them.
+3. The summary call in the loop body at step 9: stoppedBeforeModelCall first,
+   the egress and injection scans, the MODEL_CALL step with
+   purpose: 'compaction' and its digests, the Art 12 row, a failure turning
+   compaction off for the segment.
+4. AgentProfileVersion.compactionThresholdTokens, its CHECK, the replaced
+   lifecycle function, the save and approval refusal above the tier, the
+   Behaviour editor control and the approval view.
+5. The run page's label for a compaction step.
+
+Tests: compaction fires at the threshold and not below it, and not with fewer
+than two steps left; the opening message, the activated skills' text, the
+refusals, the proposals and the last turn's tool results are byte-identical
+after it; the last turn's thinking blocks are removed and no other block is
+edited; a flagged summary stops the run at the guard and is never used; the
+summary call is charged a step and its tokens; a child compacts without
+touching its parent's history; the run-state block rebuilt from a fixture
+ledger is byte-identical; the ledger keeps every original step.
+
+Deliver per the Definition of done. This step is Significant (a column).
+```
+
+**Hardening**
+
+- [ ] Nothing a run must keep is ever summarised: the instructions, the opening message, the activated skills, the refusals, the proposals and the pending results reach the model verbatim after a compaction (test, with a mutation that moves one into the summary).
+- [ ] The summary call is charged one `STEPS` and its tokens, and asks the kill switch and the breaker first (tests).
+- [ ] The summary is egress- and injection-scanned, and a flagged one is never used (test).
+- [ ] A profile can turn compaction off or lower its threshold and never raise it (save and approval tests).
+- [ ] Every original step stays in the ledger, and the compaction step names the digests before and after (integration test).
+- [ ] A sub-agent compacts independently and charges the run's one budget (test).
+
+**Exit.** A long run keeps what it must keep, and the record of it is
+unchanged.
 
 #### Step 2x — Carry thinking blocks through the assistant's loop
 

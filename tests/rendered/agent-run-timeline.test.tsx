@@ -87,6 +87,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 skillsNotRecorded: string;
                 stepStatus: Record<string, string>;
                 proposalStatus: Record<string, string>;
+                compaction: { label: string; sizes: string; notUsed: string };
             };
             status: Record<string, string>;
         };
@@ -132,6 +133,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         // is every step in these fixtures.
         delegation: null,
         subagent: null,
+        compaction: null,
         proposals: [],
         ...over,
     };
@@ -1039,6 +1041,23 @@ describe('the delegation section', () => {
         }
         expect(document.getElementById('step-0')).not.toHaveAttribute('data-subagent');
         expect(document.getElementById('step-4')).not.toHaveAttribute('data-subagent');
+    });
+
+    it('a compaction step reads "Conversation summarised", with the request\'s size before and after (Step 2g)', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', compaction: { estimatedTokensBefore: 40029, estimatedTokensAfter: 419 } }),
+            step({ seq: 2, kind: 'MODEL_CALL', status: 'FAILED', compaction: { estimatedTokensBefore: 41000, estimatedTokensAfter: null } }),
+        ]);
+        const used = document.getElementById('step-1');
+        expect(used?.textContent).toContain(D.compaction.label);
+        expect(used?.textContent).not.toContain(D.kind.MODEL_CALL);
+        expect(screen.getByTestId('step-1-compaction').textContent).toBe(
+            D.compaction.sizes.replace('{before}', '40029').replace('{after}', '419'),
+        );
+        expect(screen.getByTestId('step-2-compaction').textContent).toBe(D.compaction.notUsed.replace('{before}', '41000'));
+        // An ordinary model call keeps its own label.
+        expect(document.getElementById('step-0')?.textContent).toContain(D.kind.MODEL_CALL);
     });
 
     it('a child step whose span was never closed (a run killed mid-delegation) still names its sub-agent', () => {

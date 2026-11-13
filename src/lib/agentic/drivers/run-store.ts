@@ -124,3 +124,63 @@ function recordedProposalCount(inputJson: string | null): number {
         return 0;
     }
 }
+
+/**
+ * WHAT A COMPACTION'S RUN-STATE BLOCK IS BUILT FROM (Step 2g of
+ * `docs/claude-tool-runner-design.md`, #5531): this run's ledger rows from
+ * `fromSeq`, in seq order, and every proposal it made.
+ *
+ * Both reads are bounded and read ONE PAST the bound, so a truncated read is a
+ * fact the caller holds rather than one it cannot see: `complete` is false and
+ * the caller does not compact. A block built from a partial read could drop a
+ * pending proposal, which is the one thing it exists to keep.
+ */
+export async function readCompactionRecord(
+    ctx: RequestContext,
+    runId: string,
+    fromSeq: number,
+): Promise<{
+    complete: boolean;
+    steps: Array<{
+        seq: number;
+        kind: string;
+        toolCalled: string | null;
+        status: string;
+        subagentName: string | null;
+        guardVerdict: string | null;
+        inputJson: string | null;
+        outputJson: string | null;
+    }>;
+    proposals: Array<{ id: string; kind: string; status: string; stepSeq: number | null }>;
+}> {
+    const stepBound = ENGINE_RUN_CAPS.STEPS;
+    const proposalBound = ENGINE_RUN_CAPS.PROPOSALS;
+    const [steps, proposals] = await runInTenantContext(ctx, async (db) => [
+        await db.workflowStep.findMany({
+            where: { runId, tenantId: ctx.tenantId, seq: { gte: fromSeq } },
+            orderBy: { seq: 'asc' },
+            select: {
+                seq: true,
+                kind: true,
+                toolCalled: true,
+                status: true,
+                subagentName: true,
+                guardVerdict: true,
+                inputJson: true,
+                outputJson: true,
+            },
+            take: stepBound + 1,
+        }),
+        await db.agentProposal.findMany({
+            where: { runId, tenantId: ctx.tenantId },
+            orderBy: [{ stepSeq: 'asc' }, { id: 'asc' }],
+            select: { id: true, kind: true, status: true, stepSeq: true },
+            take: proposalBound + 1,
+        }),
+    ] as const);
+    return {
+        complete: steps.length <= stepBound && proposals.length <= proposalBound,
+        steps: steps.slice(0, stepBound),
+        proposals: proposals.slice(0, proposalBound),
+    };
+}

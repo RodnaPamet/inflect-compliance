@@ -34,9 +34,27 @@
  *      `SUBAGENT_TOOL_NOT_OFFERED`;
  *   9. BEFORE THE NEXT MODEL CALL (owner decision 4 of 2026-11-13): the turn's
  *      tools are run (`runner.generateToolResponse()`, which the runner then
- *      reuses rather than running them twice), and then the kill switch and the
- *      BREAKER are read and one STEPS is charged. The same three happen before
- *      the loop's first call. Both only narrow, in both loops.
+ *      reuses rather than running them twice); then, when the next request
+ *      would cross the run's compaction threshold, the earlier turns are
+ *      SUMMARISED (Step 2g, below); and then the kill switch and the BREAKER
+ *      are read and one STEPS is charged. The same three happen before the
+ *      loop's first call. Both only narrow, in both loops.
+ *
+ * ── COMPACTION (Step 2g, #5531) ─────────────────────────────────────────────
+ *
+ * Inflect's own summary call, never the SDK's (owner decision 3 of
+ * 2026-11-13), and in this one loop body, so a sub-agent compacts its own
+ * history on the run's one budget. The run-state block is built first, from
+ * the run's own record, so a block that cannot be built sends nothing. Then
+ * the summary call is a model call like any other: the kill switch, the
+ * breaker and one STEPS before it (`stoppedBeforeModelCall`); its tokens
+ * charged to TOKENS and the caps read after it; the egress scan and the
+ * injection scan on its text, any verdict but CLEAN stopping the run at the
+ * guard with the summary unused; a MODEL_CALL step with `purpose:
+ * 'compaction'` naming the digests before and after; and its own Art 12 row.
+ * The request after it is rebuilt by `compaction.ts`, by code. A summary that
+ * fails is discarded, the run carries on uncompacted, and compaction is off
+ * for the rest of the segment. The ledger keeps every original step.
  *
  * The body runs BEFORE the runner reads the stop reason and runs the turn's
  * tools, so every `break` in 1-7 happens before any tool of that turn.
@@ -54,7 +72,8 @@
  * An operator's Abort first, and it writes no settlement: the operator's
  * ABORTED stands (#5366). Then, in the order the Flue engine settles, for the
  * reasons it gives (#4230): a kill, then the breaker (Step 2e), then a cap,
- * then a guard verdict, then the
+ * then a guard verdict, then a skill whose pin a compaction found moved
+ * (Step 2g), then the
  * named stop reasons, then the iteration bound, then the empty catalogue, then
  * COMPLETED. Before the first call, a run whose offer would carry a business
  * system's rows to Anthropic with no acknowledgement on record is refused
@@ -62,12 +81,14 @@
  * never written to the step ledger: it reaches only the decision row's bounded,
  * sanitised summary.
  */
+import { createHash } from 'crypto';
+
 import type Anthropic from '@anthropic-ai/sdk';
-import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import type { BetaMessage, BetaMessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import type { BetaToolRunnerParams } from '@anthropic-ai/sdk/lib/tools/BetaToolRunner';
 
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
-import { guardEgress } from '@/app-layer/ai/guard';
+import { guardEgress, guardUntrustedInput } from '@/app-layer/ai/guard';
 import type { RequestContext } from '@/app-layer/types';
 import { latchOnGuardBlock, readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import {
@@ -79,7 +100,7 @@ import {
     updateRun,
     type CapBesideKill,
 } from '@/lib/agentic/drivers/run-settlement';
-import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
+import { getRunRow, proposedItemsSoFar, readCompactionRecord } from '@/lib/agentic/drivers/run-store';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { stepVerdictOf, type StepGuardObservation } from '@/lib/agentic/engine-tools';
@@ -98,16 +119,23 @@ import {
 } from '@/lib/agentic/kill-switch';
 import { createRunBudget, resolveRunCaps, type RunBudget, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { readTurnCaps } from '@/lib/agentic/turn-caps-policy';
-import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
+import { estimateTokens, type WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { logger } from '@/lib/observability/logger';
 import { recordWorkflowContextIntegrityHalt } from '@/lib/observability/metrics';
 
 import { lastRequestShape } from './client';
+import {
+    buildRunStateBlock,
+    compactedMessages,
+    compactionSkip,
+    compactionThresholdFor,
+    type CompactionLedgerStep,
+} from './compaction';
 import { delegateTool, type ChildLoopResult } from './delegate';
 import { recordToolRunnerDecision } from './model-decision';
-import { lockedParams } from './params';
+import { compactionParams, DEFAULT_TIER, lockedParams } from './params';
 import { activateSkillTool, skillCatalogueText, type RunSkills } from './skills';
 import {
     SerialQueue,
@@ -154,6 +182,10 @@ export const BREAKER_OPEN_MESSAGE =
 export const BREAKER_UNREADABLE_MESSAGE =
     'tool_runner_breaker_unreadable: the circuit breaker could not be read, so the run stopped rather than carry on unchecked.';
 
+/** A compaction found an activated skill whose text no longer matches its pin (Step 2g). */
+export const SKILL_PIN_MISMATCH_MESSAGE =
+    'tool_runner_skill_pin_mismatch: a skill this run activated no longer matches the version the run was pinned to, so the run stopped rather than re-teach it.';
+
 /** The text a model call produced, from its text blocks only. */
 export function textOf(message: Pick<BetaMessage, 'content'>): string {
     return message.content
@@ -193,6 +225,16 @@ interface LoopRuntime {
     /** Milliseconds since the last activity, and mark now. */
     sinceActivity(): number;
     markActivity(): void;
+    /**
+     * The run's compaction threshold (Step 2g), or null when compaction is off.
+     * The same for the parent and every sub-agent.
+     */
+    readonly compactionThreshold: number | null;
+    /** Has a summary failed in this segment? Then no loop compacts again until the next one. */
+    compactionFailed(): boolean;
+    noteCompactionFailed(): void;
+    /** Latch the skill-pin stop a compaction found, and abort the request in flight. */
+    stopAtPinMismatch(): void;
 }
 
 /** One loop: the parent's (no sub-agent) or a delegated sub-agent's. */
@@ -209,6 +251,8 @@ interface LoopSpec {
     readonly offeredNames?: ReadonlySet<string>;
     /** A child only: the names the run knows, so a refused request records a known name and never the model's. */
     readonly knownNames?: ReadonlySet<string>;
+    /** The loop's skills, with the pins the row recorded: what a compaction re-teaches (Step 2g). */
+    readonly skills: RunSkills;
 }
 
 /** Why a model call may not be sent, checked before EVERY model call in BOTH loops (owner decision 4). */
@@ -227,6 +271,260 @@ async function stoppedBeforeModelCall(rt: LoopRuntime): Promise<boolean> {
     return false;
 }
 
+/** How a compaction attempt ended. */
+type CompactionOutcome = 'COMPACTED' | 'NOT_BUILT' | 'FAILED' | 'STOPPED';
+
+/** Why a summary was discarded, as its FAILED step records it. Codes, never the model's text. */
+type SummaryFailure = 'REFUSAL' | 'MAX_TOKENS' | 'NO_TEXT' | 'GUARD' | 'ERROR' | 'RUN_STOPPED';
+
+/** One ledger row as the run-state block reads it, with its JSON parsed. Unreadable JSON reads as absent. */
+function ledgerStepOf(row: Awaited<ReturnType<typeof readCompactionRecord>>['steps'][number]): CompactionLedgerStep {
+    const parse = (json: string | null): unknown => {
+        if (json === null) return null;
+        try {
+            return JSON.parse(json);
+        } catch {
+            return null;
+        }
+    };
+    return {
+        seq: row.seq,
+        kind: row.kind,
+        toolCalled: row.toolCalled,
+        status: row.status,
+        subagent: row.subagentName,
+        guardVerdict: row.guardVerdict,
+        input: parse(row.inputJson),
+        output: parse(row.outputJson),
+    };
+}
+
+/** What the runner exposes to a compaction: its parameters, and the way to replace its history. */
+interface CompactableRunner {
+    readonly params: BetaToolRunnerParams;
+    setMessagesParams(params: BetaToolRunnerParams): void;
+}
+
+/**
+ * ONE COMPACTION (Step 2g), at loop-body step 9 of one loop. See the module
+ * header for the order, and `compaction.ts` for what the rebuilt request keeps.
+ */
+async function compactHistory(
+    rt: LoopRuntime,
+    spec: LoopSpec,
+    runner: CompactableRunner,
+    turn: {
+        readonly call: number;
+        readonly loopFromSeq: number;
+        readonly request: BetaToolRunnerParams;
+        readonly reply: BetaMessage;
+        readonly toolResults: BetaMessageParam;
+        readonly estimatedTokensBefore: number;
+    },
+): Promise<CompactionOutcome> {
+    const { ctx, runId, def, client, budget } = rt;
+    const label = spec.subagent === null ? {} : { subagent: spec.subagent };
+    const source = spec.subagent === null ? TOOL_RUNNER_GUARD_SOURCE : subagentGuardSource(spec.subagent);
+
+    // 1. The run-state block, from the run's own record, BEFORE any call: a
+    // block that cannot be built (a truncated read) sends nothing, and a skill
+    // whose text moved stops the run.
+    const record = await readCompactionRecord(ctx, runId, turn.loopFromSeq);
+    if (!record.complete) {
+        logger.warn('tool-runner: compaction skipped, the run\'s record could not be read in full', {
+            component: 'agentic',
+            runId: rt.runId,
+            subagent: spec.subagent,
+        });
+        return 'NOT_BUILT';
+    }
+    const block = buildRunStateBlock({
+        subagent: spec.subagent,
+        fromSeq: turn.loopFromSeq,
+        steps: record.steps.map(ledgerStepOf),
+        proposals: record.proposals,
+        skills: spec.skills,
+    });
+    if (!block.ok) {
+        rt.stopAtPinMismatch();
+        return 'STOPPED';
+    }
+
+    // 2. The kill switch, the breaker and one STEPS, as before every model call.
+    if (await stoppedBeforeModelCall(rt)) return 'STOPPED';
+
+    // 3. The summary call, over the history exactly as it stands.
+    const history: BetaMessageParam[] = [
+        ...turn.request.messages,
+        { role: 'assistant', content: turn.reply.content },
+        turn.toolResults,
+    ];
+    const summaryRequest = compactionParams(runner.params, history);
+    const decisionDigest = computeInputDigest(summaryRequest);
+    const compactedFromDigest = computeInputDigest(turn.request);
+    rt.markActivity();
+    let summary: BetaMessage;
+    try {
+        summary = await client.beta.messages.create(summaryRequest, { signal: spec.signal });
+    } catch (err) {
+        // A stop this run asked for aborted it: the run's own stop settles.
+        if (rt.binding.stopped()) return 'STOPPED';
+        await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+            status: 'FAILED',
+            label: def.key,
+            input: {
+                modelCalls: 1,
+                purpose: 'compaction',
+                decisionDigest,
+                compactedFromDigest,
+                messagesSummarised: history.length,
+                estimatedTokensBefore: turn.estimatedTokensBefore,
+            },
+            output: { failed: 'ERROR' satisfies SummaryFailure },
+            ...label,
+        });
+        logger.warn('tool-runner: the compaction summary call failed; carrying on uncompacted', {
+            component: 'agentic',
+            runId: rt.runId,
+            subagent: spec.subagent,
+            error: err instanceof Error ? err.message : 'a non-Error value was thrown',
+        });
+        return 'FAILED';
+    }
+
+    const usage = tokensOf(summary);
+    const text = textOf(summary);
+    const costTokens = rt.addTokens(usage.total);
+
+    // 4. The scans: egress, and injection, because the summary is written from
+    // tool results and goes back into the model's context.
+    const egress =
+        text.length > 0 ? await guardEgress(ctx, text, { source: `${source}-compaction-output:${runId}:${turn.call}` }) : null;
+    const injected =
+        text.length > 0
+            ? await guardUntrustedInput(ctx, text, { source: `${source}-compaction-summary:${runId}:${turn.call}` })
+            : null;
+    const verdicts = [egress, injected].filter((o): o is NonNullable<typeof o> => o !== null);
+    const worstOutcome = verdicts.reduce<(typeof verdicts)[number] | null>(
+        (worst, o) => (worst === null || RANK[stepVerdictOf(o)] > RANK[stepVerdictOf(worst)] ? o : worst),
+        null,
+    );
+    const verdict = worstOutcome ? stepVerdictOf(worstOutcome) : 'CLEAN';
+
+    let failure: SummaryFailure | null =
+        summary.stop_reason === 'refusal'
+            ? 'REFUSAL'
+            : summary.stop_reason === 'max_tokens'
+              ? 'MAX_TOKENS'
+              : text.trim().length === 0
+                ? 'NO_TEXT'
+                : verdict !== 'CLEAN'
+                  ? 'GUARD'
+                  : null;
+
+    // 5. The verdict NOTED FIRST, as a model call's is: anything but CLEAN
+    // stops the run at the guard, and the summary is never used.
+    if (worstOutcome && verdict !== 'CLEAN') {
+        rt.noteVerdict({
+            toolCallId: spec.subagent === null ? `compaction:${turn.call}` : `compaction:${spec.subagent}:${turn.call}`,
+            tool: 'model-output',
+            slice: 'result',
+            verdict,
+            ruleIds: worstOutcome.ruleIds,
+        });
+    }
+
+    // 6. The kill switch, a latched stop, and the token and wall-clock caps.
+    let stopped = (await rt.binding.checkKill()) || rt.binding.stopped() !== null;
+    if (!stopped) {
+        const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
+        const halt = tokenHalt ?? budget.charge('RUNTIME_MS', 0);
+        if (halt) {
+            rt.binding.stopAtCap(halt);
+            stopped = true;
+        }
+    }
+    if (stopped && failure === null) failure = 'RUN_STOPPED';
+
+    // 7. The rebuilt request, by code, applied only when the summary may be used.
+    const after: { compactedToDigest: string | null; estimatedTokensAfter: number | null } = {
+        compactedToDigest: null,
+        estimatedTokensAfter: null,
+    };
+    if (failure === null) {
+        const rebuilt = compactedMessages({
+            opening: turn.request.messages[0],
+            runState: block.text,
+            summary: text,
+            lastAssistant: turn.reply.content,
+            toolResults: turn.toolResults,
+        });
+        runner.setMessagesParams({ ...runner.params, messages: rebuilt });
+        after.compactedToDigest = computeInputDigest(runner.params);
+        after.estimatedTokensAfter = estimateTokens({
+            system: summaryRequest.system,
+            tools: summaryRequest.tools,
+            messages: rebuilt,
+        });
+    }
+
+    // 8. The MODEL_CALL step, labelled with its purpose and the digests before
+    // and after, and its own Art 12 row. Never the summary's text.
+    const sent = lastRequestShape(client);
+    await recordStep(ctx, runId, rt.binding.nextSeq(), 'MODEL_CALL', {
+        status: failure === null ? 'DONE' : 'FAILED',
+        label: def.key,
+        tokens: usage.total,
+        ...(verdicts.length > 0 ? { guardVerdict: verdict, guardRuleIds: worstOutcome?.ruleIds ?? [] } : {}),
+        input: {
+            modelCalls: 1,
+            purpose: 'compaction',
+            model: summary.model,
+            stopReason: summary.stop_reason,
+            decisionDigest,
+            compactedFromDigest,
+            summaryDigest: text.length > 0 ? `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}` : null,
+            messagesSummarised: history.length,
+            estimatedTokensBefore: turn.estimatedTokensBefore,
+            wire: sent
+                ? { method: sent.method, path: sent.path, bodyKeys: sent.bodyKeys, threadMember: sent.threadMember }
+                : null,
+        },
+        output:
+            failure === null
+                ? { compactedToDigest: after.compactedToDigest, estimatedTokensAfter: after.estimatedTokensAfter }
+                : { failed: failure },
+        ...label,
+    });
+    await recordToolRunnerDecision(
+        ctx,
+        runId,
+        def,
+        summaryRequest,
+        text.length > 0 && verdict === 'CLEAN' ? text : null,
+        { tokensIn: usage.tokensIn, tokensOut: usage.tokensOut },
+        summary.model,
+        rt.sinceActivity(),
+    );
+    await updateRun(ctx, runId, { costTokens, stepCount: rt.seq() });
+
+    if (stopped || verdict !== 'CLEAN') return 'STOPPED';
+    if (failure !== null) return 'FAILED';
+    logger.info('tool-runner: compacted the conversation', {
+        component: 'agentic',
+        runId: rt.runId,
+        subagent: spec.subagent,
+        estimatedTokensBefore: turn.estimatedTokensBefore,
+        estimatedTokensAfter: after.estimatedTokensAfter,
+        historyLength: history.length,
+        activatedSkills: block.activatedSkills,
+        refusals: block.refusals,
+        proposals: block.proposals,
+        delegations: block.delegations,
+    });
+    return 'COMPACTED';
+}
+
 /**
  * THE ONE LOOP BODY (Step 2e). The parent and every sub-agent run this, with
  * the sub-agent's name as a parameter. See the module header for its order.
@@ -240,6 +538,10 @@ async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopR
     let lastStopReason: string | null = null;
     let failure: string | null = null;
     let lastText = '';
+    // Where this loop's own ledger starts: its run-state block reads from here.
+    const loopFromSeq = rt.seq();
+    // The turn whose end was compacted, so the next turn does not compact again.
+    let compactedAtCall = -1;
 
     if (await stoppedBeforeModelCall(rt)) return { calls, namedStop, lastStopReason, failure, lastText };
 
@@ -359,7 +661,33 @@ async function runModelLoop(rt: LoopRuntime, spec: LoopSpec): Promise<ChildLoopR
             // switch, the breaker and one STEPS (owner decision 4). The runner
             // reuses the tool response it caches here, so nothing runs twice.
             if (asksForAnotherCall(reply.stop_reason) && calls < maxIterations) {
-                await runner.generateToolResponse();
+                const toolResults = await runner.generateToolResponse();
+                // Compaction (Step 2g): only after a complete tool round, and
+                // before the next call's own kill, breaker and STEPS charge.
+                const estimatedNextRequest =
+                    usage.tokensIn + usage.tokensOut + (toolResults ? estimateTokens(toolResults.content) : 0);
+                const skip = compactionSkip({
+                    threshold: rt.compactionThreshold,
+                    estimatedNextRequest,
+                    toolRoundComplete: reply.stop_reason === 'tool_use' && toolResults !== null,
+                    stepsRemaining: budget.remaining('STEPS'),
+                    stopLatched: rt.binding.stopped() !== null,
+                    compactedLastTurn: compactedAtCall === calls - 1,
+                    failedThisSegment: rt.compactionFailed(),
+                });
+                if (skip === null && toolResults !== null) {
+                    const compacted = await compactHistory(rt, spec, runner, {
+                        call: calls,
+                        loopFromSeq,
+                        request,
+                        reply,
+                        toolResults,
+                        estimatedTokensBefore: estimatedNextRequest,
+                    });
+                    if (compacted === 'STOPPED') break;
+                    if (compacted === 'COMPACTED') compactedAtCall = calls;
+                    else rt.noteCompactionFailed();
+                }
                 if (await stoppedBeforeModelCall(rt)) break;
             }
             rt.markActivity();
@@ -482,6 +810,8 @@ export async function executeToolRunnerRun(
         breakerUnreadable: boolean;
         worst: StepGuardObservation['verdict'];
         worstRuleIds: readonly string[];
+        pinMismatch: boolean;
+        compactionFailed: boolean;
     } = {
         capHalt: null,
         killVerdict: null,
@@ -492,6 +822,8 @@ export async function executeToolRunnerRun(
         breakerUnreadable: false,
         worst: 'CLEAN',
         worstRuleIds: [],
+        pinMismatch: false,
+        compactionFailed: false,
     };
     const seen = new Map<string, StepGuardObservation>();
     const origins = new Map<string, number>();
@@ -509,6 +841,7 @@ export async function executeToolRunnerRun(
         if (state.breakerOpen || state.breakerUnreadable) return { kind: 'BREAKER' };
         if (state.capHalt) return { kind: 'CAP', halt: state.capHalt };
         if (state.worst !== 'CLEAN') return { kind: 'GUARD' };
+        if (state.pinMismatch) return { kind: 'SKILL_PIN_MISMATCH' };
         return null;
     };
 
@@ -635,6 +968,21 @@ export async function executeToolRunnerRun(
         markActivity: () => {
             lastActivityAt = Date.now();
         },
+        // The lowest of the tier's constant, 15% of the run's TOKENS limit and
+        // the profile version's own value; null when the version turned it off.
+        compactionThreshold: compactionThresholdFor({
+            tier: def.profile?.modelTier ?? DEFAULT_TIER,
+            tokensLimit: caps.TOKENS.limit,
+            profileThreshold: def.profile?.compactionThresholdTokens ?? null,
+        }),
+        compactionFailed: () => state.compactionFailed,
+        noteCompactionFailed: () => {
+            state.compactionFailed = true;
+        },
+        stopAtPinMismatch: () => {
+            state.pinMismatch = true;
+            controller.abort();
+        },
     };
 
     // ONE queue for every call of the parent, the engine's own included, so the
@@ -731,6 +1079,7 @@ export async function executeToolRunnerRun(
                     onTurn: child.onTurn,
                     offeredNames: child.offeredNames,
                     knownNames: child.knownNames,
+                    skills: child.skills,
                 }),
         },
         queue,
@@ -766,6 +1115,7 @@ export async function executeToolRunnerRun(
         onTurn: (n) => {
             parentCalls = n;
         },
+        skills,
     });
 
     // ── Settlement ──────────────────────────────────────────────────────────
@@ -807,6 +1157,10 @@ export async function executeToolRunnerRun(
         }
         const status = await haltRunAtGuard(ctx, runId, state.worst, state.worstRuleIds, 'tool_runner');
         return { status, stepFailures };
+    }
+    if (state.pinMismatch) {
+        const status = await failRun(ctx, runId, SKILL_PIN_MISMATCH_MESSAGE);
+        return { status, stepFailures: stepFailures + 1 };
     }
     if (parent.failure !== null) {
         const status = await failRun(ctx, runId, `tool_runner_run_failed: ${parent.failure}`);
