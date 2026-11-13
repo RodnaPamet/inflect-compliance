@@ -85,6 +85,7 @@
 import type {
     ScheduledCheckProvider,
     ConnectionConfigSchema,
+    ConnectionValidationOptions,
     ConnectionValidationResult,
     CheckResult,
     EvidencePayload,
@@ -251,6 +252,7 @@ export class OrangeHrmProvider
     async validateConnection(
         config: Record<string, unknown>,
         secrets: Record<string, unknown>,
+        opts: ConnectionValidationOptions = {},
     ): Promise<ConnectionValidationResult> {
         const { client, missing } = readConfig({ ...config, ...secrets });
         if (missing.length) {
@@ -284,8 +286,11 @@ export class OrangeHrmProvider
             };
         }
         try {
-            const resolveToken = this.deps.resolveToken ?? resolveOrangeHrmAccessToken;
-            await resolveToken(secret, { client }, { fetchImpl: this.deps.fetchImpl });
+            // Through `accessTokenFor`, the ONE resolution site, so a refresh
+            // the Test makes persists the rotated pair as a sync's does. It
+            // used to resolve on its own and drop the rotated refresh token
+            // (#5195).
+            await this.accessTokenFor({ ...config, ...secrets }, client, { persistSecret: opts.persistSecret });
             return { valid: true };
         } catch (e) {
             return {

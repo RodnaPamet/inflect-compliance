@@ -348,6 +348,19 @@ export async function upsertIntegrationConnection(
             });
             if (!existing) throw notFound('Connection not found');
 
+            // The secrets and config above were validated against
+            // `input.provider`, and the write below never changes the row's
+            // provider. A caller naming another registered provider would store
+            // values shaped for THAT provider on this connection (#5143), so a
+            // mismatch is refused before anything is written — the same refusal
+            // the Test path gives.
+            if (existing.provider !== input.provider) {
+                throw badRequest(
+                    `This connection is a ${existing.provider} connection, not ${input.provider}. ` +
+                        'A connection keeps the provider it was created with.',
+                );
+            }
+
             // `existing.provider`, NOT `input.provider`. The update below writes
             // name / configJson / secrets / isEnabled and never `provider`, so
             // the row keeps the provider it was created with whatever the caller
@@ -599,9 +612,29 @@ export async function testConnectionCredentials(
         }
     }
 
+    // A token exchange the Test makes may ROTATE the stored refresh token
+    // (Workday, OrangeHRM). The rotated pair is written back onto the saved
+    // connection, or the Test leaves it holding a dead one (#5194, #5195).
+    // Only for the stored credential: a credential typed into the form is not
+    // saved by testing it.
+    const connectionId = input.connectionId;
+    const testsStoredSecrets = connectionId !== undefined && Object.keys(input.secrets ?? {}).length === 0;
+    const persistSecret = testsStoredSecrets
+        ? async (patch: Record<string, unknown>) => {
+              Object.assign(storedSecrets, patch);
+              await runInTenantContext(ctx, (db) =>
+                  db.integrationConnection.update({
+                      where: { id: connectionId },
+                      data: { secretEncrypted: encryptField(JSON.stringify(storedSecrets)) },
+                  }),
+              );
+          }
+        : undefined;
+
     const result = await providerImpl.validateConnection(
         { ...storedConfig, ...(input.configJson ?? {}) },
         { ...storedSecrets, ...(input.secrets ?? {}) },
+        { persistSecret },
     );
 
     if (input.connectionId) {

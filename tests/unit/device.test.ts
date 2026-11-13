@@ -285,7 +285,8 @@ describe('DeviceProvider', () => {
             expect(findMany).toHaveBeenCalledTimes(1);
             const arg = findMany.mock.calls[0][0] as { where: { tenantId: string }; take: number };
             expect(arg.where.tenantId).toBe('T1');
-            expect(arg.take).toBe(10000);
+            // One past the cap, so a truncated read is a fact the check holds (#5196).
+            expect(arg.take).toBe(10001);
             // And the rows it returned actually reached the check.
             expect(r.status).toBe('PASSED');
         });
