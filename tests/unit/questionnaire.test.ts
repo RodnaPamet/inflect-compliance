@@ -25,6 +25,12 @@ const mockDb = {
     control: { findMany: jest.fn() },
     policy: { findMany: jest.fn() },
     evidence: { findMany: jest.fn() },
+    // #5445 — the usecase now reads the tenant's AI-residency posture before
+    // choosing a provider. A mocked client without this delegate describes a
+    // database with no `TenantSecuritySettings` table; `null` is the common
+    // case and resolves to an undefined residency, which the factory reads as
+    // EXTERNAL.
+    tenantSecuritySettings: { findUnique: jest.fn(async () => null) },
 };
 
 const GROUNDING = [
