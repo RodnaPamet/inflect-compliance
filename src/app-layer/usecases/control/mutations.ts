@@ -5,7 +5,11 @@ import {
     assertCanSetApplicability,
 } from '../../policies/control.policies';
 import { logEvent } from '../../events/audit';
-import { notFound, forbidden, badRequest } from '@/lib/errors/types';
+import { notFound, forbidden, badRequest, conflict } from '@/lib/errors/types';
+import {
+    findSoftDeleteBlockers,
+    softDeleteBlockedMessage,
+} from '@/lib/soft-delete-blockers';
 import { runInTenantContext } from '@/lib/db-context';
 import { restoreEntity, purgeEntity } from '../soft-delete-operations';
 import { assertCanAdmin } from '../../policies/common';
@@ -426,6 +430,18 @@ export async function deleteControl(ctx: RequestContext, id: string) {
         const control = await ControlRepository.getById(db, ctx, id);
         if (!control) throw notFound('Control not found');
         if (!control.tenantId) throw forbidden('Cannot delete global library controls');
+
+        // REFUSED WHILE A RESTRICT CHILD EXISTS (#5083, owner decision
+        // 2026-11-13). Test runs, test plans and exceptions sit behind an
+        // ON DELETE RESTRICT FK and are not soft-delete models, so they are
+        // still there when the 90-day purge hard-deletes this row — which
+        // raised SQLSTATE 23503 and aborted the platform-wide sweep. Refusing
+        // here tells the person while there is still a person to tell; the
+        // children are evidence and are never cascaded.
+        const blockers = await findSoftDeleteBlockers(db, 'Control', id);
+        if (blockers.length > 0) {
+            throw conflict(softDeleteBlockedMessage('control', blockers));
+        }
 
         await db.control.delete({ where: { id } });
 

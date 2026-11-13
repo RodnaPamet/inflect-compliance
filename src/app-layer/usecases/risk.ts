@@ -5,7 +5,13 @@ import { RiskTemplateRepository } from '../repositories/RiskTemplateRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { assertCanCreateRisk, assertCanUpdateRisk } from '../policies/risk.policies';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, conflict } from '@/lib/errors/types';
+import {
+    findSoftDeleteBlockers,
+    findBlockedParents,
+    softDeleteBlockedMessage,
+    bulkSoftDeleteBlockedMessage,
+} from '@/lib/soft-delete-blockers';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
@@ -788,6 +794,12 @@ export async function bulkDeleteRisk(ctx: RequestContext, riskIds: string[]) {
     return runInTenantContext(ctx, async (db) => {
         const rows = await RiskRepository.listByIds(db, ctx, riskIds);
         if (rows.length === 0) return { deleted: 0 };
+        // #5083: a treatment plan holds a risk down at the 90-day purge. One
+        // query per blocking edge, not per risk.
+        const blocked = await findBlockedParents(db, 'Risk', rows.map((r) => r.id));
+        if (blocked.size > 0) {
+            throw conflict(bulkSoftDeleteBlockedMessage('risks', blocked));
+        }
         await db.risk.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -806,6 +818,12 @@ export async function deleteRisk(ctx: RequestContext, id: string) {
     assertCanAdmin(ctx);
 
     const result = await runInTenantContext(ctx, async (db) => {
+        // #5083: refused BEFORE the soft delete, so the row never reaches the
+        // purge in a state that would abort it.
+        const blockers = await findSoftDeleteBlockers(db, 'Risk', id);
+        if (blockers.length > 0) {
+            throw conflict(softDeleteBlockedMessage('risk', blockers));
+        }
         const deleted = await RiskRepository.delete(db, ctx, id);
         if (!deleted) throw notFound('Risk not found');
 
