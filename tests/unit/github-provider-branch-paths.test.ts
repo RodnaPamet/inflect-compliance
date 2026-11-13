@@ -1031,3 +1031,45 @@ describe('evaluateBranchProtection — boundary arms', () => {
         expect(result.details.requireCodeOwnerReviews).toBe(false);
     });
 });
+
+// The default fetch is `resilientFetch`, which THROWS on 401/403/404 instead of
+// returning the response. The fakes above all RETURN their 404s, which is why
+// the 404 arms looked covered while the real path never reached them (#5094).
+describe('a terminal status thrown by resilientFetch is read as that status (#5094)', () => {
+    const { IntegrationTerminalError, IntegrationAuthError } =
+        jest.requireActual('@/app-layer/integrations/http-resilience') as typeof import('@/app-layer/integrations/http-resilience');
+    const throwingFetch = (byUrl: (url: string) => number | 'rules-empty'): FetchFn => async (url) => {
+        const outcome = byUrl(url);
+        if (outcome === 'rules-empty') {
+            return { status: 200, ok: true, json: async () => [], text: async () => '[]' } as unknown as Response;
+        }
+        if (outcome === 401 || outcome === 403) throw new IntegrationAuthError(outcome, url);
+        throw new IntegrationTerminalError(outcome, url);
+    };
+
+    test('a branch with no classic protection and no rules FAILS, not ERRORs', async () => {
+        const provider = new GitHubProvider(
+            throwingFetch((url) => (url.includes('/rules/branches/') ? 'rules-empty' : 404)),
+        );
+        const result = await provider.runCheck(checkInput());
+        expect(result.status).toBe('FAILED');
+    });
+
+    test('fetchBranchProtection reports the thrown 404 as "not protected"', async () => {
+        const result = await fetchBranchProtection('acme', 'api', 'main', 'tok', throwingFetch(() => 404));
+        expect(result).toEqual({ protection: null, status: 404 });
+    });
+
+    test('validateConnection names a missing repository and a refused token', async () => {
+        const missing = new GitHubProvider(throwingFetch(() => 404));
+        expect(await missing.validateConnection({ owner: 'acme', repo: 'api' }, { token: 'tok' })).toEqual({
+            valid: false,
+            error: 'Repository acme/api not found',
+        });
+        const refused = new GitHubProvider(throwingFetch(() => 401));
+        expect(await refused.validateConnection({ owner: 'acme', repo: 'api' }, { token: 'tok' })).toEqual({
+            valid: false,
+            error: 'Invalid or expired token',
+        });
+    });
+});

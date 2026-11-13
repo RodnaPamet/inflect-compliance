@@ -214,7 +214,8 @@ describeFn('one enabled HRIS connection per tenant (integration)', () => {
     it('reads the provider off the STORED row, not the request body', async () => {
         // The update never writes `provider`, so the row stays HRIS whatever the
         // caller claims. Taking the guard's provider from `input.provider` would
-        // make `provider: 'github'` a bypass.
+        // make `provider: 'github'` a bypass. Since #5143 a mismatched provider
+        // is refused outright, before the guard; either way it stays disabled.
         await seedConnection({ provider: 'bamboohr', name: 'BambooHR prod', isEnabled: true });
         const workdayId = await seedConnection({
             provider: 'workday',
@@ -226,6 +227,14 @@ describeFn('one enabled HRIS connection per tenant (integration)', () => {
             upsertIntegrationConnection(ctx, {
                 id: workdayId,
                 provider: 'github',
+                name: 'Workday migration',
+                isEnabled: true,
+            }),
+        ).rejects.toThrow(/workday connection, not github/);
+        await expect(
+            upsertIntegrationConnection(ctx, {
+                id: workdayId,
+                provider: 'workday',
                 name: 'Workday migration',
                 isEnabled: true,
             }),

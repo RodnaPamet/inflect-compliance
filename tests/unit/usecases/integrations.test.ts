@@ -238,6 +238,28 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         );
     });
 
+    it('refuses an update that names another provider than the stored row, writing nothing (#5143)', async () => {
+        mockGetProvider.mockReturnValue({
+            id: 'datadog',
+            configSchema: { configFields: [], secretFields: [] },
+        } as never);
+        const update = jest.fn();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findFirst: jest.fn().mockResolvedValue({ id: 'c1', provider: 'github' }),
+                    update,
+                },
+            } as never),
+        );
+
+        await expect(
+            upsertIntegrationConnection(makeRequestContext('ADMIN'), { ...validInput, id: 'c1' }),
+        ).rejects.toThrow(/github connection, not datadog/);
+        expect(update).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
     it('emits UPDATED audit when id is provided + connection exists', async () => {
         mockGetProvider.mockReturnValue({
             id: 'datadog',
@@ -250,7 +272,7 @@ describe('upsertIntegrationConnection — RBAC + secret encryption', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 integrationConnection: {
-                    findFirst: jest.fn().mockResolvedValue({ id: 'c1' }),
+                    findFirst: jest.fn().mockResolvedValue({ id: 'c1', provider: 'datadog' }),
                     update: jest.fn().mockResolvedValue({ id: 'c1' }),
                 },
             } as never),

@@ -204,3 +204,17 @@ describe('the client secret is a secret field', () => {
         expect(schema.configFields?.map((f) => f.key)).not.toContain('clientSecret');
     });
 });
+
+describe('a Test that rotates the refresh token keeps the new one (#5194)', () => {
+    it('hands the rotated pair to the caller to persist', async () => {
+        const rotated = { accessToken: 'a2', refreshToken: 'r2', expiresAt: 4_000_000_000 };
+        const resolveToken = tokenFn(async (_current, _opts, deps) => {
+            await (deps as { persist?: (s: typeof rotated) => Promise<void> }).persist?.(rotated);
+            return { accessToken: 'a2', rotated };
+        });
+        const persistSecret = jest.fn(async () => {});
+        const r = await new WorkdayProvider({ resolveToken }).validateConnection(GOOD, {}, { persistSecret });
+        expect(r.valid).toBe(true);
+        expect(persistSecret).toHaveBeenCalledWith(rotated);
+    });
+});

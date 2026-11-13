@@ -1461,3 +1461,21 @@ describe('a row whose manager lookup the budget cut short is withheld, not emitt
         expect(parseResumeCursor(r.resumeToken).offset).toBe(ORANGEHRM_ENRICH_CONCURRENCY);
     });
 });
+
+describe('a Test that rotates the refresh token keeps the new one (#5195)', () => {
+    it('hands the rotated pair to the caller to persist', async () => {
+        const rotated = { accessToken: 'a2', refreshToken: 'r2', expiresAt: 4_000_000_000 };
+        const resolveToken = jest.fn(async (_current: OrangeHrmSecret, _opts: unknown, deps?: { persist?: (s: OrangeHrmSecret) => Promise<void> }) => {
+            await deps?.persist?.(rotated);
+            return { accessToken: 'a2', rotated };
+        });
+        const persistSecret = jest.fn(async () => {});
+        const r = await new OrangeHrmProvider({ resolveToken }).validateConnection(
+            { baseUrl: HOST, clientId: 'c' },
+            { clientSecret: 's', refreshToken: 'r1', accessToken: 'a1', expiresAt: 0 },
+            { persistSecret },
+        );
+        expect(r.valid).toBe(true);
+        expect(persistSecret).toHaveBeenCalledWith(rotated);
+    });
+});
