@@ -87,7 +87,7 @@ flowchart LR
   subgraph L4["LAYER 4 · Knowledge and deep RAG"]
     direction TB
     RF["Document parsing<br/>Docling-class seam built;<br/>RAGFlow measured only"]:::partial
-    RT["Retriever<br/>embed + rerank seam built;<br/>D-L4-3 winner on CPU"]:::partial
+    RT["Retriever<br/>embed + rerank seam built;<br/>D-L4-3 decided: multilingual-e5-small<br/>+ bge-reranker-base on CPU"]:::partial
     WV["Vector store<br/>pgvector seam, off;<br/>Weaviate conditional"]:::partial
     LU["Langfuse<br/>not adopted, OTel-only, D-L4-5"]:::declined
     TR["Tool-shaped retrieval (ours)<br/>MCP read tools"]:::done
@@ -403,21 +403,25 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
     (`src/lib/ai/in-deployment-service.ts`, G6 as amended), so a Docling
     container on the Compose network is reachable and an outside address is
     refused. No parsing service is deployed (Phase 1.3, held by C1).
-- **The RAG and retriever evaluation sets exist; no harness or record does.**
-  Ragas Phase 0 put a 52-case set at `evals/rag/sets/seed-policies.json` and a
-  record schema (`src/lib/ai/evals/rag-record.ts`), grounded on the three
-  seeded policies (the seed has no questionnaire answer-library rows). The
-  D-L4-3 benchmark is built and has no completed run
+- **The RAG and retriever evaluation sets exist; the retriever benchmark has
+  run, and no RAG harness or record does.** Ragas Phase 0 put a 52-case set at
+  `evals/rag/sets/seed-policies.json` and a record schema
+  (`src/lib/ai/evals/rag-record.ts`), grounded on the three seeded policies
+  (the seed has no questionnaire answer-library rows). The D-L4-3 benchmark
   (`.github/workflows/retriever-benchmark.yml`, dispatch-only;
-  `scripts/retriever-benchmark/`; a synthetic seed set at
-  `tests/fixtures/rag/retriever-seed-set.json`: 200 English questions and,
-  since 2026-11-13, a 50-case Bulgarian slice that translates 50 of them over
-  the same English corpus). Since D-L4-3's amendment (owner, 2026-11-13) it
-  compares small open models only, English-only and multilingual
-  (`multilingual-e5-small`, `bge-reranker-v2-m3`), and the margin applies on
-  the Bulgarian slice as well as overall. No Nemotron model is a candidate:
-  none runs on TEI's CPU backend (it refuses Llama- and Mistral-family
-  models), and Nemotron is optional Layer 5 work only.
+  `scripts/retriever-benchmark/`) ran on 2026-11-13 (run 43413063708, `main`
+  `32d3038`) over the synthetic seed set
+  `tests/fixtures/rag/retriever-seed-set.json` (`sha256:297f425a…3e92f`): 250
+  cases, 200 English and a 50-case Bulgarian slice that translates 50 of them
+  over the same English corpus (BG → EN). It compared small open models only,
+  English-only and multilingual, as D-L4-3's amendment of 2026-11-13 asks, with
+  the margin applied on the Bulgarian slice as well as overall. **D-L4-3 is
+  decided (owner, 2026-11-13): `intfloat/multilingual-e5-small` embeds and
+  `BAAI/bge-reranker-base` reranks** (recall@10 0.946 overall, 0.840 on the
+  Bulgarian slice; the figures are in the decision log). The 50 Bulgarian
+  translations are accepted unreviewed (owner, 2026-11-13). No Nemotron model
+  was a candidate: none runs on TEI's CPU backend (it refuses Llama- and
+  Mistral-family models), and Nemotron is optional Layer 5 work only.
 - **Observability is OTel + Sentry + the decision log**, and that is the
   decided end state for traces: OTel-only, no Langfuse service and no
   sub-processor (D-L4-5, 2026-11-11), with trace content capture off by default
@@ -445,7 +449,10 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   (§ Capacity budget). The embedding, rerank, parsing, NeMo and PII services the
   2026-11-11 wave prepared are each held by the capacity rule; the first one
   that crosses the line carries the resize (D-CAP-1), and pgvector adds no
-  container (it grows `postgres`).
+  container (it is absorbed into `postgres`'s existing 2,048 MiB limit, owner,
+  2026-11-13). With D-L4-3 decided the same day, the standing additions fit
+  the line within a few hundred MiB before C1b, so retrieval does not trigger
+  the resize.
 - **Model usage is LLM API keys.** `inflect-external` is registered from
   `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
   bounds what each provider receives.
@@ -756,9 +763,9 @@ that measures it.
 | --- | --- | --- | --- | --- | --- |
 | Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **9,472 MiB of limits** (C1, applied 2026-11-12): clamav 3,072, postgres 2,048, app 1,536, worker 1,536, redis 768, caddy 256, pgbouncer 128, watchtower 128. Measured peaks (C0, 2026-11-12) total about 3.6 GB, clamav 2.1 GB of it | app and postgres 1.5; clamav, worker, redis, caddy, pgbouncer 1.0 (clamav and worker at half CPU weight); watchtower 0.25 | C0 (`VM capacity` run 43209382354) and C1 (#5324, re-measured in run 43253038007). `app` and `worker` are provisional until C1b re-measures them across the nightly jobs (#5327) |
 | Overlays | `harness-scanner`, `harness-egress`, `legacy-mcp-proving` | on `main` | **1,024 MiB of limits** (C1): 512, 256 and 256; peaks 134, 85 and 67 MiB | 1.0 (half weight), 0.5, 0.5 | the same two runs. The OrangeHRM lab left the VM on 2026-11-12 |
-| Embeddings | `tei-embed` | Retriever 1 | 1 GB with a small open model (estimate) | 1.0 | TEI on CPU runs fp32 only. The candidates' weights are about 0.13 GB (`bge-small-en-v1.5`, `e5-small-v2`, 33M parameters) and 0.47 GB (`multilingual-e5-small`, 118M) at fp32, plus the engine. D-L4-3 as amended 2026-11-13 compares small open models only, so no Nemotron line remains in Layer 4 |
-| Reranking | `tei-rerank` | Retriever 2 | 1.5 to 3 GB with a small open model (estimates) | 1.0 | the candidates' weights are about 1.1 GB (`bge-reranker-base`, 278M parameters) and 2.3 GB (`bge-reranker-v2-m3`, 568M, multilingual) at fp32, plus the engine |
-| Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | +0.5 GB on `postgres`'s limit (estimate), measured with `postgres` in C0 | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector replaces all of them in one pull request, a SIGNIFICANT change, with its patch cadence open (D-L4-8). Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
+| Embeddings | `tei-embed` | Retriever 1 | 1 GB (estimate until measured) | 1.0 | `intfloat/multilingual-e5-small` (D-L4-3, decided 2026-11-13): 118M parameters, weights about 0.47 GB at fp32 (TEI on CPU runs fp32 only), plus the TEI engine. Per-pipeline memory was not measured by the benchmark; the retriever's Phase 0.5 measures it on the VM |
+| Reranking | `tei-rerank` | Retriever 2 | about 1.5 GB (estimate until measured) | 1.0 | `BAAI/bge-reranker-base` (D-L4-3, decided 2026-11-13): 278M parameters, weights about 1.1 GB at fp32, plus the TEI engine |
+| Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | 0 added: absorbed into `postgres`'s existing 2,048 MiB limit (owner, 2026-11-13). Measured `postgres` peaks are 406 MiB (C0) and 332 MiB (2026-11-13); with about 0.5 GB of vectors that is about 918 MiB, and 1.5 times it (the reset rule) about 1,377 MiB, still under the limit. Re-checked once vectors are loaded | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector replaces all of them in one pull request, a SIGNIFICANT change, with its patch cadence open (D-L4-8). Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
 | Parsing | a Docling-class parsing-only service (D-L4-4, 2026-11-11), `docling-serve-cpu`, **nightly batch only** (00:15–01:45 UTC, the window rule, owner 2026-11-13) | Parser 1 | 0 standing; 3 GB inside its window (estimate, until the parser's Phase 0 measures it) | 1.0 | layout and table models on CPU; the image is about 4.4 GB on disk. RAGFlow's full reference stack (server, search engine, MySQL, MinIO, Redis) is a second product and is not budgeted here |
 | PII detection | `presidio` | Presidio 1 | 0.7 GB (estimate) | 1.0 | the small spaCy pipelines the Presidio roadmap plans (`en_core_web_sm`; `xx_ent_wiki_sm` for Bulgarian, which has no spaCy pipeline of its own) plus the recognisers; the earlier 1.5 GB assumed a large pipeline (corrected 2026-11-13). The PII record's floors (D-L1-11) decide whether the small pipelines are enough |
 | Guard rails | `nemo-guardrails` | NeMo 1 | 1 GB (estimate) | 0.5 | LLM-free rails; LLM-backed rails call the external API, not this VM |
@@ -771,17 +778,38 @@ alone came to about 17 GB of estimated ceilings, above the 14.5 GB line before
 today's eight services were counted; two embedding-class models at fp32 made up
 most of it. The owner's decisions of 2026-11-11 (pgvector inside Postgres
 instead of a vector container, a small open retriever model unless recall says
-otherwise, a parsing-only service, traces OTel-only) bring the estimate to
-about 8.5 GB with the smallest open models, or up to about 12 GB with the largest
-small candidates. D-L4-3's amendment (2026-11-13) removed the Nemotron pair,
-which would have taken it to about 16 GB.
+otherwise, a parsing-only service, traces OTel-only) brought the estimate to
+about 8.5 GB with the smallest open models, or up to about 12 GB with the
+largest small candidates. D-L4-3's amendment (2026-11-13) removed the Nemotron
+pair, which would have taken it to about 16 GB.
 C0 and C1 answered the fit on 2026-11-12: today's stack is limited to
 10,496 MiB, leaving about 4 GB of the 14.5 GB line unallocated, so even 8.5 GB
-does not fit beside it. With the smaller pieces of 2026-11-13 (below) the
-standing additions are about 4.7 to 6.2 GB: embedding about 1, reranking 1.5
-to 3, PII 0.7, NeMo 1, pgvector 0.5, with the parser moved into a nightly
-window. That is still 0.7 to 2.2 GB over, before C1b tightens today's limits.
-Something has to give, and that is D-CAP-1:
+does not fit beside it.
+
+Recomputed after the decisions of 2026-11-13 (the smaller pieces below, D-L4-3
+decided on `multilingual-e5-small` + `bge-reranker-base`, pgvector absorbed into
+`postgres`'s existing limit, the parser in its nightly window):
+
+| | MiB |
+| --- | --- |
+| Today's limits (C1) | 10,496 |
+| Embedding, about 1 GB (estimate) | 1,024 |
+| Reranking, about 1.5 GB (estimate) | 1,536 |
+| PII detection, 0.7 GB (estimate) | 717 |
+| Guard rails, 1 GB (estimate) | 1,024 |
+| Vectors (absorbed by `postgres`) and the parser (in its window) | 0 |
+| **Total** | **14,797** |
+
+The standing additions come to about 4.2 GB (4,301 MiB). Against the 14.5 GB
+line (14,848 MiB) the total fits, with about 50 MiB to spare. On the stricter
+reading, the measured host memory minus 1.5 GB (16,003 − 1,536 = 14,467 MiB,
+`docs/implementation-notes/2026-11-12-capacity-c1.md`), it is about 330 MiB
+over. Either way it is within a few hundred MiB of the line before C1b, and
+C1b is what gives the margin: the harness scanner's limit goes from 512 to
+256 MiB (owner-approved), and `app` and `worker` are re-sized from the
+capacity recorder's history across the nightly jobs. Every addition above is
+an estimate until its phase measures it. **Retrieval does not trigger
+D-CAP-1's resize.** D-CAP-1's options, as decided:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
@@ -808,9 +836,11 @@ production VM.
   for a failure inside the window, never for "not the window", so a new upload
   is searchable the next morning rather than indexed from poor text. Counted
   under the window rule, not the standing line.
-- **The reranker is chosen by the D-L4-3 rule as amended**, which already keeps
-  the smaller English reranker whenever its recall on the Bulgarian slice holds
-  within the margin; nothing more is decided here.
+- **The reranker is `bge-reranker-base`** (D-L4-3, decided 2026-11-13), the
+  smaller of the two candidates: about 1.1 GB of weights at fp32 against about
+  2.3 GB for `bge-reranker-v2-m3`, which ranks better (MRR@10 0.936 against
+  0.863 with the same embedder) and is the alternative if the VM is ever
+  resized for another reason. That is not a commitment.
 - **Presidio uses the small spaCy pipelines** its roadmap plans; its capacity
   line is corrected from 1.5 to 0.7 GB. Its record's floors (D-L1-11) still
   decide whether they are enough.
@@ -860,7 +890,7 @@ completion.
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
 | cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | — | **declined** — no optimisation problem in the product, none at GPU scale (D-L3-3, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decline (met) | — |
 | Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1's seam built, off by default (`VectorRepository`, `VECTOR_STORE_BACKEND`), tested only against a mock: no image in the repository carries pgvector, no migration, no table. Phase 4 (Weaviate) only on a missed floor | 0 | 3 | — |
-| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the seed set done (0.4: 200 English cases and a 50-case Bulgarian slice, 2026-11-13); the D-L4-3 benchmark built, comparing small open models only since D-L4-3's amendment, with no completed run (0.3). Phase 1 seam built (1.2–1.5), 1.1 (`tei-embed`) held by C1; Phase 2.1 (`RerankProvider`) built. No service deployed, nothing calls the seam | — | 2, the D-L4-3 winner on CPU | D-L4-10's latency budgets |
+| Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the seed set done (0.4: 200 English cases and a 50-case Bulgarian slice, 2026-11-13); the D-L4-3 benchmark run 2026-11-13 (0.3, run 43413063708) and D-L4-3 decided the same day: `multilingual-e5-small` + `bge-reranker-base`, the Bulgarian translations accepted unreviewed. Phase 1 seam built (1.2–1.5), 1.1 (`tei-embed`) held by C1; Phase 2.1 (`RerankProvider`) built. No service deployed, nothing calls the seam | — | 2, `multilingual-e5-small` + `bge-reranker-base` on CPU | D-L4-10's latency budgets |
 | Document parsing (Docling-class; RAGFlow measured) | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | Phase 0 decided (D-L4-4), its fidelity set and measurements (0.1–0.5) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.7: `DocumentParser`, a docling-serve client, a paragraph stub default); 1.3 (the Compose service, held by C1), 1.5 and 1.6 open | 0 | 3 | — |
 | Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | — | **complete** — OTel-only (D-L4-5, 2026-11-11); content capture off by default (D-L4-6) ([note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's OTel-only decision (met) | — |
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
@@ -897,7 +927,7 @@ timeline
            : cuOpt 0 and SWE-bench 0, declined, done
            : Capacity C0-C1, measure the VM and limit every container
   section Knowledge
-    Wave 1 : Retriever 0-2, the D-L4-3 winner on CPU, seam built, benchmark not run
+    Wave 1 : Retriever 0-2, models chosen (D-L4-3, 2026-11-13), seam built
            : Vector store 0-3, pgvector, then search_knowledge, 0 done, seam built
            : Document parsing 0-3, Docling seam and fidelity eval, 0 decided, seam built
            : Ragas 0-3, the record opens the gate, 0 done
@@ -939,7 +969,7 @@ finished), blue ones have not started.
 ```mermaid
 flowchart LR
   F5["W0 · close F5<br/>input scan, done"]:::done
-  RT1["W1 · Retriever 0-2<br/>D-L4-3 winner on CPU"]:::partial
+  RT1["W1 · Retriever 0-2<br/>multilingual-e5-small<br/>+ bge-reranker-base on CPU"]:::partial
   WV2["W1 · Vector store 0-2<br/>pgvector + index"]:::partial
   RF2["W1 · Document parsing 0-3<br/>Docling-class"]:::partial
   RA2["W1 · Ragas 0-2"]:::partial
@@ -1084,7 +1114,7 @@ D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 | D-L3-3 | An optimisation problem at GPU scale exists | cuopt | **decided 2026-11-11** (owner): no; a CPU seam only if a feature wants one |
 | D-L4-1 | pgvector-first or Weaviate-first | weaviate | **decided 2026-11-11** (owner): **pgvector first**, in the existing Postgres under RLS; Weaviate only if a measured recall or latency floor is not met |
 | D-L4-2 | Vectors-only rule (no chunk text outside Postgres) | weaviate | **decided 2026-11-11** (owner): adopt |
-| D-L4-3 | Retriever models in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | **decided 2026-11-11, amended 2026-11-13** (owner). As decided: benchmark Nemotron 1B embed and rerank against a small open multilingual model on CPU (open weights on an open engine, never the NIM container); keep the smaller unless recall@10 drops by more than the agreed margin (D-L4-10); the GPU arm is optional Layer 5. **Amended:** Nemotron is not a Layer 4 candidate (no CPU engine the deployment has serves it, a 1B model costs about ten times a small one's memory, and small per-tenant corpora with a reranker rarely need it); it stays only in the retriever's optional Layer 5 Phase 3. Layer 4 compares small open models, English-only and multilingual, and keeps the smallest within the margin both overall and on the seed set's Bulgarian slice, because the product serves Bulgarian. The benchmark's small candidates had been English-only, against this decision's own "multilingual"; the amendment's pull request corrected them and added the Bulgarian slice |
+| D-L4-3 | Retriever models in the deployment; the GPU arm is optional Layer 5 | nemotron-retriever | **decided 2026-11-11, amended and decided 2026-11-13** (owner). **Decided 2026-11-13: embedder `intfloat/multilingual-e5-small`, reranker `BAAI/bge-reranker-base`.** Retriever benchmark run 43413063708 on `main` `32d3038`, seed set `sha256:297f425a247bb6f6800528187765f404fee8e9f879c41f2727897fe11573e92f` (250 cases, 50 Bulgarian, BG → EN), figures recomputed from each record's raw answers. Recall@10 overall / Bulgarian, MRR@10: `multilingual-e5-small` + `bge-reranker-v2-m3` 0.960 / 0.880, 0.936 (the best); + `bge-reranker-base` 0.946 / 0.840, 0.863 (0.014 and 0.040 behind, within the 0.05 margin, and smaller); alone 0.899 / 0.733, 0.774 (0.061 behind, outside it). Every English-only pipeline scored 0.080 or less on the Bulgarian slice. The owner accepts the lower first-place ranking as the price of not resizing; `bge-reranker-v2-m3` is the better-ranking alternative if the VM is ever resized for another reason, not a commitment. The 50 Bulgarian translations are accepted unreviewed. As decided: benchmark Nemotron 1B embed and rerank against a small open multilingual model on CPU (open weights on an open engine, never the NIM container); keep the smaller unless recall@10 drops by more than the agreed margin (D-L4-10); the GPU arm is optional Layer 5. **Amended:** Nemotron is not a Layer 4 candidate (no CPU engine the deployment has serves it, a 1B model costs about ten times a small one's memory, and small per-tenant corpora with a reranker rarely need it); it stays only in the retriever's optional Layer 5 Phase 3. Layer 4 compares small open models, English-only and multilingual, and keeps the smallest within the margin both overall and on the seed set's Bulgarian slice, because the product serves Bulgarian. The benchmark's small candidates had been English-only, against this decision's own "multilingual"; the amendment's pull request corrected them and added the Bulgarian slice |
 | D-L4-4 | Parser backend: RAGFlow slim or a parsing-only service | ragflow | **decided 2026-11-11** (owner): a Docling-class parsing-only service; RAGFlow measured, adopted only if Docling fails the fidelity eval |
 | D-L4-5 | Langfuse hosting: self-host / Cloud EU / OTel-only | langfuse | **decided 2026-11-11** (owner): **OTel-only for now**; no new service and no sub-processor |
 | D-L4-6 | Trace content capture off by default; three conditions to turn on | langfuse | **decided 2026-11-11** (owner): adopt |
@@ -1095,7 +1125,7 @@ D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
-| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule, Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b |
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule (`bge-reranker-base`, decided 2026-11-13), Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
 | D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |

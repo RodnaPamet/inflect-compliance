@@ -20,7 +20,7 @@ inflect · ai architecture · nemotron retriever · roadmap v1 · 2026-10-29
 | Wave | 1 for the CPU embedding and rerank arms (Phases 0–2, zero-GPU). The GPU arm (Phase 3) is optional Layer 5 work, after every other roadmap is complete |
 | Depends on | nothing for Phases 0–2; Layer 5 ([`modal-inference.md`](./modal-inference.md)), optional and last, for Phase 3 |
 | Unblocks | [`weaviate.md`](./weaviate.md) Phase 2 (nothing to index without a vector), [`ragas.md`](./ragas.md) |
-| Owner decisions | **D-L4-3** (**decided 2026-11-11, amended 2026-11-13**, owner: Layer 4 compares small open models only, English and multilingual, on CPU, and keeps the smallest unless recall@10 drops by more than the margin overall or on the Bulgarian slice; Nemotron is not a Layer 4 candidate and stays only in Phase 3, optional Layer 5; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last), **D-L4-10** (decided 2026-11-12: the margin is 0.05 absolute recall@10; the latency budgets are open) |
+| Owner decisions | **D-L4-3** (**decided 2026-11-11, amended and decided 2026-11-13**, owner: the pipeline is `intfloat/multilingual-e5-small` + `BAAI/bge-reranker-base`, chosen by the benchmark of 2026-11-13; the rule: Layer 4 compares small open models only, English and multilingual, on CPU, and keeps the smallest unless recall@10 drops by more than the margin overall or on the Bulgarian slice; Nemotron is not a Layer 4 candidate and stays only in Phase 3, optional Layer 5; open weights on an open engine, never the NIM container), **D-L4-1** (**decided 2026-11-11**, owner: pgvector first, in the existing Postgres under RLS), **D-L5-1** (decided 2026-10-31: no self-hosting now; Layer 5 optional and last), **D-L4-10** (decided 2026-11-12: the margin is 0.05 absolute recall@10; the latency budgets are open) |
 | Complete at | Phase 2: embeddings and rerank on CPU, in the deployment. Phase 3 is optional Layer 5 work |
 
 ## At a glance
@@ -69,6 +69,16 @@ flowchart LR
   `AI_RERANK_LOCAL_*` unset — every deployment today — the factory refuses
   by name and constructs nothing. Nothing calls it yet; see
   [`weaviate.md`](./weaviate.md) § Current state for the store.
+- **The models are chosen (D-L4-3, owner, 2026-11-13): `intfloat/multilingual-e5-small`
+  embeds and `BAAI/bge-reranker-base` reranks.** The retriever benchmark
+  (`.github/workflows/retriever-benchmark.yml`, run 43413063708 on `main`
+  `32d3038`) scored nine pipelines on the seed set
+  (`sha256:297f425a247bb6f6800528187765f404fee8e9f879c41f2727897fe11573e92f`,
+  250 cases, 50 of them Bulgarian, BG → EN); its summary job recomputed every
+  figure from each record's raw answers. The configuration that would point
+  the seam at them (`AI_EMBED_LOCAL_MODEL`, `AI_RERANK_LOCAL_MODEL`) is unset
+  until a service is deployed (1.1). The 50 Bulgarian translations are
+  accepted unreviewed (owner, 2026-11-13).
 - **The model-provider seam already routes by residency, and that is the seam
   an embedding provider must copy.** `src/lib/agentic/flue/model-selection.ts`
   owns the decision: provider ids name a residency (`inflect-external`,
@@ -100,6 +110,8 @@ recall@10 is lower by more than the margin (0.05, D-L4-10), overall or on the
 Bulgarian slice**. The candidates are `bge-small-en-v1.5`, `e5-small-v2` and
 `multilingual-e5-small` for embedding, and `bge-reranker-base` and
 `bge-reranker-v2-m3` for reranking (`scripts/retriever-benchmark/candidates.ts`).
+**The rule chose `multilingual-e5-small` + `bge-reranker-base` (2026-11-13)**;
+the figures are under Phase 0, 0.3.
 
 The amendment (owner, 2026-11-13) took the Nemotron 1B models out of Layer 4.
 They run on no CPU engine the deployment has, a 1B model costs about ten times
@@ -159,7 +171,7 @@ the measurements are still to run.
       so no current Nemotron retriever model runs on TEI's CPU build without an
       ONNX export (untested); the small multilingual candidates (E5, Arctic
       Embed v2 / GTE, BGE-M3, BGE and GTE rerankers) run on it natively, fp32.
-- [ ] 0.3 Quality (Q1, engine-independent, in CI): recall@10 for each
+- [x] 0.3 Quality (Q1, engine-independent, in CI): recall@10 for each
       embedder alone, then each reranker on a fixed top-50 pool, against the
       seed set, overall and on its Bulgarian slice
       (`.github/workflows/retriever-benchmark.yml`, dispatch-only). The rule is
@@ -168,16 +180,50 @@ the measurements are still to run.
       model that falls behind on Bulgarian questions is not kept. On 50
       Bulgarian cases that margin is about one standard error; growing the
       slice is open under D-L4-10.
+      **Done 2026-11-13** (run 43413063708 on `main` `32d3038`, seed set
+      `sha256:297f425a…3e92f`, figures recomputed from each record's raw
+      answers by the workflow's summary job). Recall@10 / recall@10 (bg) /
+      MRR@10 / embed p50 / embed p95 ms:
+
+      | Pipeline | R@10 | R@10 (bg) | MRR@10 | p50 | p95 |
+      | --- | --- | --- | --- | --- | --- |
+      | `bge-small-en-v1.5` + `bge-reranker-base` | 0.801 | 0.080 | 0.739 | 20.4 | 34.7 |
+      | `bge-small-en-v1.5` + `bge-reranker-v2-m3` | 0.808 | 0.080 | 0.787 | 20.4 | 34.7 |
+      | `bge-small-en-v1.5` alone | 0.781 | 0.060 | 0.686 | 20.4 | 34.7 |
+      | `e5-small-v2` + `bge-reranker-base` | 0.797 | 0.060 | 0.742 | 7.6 | 17.1 |
+      | `e5-small-v2` + `bge-reranker-v2-m3` | 0.804 | 0.060 | 0.783 | 7.6 | 17.1 |
+      | `e5-small-v2` alone | 0.762 | 0.000 | 0.680 | 7.6 | 17.1 |
+      | `multilingual-e5-small` + `bge-reranker-base` | 0.946 | 0.840 | 0.863 | 9.6 | 13.5 |
+      | `multilingual-e5-small` + `bge-reranker-v2-m3` | 0.960 | 0.880 | 0.936 | 9.6 | 13.5 |
+      | `multilingual-e5-small` alone | 0.899 | 0.733 | 0.774 | 9.6 | 13.5 |
+
+      The summary's per-reranker-group rule chose `multilingual-e5-small` in
+      every group. Across all nine pipelines, D-L4-3's rule gives: the best is
+      `multilingual-e5-small` + `bge-reranker-v2-m3` (0.960 / 0.880);
+      `multilingual-e5-small` + `bge-reranker-base` is within the margin
+      (0.014 behind overall, 0.040 on the Bulgarian slice) and smaller;
+      `multilingual-e5-small` alone is outside it (0.061 behind overall). The
+      English-only embedders reach 0.080 at most on the Bulgarian slice.
+      **Decided (owner, 2026-11-13): `multilingual-e5-small` +
+      `bge-reranker-base`**, accepting the lower first-place ranking (MRR@10
+      0.863 against 0.936) as the price of not resizing the VM.
+      `bge-reranker-v2-m3` is the better-ranking alternative if the VM is ever
+      resized for another reason; that is not a commitment. The latencies are
+      the CI runner's, not the VM's. Reranker latency was in the summary's
+      columns but was not captured with these figures, and the benchmark
+      measured no per-pipeline memory: the capacity lines stay estimates from
+      the weights until 0.5.
 - [x] 0.4 The seed set, `tests/fixtures/rag/retriever-seed-set.json` with a
       content hash: 200 English questions over 372 chunks of the seed's policy
       text, and since 2026-11-13 a 50-case Bulgarian slice. Each Bulgarian case
       translates one English case and keeps its labels, so the slice measures
       Bulgarian questions over English text (BG → EN). The planned BG → BG
       cases are not possible while the seed carries no Bulgarian policy text.
-      The translations are the assistant's and are for review by a Bulgarian
-      speaker.
-- [ ] 0.5 CPU latency and memory (Q2) on the production VM for the candidates
-      Q1 keeps, through a dispatch-only
+      The translations are the assistant's; the owner accepted them
+      unreviewed on 2026-11-13, and the fixture is unchanged (editing it
+      changes its content hash).
+- [ ] 0.5 CPU latency and memory (Q2) on the production VM for the chosen
+      pipeline (`multilingual-e5-small` + `bge-reranker-base`), through a dispatch-only
       workflow modelled on `VM capacity`: a temporary TEI container at 1.0 CPU,
       p50/p95 for a 20-token query, 32 × 512-token passages and a 1 × 50
       rerank, plus `memory.peak` and the host CPU's flags. Proposed budgets
@@ -185,9 +231,10 @@ the measurements are still to run.
 - [ ] 0.6 Dependency governance: TEI is a runtime image (digest), the model
       weights are a volume (`deploy/` volume + a checksum of the snapshot
       recorded in the note); no Python enters the app image.
-- [ ] 0.7 The vector's shape suits pgvector (D-L4-1): `vector` indexes up to
+- [x] 0.7 The vector's shape suits pgvector (D-L4-1): `vector` indexes up to
       2,000 dimensions and `halfvec` up to 4,000, so a 2048-dimension winner
-      needs `halfvec`; every small candidate (384–1024) fits `vector`.
+      needs `halfvec`; every small candidate (384–1024) fits `vector`. The
+      chosen `multilingual-e5-small` emits 384 dimensions, so it is `vector`.
 
 **Prompt.**
 ```text
@@ -226,6 +273,8 @@ evaluation set rather than promising one).
 **Done when.** The measurements are on `main` with numbers and the D-L4-3 rule
 has picked the embedder and the reranker. D-L4-3 was initialled on 2026-11-11
 and amended on 2026-11-13; the margin was agreed under D-L4-10 on 2026-11-12.
+The pick is made (2026-11-13, 0.3); the VM measurements (0.5), the licence
+read (0.1b) and the dependency record (0.6) remain.
 
 ### Phase 1 — The embedding seam, CPU-local
 
@@ -254,7 +303,8 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
       (optional; absent = no local embedding provider constructed), plus
       `AI_EMBED_LOCAL_DIMENSIONS` (required with them) and
       `AI_EMBED_LOCAL_QUERY_PREFIX` / `_PASSAGE_PREFIX` (absent = no prefix).
-      The model is configuration until the Phase 0 benchmark (D-L4-3).
+      The model is configuration; D-L4-3 chose `intfloat/multilingual-e5-small`
+      (2026-11-13), set here when 1.1 deploys it.
 - [x] 1.3 `src/lib/ai/embeddings/`: `types.ts` (`EmbeddingProvider.embed(texts,
       { inputType: 'query' | 'passage' })` returning vectors + `model` +
       `dimensions`), `select.ts` (residency routing copied from
