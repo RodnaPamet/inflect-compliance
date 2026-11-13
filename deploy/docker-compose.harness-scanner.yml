@@ -105,10 +105,12 @@
 #
 services:
   harness-scanner:
-    # `Scanner image` run 42541352551, 2026-11-09, commit f8d02af1a (#5004
-    # parts A-C: scanner 0.12.0, with its egress proxy): smoke-tested, then
-    # Trivy-gated at CRITICAL,HIGH with nothing found.
-    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:507a6af39f0824ff731b65add0dea8a3e0a2da39dac505dd6be70e8bdf6171e6
+    # `Scanner image` run 43398571764, 2026-11-13, commit b25747dff (scanner
+    # 0.13.0, contract /4: #5414's refusal of a secret-shaped member name,
+    # #5471's provider-SDK agents in the `code` source, #5489's scoped
+    # reconcile): smoke-tested, then Trivy-gated at CRITICAL,HIGH with
+    # nothing found.
+    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:e9059418045046ce507c56b68e818de1e59c945176c21abfdcb9b993a4598924
     restart: unless-stopped
     command: ["schedule", "--config", "/etc/agent-harness-scanner/config.json"]
     # Capacity budget C1 (2026-11-12): peak 155 MiB; 1.5x rounded up, with
@@ -151,7 +153,7 @@ services:
   harness-egress:
     # The SAME digest as the scanner: the proxy is reviewed code from this
     # repository, not a third-party image. `vm.sh` refuses two digests.
-    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:507a6af39f0824ff731b65add0dea8a3e0a2da39dac505dd6be70e8bdf6171e6
+    image: ghcr.io/rodnapamet/agent-harness-scanner@sha256:e9059418045046ce507c56b68e818de1e59c945176c21abfdcb9b993a4598924
     restart: unless-stopped
     entrypoint: ["node", "--import", "tsx", "/app/packages/agent-harness-scanner/src/egress-proxy.ts"]
     command: []
