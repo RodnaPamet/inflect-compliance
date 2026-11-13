@@ -138,6 +138,12 @@ describe('Audit Guardrails — No Unaudited Raw SQL to Domain Tables', () => {
         const ALLOWED_FILES = [
             // The audit middleware itself uses $executeRawUnsafe for AuditLog INSERTs
             path.resolve(SRC_DIR, 'lib', 'prisma.ts'),
+            // #5071: the container-start recompute rewrites only the DERIVED
+            // email lookup hash (`emailHash` and its siblings) from the row's
+            // own plaintext, which it does not change. Raw SQL so the PII
+            // middleware cannot transform the value; not a domain change, and
+            // the script logs how many rows it rewrote.
+            path.resolve(SRC_DIR, 'lib', 'security', 'lookup-hash-recompute.ts'),
         ];
 
         const DOMAIN_TABLES = [
