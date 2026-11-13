@@ -396,50 +396,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  on REJECTED rows. Both contain narrative that may name
     //  internal users / systems, so they're encrypted at rest.
     ControlException: ['justification', 'rejectionReason'],
-    // GDPR data-subject requests. Both columns are narrative text ABOUT AN
-    // IDENTIFIED PERSON who has exercised a privacy right — why their request
-    // was refused, and what was done to fulfil it. That is the most sensitive
-    // free text the platform holds by subject matter, and it was shipping in
-    // plaintext until 20260822010000.
-    //
-    // Nothing was bypassed. The model is deliberately USER-scoped and carries
-    // no `tenantId`, so it was outside `TENANT_SCOPED_MODELS` — and the
-    // coverage guard scans tenant-scoped columns only. Listing the model for
-    // RLS put these two into that guard's denominator for the first time, and
-    // it failed immediately. One absence hid the table from two guards.
-    //
-    // The D.2 write-path requirement is met for both, but by TWO DIFFERENT
-    // mechanisms, and the distinction is the point of this comment.
-    //
-    //   `fulfilmentNotes`  — genuinely free text, sanitised via
-    //                        `sanitizeOptional` in `dsar-register.ts`.
-    //   `rejectionReason`  — written RAW at `dsar-register.ts:236`
-    //                        (`input.reason ?? null`) and NOT sanitised. What
-    //                        protects it is the allowlist at :204-212: the
-    //                        write is gated on `input.to === 'REJECTED'` and
-    //                        `requiresReason` is exactly that same condition,
-    //                        so the check always runs first and the column can
-    //                        only ever hold one of the three values in
-    //                        `DSAR_REJECTION_REASONS`. Sanitising a closed
-    //                        vocabulary would be a no-op.
-    //
-    // Written out because the protection is easy to lose by accident. Add an
-    // `other: please specify` reason, or widen the vocabulary to free text, and
-    // the allowlist stops protecting anything — while the rich-text sanitiser
-    // ratchet stays GREEN, because it is file-level and `dsar-register.ts` does
-    // sanitise the sibling column.
-    //
-    // `tests/unit/dsar-rejection-reason-allowlist.test.ts` is what fails
-    // instead: it pins every allowed value to a fixed token shape, and asserts
-    // both that a free-text reason is refused and that each allowlisted one
-    // gets through. Widening the vocabulary breaks the first; deleting the
-    // check breaks the other two.
-    //
-    // Neither column is used in a `contains` / `startsWith` / `orderBy`
-    // anywhere in `src/`, so encryption is safe.
-    // No backfill migration: production holds zero DataSubjectRequest rows
-    // (measured, not assumed).
-    DataSubjectRequest: ['rejectionReason', 'fulfilmentNotes'],
+    // DataSubjectRequest is deliberately NOT here (#5107, owner decision
+    // 2026-11-13). The model is user-scoped with no `tenantId`, and the
+    // middleware encrypts under the ACTING request's tenant DEK: a note written
+    // from tenant A could not be read from tenant B, and the tenant-DEK
+    // rotation sweep, which walks tenant-scoped rows, skipped the model and
+    // then cleared the previous DEK, leaving its v2 ciphertexts unreadable for
+    // good. Both columns are sanitised on write (`dsar-register.ts`), and
+    // `rejectionReason` is a closed vocabulary. Values written while it was
+    // listed are decrypted at container start
+    // (`scripts/decrypt-legacy-dsr-fields.ts`).
     // EU AI Act registry — a system's purpose + use-context can describe
     // sensitive business processes / data flows. Sanitised on write, encrypted
     // at rest. NOT searched (no contains/orderBy), so encryption is safe.

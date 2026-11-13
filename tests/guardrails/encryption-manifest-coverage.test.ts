@@ -71,6 +71,14 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'DataSubjectRequest.rejectionReason':
+        'A closed vocabulary (DSAR_REJECTION_REASONS), pinned by dsar-rejection-reason-allowlist. ' +
+        'Removed from the manifest by owner decision (#5107): the model has no tenantId, so a tenant ' +
+        'DEK cannot be the right key for it, and the DEK rotation sweep left its ciphertexts unreadable.',
+    'DataSubjectRequest.fulfilmentNotes':
+        'Sanitised on write (dsar-register.ts). Removed from the manifest by owner decision (#5107): ' +
+        'a user-scoped row encrypted under the acting tenant DEK could not be read from another ' +
+        'tenant, and the DEK rotation sweep skipped the model, then cleared the previous DEK.',
     'HostConsumerMessage.bodyDigest':
         'A SHA-256 of the request body, and the body itself IS encrypted ' +
         '(#3861). A digest discloses nothing about its preimage, and it has to ' +
