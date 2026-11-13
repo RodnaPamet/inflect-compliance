@@ -133,13 +133,12 @@ describe('3. the content hash', () => {
 
     it('every existing form is byte for byte what it was', () => {
         // No flow, no sub-agents: the bare text's hash.
-        expect(profileContentHash(INSTRUCTIONS, null)).toBe(createHash('sha256').update(INSTRUCTIONS, 'utf8').digest('hex'));
+        expect(profileContentHash(INSTRUCTIONS, null, null)).toBe(createHash('sha256').update(INSTRUCTIONS, 'utf8').digest('hex'));
         expect(profileContentHash(INSTRUCTIONS, null, null)).toBe(profileInstructionsHash(INSTRUCTIONS));
         // A flow, no sub-agents: domain 1, exactly as before Step 2e.
         const flowHash = createHash('sha256')
             .update(JSON.stringify(['inflect-agent-profile-content/1', INSTRUCTIONS, FLOW]), 'utf8')
             .digest('hex');
-        expect(profileContentHash(INSTRUCTIONS, FLOW)).toBe(flowHash);
         expect(profileContentHash(INSTRUCTIONS, FLOW, null)).toBe(flowHash);
     });
 
@@ -153,7 +152,7 @@ describe('3. the content hash', () => {
                 .digest('hex'),
         );
         expect(profileContentHash(INSTRUCTIONS, null, other)).not.toBe(h);
-        expect(h).not.toBe(profileContentHash(INSTRUCTIONS, null));
+        expect(h).not.toBe(profileContentHash(INSTRUCTIONS, null, null));
     });
 });
 

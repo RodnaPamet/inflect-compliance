@@ -282,7 +282,10 @@ const SUBAGENT_CONTENT_HASH_DOMAIN = 'inflect-agent-profile-content/2';
  *     approved version, every run pin and every hash an approver has named
  *     still verifies. Changing one sub-agent's text changes the hash.
  */
-export function profileContentHash(instructions: string, flowJson: string | null, subagentsJson: string | null = null): string {
+// `subagentsJson` is REQUIRED, never defaulted: a caller that left it out
+// would hash a sub-agent version without its sub-agents, so the third argument
+// is a compile error to forget rather than a silent mismatch to debug.
+export function profileContentHash(instructions: string, flowJson: string | null, subagentsJson: string | null): string {
     if (subagentsJson !== null) {
         return createHash('sha256')
             .update(JSON.stringify([SUBAGENT_CONTENT_HASH_DOMAIN, instructions, flowJson, subagentsJson]), 'utf8')
