@@ -989,8 +989,14 @@ executorRegistry.register('agent-run-execute', async (payload) => {
     // they are right to: a dispatch site that never mentions the tenant is
     // how a job comes to act across tenants without any single line looking
     // wrong.
-    const { tenantId, runId } = payload;
-    const r = await runAgentRunExecute({ tenantId, runId });
+    //
+    // `clockBase` is named for the same reason (#5534): a person's resume puts
+    // its clock base in the payload, and an executor that kept naming two
+    // fields would silently measure every resumed segment from the run's start.
+    // `NamesEveryField` makes leaving it out a compile error.
+    const { tenantId, runId, clockBase } = payload;
+    const forwarded: NamesEveryField<JobPayload<'agent-run-execute'>> = { tenantId, runId, clockBase };
+    const r = await runAgentRunExecute(forwarded);
     return makeResult(
         'agent-run-execute',
         startedAt,
