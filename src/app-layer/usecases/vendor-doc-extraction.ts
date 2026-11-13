@@ -24,6 +24,7 @@ import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-laye
 import { getFileRecordText } from '@/app-layer/services/vendor-doc-text';
 import { controlEvidencesQuestion } from '@/app-layer/services/soc2-question-map';
 import type { FindingSeverity } from '@prisma/client';
+import { answerPointsFor } from './vendor-assessment-response';
 
 /** Finding provenance tag for materialised SOC 2 exceptions. */
 export const VENDOR_DOC_EXCEPTION_KIND = 'VENDOR_DOC_EXCEPTION';
@@ -196,17 +197,45 @@ export async function extractVendorDocument(
     // ── Exceptions → PROPOSED vendor findings (opt-in, idempotent). ──
     let findingsProposed = 0;
     if (input.materializeExceptions && e.exceptions.length > 0) {
-        const existing = await runInTenantContext(ctx, async (db) =>
-            db.finding.findMany({
-                where: { tenantId: ctx.tenantId, sourceKind: VENDOR_DOC_EXCEPTION_KIND, deletedAt: null },
+        // Keyed on the DOCUMENT and the control, so a re-run over the same
+        // report finds the findings it already raised (#5157). The key used to
+        // embed this run's brand-new extraction id, which no earlier finding
+        // could carry, so every run duplicated every exception. Findings raised
+        // under that old key (`<extractionId>:<control>`) for an earlier
+        // extraction of this document still count as seen.
+        const { existing, priorExtractionIds } = await runInTenantContext(ctx, async (db) => {
+            const prior = await db.vendorDocExtraction.findMany({
+                where: { tenantId: ctx.tenantId, documentId: document.id },
+                select: { id: true },
+                take: 500,
+            });
+            const prefixes = [document.id, ...prior.map((x) => x.id)];
+            const rows = await db.finding.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    sourceKind: VENDOR_DOC_EXCEPTION_KIND,
+                    deletedAt: null,
+                    OR: prefixes.map((p) => ({ sourceRef: { startsWith: `${p}:` } })),
+                },
                 select: { sourceRef: true },
                 take: 2000,
-            }),
+            });
+            return { existing: rows, priorExtractionIds: prior.map((x) => x.id) };
+        });
+        const controlOf = (ref: string): string | null => {
+            for (const prefix of [document.id, ...priorExtractionIds]) {
+                if (ref.startsWith(`${prefix}:`)) return ref.slice(prefix.length + 1);
+            }
+            return null;
+        };
+        const seenControls = new Set(
+            existing.map((f) => (f.sourceRef ? controlOf(f.sourceRef) : null)).filter((c): c is string => c !== null),
         );
-        const seen = new Set(existing.map((f) => f.sourceRef).filter(Boolean));
         for (const exc of e.exceptions.slice(0, 100)) {
-            const sourceRef = `${extractionRow.id}:${exc.control}`;
-            if (seen.has(sourceRef)) continue;
+            if (seenControls.has(exc.control)) continue;
+            // Two exceptions on one control in one report are one finding.
+            seenControls.add(exc.control);
+            const sourceRef = `${document.id}:${exc.control}`;
             await createFinding(ctx, {
                 severity: 'MEDIUM' as FindingSeverity,
                 type: 'OBSERVATION',
@@ -271,23 +300,55 @@ export async function approveProposal(
                 'This assessment has already been reviewed, so its answers can no longer change. Proposed answers cannot be approved onto it.',
             );
         }
+        // Claimed while still PENDING, in this transaction (#5156). A rejected
+        // or already-accepted proposal could be approved again by anyone
+        // holding its id; a refused approval now rolls the claim back.
+        const claimed = await db.vendorAnswerProposal.updateMany({
+            where: { id: proposalId, tenantId: ctx.tenantId, status: 'PENDING' },
+            data: { status: 'ACCEPTED' },
+        });
+        if (claimed.count === 0) {
+            throw conflict('This proposal has already been accepted or rejected.');
+        }
+
+        // The question the answer is for, so the answer is written in its
+        // vocabulary and scored by its own rule, as a vendor's submission is.
+        const question = proposal.templateQuestionId
+            ? await db.vendorAssessmentTemplateQuestion.findFirst({
+                  where: { id: proposal.templateQuestionId, tenantId: ctx.tenantId },
+                  select: { answerType: true, weight: true, optionsJson: true, riskPointsJson: true },
+              })
+            : await db.questionnaireQuestion.findFirst({
+                  where: { id: proposal.questionId },
+                  select: { answerType: true, weight: true, optionsJson: true, riskPointsJson: true },
+              });
+        if (!question) throw notFound('The question this proposal answers no longer exists');
+        const answerJson = answerInQuestionVocabulary(
+            question,
+            (editedAnswerJson ?? proposal.proposedAnswerJson) as unknown,
+        );
+        const computedPoints = answerPointsFor(question, answerJson);
+
         const answer = await db.vendorAssessmentAnswer.upsert({
             where: { assessmentId_questionId: { assessmentId: proposal.assessmentId, questionId: proposal.questionId } },
             create: {
                 tenantId: ctx.tenantId,
                 assessmentId: proposal.assessmentId,
                 questionId: proposal.questionId,
-                answerJson: (editedAnswerJson ?? proposal.proposedAnswerJson) as object,
+                templateQuestionId: proposal.templateQuestionId ?? undefined,
+                answerJson: answerJson as object,
+                computedPoints,
                 reviewerNotes: `Pre-filled from ${proposal.sourceCitation}`,
             },
             update: {
-                answerJson: (editedAnswerJson ?? proposal.proposedAnswerJson) as object,
+                answerJson: answerJson as object,
+                computedPoints,
                 reviewerNotes: `Pre-filled from ${proposal.sourceCitation}`,
             },
         });
         await db.vendorAnswerProposal.update({
             where: { id: proposalId },
-            data: { status: 'ACCEPTED', createdAnswerId: answer.id },
+            data: { createdAnswerId: answer.id },
         });
         await logEvent(db, ctx, {
             action: 'VENDOR_PROPOSAL_APPROVED',
@@ -298,6 +359,48 @@ export async function approveProposal(
         });
         return { answerId: answer.id };
     });
+}
+
+/**
+ * The proposed answer, in the question's own vocabulary (#5156).
+ *
+ * Proposals say `YES` or `PARTIAL`; a G-3 yes/no answer is `yes` or `no`, and
+ * `PARTIAL` is in no vocabulary. A yes/no value is folded to lowercase; any
+ * other value a yes/no or select question does not offer is refused, so the
+ * reviewer edits it rather than storing an answer that scores nothing.
+ */
+function answerInQuestionVocabulary(
+    question: { answerType: string; optionsJson: unknown },
+    answerJson: unknown,
+): unknown {
+    const obj = answerJson && typeof answerJson === 'object' && !Array.isArray(answerJson)
+        ? (answerJson as Record<string, unknown>)
+        : { value: answerJson };
+    const value = obj.value;
+    if (question.answerType === 'YES_NO') {
+        const folded = typeof value === 'string' ? value.trim().toLowerCase() : value === true ? 'yes' : value === false ? 'no' : null;
+        if (folded !== 'yes' && folded !== 'no') {
+            throw badRequest(
+                'PROPOSAL_VALUE_NOT_IN_VOCABULARY',
+                'This question takes yes or no. Edit the proposed answer before approving it.',
+            );
+        }
+        return { ...obj, value: folded };
+    }
+    if (question.answerType === 'SINGLE_SELECT') {
+        const offered = Array.isArray(question.optionsJson)
+            ? question.optionsJson
+                  .map((o) => (o && typeof o === 'object' ? (o as { value?: unknown }).value : undefined))
+                  .filter((v): v is string => typeof v === 'string')
+            : [];
+        if (typeof value !== 'string' || !offered.includes(value)) {
+            throw badRequest(
+                'PROPOSAL_VALUE_NOT_IN_VOCABULARY',
+                'This question takes one of its listed options. Edit the proposed answer before approving it.',
+            );
+        }
+    }
+    return obj;
 }
 
 /** Statuses after which an assessment's answers are the reviewed record. */

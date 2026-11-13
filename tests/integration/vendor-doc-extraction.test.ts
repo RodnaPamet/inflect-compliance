@@ -152,6 +152,7 @@ describeFn('vendor-doc extraction (integration)', () => {
             // than rejecting it, so the unguarded form is an unpredicated
             // DELETE — see the teardown note in ./db-helper.ts.
             if (tenantId) {
+                await prisma.finding.deleteMany({ where: { tenantId, sourceKind: 'VENDOR_DOC_EXCEPTION' } });
                 await prisma.vendorAnswerProposal.deleteMany({ where: { tenantId } });
                 await prisma.vendorDocExtraction.deleteMany({ where: { tenantId } });
                 await prisma.vendorAssessmentAnswer.deleteMany({ where: { tenantId } });
@@ -159,6 +160,31 @@ describeFn('vendor-doc extraction (integration)', () => {
         } catch {
             /* best-effort */
         }
+    });
+
+    it('re-extracting the same report raises each exception once, not once per run (#5157)', async () => {
+        const base = extractionWith([]);
+        if (!base.ok) throw new Error('fixture');
+        jest.mocked(extractDocument).mockResolvedValue({
+            ...base,
+            data: {
+                ...base.data,
+                exceptions: [
+                    { control: 'CC6.1', description: 'Two terminated users kept access for 40 days.' },
+                    { control: 'CC6.1', description: 'A second note on the same control.' },
+                    { control: 'CC7.2', description: 'Alerts were not reviewed for one week.' },
+                ],
+            },
+        });
+        const first = await extractVendorDocument(ctx, { documentId, text: 'SOC 2 Type II', materializeExceptions: true });
+        const second = await extractVendorDocument(ctx, { documentId, text: 'SOC 2 Type II', materializeExceptions: true });
+        expect(first.findingsProposed).toBe(2);
+        expect(second.findingsProposed).toBe(0);
+        const refs = await prisma.finding.findMany({
+            where: { tenantId, sourceKind: 'VENDOR_DOC_EXCEPTION', deletedAt: null },
+            select: { sourceRef: true },
+        });
+        expect(refs.map((r) => r.sourceRef).sort()).toEqual([`${documentId}:CC6.1`, `${documentId}:CC7.2`]);
     });
 
     it('extract persists an extraction and writes NO assessment answer (stub AI)', async () => {
@@ -234,6 +260,63 @@ describeFn('vendor-doc extraction (integration)', () => {
             expect((await prisma.vendorAnswerProposal.findFirst({ where: { id: proposal.id } }))!.status).toBe('PENDING');
         },
     );
+
+    describe('an approved proposal is a scored answer in the question\'s vocabulary (#5156)', () => {
+        async function proposalFor(questionRef: string, value: string, status = 'PENDING') {
+            const scoredAssessment = (
+                await prisma.vendorAssessment.create({
+                    data: { tenantId, vendorId, templateId: legacyTemplateId, requestedByUserId: userId },
+                })
+            ).id;
+            const extraction = await prisma.vendorDocExtraction.create({
+                data: { tenantId, vendorId, documentId, assessmentId: scoredAssessment, status: 'EXTRACTED', createdByUserId: userId },
+            });
+            const proposal = await prisma.vendorAnswerProposal.create({
+                data: {
+                    tenantId,
+                    extractionId: extraction.id,
+                    assessmentId: scoredAssessment,
+                    questionId: questionRef,
+                    proposedAnswerJson: { value },
+                    sourceCitation: 'SOC 2 CC6.1',
+                    status,
+                },
+            });
+            return { proposal, scoredAssessment };
+        }
+
+        it('scores the answer by the question\'s own points and stores lowercase yes/no', async () => {
+            const scored = await prisma.questionnaireQuestion.create({
+                data: {
+                    templateId: legacyTemplateId,
+                    section: 'Security',
+                    prompt: 'Are production changes reviewed?',
+                    answerType: 'YES_NO',
+                    riskPointsJson: { YES: 0, NO: 10 },
+                },
+            });
+            const { proposal } = await proposalFor(scored.id, 'NO');
+            const { answerId } = await approveProposal(ctx, proposal.id);
+            const answer = await prisma.vendorAssessmentAnswer.findFirst({ where: { id: answerId } });
+            expect(answer!.computedPoints).toBe(10);
+            expect(answer!.answerJson).toEqual({ value: 'no' });
+        });
+
+        it('refuses a value the question does not offer, until the reviewer edits it', async () => {
+            const { proposal, scoredAssessment } = await proposalFor(questionId, 'PARTIAL');
+            await expect(approveProposal(ctx, proposal.id)).rejects.toMatchObject({ status: 400 });
+            expect(await prisma.vendorAssessmentAnswer.count({ where: { tenantId, assessmentId: scoredAssessment } })).toBe(0);
+            expect((await prisma.vendorAnswerProposal.findFirst({ where: { id: proposal.id } }))!.status).toBe('PENDING');
+
+            await expect(approveProposal(ctx, proposal.id, { value: 'yes' })).resolves.toMatchObject({ answerId: expect.any(String) });
+        });
+
+        it.each(['REJECTED', 'ACCEPTED'])('refuses a %s proposal and writes nothing', async (status) => {
+            const { proposal, scoredAssessment } = await proposalFor(questionId, 'YES', status);
+            await expect(approveProposal(ctx, proposal.id)).rejects.toMatchObject({ status: 409 });
+            expect(await prisma.vendorAssessmentAnswer.count({ where: { tenantId, assessmentId: scoredAssessment } })).toBe(0);
+        });
+    });
 
     it('rejecting a proposal writes no answer', async () => {
         const extraction = await prisma.vendorDocExtraction.create({

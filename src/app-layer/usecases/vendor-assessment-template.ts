@@ -847,6 +847,22 @@ export async function reorderTemplate(
         if (!template) throw notFound('Template not found');
         assertEditable(template);
 
+        // Every section a question is moved INTO must belong to this template
+        // (#5155). The updates below scope the question by template, but its new
+        // `sectionId` was written as given, so a question could be moved into
+        // another template's section — a published one included.
+        const targetSectionIds = [
+            ...new Set(input.sections.flatMap((s) => (s.questions ?? []).map((q) => q.sectionId))),
+        ];
+        if (targetSectionIds.length > 0) {
+            const owned = await db.vendorAssessmentTemplateSection.count({
+                where: { id: { in: targetSectionIds }, tenantId: ctx.tenantId, templateId },
+            });
+            if (owned !== targetSectionIds.length) {
+                throw badRequest('A question can only be moved into a section of the same template.');
+            }
+        }
+
         // Apply section + question rewrites in a single sweep. Each
         // updateMany scopes to (id, tenantId, templateId) so a
         // tampered sectionId / questionId in the input cannot mutate
