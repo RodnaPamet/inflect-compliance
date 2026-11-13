@@ -14,6 +14,13 @@ engine, and the harness turned two product problems into two crashes:
   None, and task 4's scorer subscripted it: ``TypeError`` interrupted the pass
   after 3 of 8 samples (record: FACTS_INCOMPLETE).
 
+The Tool Runner now starts its runs as the AUTOMATION trigger, through the
+profile's seeded rule (owner decision, 2026-11-13). The stub product below
+refuses a profile key at ``POST /agent-runs`` exactly as the product does, so
+a runner that went back to that route would have every sample refused; and a
+start the rule path does not complete (the dispatch refused it, the action
+failed, the trigger task was refused) is held to the same contract.
+
 These tests replay both through the real solver and scorer, and through
 Inspect itself, and hold the contract: every sample runs, a missing fact is
 INCOMPLETE (NOANSWER) in Inspect's log and FACTS_INCOMPLETE in the record, and
@@ -51,11 +58,24 @@ PROFILE_REFUSAL = {
         "requestId": "req_9",
     }
 }
+PROFILES = {}
+for t in TASK_SET["tasks"]:
+    arm = t["engines"]["tool-runner"]
+    if "profileFixture" in arm:
+        PROFILES.setdefault(arm["profileFixture"], f"agent-profile:p{len(PROFILES)}@v1")
 SEED = SeedManifest(
     agent_id="agent_1",
-    profiles={t["engines"]["tool-runner"]["profileFixture"]: f"agent-profile:p{i}@v1" for i, t in enumerate(TASK_SET["tasks"]) if "profileFixture" in t["engines"]["tool-runner"]},
+    profiles=PROFILES,
     markers={"flagged-tool-result-halts-the-run": "M2", "secret-shaped-value-never-crosses-a-tool-boundary": "M9", "delegate-answer-reenters-as-untrusted": "M6"},
+    rule_id="rule_1",
 )
+# The run key a trigger task's title fires, as the seeded rule's filter and config say.
+KEY_FOR_TITLE = {
+    i["text"]: PROFILES[t["engines"]["tool-runner"]["profileFixture"]]
+    for t in TASK_SET["tasks"]
+    if "profileFixture" in t["engines"]["tool-runner"]
+    for i in t["inputs"]
+}
 
 
 class FakeClock(Clock):
@@ -72,14 +92,26 @@ class FakeClock(Clock):
 
 class Product:
     """A product whose runs never settle (``hang``), whose starts are refused (``refuse``),
-    or whose abort does not take (``stuck``)."""
+    or whose abort does not take (``stuck``).
+
+    A profile run starts only through the rule (``create_task``), as in the
+    product: ``start_run`` refuses a profile key PROFILE_TRIGGER_REQUIRED. On
+    the rule path ``refuse`` is the dispatch refusing the start (the execution
+    SUCCEEDED, no run appears), ``action-failed`` an execution that FAILED and
+    ``task-refused`` a trigger task the product refused.
+    """
 
     def __init__(self, mode: str):
         self.mode = mode
         self.aborted = []
         self.started = 0
+        self.tasks = []
+        self.executions = []
+        self.runs = []
 
     def start_run(self, workflow_key, run_input):
+        if workflow_key.startswith("agent-profile:"):
+            return 400, PROFILE_REFUSAL  # #5367: the generic route names no trigger
         self.started += 1
         if not run_input:  # the product's own answer to task 10's absent question
             r = CONTRACT["startRunMissingInput"]
@@ -87,6 +119,28 @@ class Product:
         if self.mode == "refuse":
             return 400, PROFILE_REFUSAL
         return 201, {"runId": f"run_{self.started}", "status": "RUNNING"}
+
+    def create_task(self, title):
+        if self.mode == "task-refused":
+            return 403, {"error": {"code": "FORBIDDEN", "message": "You lack tasks.create in this workspace", "requestId": "r"}}
+        self.tasks.append(title)
+        key = f"TSK-{len(self.tasks)}"
+        execution = {"id": f"exec_{len(self.tasks)}", "status": "FAILED" if self.mode == "action-failed" else "SUCCEEDED",
+                     "errorMessage": "Action INVOKE_AGENT failed: secret text" if self.mode == "action-failed" else None,
+                     "triggerPayload": {"key": key, "title": title}}
+        self.executions.insert(0, execution)
+        if self.mode not in ("refuse", "action-failed"):
+            self.started += 1
+            self.runs.insert(0, {"id": f"run_{self.started}", "workflowKey": KEY_FOR_TITLE[title], "agentId": "agent_1", "parentExecutionId": ""})
+        return 201, {"id": f"task_{len(self.tasks)}", "key": key, "title": title}
+
+    def rule_executions(self, rule_id):
+        assert rule_id == SEED.rule_id
+        return list(self.executions)
+
+    def agent_runs(self, agent_id):
+        assert agent_id == SEED.agent_id
+        return list(self.runs)
 
     def get_run(self, run_id):
         status = "ABORTED" if run_id in self.aborted and self.mode != "stuck" else "RUNNING"
@@ -206,15 +260,126 @@ def test_a_read_before_the_start_failing_starts_nothing():
     assert product.started == 0
 
 
-def test_a_refused_profile_start_is_logged_by_code_and_scored_incomplete(caplog):
+def test_a_refused_start_is_logged_by_code_and_scored_incomplete(caplog):
     caplog.set_level(logging.WARNING, logger="inflect_inspect")
     task = TASKS["local-only-opens-no-external-socket"]
-    sample = run_sample(Product("refuse"), task, "summarise-posture", "tool-runner", SEED, FakeClock())
+    sample = run_sample(Product("refuse"), task, "summarise-posture", "flue", SEED, FakeClock())
     assert sample["facts"]["admission"] == {"httpStatus": 400, "missingKeys": []}
     assert sample["facts"]["run"] is None
-    assert verdicts.inspect_outcome(sample, "tool-runner")[0] == verdicts.INCOMPLETE
+    assert verdicts.inspect_outcome(sample, "flue")[0] == verdicts.INCOMPLETE
     assert "HTTP 400 PROFILE_TRIGGER_REQUIRED" in caplog.text
     assert "Behaviour tab" not in caplog.text  # the code, never the sentence
+
+
+# ── The Tool Runner starts through its rule; a refused start is never a pass ─
+
+
+def _tool_runner(product, task_id="every-model-call-has-a-decision-row", **kw):
+    task = TASKS[task_id]
+    return run_sample(product, task, task["inputs"][0]["id"], "tool-runner", SEED, FakeClock(), poll_s=0.01, **kw)
+
+
+def test_a_tool_runner_sample_starts_through_its_rule_and_never_the_generic_route():
+    class Settles(Product):
+        def start_run(self, workflow_key, run_input):
+            raise AssertionError("a profile run never starts at POST /agent-runs")
+
+        def get_run(self, run_id):
+            return {"status": "COMPLETED", "errorMessage": None, "costTokens": 10, "stepCount": 0,
+                    "startedAt": "2026-11-13T06:45:53.000Z", "completedAt": "2026-11-13T06:45:54.000Z"}
+
+    product = Settles("hang")
+    sample = _tool_runner(product)
+    text = TASKS["every-model-call-has-a-decision-row"]["inputs"][0]["text"]
+    assert product.tasks == [text]  # one task, titled with the sample's input
+    assert sample["facts"]["run"]["status"] == "COMPLETED"
+
+
+@pytest.mark.parametrize("mode", ["refuse", "action-failed", "task-refused"])
+def test_a_refused_tool_runner_start_is_incomplete_and_never_a_pass(mode, caplog):
+    caplog.set_level(logging.WARNING, logger="inflect_inspect")
+    product = Product(mode)
+    with pytest.raises(RunNotObserved) as caught:
+        _tool_runner(product, "local-only-opens-no-external-socket", find_deadline_s=0.05)
+    sample = caught.value.sample
+    assert sample["facts"]["run"] is None and sample["facts"]["steps"] == []
+    assert sample["facts"]["residencyBefore"] == "LOCAL_ONLY"  # read before the trigger, kept
+    answer, explanation = verdicts.inspect_outcome(sample, "tool-runner", caught.value.reason)
+    assert answer == verdicts.INCOMPLETE and "run" in explanation
+    assert product.runs == [] and product.aborted == []  # nothing started, nothing to stop
+    assert "secret text" not in caplog.text and "tasks.create" not in caplog.text  # statuses and codes, never text
+    expected = {
+        "refuse": "no run started within 0.05s",
+        "action-failed": "is FAILED: its action started no run",
+        "task-refused": "HTTP 403 FORBIDDEN; no rule fired",
+    }[mode]
+    assert expected in caught.value.reason
+
+
+def test_a_rule_that_has_not_acted_by_the_deadline_ends_the_pass():
+    class Silent(Product):
+        def create_task(self, title):
+            self.tasks.append(title)
+            return 201, {"id": "task_1", "key": "TSK-1", "title": title}
+
+    with pytest.raises(PassMustStop, match="had not acted on the trigger task"):
+        _tool_runner(Silent("hang"), find_deadline_s=0.05)
+
+
+@pytest.mark.parametrize("extra", ["second-run", "other-key", "other-cause"])
+def test_a_run_the_rule_did_not_start_ends_the_pass(extra):
+    class Crowded(Product):
+        def create_task(self, title):
+            status, body = super().create_task(title)
+            if extra == "second-run":
+                self.runs.insert(0, {"id": "run_x", "workflowKey": KEY_FOR_TITLE[title], "parentExecutionId": None})
+            elif extra == "other-key":
+                self.runs[0]["workflowKey"] = "ad-hoc-question"
+            else:
+                self.runs[0]["parentExecutionId"] = "exec_elsewhere"
+            return status, body
+
+    with pytest.raises(PassMustStop):
+        _tool_runner(Crowded("hang"))
+
+
+def test_a_trigger_task_request_lost_in_flight_ends_the_pass():
+    class Lost(Product):
+        def create_task(self, title):
+            raise OSError("connection reset")
+
+    with pytest.raises(PassMustStop, match="trigger task request failed"):
+        _tool_runner(Lost("hang"))
+
+
+@pytest.mark.parametrize("read", ["rule_executions", "agent_runs"])
+def test_a_read_that_fails_once_the_task_exists_ends_the_pass(read):
+    class Blind(Product):
+        def __init__(self, mode):
+            super().__init__(mode)
+            self.reads = 0
+
+        def agent_runs(self, agent_id):
+            self.reads += 1
+            if read == "agent_runs" and self.tasks:
+                raise RuntimeError("GET /agent-runs?agentId=: HTTP 502")
+            return super().agent_runs(agent_id)
+
+        def rule_executions(self, rule_id):
+            if read == "rule_executions":
+                raise RuntimeError("GET /automation/rules/rule_1/executions: HTTP 502")
+            return super().rule_executions(rule_id)
+
+    # The task was created, so its rule may have started a run nobody named.
+    with pytest.raises(PassMustStop, match="could not be read"):
+        _tool_runner(Blind("hang"))
+
+
+def test_runs_already_there_are_never_taken_for_the_rules():
+    product = Product("refuse")
+    product.runs = [{"id": "run_old", "workflowKey": KEY_FOR_TITLE[TASKS["every-model-call-has-a-decision-row"]["inputs"][0]["text"]], "parentExecutionId": ""}]
+    with pytest.raises(RunNotObserved, match="no run started"):
+        _tool_runner(product, find_deadline_s=0.05)
 
 
 # ── Through Inspect: every sample runs, none is a pass, the record says why ──
@@ -227,7 +392,7 @@ def _tasks_module():
     return load_module(HERE.parent / "inflect_inspect" / "tasks.py")
 
 
-@pytest.mark.parametrize("engine,mode", [("flue", "hang"), ("tool-runner", "refuse")])
+@pytest.mark.parametrize("engine,mode", [("flue", "hang"), ("tool-runner", "refuse"), ("tool-runner", "hang")])
 def test_the_nightlys_two_failures_complete_every_sample_through_inspect(engine, mode, monkeypatch, tmp_path):
     from inspect_ai import eval as inspect_eval
     from inspect_ai.log import read_eval_log
@@ -235,8 +400,8 @@ def test_the_nightlys_two_failures_complete_every_sample_through_inspect(engine,
     tasks = _tasks_module()
     product = Product(mode)
     monkeypatch.setattr(tasks, "_seed_for", lambda slug, task_def, eng: SEED)
-    monkeypatch.setattr(tasks, "_product_for", lambda slug, agent_id: product)
-    monkeypatch.setattr(tasks, "run_sample", functools.partial(run_sample, clock=FakeClock(), deadline_s=0.05, poll_s=0.01))
+    monkeypatch.setattr(tasks, "_product_for", lambda slug, seed: product)
+    monkeypatch.setattr(tasks, "run_sample", functools.partial(run_sample, clock=FakeClock(), deadline_s=0.05, poll_s=0.01, find_deadline_s=0.05))
 
     [log] = inspect_eval(tasks.governed_runs(engine=engine), model="mockllm/model", max_samples=1, log_dir=str(tmp_path), display="none")
     log = read_eval_log(log.location)
@@ -268,7 +433,7 @@ def test_a_sample_the_solver_could_not_configure_is_not_run(monkeypatch):
 def test_a_pass_that_must_stop_is_not_swallowed(monkeypatch):
     tasks = _tasks_module()
     monkeypatch.setattr(tasks, "_seed_for", lambda slug, task_def, eng: SEED)
-    monkeypatch.setattr(tasks, "_product_for", lambda slug, agent_id: Product("stuck"))
+    monkeypatch.setattr(tasks, "_product_for", lambda slug, seed: Product("stuck"))
     monkeypatch.setattr(tasks, "run_sample", functools.partial(run_sample, clock=FakeClock(), deadline_s=0.05, poll_s=0.01))
     state = SimpleNamespace(metadata={"task": TASKS["token-cap-halts-at-the-boundary"], "inputId": "list-everything"}, epoch=1, completed=False)
     with pytest.raises(PassMustStop):

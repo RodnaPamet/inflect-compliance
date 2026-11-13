@@ -2,18 +2,31 @@
  * THE INSPECT SEED, RUN TWICE AGAINST A REAL DATABASE (inspect.md Phase 1.6).
  *
  * `scripts/inspect-seed.ts` makes the agent-evals nightly runnable: four seed
- * tenants, their eval agents, bound keys, approved profiles and fixtures, and
- * a manifest `tasks.py` reads. What is asserted is the contract it states:
+ * tenants, their eval agents, bound keys, approved profiles, the automation
+ * rules that start the Tool Runner runs, fixtures, and a manifest `tasks.py`
+ * reads. What is asserted is the contract it states:
  *
  *   - every row it promises exists, through the usecases (scored, active,
- *     granted, carded agents; approved four-eyes profiles; bound keys);
+ *     granted, carded agents; approved four-eyes profiles allowing the
+ *     AUTOMATION trigger alone; one ENABLED rule per profile, authored by the
+ *     owner, firing on its samples' titles; bound keys for Flue agents only);
  *   - a second run duplicates nothing and writes the same manifest;
  *   - the raw keys are in the keys file, verify as keys bound to their agent,
- *     and appear nowhere in the manifest;
+ *     and appear nowhere in the manifest; a profile agent holds no live key;
  *   - the manifest has the shape `evals/inspect/fixtures/seed-manifest.example.json`
  *     pins for the Python side;
+ *   - a task titled with a sample's input fires exactly that profile's rule,
+ *     and the dispatch it enqueues admits a run of the profile as its agent,
+ *     the AUTOMATION trigger the version allows (the harness's start path);
  *   - it refuses production and a database off loopback.
  */
+// The queue is not the subject: the dispatch jobs are run here by hand, and a
+// run is admitted, never executed.
+jest.mock('@/app-layer/jobs/queue', () => ({
+    ...jest.requireActual('@/app-layer/jobs/queue'),
+    enqueue: jest.fn(async () => undefined),
+}));
+
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +37,9 @@ import { prismaTestClient } from '../helpers/db';
 import { verifyApiKey } from '@/lib/auth/api-key-auth';
 import { hashForLookup } from '@/lib/security/encryption';
 import { parseProfileRunKey } from '@/lib/agentic/agent-profile';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { runAutomationEventDispatch } from '@/app-layer/jobs/automation-event-dispatch';
+import { runAgentInvokeDispatch, type AgentInvokeDispatchPayload } from '@/app-layer/jobs/agent-invoke-dispatch';
 import {
     SEED_KEY_NAME,
     assertSeedTarget,
@@ -33,6 +49,7 @@ import {
     type InspectSeedResult,
 } from '../../scripts/inspect-seed';
 import {
+    AUTOMATION_TRIGGER_EVENT,
     BULK_RISK_COUNT,
     FINDING_SOURCE_KIND,
     NEVER_GRANTED,
@@ -58,7 +75,7 @@ async function userIdOf(email: string): Promise<string> {
 /** Every row the seed writes, counted, so a second run can be shown to add none. */
 async function footprint(tenantIds: string[]) {
     const where = { tenantId: { in: tenantIds } };
-    const [agents, grants, cards, profiles, versions, findings, controls, risks, memberships, liveKeys] = await Promise.all([
+    const [agents, grants, cards, profiles, versions, findings, controls, risks, memberships, liveKeys, rules] = await Promise.all([
         prisma.registeredAgent.count({ where }),
         prisma.registeredAgentTool.count({ where }),
         prisma.agentPolicyCard.count({ where }),
@@ -69,8 +86,9 @@ async function footprint(tenantIds: string[]) {
         prisma.risk.count({ where }),
         prisma.tenantMembership.count({ where }),
         prisma.tenantApiKey.count({ where: { ...where, revokedAt: null } }),
+        prisma.automationRule.count({ where: { ...where, deletedAt: null } }),
     ]);
-    return { agents, grants, cards, profiles, versions, findings, controls, risks, memberships, liveKeys };
+    return { agents, grants, cards, profiles, versions, findings, controls, risks, memberships, liveKeys, rules };
 }
 
 describeFn('scripts/inspect-seed', () => {
@@ -178,12 +196,43 @@ describeFn('scripts/inspect-seed', () => {
                 expect(profile.currentApprovedVersion).toBe(key!.version);
                 const version = await prisma.agentProfileVersion.findFirstOrThrow({
                     where: { profileId: key!.profileId, version: key!.version },
-                    select: { status: true, toolNames: true, authoredByUserId: true, decidedByUserId: true },
+                    select: { status: true, toolNames: true, authoredByUserId: true, decidedByUserId: true, allowedTriggers: true },
                 });
                 expect(version.status).toBe('APPROVED');
+                // The trigger the harness starts it by, and no other (#5367).
+                expect(version.allowedTriggers).toEqual(['AUTOMATION']);
                 expect([...version.toolNames].sort()).toEqual([...p.toolNames].sort());
                 expect(version.authoredByUserId).toBe(await userIdOf(t.ownerEmail));
                 expect(version.decidedByUserId).toBe(await userIdOf(t.approverEmail));
+            }
+        }
+    });
+
+    it('gives every profile one ENABLED INVOKE_AGENT rule, authored by the owner, firing on its samples\' titles', async () => {
+        for (const t of PLAN.tenants) {
+            const m = second.tenants[t.slug];
+            expect(Object.keys(m.automationRules).sort()).toEqual(t.profiles.map((p) => p.fixture).sort());
+            const rules = await prisma.automationRule.findMany({
+                where: { tenantId: tenantIds[t.slug], deletedAt: null },
+                select: { id: true, triggerEvent: true, triggerFilterJson: true, actionType: true, actionConfigJson: true, status: true, createdByUserId: true },
+            });
+            expect(rules.map((r) => r.id).sort()).toEqual(Object.values(m.automationRules).sort());
+            for (const p of t.profiles) {
+                const rule = rules.find((r) => r.id === m.automationRules[p.fixture])!;
+                expect(rule.triggerEvent).toBe(AUTOMATION_TRIGGER_EVENT);
+                expect(rule.actionType).toBe('INVOKE_AGENT');
+                expect(rule.status).toBe('ENABLED');
+                expect(rule.createdByUserId).toBe(await userIdOf(t.ownerEmail));
+                expect(rule.actionConfigJson).toEqual({
+                    agentId: m.profileAgents[p.fixture],
+                    workflowKey: m.profiles[p.fixture],
+                    inputMapping: { question: 'title' },
+                });
+                expect(rule.triggerFilterJson).toEqual({
+                    logic: 'AND',
+                    conditions: [{ field: 'title', operator: 'in', value: [...p.triggerTitles] }],
+                });
+                expect(p.triggerTitles.length).toBeGreaterThan(0);
             }
         }
     });
@@ -209,7 +258,7 @@ describeFn('scripts/inspect-seed', () => {
         expect(second.tenants).toEqual(first.tenants);
     });
 
-    it('binds one live seed key to each agent, with mcp:orchestrate and the grants\' scopes, in the keys file only', async () => {
+    it('binds one live seed key to each Flue agent, with mcp:orchestrate and the grants\' scopes, in the keys file only', async () => {
         const keys = JSON.parse(readFileSync(path.join(dir, 'agent-keys.json'), 'utf8')) as Record<string, Record<string, string>>;
         expect(statSync(path.join(dir, 'agent-keys.json')).mode & 0o777).toBe(0o600);
         const manifestText = readFileSync(path.join(dir, 'seed-manifest.json'), 'utf8');
@@ -219,7 +268,14 @@ describeFn('scripts/inspect-seed', () => {
 
         for (const t of PLAN.tenants) {
             const m = second.tenants[t.slug];
-            const agentIds = t.engine === 'flue' ? [m.agentId!] : Object.values(m.profileAgents);
+            if (t.engine !== 'flue') {
+                // A profile agent's runs start from its rule: no key, in the
+                // file or live in the tenant.
+                expect(keys[t.slug]).toEqual({});
+                expect(await prisma.tenantApiKey.count({ where: { tenantId: tenantIds[t.slug], revokedAt: null } })).toBe(0);
+                continue;
+            }
+            const agentIds = [m.agentId!];
             expect(Object.keys(keys[t.slug]).sort()).toEqual([...agentIds].sort());
             for (const agentId of agentIds) {
                 const raw = keys[t.slug][agentId];
@@ -236,9 +292,7 @@ describeFn('scripts/inspect-seed', () => {
                 });
                 expect(live).toHaveLength(1);
                 expect(live[0].name).toBe(SEED_KEY_NAME);
-                const def = t.agents.find((d) =>
-                    t.engine === 'flue' ? d.profileFixture === null : m.profileAgents[d.profileFixture!] === agentId,
-                )!;
+                const def = t.agents.find((d) => d.profileFixture === null)!;
                 expect([...(live[0].scopes as string[])].sort()).toEqual([...def.keyScopes].sort());
                 expect(def.keyScopes).toContain('mcp:orchestrate');
             }
@@ -247,7 +301,9 @@ describeFn('scripts/inspect-seed', () => {
         const revoked = await prisma.tenantApiKey.count({
             where: { tenantId: { in: Object.values(tenantIds) }, name: SEED_KEY_NAME, revokedAt: { not: null } },
         });
-        expect(revoked).toBeGreaterThanOrEqual(PLAN.tenants.reduce((n, t) => n + t.agents.length, 0));
+        expect(revoked).toBeGreaterThanOrEqual(
+            PLAN.tenants.reduce((n, t) => n + t.agents.filter((a) => a.startedBy === 'agent-key').length, 0),
+        );
     });
 
     it('writes the manifest in the shape the Python side reads', () => {
@@ -260,10 +316,58 @@ describeFn('scripts/inspect-seed', () => {
             expect(Object.keys(real).sort()).toEqual(Object.keys(example).sort());
             expect(Object.keys(real.profiles).sort()).toEqual(Object.keys(example.profiles).sort());
             expect(Object.keys(real.profileAgents).sort()).toEqual(Object.keys(example.profileAgents).sort());
+            expect(Object.keys(real.automationRules).sort()).toEqual(Object.keys(example.automationRules).sort());
             expect(Object.keys(real.markers).sort()).toEqual(Object.keys(example.markers).sort());
             expect(real.agentId === null).toBe(example.agentId === null);
             expect(real.ownerEmail).toBe(example.ownerEmail);
         }
+    });
+
+    it("a task titled with a sample's input fires exactly its profile's rule, and the run starts as AUTOMATION", async () => {
+        const t = PLAN.tenants.find((x) => x.slug === 'inspect-ext-tool-runner')!;
+        const m = second.tenants[t.slug];
+        const tenantId = tenantIds[t.slug];
+        const queued = enqueue as unknown as jest.Mock;
+        for (const p of t.profiles) {
+            queued.mockClear();
+            const title = p.triggerTitles[0];
+            await runAutomationEventDispatch({
+                tenantId,
+                event: {
+                    event: AUTOMATION_TRIGGER_EVENT,
+                    tenantId,
+                    entityType: 'Task',
+                    entityId: `task-${p.fixture}`,
+                    actorUserId: await userIdOf(t.ownerEmail),
+                    emittedAt: new Date().toISOString(),
+                    stableKey: `task-${p.fixture}`,
+                    data: { key: `TSK-${p.fixture}`, title, type: 'TASK', severity: 'MEDIUM', priority: 'P2', assigneeUserId: null, controlId: null },
+                },
+            });
+            const invokes = queued.mock.calls.filter(([name]) => name === 'agent-invoke-dispatch');
+            expect(invokes).toHaveLength(1); // one task, one rule
+            const payload = invokes[0][1] as AgentInvokeDispatchPayload;
+            expect(payload).toMatchObject({ agentId: m.profileAgents[p.fixture], workflowKey: m.profiles[p.fixture] });
+
+            const started = await runAgentInvokeDispatch(payload);
+            expect(started.refusal).toBeNull();
+            const run = await prisma.workflowRun.findUniqueOrThrow({
+                where: { id: started.runId! },
+                select: { tenantId: true, agentId: true, workflowKey: true },
+            });
+            expect(run).toEqual({ tenantId, agentId: m.profileAgents[p.fixture], workflowKey: m.profiles[p.fixture] });
+        }
+        // A title no sample carries fires nothing.
+        queued.mockClear();
+        await runAutomationEventDispatch({
+            tenantId,
+            event: {
+                event: AUTOMATION_TRIGGER_EVENT, tenantId, entityType: 'Task', entityId: 'task-other', actorUserId: null,
+                emittedAt: new Date().toISOString(), stableKey: 'task-other',
+                data: { key: 'TSK-other', title: 'An unrelated task', type: 'TASK', severity: 'MEDIUM', priority: 'P2', assigneeUserId: null, controlId: null },
+            },
+        });
+        expect(queued.mock.calls.filter(([name]) => name === 'agent-invoke-dispatch')).toHaveLength(0);
     });
 
     it('refuses production and a database off loopback', () => {

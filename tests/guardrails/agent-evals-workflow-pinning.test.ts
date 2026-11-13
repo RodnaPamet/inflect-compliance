@@ -14,10 +14,17 @@
  *      in the Dockerfile and pyproject alike; the app image never installs it.
  *   5. One sample in flight on the deployment (`--max-samples 1`), Inspect's
  *      own model slot unused (`mockllm/model`), schedule + dispatch only.
+ *   6. The fallback (organisation-level) key reaches the model: the app and
+ *      worker get the workspace header with it, and the job log names which
+ *      key and whether the header went, never a value.
+ *   7. Only a Flue tenant hands over an agent key. A Tool Runner tenant's runs
+ *      start from its automation rules (owner decision, 2026-11-13), so a key
+ *      for one is refused rather than masked and passed along unused.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -76,6 +83,45 @@ describe('skip without the CI key', () => {
         expect(JSON.stringify(WORKFLOW.jobs.inspect.env)).not.toContain('INSPECT_CI_ANTHROPIC_KEY');
         const holders = steps.filter((s) => JSON.stringify(s.env ?? {}).includes('secrets.INSPECT_CI_ANTHROPIC_KEY')).map((s) => s.id ?? s.name);
         expect(holders).toEqual(['key', 'Start app + worker (background)']);
+    });
+});
+
+describe('the model is reached with the key in use', () => {
+    const start = WORKFLOW.jobs.inspect.steps.find((s) => s.name === 'Start app + worker (background)');
+
+    it('sends the workspace header with the fallback key only, to the step that starts the app and the worker', () => {
+        expect(start?.env?.ANTHROPIC_API_KEY).toBe('${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}');
+        expect(start?.env?.ANTHROPIC_WORKSPACE_ID).toBe(
+            "${{ secrets.INSPECT_CI_ANTHROPIC_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}",
+        );
+        // Both processes inherit the step's env: no wrapper strips it.
+        expect(start?.run).toMatch(/^\s*npm start > \/tmp\/app\.log 2>&1 &$/m);
+        expect(start?.run).toMatch(/^\s*node dist\/worker\.mjs > \/tmp\/worker\.log 2>&1 &$/m);
+        expect(JSON.stringify(WORKFLOW.jobs.inspect.env)).not.toContain('ANTHROPIC_WORKSPACE_ID');
+    });
+
+    it('both engines read the header from that variable', () => {
+        // Comments blanked, so a note naming the variable cannot stand in for the read.
+        expect(codeOf(read('src/lib/agentic/tool-runner/client.ts'))).toContain('defaultHeaders: { ...anthropicWorkspaceHeaders(env.ANTHROPIC_WORKSPACE_ID) },');
+        expect(codeOf(read('src/lib/agentic/flue/runtime-start.ts'))).toContain('externalWorkspaceId: env.ANTHROPIC_WORKSPACE_ID,');
+        expect(codeOf(read('src/env.ts'))).toContain('ANTHROPIC_WORKSPACE_ID: process.env.ANTHROPIC_WORKSPACE_ID,');
+    });
+
+    it('logs which key and whether the header was sent, by name only', () => {
+        expect(start?.env?.KEY_SOURCE).toBe("${{ secrets.INSPECT_CI_ANTHROPIC_KEY != '' && 'INSPECT_CI_ANTHROPIC_KEY' || 'ANTHROPIC_API_KEY' }}");
+        expect(start?.run).toContain('agent-evals: model key from ${KEY_SOURCE}; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo \'not sent\')');
+        expect(start?.run).not.toMatch(/\$\{?ANTHROPIC_API_KEY/);
+        expect(start?.run).not.toMatch(/echo[^\n]*\$\{?ANTHROPIC_WORKSPACE_ID\}?"?\s*$/m);
+    });
+});
+
+describe('agent keys reach only the tenants whose runs present one', () => {
+    const run = WORKFLOW.jobs.inspect.steps.find((s) => s.id === 'evals')?.run ?? '';
+
+    it('requires a key for a Flue tenant and refuses one for a Tool Runner tenant', () => {
+        expect(run).toContain(`expects_key="$(node -p "require('./inspect-out/seed-manifest.json')['\${slug}'].agentId ? 1 : 0")"`);
+        expect(run).toContain('if [ "$expects_key" = "1" ] && [ "$keys_for_slug" -eq 0 ]; then');
+        expect(run).toContain('if [ "$expects_key" = "0" ] && [ "$keys_for_slug" -ne 0 ]; then');
     });
 });
 

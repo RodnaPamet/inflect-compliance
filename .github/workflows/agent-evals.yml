@@ -8,12 +8,19 @@ name: Agent evals (Inspect, nightly)
 # (boot app + Postgres + Redis + worker, skip without the CI key, a dated
 # deferral a guard parses).
 #
-#   - NO BYPASS. Runs start through POST /api/t/<slug>/agent-runs with the
-#     seed agent's BOUND API key, the way an agent starts one (a reasoning
+#   - NO BYPASS. A Flue run starts through POST /api/t/<slug>/agent-runs with
+#     the seed agent's BOUND API key, the way an agent starts one (a reasoning
 #     engine refuses a run no ACTIVE registered agent vouches for, and a
-#     session binds no agent). Every read, and the kill in task 3, goes through
-#     the routes the product's pages call, as the seed tenant's OWNER. The
-#     harness never reads the database.
+#     session binds no agent). A Tool Runner run is an agent profile's, and the
+#     generic route starts no profile (#5367: a profile key names its trigger),
+#     so it starts as the AUTOMATION trigger, the way production starts an
+#     unattended run (owner decision 2026-11-13): the seed gives each profile
+#     an ENABLED INVOKE_AGENT rule on TASK_CREATED, and the OWNER creating a
+#     task titled with the sample's input fires it. Either way the run passes
+#     the ordinary admission (kill switch, caps, residency, registration).
+#     Every read, and the kill in task 3, goes through the routes the product's
+#     pages call, as the seed tenant's OWNER. The harness never reads the
+#     database.
 #   - BOTH ENGINES, one after the other, one sample in flight on the whole
 #     deployment (`--max-samples 1`): tasks 1 and 10 read tenant-wide counts
 #     and task 3's kill would abort a concurrent sample. The record refuses
@@ -152,13 +159,14 @@ jobs:
       # The four seed tenants of the Phase 0 note, kept apart from acme-corp:
       # the injection and secret fixtures and the kill switch must not reach
       # any other job. The seed writes a manifest with ids and synthetic
-      # markers only (no secrets) to --manifest, and every seed agent's bound
-      # API key, as { slug: { agentId: key } }, to a SEPARATE file under
+      # markers only (no secrets) to --manifest, and every Flue seed agent's
+      # bound API key, as { slug: { agentId: key } }, to a SEPARATE file under
       # RUNNER_TEMP, which is never uploaded and is masked before use. Neither
       # goes to stdout, which the usecases' own log lines share. A Tool Runner
-      # tenant has one eval agent per profile (a profile runs as its own agent),
-      # so it has one key per profile. The seed exits non-zero, naming the
-      # tenant and the step, on anything it cannot complete.
+      # tenant has one eval agent per profile (a profile runs as its own agent)
+      # and one automation rule per profile, and NO key: its runs start from
+      # its rules, so nothing would present one. The seed exits non-zero,
+      # naming the tenant and the step, on anything it cannot complete.
       - name: Apply migrations + seed the Inspect tenants
         if: steps.key.outputs.present == 'true'
         run: |
@@ -187,7 +195,20 @@ jobs:
         env:
           NODE_ENV: production
           ANTHROPIC_API_KEY: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY || secrets.ANTHROPIC_API_KEY }}
+          # The repository's ANTHROPIC_API_KEY is an ORGANISATION-level key:
+          # Anthropic refuses its requests with HTTP 400 unless each names a
+          # workspace (docs/implementation-notes/2026-10-17-anthropic-workspace-header.md),
+          # as skills-evaluate.yml sends it (and garak.yml in #5498). Both engines
+          # read ANTHROPIC_WORKSPACE_ID from env in the worker that runs them
+          # (Tool Runner: tool-runner/client.ts; Flue: flue/runtime-start.ts),
+          # and the app and worker below inherit this step's env. Sent only
+          # with that fallback key: the dedicated INSPECT_CI_ANTHROPIC_KEY is
+          # created inside its own workspace and needs no header.
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
+          KEY_SOURCE: ${{ secrets.INSPECT_CI_ANTHROPIC_KEY != '' && 'INSPECT_CI_ANTHROPIC_KEY' || 'ANTHROPIC_API_KEY' }}
         run: |
+          # Names and set/unset only; never a value.
+          echo "agent-evals: model key from ${KEY_SOURCE}; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo 'not sent')"
           npm start > /tmp/app.log 2>&1 &
           node dist/worker.mjs > /tmp/worker.log 2>&1 &
           worker_pid=$!
@@ -244,8 +265,11 @@ jobs:
             echo "::add-mask::$session"
             var="$(echo "$slug" | tr 'a-z-' 'A-Z_')"
             cookie_env+=(-e "INSPECT_SESSION_${var}=next-auth.session-token=${session}")
-            # One key per seed agent: INSPECT_AGENT_KEY_<SLUG>_<AGENT ID>, the
-            # name runner.agent_key_env reads.
+            # One key per Flue seed agent: INSPECT_AGENT_KEY_<SLUG>_<AGENT ID>,
+            # the name runner.agent_key_env reads. A Tool Runner tenant (its
+            # manifest names no agentId) holds none: its runs start from its
+            # automation rules.
+            expects_key="$(node -p "require('./inspect-out/seed-manifest.json')['${slug}'].agentId ? 1 : 0")"
             keys_for_slug=0
             while IFS=$'\t' read -r agent_id agent_key; do
               case "$agent_key" in iflk_*) ;; *) echo "::error::a seed key for ${slug} is not an agent-bound API key"; exit 1 ;; esac
@@ -253,7 +277,8 @@ jobs:
               cookie_env+=(-e "INSPECT_AGENT_KEY_$(echo "${slug}_${agent_id}" | tr 'a-z-' 'A-Z_')=${agent_key}")
               keys_for_slug=$((keys_for_slug + 1))
             done < <(node -e 'const k=require(process.argv[1])[process.argv[2]]||{};for(const [a,v] of Object.entries(k))process.stdout.write(`${a}\t${typeof v==="string"?v:""}\n`)' "$RUNNER_TEMP/inspect-agent-keys.json" "$slug")
-            if [ "$keys_for_slug" -eq 0 ]; then echo "::error::no agent-bound API key for ${slug}"; exit 1; fi
+            if [ "$expects_key" = "1" ] && [ "$keys_for_slug" -eq 0 ]; then echo "::error::no agent-bound API key for ${slug}"; exit 1; fi
+            if [ "$expects_key" = "0" ] && [ "$keys_for_slug" -ne 0 ]; then echo "::error::${slug} starts its runs from automation rules; the seed handed over an agent key it would never present"; exit 1; fi
           done
           for engine in flue tool-runner; do
             spent="$(spent_usd)"

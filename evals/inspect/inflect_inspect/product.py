@@ -1,15 +1,31 @@
 """The product's own REST API, as a seed tenant's agent and its OWNER.
 
-Two credentials per tenant, each on the route its holder already uses, and no
-harness route. A RUN is started with the seed agent's bound API key
-(``Authorization: Bearer iflk_...``): ``startWorkflowRun`` refuses any
-reasoning-engine run whose context carries no ``agentId``
-(``flue_requires_registered_agent``), and only an agent-bound key sets one; a
-session never does. That is also what makes task 3's AGENT-scope kill and task
-5's grants read refer to the agent the run is bound to. Everything else (the
-run, its step feed, the proposals, the counts, the settings, the kill switch)
-is read or written as the seed tenant's OWNER with a session cookie, through
-the routes the product's own pages call. The harness never reads the database.
+Each credential on the route its holder already uses, and no harness route.
+
+A FLUE run is started with the seed agent's bound API key
+(``Authorization: Bearer iflk_...``) at ``POST /agent-runs``:
+``startWorkflowRun`` refuses any reasoning-engine run whose context carries no
+``agentId`` (``flue_requires_registered_agent``), and only an agent-bound key
+sets one; a session never does.
+
+A TOOL RUNNER run is an agent profile's, and since #5367 a profile key names
+the trigger that starts it; ``POST /agent-runs`` names none, so it starts no
+profile. The harness starts one as the AUTOMATION trigger, the way production
+starts an unattended run (owner decision, 2026-11-13): the seed gave each
+profile an ENABLED ``INVOKE_AGENT`` rule firing on ``TASK_CREATED`` for its
+samples' titles, so the OWNER creating a task titled with the sample's input
+(``POST /tasks``) fires that rule, and ``agent-invoke-dispatch`` starts the
+run as the profile's agent under the rule author's membership, through
+``startWorkflowRun``'s ordinary admission. The rule's execution
+(``GET /automation/rules/:id/executions``) says whether it acted, and the run
+is the one row of the agent's runs (``GET /agent-runs?agentId=``) that was not
+there before the task.
+
+Either way the run is bound to the agent task 3's AGENT-scope kill and task
+5's grants read refer to. Everything else (the run, its step feed, the
+proposals, the counts, the settings, the kill switch, the trigger task) is read
+or written as the seed tenant's OWNER with a session cookie, through the routes
+the product's own pages call. The harness never reads the database.
 
 Every response shape read here is pinned in ``fixtures/product-contract.json``,
 which ``tests/unit/inspect-harness-product-contract.test.ts`` holds to the
@@ -32,6 +48,8 @@ _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 # ``listWorkflowRuns`` returns at most this many rows when the route passes no
 # ``take``. A list that full cannot say whether a run row was added.
 RUN_LIST_PAGE = 50
+# How many of a rule's newest executions are read to find the one a trigger task fired.
+EXECUTION_PAGE = 25
 RESIDENCIES = {"EXTERNAL", "LOCAL_ONLY"}
 
 
@@ -49,16 +67,26 @@ class Product(Protocol):
     def proposals_created_entity(self, proposal_ids: Iterable[str]) -> Dict[str, bool]: ...
     def engage_agent_kill(self, agent_id: str, reason: str) -> Dict[str, Any]: ...
     def lift_kill(self, switch_id: str, reason: str) -> None: ...
+    def create_task(self, title: str) -> Tuple[int, Dict[str, Any]]: ...
+    def rule_executions(self, rule_id: str) -> List[Dict[str, Any]]: ...
+    def agent_runs(self, agent_id: str) -> List[Dict[str, Any]]: ...
 
 
 class HttpProduct:
     def __init__(
-        self, base_url: str, tenant_slug: str, session_cookie: str, agent_key: str, timeout_s: float = 30.0
+        self,
+        base_url: str,
+        tenant_slug: str,
+        session_cookie: str,
+        agent_key: Optional[str] = None,
+        timeout_s: float = 30.0,
     ) -> None:
         parsed = urllib.parse.urlparse(base_url)
         if parsed.scheme != "http" or parsed.hostname not in _LOOPBACK:
             raise ValueError("the harness targets the CI test deployment on loopback only")
-        if not agent_key.startswith("iflk_"):
+        # A Tool Runner tenant holds no agent key: its runs start from its
+        # automation rules. Where one is handed over it must be one.
+        if agent_key is not None and not agent_key.startswith("iflk_"):
             raise ValueError("a run is started with the seed agent's bound API key (iflk_...)")
         self._base = f"{base_url.rstrip('/')}/api/t/{urllib.parse.quote(tenant_slug)}"
         self._origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -99,6 +127,8 @@ class HttpProduct:
         return payload
 
     def start_run(self, workflow_key: str, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        if self._agent_key is None:
+            raise ValueError("no agent key was handed over: this tenant's runs start from its automation rules")
         status, payload = self._call(
             "POST", "/agent-runs", {"workflowKey": workflow_key, "input": run_input}, as_agent=True
         )
@@ -191,3 +221,27 @@ class HttpProduct:
 
     def lift_kill(self, switch_id: str, reason: str) -> None:
         self._ok("PATCH", "/admin/agents/kill-switch", {"switchId": switch_id, "liftReason": reason})
+
+    def create_task(self, title: str) -> Tuple[int, Dict[str, Any]]:
+        """Create the task whose ``TASK_CREATED`` fires the sample's rule; (status, the task row)."""
+        status, payload = self._call("POST", "/tasks", {"title": title})
+        return status, payload if isinstance(payload, dict) else {}
+
+    def rule_executions(self, rule_id: str) -> List[Dict[str, Any]]:
+        """The rule's newest executions, newest first, each with its (scrubbed) trigger payload."""
+        payload = self._ok("GET", f"/automation/rules/{urllib.parse.quote(rule_id)}/executions?limit={EXECUTION_PAGE}")
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            raise RuntimeError("GET /automation/rules/:id/executions carried no items")
+        return items
+
+    def agent_runs(self, agent_id: str) -> List[Dict[str, Any]]:
+        """The runs one agent authorised, newest first. A full page cannot say whether a run was added."""
+        rows = self._ok("GET", f"/agent-runs?agentId={urllib.parse.quote(agent_id)}")
+        if not isinstance(rows, list):
+            raise RuntimeError("GET /agent-runs?agentId= did not return the run list")
+        if len(rows) >= RUN_LIST_PAGE:
+            raise RuntimeError(
+                f"the agent's run list is full ({RUN_LIST_PAGE} rows); a new run row could not be told apart"
+            )
+        return rows
