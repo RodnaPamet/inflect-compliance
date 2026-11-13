@@ -10,6 +10,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiErrorMessage } from '@/lib/api-error';
 
 import type { AgentSummary, OwnerChoice, VendorChoice } from './AgentDetailClient';
 
@@ -151,8 +152,10 @@ export function AgentAmendModal({
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 // Verbatim. The tier-ceiling refusal tells the operator what to
-                // do about it; a generic message would throw that away.
-                setError(body?.error ?? t('agentDetail.amend.failed'));
+                // do about it; a generic message would throw that away. The
+                // body's `error` is the envelope OBJECT, so it is read through
+                // `apiErrorMessage`: rendering the object threw (#5151).
+                setError(apiErrorMessage(body, t('agentDetail.amend.failed')));
                 return;
             }
             onAmended();

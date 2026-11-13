@@ -124,3 +124,17 @@ describe('the amend modal shows the owner and never sends it', () => {
         expect(JSON.parse(String(init.body))).toEqual({ name: 'Reconciler two' });
     });
 });
+
+describe('a refused amend shows the reason, not the envelope (#5151)', () => {
+    it('renders the error envelope message as text and keeps the modal open', async () => {
+        fetchMock.mockResolvedValueOnce({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: { code: 'BAD_REQUEST', message: 'Autonomy above the tier ceiling.' } }),
+        });
+        renderModal();
+        fireEvent.change(screen.getByDisplayValue('Reconciler'), { target: { value: 'Reconciler two' } });
+        fireEvent.click(screen.getByTestId('agent-amend-save'));
+        expect((await screen.findByTestId('agent-amend-error')).textContent).toBe('Autonomy above the tier ceiling.');
+    });
+});
