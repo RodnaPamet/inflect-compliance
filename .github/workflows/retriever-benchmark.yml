@@ -2,11 +2,14 @@
 #  Retriever benchmark — the evidence for owner decision D-L4-3
 #  (docs/ai-architecture/nemotron-retriever.md, Phase 0.3-0.4)
 #
-#  D-L4-3: benchmark the Nemotron embed model against a small open model and
-#  keep the smaller unless recall@10 drops past a margin. This workflow
-#  produces that comparison: for each embed candidate it starts Hugging Face
+#  D-L4-3 (amended 2026-11-13): compare small open embedding models, English
+#  and multilingual, and keep the smallest unless recall@10 drops past the
+#  margin, overall or on the seed set's Bulgarian slice. Nemotron is not a
+#  candidate here; it stays only in the optional Layer 5 (GPU) phase. This
+#  workflow produces that comparison: for each embed candidate it starts Hugging Face
 #  Text Embeddings Inference (CPU, by digest) on THIS RUNNER, embeds the
-#  200-pair seed set (tests/fixtures/rag/retriever-seed-set.json), and
+#  250-case seed set (tests/fixtures/rag/retriever-seed-set.json: 200 English
+#  questions and 50 Bulgarian ones over the same English corpus), and
 #  records recall@10 with and without each reranker plus p50/p95 latency.
 #
 #  ON A GITHUB RUNNER, NEVER ON THE PRODUCTION VM. The capacity rule holds
@@ -30,11 +33,10 @@
 #  traffic is one Hub API request per model (the commit to load, carrying
 #  only the model id) and the engine downloading that commit's weights.
 #
-#  TEI's CPU image refuses Llama-based models (both Nemotron candidates)
-#  unless the repository carries ONNX. The runner checks that before starting
-#  a container, so a refused candidate costs seconds, and the summary reports
-#  its comparison BLOCKED: deciding D-L4-3 needs an engine that serves it
-#  (the nemotron-retriever.md Phase 0.2 question), not a rerun.
+#  TEI's CPU image refuses Llama-, Mistral- and Qwen2-based models unless the
+#  repository carries ONNX. No current candidate is one; the runner still
+#  checks before starting a container, so a refused candidate costs seconds
+#  and the summary reports its comparison BLOCKED rather than INCOMPLETE.
 # ───────────────────────────────────────────────────────────────
 name: Retriever benchmark
 
@@ -59,9 +61,9 @@ jobs:
       # tests/unit/retriever-benchmark.test.ts fails when they differ.
       matrix:
         embed:
-          - nemotron-embed-1b
           - bge-small-en
           - e5-small
+          - multilingual-e5-small
     steps:
       - uses: actions/checkout@v7
 
