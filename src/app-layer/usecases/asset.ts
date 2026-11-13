@@ -362,8 +362,13 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
 
         // Validate a newly-supplied owner (non-empty string) is an active
         // member. `undefined` leaves it unchanged; `''`/null clears it — neither
-        // needs a membership check.
-        if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+        // needs a membership check. Nor does the owner the row ALREADY has
+        // (#5159): the edit form sends it back on every save, and re-checking
+        // it made every edit of an asset whose owner had left fail with
+        // "Owner must be an active member" until somebody reassigned it.
+        if (data.ownerUserId && data.ownerUserId !== previousOwnerId) {
+            await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
+        }
 
         // A rename to a name another live asset holds gets the same named 409
         // as a create (#4361); left to the index it was a bare P2002. Only an
