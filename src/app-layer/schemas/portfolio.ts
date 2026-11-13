@@ -261,6 +261,10 @@ const OverdueEvidenceStatusEnum = z.enum([
     'DRAFT',
     'SUBMITTED',
     'REJECTED',
+    // The status a stale-review sweep gives evidence past its review date —
+    // so the one most overdue rows carry (#5205). Without it the row failed
+    // its own schema and the drill-down had no label or badge for it.
+    'NEEDS_REVIEW',
     // 'APPROVED' intentionally excluded — approved evidence is current,
     // not overdue, regardless of nextReviewDate.
 ]);
