@@ -6,7 +6,15 @@ wizard generates, connected to a proving tenant through a key the wizard minted.
 It calls one granted read tool, and one ungranted tool is called with its key.
 
 This folder is self-contained and outside the application's build: it has its
-own `package.json` and is excluded from the root typecheck and lint.
+own `package.json` and is excluded from the root typecheck (the root
+`tsconfig.json` excludes `scripts/`). The root ESLint does lint it.
+
+It pins `@anthropic-ai/claude-agent-sdk` `0.3.314`, the first release in which
+`settingSources: []` stops the host's settings leaking into the run (the Step 4a
+spike, `docs/implementation-notes/2026-11-13-spike-4a-agent-sdk.md`). An older
+SDK would let the computer you run this from add its own `CLAUDE.md`, settings
+and hooks to the agent, so the evidence would not be the wizard's options alone.
+The wizard's TypeScript snippet type-checks against it under `--strict`.
 
 ## Run it
 
