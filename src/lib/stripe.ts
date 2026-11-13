@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import { isManualCustomerId } from '@/lib/billing/manual-customer';
 
 // ─── Types (matching Prisma enums, duplicated so we don't depend on generated client at import time) ───
 
@@ -46,7 +47,11 @@ export async function findOrCreateCustomer(
         where: { tenantId },
     });
 
-    if (existing) {
+    // A row an operator created with `changeTenantPlan` carries a
+    // `manual:<tenantId>` sentinel, not a Stripe customer, and Stripe refused
+    // every checkout and portal session for it (#5120). Such a row is given a
+    // real customer here; its plan is left as the operator set it.
+    if (existing && !isManualCustomerId(existing.stripeCustomerId)) {
         return {
             billingAccountId: existing.id,
             stripeCustomerId: existing.stripeCustomerId,
@@ -59,6 +64,14 @@ export async function findOrCreateCustomer(
         email: adminEmail,
         metadata: { tenantId },
     });
+
+    if (existing) {
+        await prisma.billingAccount.update({
+            where: { id: existing.id },
+            data: { stripeCustomerId: customer.id },
+        });
+        return { billingAccountId: existing.id, stripeCustomerId: customer.id };
+    }
 
     // Create billing account
     const billingAccount = await prisma.billingAccount.create({
@@ -141,7 +154,9 @@ function mapStripeStatus(status: string): BillingStatus {
         case 'trialing': return 'TRIALING';
         case 'incomplete_expired': return 'CANCELED';
         case 'unpaid': return 'PAST_DUE';
-        default: return 'ACTIVE';
+        // A status this build does not know (Stripe's `paused`, or one added
+        // later) is not evidence of a paying subscription (#5082).
+        default: return 'INCOMPLETE';
     }
 }
 
@@ -152,6 +167,21 @@ function mapStripePlan(metadata: Record<string, string> | null): BillingPlan {
     if (plan === 'PRO') return 'PRO';
     if (plan === 'ENTERPRISE') return 'ENTERPRISE';
     return 'PRO'; // default for new subscriptions
+}
+
+/**
+ * The plan a subscription in this state entitles its tenant to.
+ *
+ * Entitlements read `BillingAccount.plan` and nothing else (docs/billing.md),
+ * so the webhook is what moves a tenant back to FREE when a subscription ends.
+ * It wrote only the status, and a cancelled PRO tenant kept PRO for good
+ * (#5082). An ended subscription (`canceled`, `incomplete_expired`) entitles
+ * to FREE; any other keeps the plan its metadata names.
+ */
+function planForSubscription(sub: Record<string, unknown>): BillingPlan {
+    return mapStripeStatus(sub.status as string) === 'CANCELED'
+        ? 'FREE'
+        : mapStripePlan(sub.metadata as Record<string, string> | null);
 }
 
 // ─── Subscription period helpers ───
@@ -213,7 +243,7 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 where: { stripeCustomerId: customerId },
                 data: {
                     stripeSubscriptionId: subscriptionId,
-                    plan: mapStripePlan(sub.metadata as Record<string, string> | null),
+                    plan: planForSubscription(sub),
                     status: mapStripeStatus(sub.status as string),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
@@ -245,7 +275,7 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 where: { stripeCustomerId: customerId },
                 data: {
                     stripeSubscriptionId: sub.id as string,
-                    plan: mapStripePlan(sub.metadata as Record<string, string> | null),
+                    plan: planForSubscription(sub),
                     status: mapStripeStatus(sub.status as string),
                     currentPeriodEnd: getSubscriptionPeriodEnd(sub),
                     trialEndsAt: getSubscriptionTrialEnd(sub),
@@ -276,6 +306,8 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
                 where: { stripeCustomerId: customerId },
                 data: {
                     status: 'CANCELED',
+                    // The subscription is gone, so is what it paid for (#5082).
+                    plan: 'FREE',
                     stripeSubscriptionId: null,
                 },
             });
