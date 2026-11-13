@@ -43,8 +43,10 @@ import {
     offerToolSet,
     type OfferedTool,
     type OfferedToolSet,
+    type ReviewLatch,
     type StepGuardObservation,
 } from '@/lib/agentic/engine-tools';
+import { evaluateFanOut, type FanOutVerdict } from '@/lib/agentic/subagent-fanout';
 import { recordExternalToolDecision } from '@/lib/agentic/flue/tool-decision';
 import type { RunBudget, RunCapHalt } from '@/lib/agentic/run-caps';
 import {
@@ -59,11 +61,24 @@ import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools'
 /** This engine's name in every guard source its tool calls write. */
 export const TOOL_RUNNER_GUARD_SOURCE = 'tool-runner';
 
+/**
+ * The guard source prefix of one inline sub-agent's calls (Step 2e, #4594):
+ * `tool-runner-subagent.<name>`, so its rows read
+ * `tool-runner-subagent.risk_analyst-tool-args:list_risks:toolu_…`. They still
+ * begin with the engine's name, and because the name pattern admits no `-`,
+ * `:` or `.`, the name ends exactly at the first `-tool-`.
+ */
+export function subagentGuardSource(name: string): string {
+    return `${TOOL_RUNNER_GUARD_SOURCE}-subagent.${name}`;
+}
+
 /** Why the run stopped, latched by whichever check found it first. */
 export type RunStop =
     | { readonly kind: 'CAP'; readonly halt: RunCapHalt }
     | { readonly kind: 'KILL' }
     | { readonly kind: 'OPERATOR_ABORT' }
+    /** The agent's circuit breaker read OPEN, or could not be read (Step 2e). */
+    | { readonly kind: 'BREAKER' }
     | { readonly kind: 'GUARD' };
 
 /** What a run's tools share with the loop that drives them. */
@@ -73,6 +88,13 @@ export interface ToolRunBinding {
     readonly budget: RunBudget;
     /** The next ledger seq. The loop's MODEL_CALL steps take from the same counter. */
     nextSeq(): number;
+    /** The seq the next step will take, without taking it: a delegation's span starts here. */
+    peekSeq(): number;
+    /**
+     * The inline sub-agent whose loop these tools serve (Step 2e), or null for
+     * the parent. Every step they record carries it.
+     */
+    readonly subagent: string | null;
     /** The latched stop, or null while the run may go on. */
     stopped(): RunStop | null;
     /** Latch a cap halt and abort the request in flight, if any. */
@@ -82,6 +104,12 @@ export interface ToolRunBinding {
      * (#5366); latch and abort when either has stopped the run.
      */
     checkKill(): Promise<boolean>;
+    /**
+     * Read the agent's circuit breaker, uncached (Step 2e); latch and abort
+     * when it reads OPEN or cannot be read. A delegation asks it, and the loop
+     * body asks it before every model call, in both loops.
+     */
+    checkBreaker(): Promise<boolean>;
     /** The guard's verdict for one call, taken (removed) once its step is written. */
     takeVerdict(toolCallId: string): StepGuardObservation | undefined;
     /** Which step a propose call belongs to, so its proposals name it. Per run, keyed by call. */
@@ -108,12 +136,26 @@ export interface ToolRunBinding {
 export class TurnCallCounter {
     private readonly made = new Map<string, number>();
 
+    private readonly delegated = new Map<string, number>();
+
     constructor(private readonly cap: number) {}
 
     admit(loop: string, turn: number): ToolCallsPerTurnVerdict {
         const key = `${loop}:${turn}`;
         const verdict = evaluateToolCallsPerTurn({ cap: this.cap, madeThisTurn: this.made.get(key) ?? 0 });
         if (verdict.allowed) this.made.set(key, verdict.madeThisTurn + 1);
+        return verdict;
+    }
+
+    /**
+     * Admit one delegation against the turn's delegation cap (Step 2e), counted
+     * on the way in like a tool call: an admitted delegation counts, a refused
+     * one does not. Only the parent delegates, so only its turns are keyed here.
+     */
+    admitDelegation(loop: string, turn: number, cap: number): FanOutVerdict {
+        const key = `${loop}:${turn}`;
+        const verdict = evaluateFanOut({ cap, delegatedThisTurn: this.delegated.get(key) ?? 0 });
+        if (verdict.allowed) this.delegated.set(key, verdict.delegatedThisTurn + 1);
         return verdict;
     }
 }
@@ -138,8 +180,14 @@ export async function refuseOverTurnCap(
         label: toolName,
         ...(input ? { input } : {}),
         output: { refused: TOOL_CALLS_PER_TURN_EXCEEDED, cap: verdict.cap, madeThisTurn: verdict.madeThisTurn },
+        ...subagentOf(binding),
     });
     throw new Error(toolCallsPerTurnRefusalMessage(verdict));
+}
+
+/** The ledger label of a step a binding records: the sub-agent's name, or nothing for the parent. */
+export function subagentOf(binding: Pick<ToolRunBinding, 'subagent'>): { subagent?: string } {
+    return binding.subagent === null ? {} : { subagent: binding.subagent };
 }
 
 /** The message a tool call gets when the run has already stopped. */
@@ -151,6 +199,8 @@ export function stoppedMessage(stop: RunStop): string {
             return 'This run was stopped by a kill switch.';
         case 'OPERATOR_ABORT':
             return 'This run was aborted by an operator.';
+        case 'BREAKER':
+            return 'This agent is stopped: its circuit breaker is latched open.';
         case 'GUARD':
             return 'This run is stopped for review by the AI guard.';
     }
@@ -231,6 +281,7 @@ async function ledgeredCall(
             // The arguments the model chose, never the result: the result is
             // tenant content, already guarded on its way to the model.
             input: args,
+            ...subagentOf(binding),
         });
         await recordExternalToolDecision(ctx, { runId, toolName: name, status: 'DONE', latencyMs: Date.now() - startedAt });
         return result;
@@ -245,6 +296,7 @@ async function ledgeredCall(
             guardRuleIds: verdict?.ruleIds,
             input: args,
             output: { error: err instanceof Error ? err.message : String(err) },
+            ...subagentOf(binding),
         });
         await recordExternalToolDecision(ctx, { runId, toolName: name, status: 'FAILED', latencyMs: Date.now() - startedAt });
         throw err;
@@ -288,11 +340,19 @@ export function toolRunnerToolsFor(
          * same queue, so the ledger's order is the order the calls were made.
          */
         readonly queue?: SerialQueue;
+        /**
+         * The run's existing latch, for a sub-agent's set (Step 2e): ONE latch
+         * per run, so a flag raised in a child refuses the parent too.
+         */
+        readonly review?: ReviewLatch;
+        /** The guard source prefix: the engine's own, or a sub-agent's (`subagentGuardSource`). */
+        readonly sourcePrefix?: string;
     },
 ): OfferedToolSet<BetaRunnableTool<Record<string, unknown>>> {
     const queue = opts.queue ?? new SerialQueue();
     return offerToolSet(inv, (offered) => runnableToolFor(offered, binding, queue), {
-        sourcePrefix: TOOL_RUNNER_GUARD_SOURCE,
+        sourcePrefix: opts.sourcePrefix ?? TOOL_RUNNER_GUARD_SOURCE,
+        ...(opts.review ? { review: opts.review } : {}),
         observe: opts.observe,
         originFor: (toolCallId) => {
             const stepSeq = binding.originOf(toolCallId);

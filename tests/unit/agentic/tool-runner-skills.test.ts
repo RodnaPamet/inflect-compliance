@@ -73,12 +73,15 @@ function bindingFor(opts: { stopped?: RunStop | null; stepHalt?: RunCapHalt | nu
         ctx: { tenantId: 't-1', requestId: 'r-1' } as unknown as RequestContext,
         runId: 'run-1',
         budget: { charge: () => opts.stepHalt ?? null, used: () => 0 } as unknown as ToolRunBinding['budget'],
+        subagent: null,
         nextSeq: () => seq++,
+        peekSeq: () => seq,
         stopped: () => opts.stopped ?? null,
         stopAtCap: (halt) => {
             halts.push(halt);
         },
         checkKill: async () => false,
+        checkBreaker: async () => false,
         takeVerdict: () => undefined,
         noteOrigin: () => undefined,
         originOf: () => undefined,
@@ -232,13 +235,17 @@ describe('reported to the register as engine-supplied', () => {
         const added = activateSkillTool(binding, MOUNTED, new SerialQueue());
         expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: true })).toEqual([added!.name]);
         expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: false })).toEqual([]);
-        expect(TOOL_RUNNER_SUPPLIED_TOOLS.map((t) => t.appearsWhen)).toEqual(['when-skills-mounted']);
+        // `delegate` (Step 2e) only when the version defines sub-agents.
+        expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: false, subagentsDefined: true })).toEqual(['delegate']);
+        expect(toolRunnerSuppliedToolNamesFor({ skillsMounted: true, subagentsDefined: true })).toEqual([added!.name, 'delegate']);
+        expect(TOOL_RUNNER_SUPPLIED_TOOLS.map((t) => t.appearsWhen)).toEqual(['when-skills-mounted', 'when-subagents-defined']);
     });
 
     it('the exposure report carries activate_skill as supplied by both engines, beside Flue\'s own task', () => {
         const rows = engineSuppliedTools();
         const byName = new Map(rows.map((r) => [r.name, r]));
-        expect(rows.map((r) => r.name).sort()).toEqual(['activate_skill', 'task']);
+        expect(rows.map((r) => r.name).sort()).toEqual(['activate_skill', 'delegate', 'task']);
+        expect(byName.get('delegate')).toMatchObject({ appearsWhen: 'when-subagents-defined', engines: ['tool-runner'] });
         expect(byName.get('activate_skill')).toMatchObject({
             appearsWhen: 'when-skills-mounted',
             engines: ['flue', 'tool-runner'],

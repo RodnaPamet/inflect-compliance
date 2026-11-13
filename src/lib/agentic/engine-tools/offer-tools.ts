@@ -300,6 +300,15 @@ export function offerToolSet<T>(
          * engine's usual offer.
          */
         readonly profileTools?: readonly string[];
+        /**
+         * The run's EXISTING latch, for a second tool set built inside the same
+         * run (Step 2e: a sub-agent's set, built over the parent's). Two
+         * latches in one run is the routing-around the latch exists to stop: a
+         * flag a child's tool raised must refuse the parent's next call, and
+         * the reverse. When given, `observe` is ignored, because the latch
+         * already reports to the run's observer. Absent means a new latch.
+         */
+        readonly review?: ReviewLatch;
     },
 ): OfferedToolSet<T> {
     // One latch for the RUN — review, once required, stays required across
@@ -308,7 +317,7 @@ export function offerToolSet<T>(
     // cross. A second latch for the propose tools would let a flagged read be
     // followed by a clean proposal, which is the routing-around it exists to
     // stop, and on the surface where it would matter most.
-    const review = new ReviewLatch(opts.observe);
+    const review = opts.review ?? new ReviewLatch(opts.observe);
 
     const profileTools = opts.profileTools === undefined ? null : new Set(opts.profileTools);
     const inProfile = (t: OfferableTool): boolean => profileTools === null || profileTools.has(t.name);

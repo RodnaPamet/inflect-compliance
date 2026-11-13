@@ -6137,6 +6137,7 @@
         "runtimeBody": "These reach a Flue run whatever this agent was granted — the runtime adds them, not the register. Neither widens what the agent can reach today; each says below what bounds it. They are listed here because an operator reading the grants above was seeing a shorter list than the model is shown.",
         "runtimeAlways": "On every run",
         "runtimeWhenSkills": "Only with a skill mounted",
+        "runtimeWhenSubagents": "Only when the version defines sub-agents",
         "widensRead": "{tool} can READ this workspace's data. It cannot propose or change anything.",
         "widensPropose": "{tool} can PROPOSE changes. Proposals land in the approval queue for a human — granting this does not let the agent commit anything on its own.",
         "widensBlocked": "The tool boundary is refusing this tool right now because its definition changed and no one has accepted the new one. Granting it will have no effect until that pin is approved.",
@@ -11943,6 +11944,7 @@
           "accepted": "Answer accepted",
           "overlapping": "Ran at the same time as another delegation, so the steps below are claimed by both and these figures do not sum to the run's total.",
           "stepBadge": "via {agents}",
+          "subagentBadge": "Sub-agent: {name}",
           "specialist": "Specialist: {name}"
         },
         "crumbAgents": "Agents",
@@ -13460,7 +13462,8 @@
         "effort": "Effort",
         "maxTurns": "Turn limit",
         "outputKind": "Output",
-        "triggers": "Allowed triggers"
+        "triggers": "Allowed triggers",
+        "subagents": "Sub-agents: each one's tools, skills, turn limit and every word of its instructions"
       },
       "tier": {
         "balanced": "Balanced",
@@ -13499,7 +13502,9 @@
         "hashNoteWithFlow": "Approving approves this text and this drawn flow, together, by their hash:",
         "authorCannotDecide": "You wrote this version, so another person must approve or reject it.",
         "approve": "Approve",
-        "reject": "Reject"
+        "reject": "Reject",
+        "subagentsDiffIntro": "Changes to the sub-agents from version {from}, in force now, to version {to}:",
+        "hashNoteWithSubagents": "Approving approves this text and every sub-agent's instructions, together, by their hash:"
       },
       "testRun": {
         "action": "Test run",
@@ -13509,7 +13514,8 @@
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
           "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
           "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it.",
-          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it."
+          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it.",
+          "SUBAGENTS_NOT_RUNNABLE": "This version defines sub-agents, and the Tool Runner engine does not run them in this build. It is refused rather than run without them."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -13525,7 +13531,8 @@
         "decider": "Decided by",
         "byOn": "{who}, {when}",
         "hash": "Instructions hash",
-        "rejectionReason": "Reason for rejection"
+        "rejectionReason": "Reason for rejection",
+        "subagents": "Sub-agents"
       },
       "editor": {
         "createTitle": "Write the first version",
@@ -13567,6 +13574,24 @@
       },
       "refusal": {
         "SKILL_CATALOGUE_OVER_BUDGET": "These skills' descriptions total {used} bytes, over the {budget}-byte budget a run can mount, so a run of this version would be refused. Choose fewer skills, or skills with shorter descriptions."
+      },
+      "subagents": {
+        "heading": "Sub-agents",
+        "add": "Sub-agent",
+        "hint": "Up to {max}. Each works only with tools and skills this version has chosen, and cannot delegate further. The agent picks one by name alone, so nothing of a sub-agent's instructions reaches it.",
+        "none": "No sub-agents. The agent does all of its work itself.",
+        "untitled": "Sub-agent {n}",
+        "outside": "This sub-agent names what this version no longer has: {items}. Change it, or the save is refused.",
+        "turnsAbove": "a turn limit above the version's {max}",
+        "name": "Name",
+        "nameHint": "Lowercase letters, digits and underscores, starting with a letter. The agent chooses a sub-agent by this name.",
+        "nameInvalid": "Use 2 to 40 lowercase letters, digits and underscores, starting with a letter.",
+        "toolsHint": "Only tools this version has chosen. A sub-agent can never use more than its agent.",
+        "toolsEmpty": "Choose this version's tools first.",
+        "skillsHint": "Only skills this version has chosen.",
+        "skillsEmpty": "This version mounts no skills.",
+        "maxTurnsHint": "From 1 to this version's own limit, {max}.",
+        "remove": "Remove"
       }
     },
     "oversightAccess": {
@@ -16933,6 +16958,7 @@
       "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
       "refused": {
         "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
+        "PROFILE_SUBAGENTS_NOT_RUNNABLE": "Version {version} defines sub-agents, and no engine in this build runs them, so a run of it is refused rather than run without them. This is the message an engine would be handed.",
         "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
       },
       "runAs": {

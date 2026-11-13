@@ -45,7 +45,12 @@ export type RuntimeToolCondition =
     /** Present on every run, whatever it was bound with. */
     | 'always'
     /** Present only once the run mounts at least one skill. */
-    | 'when-skills-mounted';
+    | 'when-skills-mounted'
+    /**
+     * Present only when the run's profile version defines inline sub-agents
+     * (Step 2e, the Tool Runner's `delegate`). No Flue runtime tool has it.
+     */
+    | 'when-subagents-defined';
 
 export interface FlueRuntimeTool {
     /** The tool name exactly as it reaches the model. */

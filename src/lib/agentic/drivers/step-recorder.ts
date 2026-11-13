@@ -83,6 +83,14 @@ export interface StepRecord {
      * review wants and the cap does not read.
      */
     tokens?: number;
+    /**
+     * The inline sub-agent this step belongs to (Step 2e, #4594): set on every
+     * MODEL_CALL and TOOL_CALL a sub-agent produces, absent on every parent
+     * step. Written to `WorkflowStep.subagentName` and to the audit row, so a
+     * step's owner is READ, not inferred from a span: a run killed during a
+     * delegation never writes the marker that closes its span.
+     */
+    subagent?: string;
 }
 
 export async function recordStep(
@@ -117,6 +125,9 @@ export async function recordStep(
                 // enforced total and the cap still reads it — this is the
                 // detail an incident review wants and a run total cannot give.
                 costTokens: rec.tokens,
+                // Whose step it was: a sub-agent's name, or NULL for the
+                // parent. An identifier (CHECK `WorkflowStep_subagent_name_shape`).
+                subagentName: rec.subagent ?? null,
             },
         }),
     );
@@ -165,6 +176,10 @@ export async function recordStep(
             // it ran and found nothing.
             guardVerdict: rec.guardVerdict ?? null,
             guardRuleIds: rec.guardRuleIds ? [...rec.guardRuleIds] : [],
+            // …and WHOSE step it was (Step 2e): the sub-agent's name, or null
+            // for the parent's own. In the hash-chained trail as well as the
+            // column, for the reason the verdict is.
+            subagent: rec.subagent ?? null,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, runId },
     }).catch(() => undefined);

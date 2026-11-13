@@ -57,8 +57,19 @@
  * check; a `subagent` node must name an APPROVED profile in the caller's
  * tenant. No new route and no new permission: the version routes take `flow`.
  *
- * Audit rows carry hashes, version numbers, tool names and rule ids, never the
- * instructions or a flow's labels.
+ * ── INLINE SUB-AGENTS (Step 2e of `docs/claude-tool-runner-design.md`) ──────
+ *
+ * A version may instead carry up to four sub-agents (never beside a flow):
+ * each a name, its own instructions (sanitised, capped, scanned against ITS
+ * tools), a subset of the version's tools and skills, and a turn limit no
+ * higher than the version's. Every rule is a refusal by name (`SUBAGENT_*`),
+ * asked at save and again at approval. They are stored canonical and
+ * encrypted in `subagentsJson`, frozen by the version trigger, and covered by
+ * the content hash under its own domain, so no existing version's hash moves.
+ *
+ * Audit rows carry hashes, version numbers, tool names, sub-agent names and
+ * rule ids, never the instructions, a sub-agent's instructions or a flow's
+ * labels.
  */
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -75,12 +86,18 @@ import { catalogBytes, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { agentProfilesOnFor } from '@/lib/agentic/agent-switches-policy';
 import {
     PROFILE_INSTRUCTIONS_MAX_CHARS,
+    PROFILE_MAX_SUBAGENTS,
     PROFILE_MAX_TURNS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
+    checkProfileSubagents,
+    parseStoredProfileSubagents,
     profileNamesNoReadTool,
     profileRunKey,
+    serializeProfileSubagents,
     type ProfileSkillOption,
     type ProfileSkillRef,
+    type ProfileSubagent,
+    type ProfileSubagentRefusal,
 } from '@/lib/agentic/agent-profile';
 import type { AgentProfileVersionInput } from '../schemas/agent-profile.schemas';
 import { getAgentDriverSetting } from './agent-driver-setting';
@@ -136,7 +153,9 @@ export type AgentProfileRefusal =
     | 'FLOW_SUBAGENT_SELF'
     | 'FLOW_SUBAGENT_NOT_APPROVED'
     | 'FLOW_UNREADABLE'
-    | 'FLOW_TOOLS_DIVERGED';
+    | 'FLOW_TOOLS_DIVERGED'
+    | ProfileSubagentRefusal
+    | 'SUBAGENTS_UNREADABLE';
 
 const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     PROFILES_DISABLED: 404,
@@ -183,6 +202,18 @@ const REFUSAL_STATUS: Record<AgentProfileRefusal, 400 | 403 | 404 | 409> = {
     FLOW_SUBAGENT_NOT_APPROVED: 400,
     FLOW_UNREADABLE: 409,
     FLOW_TOOLS_DIVERGED: 409,
+    SUBAGENTS_TOO_MANY: 400,
+    SUBAGENTS_WITH_FLOW: 400,
+    SUBAGENT_NAME_INVALID: 400,
+    SUBAGENT_NAME_DUPLICATE: 400,
+    SUBAGENT_INSTRUCTIONS_EMPTY: 400,
+    SUBAGENT_INSTRUCTIONS_TOO_LONG: 400,
+    SUBAGENT_INSTRUCTIONS_REFUSED: 400,
+    SUBAGENT_NAMES_NO_TOOL: 400,
+    SUBAGENT_TOOL_NOT_IN_VERSION: 400,
+    SUBAGENT_SKILL_NOT_IN_VERSION: 400,
+    SUBAGENT_MAX_TURNS_ABOVE_VERSION: 400,
+    SUBAGENTS_UNREADABLE: 409,
 };
 
 /** A refusal carrying its reason as `details.reason`, beside a sentence for the person who asked. */
@@ -227,18 +258,36 @@ export function profileInstructionsHash(instructions: string): string {
 const FLOW_CONTENT_HASH_DOMAIN = 'inflect-agent-profile-content/1';
 
 /**
+ * Names the sub-agent-bearing form (Step 2e, #4594): a second domain, so no
+ * value of the first two forms can collide with it.
+ */
+const SUBAGENT_CONTENT_HASH_DOMAIN = 'inflect-agent-profile-content/2';
+
+/**
  * THE VERSION'S CONTENT HASH, stored in `instructionsHash`: what the approver
  * names and what a run pins and recomputes.
  *
- *   - No flow: the hash of the instructions alone, byte for byte what it has
- *     always been, so every version and every run pin written before flows
- *     existed still verifies.
- *   - A flow: the hash of `[domain, instructions, flowJson]` as JSON, an
+ *   - No flow, no sub-agents: the hash of the instructions alone, byte for
+ *     byte what it has always been, so every version and every run pin
+ *     written before flows existed still verifies.
+ *   - A flow: the hash of `[domain/1, instructions, flowJson]` as JSON, an
  *     unambiguous encoding of both columns, so a changed flow is a changed
  *     hash exactly as changed instructions are (`PROFILE_HASH_MISMATCH` at the
  *     resolver, `HASH_CHANGED` at approval).
+ *   - Any sub-agents (Step 2e): the hash of `[domain/2, instructions,
+ *     flowJson ?? null, subagentsJson]`, over the STORED string, never a
+ *     re-serialisation, so a later build that canonicalises differently
+ *     cannot move it. A version with none stores NULL and takes one of the two
+ *     forms above, byte for byte, so NO EXISTING VERSION'S HASH CHANGES: every
+ *     approved version, every run pin and every hash an approver has named
+ *     still verifies. Changing one sub-agent's text changes the hash.
  */
-export function profileContentHash(instructions: string, flowJson: string | null): string {
+export function profileContentHash(instructions: string, flowJson: string | null, subagentsJson: string | null = null): string {
+    if (subagentsJson !== null) {
+        return createHash('sha256')
+            .update(JSON.stringify([SUBAGENT_CONTENT_HASH_DOMAIN, instructions, flowJson, subagentsJson]), 'utf8')
+            .digest('hex');
+    }
     if (flowJson === null) return profileInstructionsHash(instructions);
     return createHash('sha256')
         .update(JSON.stringify([FLOW_CONTENT_HASH_DOMAIN, instructions, flowJson]), 'utf8')
@@ -255,6 +304,11 @@ interface PreparedVersion {
     readonly subagentRefs: string[];
     /** Node count, the only fact about a flow an audit row carries. */
     readonly flowNodeCount: number | null;
+    /** Canonical JSON of the checked sub-agents, or null for a version with none. */
+    readonly subagentsJson: string | null;
+    readonly subagents: readonly ProfileSubagent[];
+    /** The sub-agents' names and tools, for the audit row. */
+    readonly subagentFacts: SubagentAuditFacts;
     readonly skillRefs: ProfileSkillRef[];
     /** `origin:name` per skill, the form an audit row carries. */
     readonly skillRefKeys: string[];
@@ -306,13 +360,18 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
     }
     skillRefs.sort((a, b) => (a.origin + a.name < b.origin + b.name ? -1 : 1));
     const flowJson = flow ? serializeAgentFlow(flow) : null;
+    const subagents = prepareSubagents(input, { toolNames, skillRefs, maxTurns: input.maxTurns }, flow !== null);
+    const subagentsJson = serializeProfileSubagents(subagents);
     return {
         instructions,
-        instructionsHash: profileContentHash(instructions, flowJson),
+        instructionsHash: profileContentHash(instructions, flowJson, subagentsJson),
         toolNames,
         flowJson,
         subagentRefs: flow ? flowSubagentRefs(flow) : [],
         flowNodeCount: flow ? flow.nodes.length : null,
+        subagentsJson,
+        subagents,
+        subagentFacts: subagentAuditFacts(subagents),
         skillRefs,
         skillRefKeys: skillRefs.map((r) => `${r.origin}:${r.name}`),
         modelTier: input.modelTier,
@@ -320,6 +379,104 @@ function prepareVersion(input: AgentProfileVersionInput): PreparedVersion {
         maxTurns: input.maxTurns,
         outputKind: input.outputKind,
         allowedTriggers: [...new Set(input.allowedTriggers)].sort(),
+    };
+}
+
+/** A sub-agent refusal from the pure check, as the usecase's error. */
+function refuseSubagents(check: Extract<ReturnType<typeof checkProfileSubagents>, { ok: false }>): AppError {
+    return refuse(check.reason, check.message, { ...check.details });
+}
+
+/**
+ * Hold each sub-agent's instructions to the text scan, with `declaredTools`
+ * set to THAT sub-agent's own tools: text naming a tool outside its subset is
+ * refused by `skill.undeclared_tool`, exactly as the version's text is held to
+ * the version's tools. Asked at save and again at approval.
+ */
+function assertSubagentTextScans(subagents: readonly ProfileSubagent[]): void {
+    for (const s of subagents) {
+        const scan = scanSkillText({ description: '', instructions: s.instructions, declaredTools: s.toolNames });
+        if (scan.rules.length > 0) {
+            throw refuse(
+                'SUBAGENT_INSTRUCTIONS_REFUSED',
+                `The text scan refused sub-agent ${s.name}'s instructions (${[...scan.rules, ...scan.guardRules].join(', ')}).`,
+                { subagent: s.name, rules: [...scan.rules], guardRules: [...scan.guardRules] },
+            );
+        }
+    }
+}
+
+/**
+ * THE VERSION'S SUB-AGENTS (Step 2e, #4594): sanitised, checked against the
+ * version's own sets, scanned, and canonical. Every rule is a refusal by name
+ * (`SUBAGENT_*`), never a silent drop, and a version carries a flow or
+ * sub-agents, never both (`SUBAGENTS_WITH_FLOW`, owner decision 1).
+ *
+ * The version's own grant, skill and catalogue checks need no change: each
+ * sub-agent's sets are subsets of the version's, so a version whose sets pass
+ * already covers its sub-agents.
+ */
+function prepareSubagents(
+    input: AgentProfileVersionInput,
+    version: { toolNames: readonly string[]; skillRefs: readonly ProfileSkillRef[]; maxTurns: number },
+    hasFlow: boolean,
+): readonly ProfileSubagent[] {
+    const raw = input.subagents ?? [];
+    if (raw.length === 0) return [];
+    if (hasFlow) {
+        throw refuse('SUBAGENTS_WITH_FLOW', 'A version carries a drawn flow or sub-agents, never both.');
+    }
+    if (raw.length > PROFILE_MAX_SUBAGENTS) {
+        throw refuse('SUBAGENTS_TOO_MANY', `A version has at most ${PROFILE_MAX_SUBAGENTS} sub-agents.`, {
+            max: PROFILE_MAX_SUBAGENTS,
+            count: raw.length,
+        });
+    }
+    const checked = checkProfileSubagents(
+        raw.map((s) => ({ ...s, instructions: sanitizePlainText(s.instructions).trim() })),
+        version,
+        { instructionsMaxChars: PROFILE_INSTRUCTIONS_MAX_CHARS },
+    );
+    if (!checked.ok) throw refuseSubagents(checked);
+    assertSubagentTextScans(checked.subagents);
+    return checked.subagents;
+}
+
+/**
+ * A stored list of sub-agents, read back for approval. Unreadable, or no longer
+ * a subset of the version's own sets, is refused rather than approved as "no
+ * sub-agents"; a version that also stores a flow was not written by the writer.
+ */
+function readStoredSubagents(
+    v: { subagentsJson: string | null; flowJson: string | null; toolNames: string[]; skillRefs: unknown; maxTurns: number },
+): readonly ProfileSubagent[] {
+    if (v.subagentsJson === null) return [];
+    if (v.flowJson !== null) throw refuse('SUBAGENTS_WITH_FLOW', 'A version carries a drawn flow or sub-agents, never both.');
+    const parsed = parseStoredProfileSubagents(v.subagentsJson, {
+        toolNames: v.toolNames,
+        skillRefs: viewSkillRefs(v.skillRefs),
+        maxTurns: v.maxTurns,
+    });
+    if (!parsed) {
+        throw refuse('SUBAGENTS_UNREADABLE', 'This version\'s sub-agents cannot be read by this build; write a new version.');
+    }
+    return parsed;
+}
+
+/**
+ * What an audit row says about a version's sub-agents: their names and each
+ * one's tools, never their instructions. Computed here and NAMED at each sink
+ * (`no-raw-prompt-logging`), so no field bag reaches a row.
+ */
+interface SubagentAuditFacts {
+    readonly names: string[];
+    readonly toolNames: Record<string, string[]>;
+}
+
+function subagentAuditFacts(subagents: readonly ProfileSubagent[]): SubagentAuditFacts {
+    return {
+        names: subagents.map((s) => s.name),
+        toolNames: Object.fromEntries(subagents.map((s) => [s.name, [...s.toolNames]])),
     };
 }
 
@@ -536,6 +693,7 @@ async function insertVersion(db: PrismaTx, ctx: RequestContext, profileId: strin
             instructionsHash: v.instructionsHash,
             toolNames: v.toolNames,
             flowJson: v.flowJson,
+            subagentsJson: v.subagentsJson,
             skillRefs: v.skillRefs.map((r) => ({ origin: r.origin, name: r.name })),
             modelTier: v.modelTier,
             effort: v.effort,
@@ -601,6 +759,11 @@ export async function createAgentProfile(
                         instructionsHash: prepared.instructionsHash,
                         toolNames: prepared.toolNames,
                         flowNodeCount: prepared.flowNodeCount,
+                        subagents: {
+                            count: prepared.subagentFacts.names.length,
+                            names: prepared.subagentFacts.names,
+                            toolNames: prepared.subagentFacts.toolNames,
+                        },
                         skillRefs: prepared.skillRefKeys,
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
@@ -688,6 +851,11 @@ export async function createAgentProfileVersion(
                         instructionsHash: prepared.instructionsHash,
                         toolNames: prepared.toolNames,
                         flowNodeCount: prepared.flowNodeCount,
+                        subagents: {
+                            count: prepared.subagentFacts.names.length,
+                            names: prepared.subagentFacts.names,
+                            toolNames: prepared.subagentFacts.toolNames,
+                        },
                         skillRefs: prepared.skillRefKeys,
                         modelTier: prepared.modelTier,
                         effort: prepared.effort,
@@ -723,8 +891,11 @@ const VERSION_SELECT = {
     toolNames: true,
     // Read so approval can re-check the flow the version carries (Phase 1).
     flowJson: true,
+    // Read so approval can re-check the sub-agents the version carries (Step 2e).
+    subagentsJson: true,
     // Read so approval can price the catalogue the version names (#4523).
     skillRefs: true,
+    maxTurns: true,
     authoredByUserId: true,
 } as const;
 
@@ -814,10 +985,17 @@ export async function approveAgentProfileVersion(
         const v = await findVersion(db, ctx, profile.id, version);
         if (v.status !== 'SUBMITTED') throw refuse('NOT_SUBMITTED', 'Only a submitted version can be approved.');
         assertMayDecide(ctx, v.authoredByUserId);
-        if (input.instructionsHash !== v.instructionsHash || profileContentHash(v.instructions, v.flowJson) !== v.instructionsHash) {
+        if (
+            input.instructionsHash !== v.instructionsHash ||
+            profileContentHash(v.instructions, v.flowJson, v.subagentsJson) !== v.instructionsHash
+        ) {
             throw refuse('HASH_CHANGED', 'The instructions you read are not this version\'s; read the version again before approving.');
         }
         const flow = v.flowJson === null ? null : readStoredFlow(v.flowJson, v.toolNames);
+        // Every sub-agent rule asked again, as the version's own checks are:
+        // the text scan's rules can change while a version waits (Step 2e).
+        const subagents = readStoredSubagents(v);
+        const stored = { subagentFacts: subagentAuditFacts(subagents) };
         const scannedText = flow ? [v.instructions, ...flowLabels(flow)].join('\n') : v.instructions;
         const scan = scanSkillText({ description: '', instructions: scannedText, declaredTools: v.toolNames });
         if (scan.rules.length > 0) {
@@ -827,6 +1005,7 @@ export async function approveAgentProfileVersion(
                 { rules: [...scan.rules], guardRules: [...scan.guardRules] },
             );
         }
+        assertSubagentTextScans(subagents);
         await assertToolsGranted(db, ctx, agentId, v.toolNames);
         // Re-priced at APPROVAL, not just at save (#4523): a deploy between the
         // two can lengthen a shipped skill's description, and approving a tenant
@@ -875,6 +1054,11 @@ export async function approveAgentProfileVersion(
                     instructionsHash: v.instructionsHash,
                     authoredByUserId: v.authoredByUserId,
                     toolNames: v.toolNames,
+                    subagents: {
+                        count: stored.subagentFacts.names.length,
+                        names: stored.subagentFacts.names,
+                        toolNames: stored.subagentFacts.toolNames,
+                    },
                     supersededVersion: inForce?.version ?? null,
                 },
             },
@@ -1000,6 +1184,13 @@ export interface AgentProfileVersionView {
     toolNames: string[];
     /** The drawn flow, or null. Read back for the reviewer; never in an audit row. */
     flow: AgentFlow | null;
+    /**
+     * The inline sub-agents (Step 2e), in name order, or `[]` for a version
+     * with none. Read back for the reviewer, instructions included; never in
+     * an audit row. A stored list this build cannot read is `[]` here and is
+     * refused at approval (`SUBAGENTS_UNREADABLE`).
+     */
+    subagents: ProfileSubagent[];
     skillRefs: ProfileSkillRef[];
     modelTier: string;
     effort: string;
@@ -1177,6 +1368,7 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             instructionsHash: true,
             toolNames: true,
             flowJson: true,
+            subagentsJson: true,
             skillRefs: true,
             modelTier: true,
             effort: true,
@@ -1224,6 +1416,16 @@ export async function getAgentProfile(ctx: RequestContext, agentId: string): Pro
             instructionsHash: r.instructionsHash,
             toolNames: r.toolNames,
             flow: r.flowJson === null ? null : parseStoredAgentFlow(r.flowJson),
+            subagents:
+                r.subagentsJson === null
+                    ? []
+                    : [
+                          ...(parseStoredProfileSubagents(r.subagentsJson, {
+                              toolNames: r.toolNames,
+                              skillRefs: viewSkillRefs(r.skillRefs),
+                              maxTurns: r.maxTurns,
+                          }) ?? []),
+                      ],
             skillRefs: viewSkillRefs(r.skillRefs),
             modelTier: r.modelTier,
             effort: r.effort,

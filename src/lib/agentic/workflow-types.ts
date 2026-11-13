@@ -19,6 +19,7 @@ import type {
     ProfileModelTier,
     ProfileOutputKind,
     ProfileSkillRef,
+    ProfileSubagent,
     ProfileTrigger,
 } from './agent-profile';
 import type { AgentDriver } from './agent-driver';
@@ -302,6 +303,14 @@ export interface ProfileRunSpec {
      * the grants, whatever the order says.
      */
     readonly flow?: CompiledFlow;
+    /**
+     * The version's inline sub-agents (Step 2e of
+     * `docs/claude-tool-runner-design.md`), read back strictly by the
+     * resolver, or ABSENT for a version with none. Each one's tools and skills
+     * are subsets of this spec's own, and only an engine whose `runsSubagents`
+     * entry is true is admitted to run a version that has any.
+     */
+    readonly subagents?: readonly ProfileSubagent[];
 }
 
 /**

@@ -16,12 +16,37 @@ import {
     PROFILE_INSTRUCTIONS_MAX_CHARS,
     PROFILE_REJECTION_REASON_MAX_CHARS,
     PROFILE_MAX_SKILLS,
+    PROFILE_MAX_SUBAGENTS,
     PROFILE_MAX_TOOLS,
     PROFILE_MAX_TURNS,
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
 } from '@/lib/agentic/agent-profile';
+
+const SkillRefSchema = z
+    .object({
+        origin: z.enum(['repository', 'tenant']),
+        name: z.string().min(1).max(64),
+    })
+    .strict();
+
+/**
+ * One inline sub-agent (Step 2e, #4594). No description (owner decision 2,
+ * 2026-11-13): a field it does not have is a 400. Its name pattern, its
+ * subsets of the version's tools and skills and its turn limit are the
+ * usecase's checks, each refused by name (`SUBAGENT_*`); here they are only
+ * bounded.
+ */
+export const AgentProfileSubagentSchema = z
+    .object({
+        name: z.string().min(1).max(64),
+        instructions: z.string().min(1).max(PROFILE_INSTRUCTIONS_MAX_CHARS),
+        toolNames: z.array(z.string().min(1).max(100)).max(PROFILE_MAX_TOOLS),
+        skillRefs: z.array(SkillRefSchema).max(PROFILE_MAX_SKILLS),
+        maxTurns: z.number().int().min(1).max(PROFILE_MAX_TURNS),
+    })
+    .strict();
 
 /**
  * One version, in full: an edit supplies every field, because a version is
@@ -42,16 +67,12 @@ export const AgentProfileVersionSchema = z
         // `checkAgentFlow`, which names each refusal (a cycle, a checkpoint, a
         // tool of the wrong kind); here it is only bounded.
         flow: z.unknown().optional(),
-        skillRefs: z
-            .array(
-                z
-                    .object({
-                        origin: z.enum(['repository', 'tenant']),
-                        name: z.string().min(1).max(64),
-                    })
-                    .strict(),
-            )
-            .max(PROFILE_MAX_SKILLS),
+        skillRefs: z.array(SkillRefSchema).max(PROFILE_MAX_SKILLS),
+        // The version's inline sub-agents (Step 2e). Bounded here only to keep
+        // a body small: the cap of PROFILE_MAX_SUBAGENTS is the usecase's, so a
+        // fifth sub-agent is refused BY NAME (`SUBAGENTS_TOO_MANY`), with the
+        // cap in `details`, rather than as an anonymous schema error.
+        subagents: z.array(AgentProfileSubagentSchema).max(PROFILE_MAX_SUBAGENTS * 4).optional(),
         modelTier: z.enum(PROFILE_MODEL_TIERS),
         effort: z.enum(PROFILE_EFFORTS),
         maxTurns: z.number().int().min(1).max(PROFILE_MAX_TURNS),
@@ -66,6 +87,15 @@ export const AgentProfileVersionSchema = z
                 code: 'custom',
                 path: ['toolNames'],
                 message: 'FLOW_TOOLS_ARE_DERIVED: a version with a flow takes its tools from the flow; do not list them.',
+            });
+        }
+        // A version carries a flow or sub-agents, never both (owner decision 1,
+        // 2026-11-13). The usecase refuses it again, by name.
+        if (hasFlow && v.subagents !== undefined && v.subagents.length > 0) {
+            issue.addIssue({
+                code: 'custom',
+                path: ['subagents'],
+                message: 'SUBAGENTS_WITH_FLOW: a version carries a drawn flow or sub-agents, never both.',
             });
         }
         if (!hasFlow && v.toolNames === undefined) {

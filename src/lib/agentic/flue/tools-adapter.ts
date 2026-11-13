@@ -111,9 +111,9 @@
 import type * as v from 'valibot';
 
 import type { RequestContext } from '@/app-layer/types';
-import { guardUntrustedInput } from '@/app-layer/ai/guard';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import {
+    guardDelegateAnswer as guardEngineDelegateAnswer,
     offerToolSet,
     runGuardedTool as runEngineGuardedTool,
     ReviewLatch,
@@ -221,37 +221,12 @@ export type FlueToolSet = OfferedToolSet<FlueToolDefinition>;
 /**
  * SCAN A DELEGATE'S ANSWER, exactly as a tool RESULT is scanned (#3473).
  *
- * Lives here rather than in the driver because the delegate is the RUNTIME's
- * own `task` tool, so this is Flue-shaped; what it shares with a tool result it
- * takes from the core: the run's `ReviewLatch`, whose `check` observes, records
- * and asserts exactly as it does for a tool result. A second implementation in
- * the driver would be the same sandwich with its own opinions about which
- * verdicts throw — and the first one here did forget the recording (#5290).
- *
- * ## Why a delegate's answer is a tool result in every respect that matters
- *
- * It crosses into the parent's context as the `task` tool's return value. The
- * only thing that makes it special is that `task` belongs to the RUNTIME, so
- * `wrapForLedger` never sees it — which is why nothing was scanning it.
- *
- * The delegate's own READS need no help: `narrowTools` hands it the parent's
- * own tool objects, so each one runs the parent's wrapper and is scanned both
- * directions, recorded in the parent's ledger and charged to its budget.
- * Measured. What is left is the composed answer.
- *
- * ## It reports through the SAME observer, so a flag settles the run
- *
- * A flagged answer trips the same latch a flagged tool result does — the
- * run's `ReviewLatch`, handed in — so every later tool call refuses, and the
- * run settles `AWAITING_APPROVAL` with the flag attached. Reported
- * BEFORE the assertions for the reason `check` gives: both of those paths
- * leave by throwing, and observing afterwards would record every clean verdict
- * and drop every refusal.
- *
- * `slice: 'result'` because that is what it is, and the ledger folds every
- * verdict for one id into the worst seen. The `tool` is `task` — the name the
- * model called, not the specialist it selected, because the specialist is in
- * the arguments and this field is the tool.
+ * The scan itself lives in the engine-neutral core since Step 2e (#4594),
+ * `engine-tools/delegate-answer.ts`, so the Tool Runner scans its sub-agents'
+ * answers with the same function. This binds it to Flue's source prefix,
+ * which keeps every row byte for byte `flue-delegate-answer:<taskId>`, and to
+ * the runtime's own `task` tool, the name the model called. It records
+ * through the run's `ReviewLatch`, handed in (#5290).
  */
 export async function guardDelegateAnswer(
     ctx: RequestContext,
@@ -259,15 +234,7 @@ export async function guardDelegateAnswer(
     taskId: string | undefined,
     review: ReviewLatch,
 ): Promise<void> {
-    const outcome = await guardUntrustedInput(ctx, text, {
-        source: `flue-delegate-answer:${taskId ?? 'unknown'}`,
-    });
-    // THROUGH THE RUN'S OWN LATCH (#5290), not beside it. `check` observes,
-    // records the flag and asserts — and the recording is what makes every
-    // later guarded call refuse. Observing and asserting here without
-    // recording let the parent carry on reading and proposing after a
-    // flagged answer, which is the routing-around the latch exists to stop.
-    review.check(outcome, 'task', 'result', taskId ?? 'standalone');
+    await guardEngineDelegateAnswer(ctx, text, taskId, review, FLUE_GUARD_SOURCE_PREFIX, 'task');
 }
 
 /**

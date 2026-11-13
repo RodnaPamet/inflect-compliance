@@ -78,7 +78,11 @@ export type FlowRunPreview =
           version: number;
           runAs: 'RUN' | 'TEST_RUN' | null;
           /** Admission refuses this version on every engine: no run receives the message. */
-          runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null;
+          runRefused:
+              | 'PROFILE_FLOW_NOT_RUNNABLE'
+              | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+              | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
+              | null;
           message: string;
           readOnly: boolean;
       }

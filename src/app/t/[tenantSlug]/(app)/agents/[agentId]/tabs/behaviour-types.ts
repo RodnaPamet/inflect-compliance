@@ -12,6 +12,7 @@ import type {
     ProfileOutputKind,
     ProfileSkillOption,
     ProfileSkillRef,
+    ProfileSubagent,
     ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 
@@ -35,6 +36,12 @@ export interface ProfileVersionView {
      * diffs it beside the instructions.
      */
     flow: AgentFlow | null;
+    /**
+     * The inline sub-agents (Step 2e), in name order, instructions included, or
+     * `[]` for a version with none. The content hash covers them, so the tab
+     * renders and diffs them beside the instructions.
+     */
+    subagents: ProfileSubagent[];
     skillRefs: ProfileSkillRef[];
     modelTier: ProfileModelTier;
     effort: ProfileEffort;

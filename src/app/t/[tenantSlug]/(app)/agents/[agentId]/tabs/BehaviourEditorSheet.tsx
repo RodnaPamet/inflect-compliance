@@ -28,6 +28,11 @@
  * out of the body, as the sheet used to, wrote a version with no flow and
  * retired the open one that had it, which nobody had asked for.
  *
+ * SUB-AGENTS (Step 2e, #4594) are written in their own section
+ * (`BehaviourSubagentsSection`), whose pickers offer only the tools and skills
+ * this version has selected. A version with a drawn flow carries none (owner
+ * decision 1), so the section is absent beside a flow and the save sends none.
+ *
  * The actions sit at the end of the body, not in a `Sheet.Footer`: a footer's
  * last action must be a primary (`modal-action-order`) and the product-wide
  * primary ceiling has no slot to spend on it (`primary-secondary-ratio`), the
@@ -61,8 +66,14 @@ import {
 } from '@/lib/agentic/agent-profile';
 
 import { catalogueOverBudget, refusalReason, type ProfileVersionView, type ProfileView } from './behaviour-types';
+import {
+    BehaviourSubagentsSection,
+    newSubagentKey,
+    subagentDraftReady,
+    type SubagentDraft,
+} from './BehaviourSubagentsSection';
 
-type Field = 'instructions' | 'tools' | 'skills';
+type Field = 'instructions' | 'tools' | 'skills' | 'subagents';
 
 /** Which field a refusal from the save concerns. Any other reason is shown above the form. */
 const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
@@ -72,6 +83,17 @@ const FIELD_OF_REFUSAL: Readonly<Record<string, Field>> = {
     TOOL_NOT_GRANTED: 'tools',
     SKILL_UNKNOWN: 'skills',
     SKILL_CATALOGUE_OVER_BUDGET: 'skills',
+    SUBAGENTS_TOO_MANY: 'subagents',
+    SUBAGENTS_WITH_FLOW: 'subagents',
+    SUBAGENT_NAME_INVALID: 'subagents',
+    SUBAGENT_NAME_DUPLICATE: 'subagents',
+    SUBAGENT_INSTRUCTIONS_EMPTY: 'subagents',
+    SUBAGENT_INSTRUCTIONS_TOO_LONG: 'subagents',
+    SUBAGENT_INSTRUCTIONS_REFUSED: 'subagents',
+    SUBAGENT_NAMES_NO_TOOL: 'subagents',
+    SUBAGENT_TOOL_NOT_IN_VERSION: 'subagents',
+    SUBAGENT_SKILL_NOT_IN_VERSION: 'subagents',
+    SUBAGENT_MAX_TURNS_ABOVE_VERSION: 'subagents',
 };
 
 const skillKey = (s: ProfileSkillRef) => `${s.origin}:${s.name}`;
@@ -118,6 +140,20 @@ export function BehaviourEditorSheet({
     const [maxTurns, setMaxTurns] = useState(from?.maxTurns ?? 10);
     const [outputKind, setOutputKind] = useState<ProfileOutputKind>(from?.outputKind ?? 'ANSWER_ONLY');
     const [triggers, setTriggers] = useState<ProfileTrigger[]>(from?.allowedTriggers ?? ['TEST_RUN']);
+    // The starting version's sub-agents, kept as written: a sub-agent naming
+    // something the version has since lost is marked in place, never trimmed.
+    const [subagents, setSubagents] = useState<SubagentDraft[]>(
+        flow !== null
+            ? []
+            : (from?.subagents ?? []).map((s) => ({
+                  key: newSubagentKey(),
+                  name: s.name,
+                  instructions: s.instructions,
+                  toolNames: [...s.toolNames],
+                  skillKeys: s.skillRefs.map(skillKey),
+                  maxTurns: s.maxTurns,
+              })),
+    );
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<{ field: Field | null; message: string } | null>(null);
 
@@ -139,13 +175,21 @@ export function BehaviourEditorSheet({
         .filter((s) => skillKeys.includes(skillKey(s)))
         .reduce((n, s) => n + s.catalogueBytes, 0);
     const overBudget = catalogueBytes > budget;
+    // What a sub-agent's pickers may offer: this version's own selections.
+    const versionSkillChoices = view.options.skills
+        .filter((s) => skillKeys.includes(skillKey(s)))
+        .map((s) => ({ key: skillKey(s), label: t(`editor.skillOption.${s.origin}`, { name: s.name }) }));
+    const subagentsReady = subagents.every((s) =>
+        subagentDraftReady(s, { toolNames, skillKeys, maxTurns }, max),
+    );
     const canSave =
         !busy &&
         instructions.trim().length > 0 &&
         instructions.length <= max &&
         (flow !== null || toolNames.length > 0) &&
         triggers.length > 0 &&
-        !overBudget;
+        !overBudget &&
+        subagentsReady;
 
     const fieldError = (field: Field) => (error?.field === field ? error.message : undefined);
 
@@ -167,6 +211,20 @@ export function BehaviourEditorSheet({
             maxTurns,
             outputKind,
             allowedTriggers: PROFILE_TRIGGERS.filter((x) => triggers.includes(x)),
+            // Sent only when there are any, and never beside a flow.
+            ...(flow === null && subagents.length > 0
+                ? {
+                      subagents: subagents.map((s) => ({
+                          name: s.name.trim(),
+                          instructions: s.instructions,
+                          toolNames: s.toolNames,
+                          skillRefs: view.options.skills
+                              .filter((o) => s.skillKeys.includes(skillKey(o)))
+                              .map((o) => ({ origin: o.origin, name: o.name })),
+                          maxTurns: s.maxTurns,
+                      })),
+                  }
+                : {}),
         };
         try {
             const path = view.profile ? `/admin/agents/${agentId}/profile/versions` : `/admin/agents/${agentId}/profile`;
@@ -300,6 +358,19 @@ export function BehaviourEditorSheet({
                     <p className="text-xs text-content-muted" data-testid="behaviour-skills-budget">
                         {t('editor.skillsBudget', { used: catalogueBytes, budget })}
                     </p>
+
+                    {flow === null ? (
+                        <BehaviourSubagentsSection
+                            subagents={subagents}
+                            onChange={setSubagents}
+                            versionTools={toolNames}
+                            versionSkills={versionSkillChoices}
+                            versionMaxTurns={maxTurns}
+                            instructionsMaxChars={max}
+                            disabled={busy}
+                            error={fieldError('subagents')}
+                        />
+                    ) : null}
 
                     <FormField label={t('field.modelTier')} description={t('editor.modelTierHint')}>
                         <RadioGroup

@@ -67,6 +67,10 @@ const mockState = {
      * for a workspace with no organization: the product default, one.
      */
     orgToolCallsPerTurn: null as number | null,
+    /** The organization's delegation ceiling (Step 2e), or null for the product default. */
+    orgDelegationsPerTurn: null as number | null,
+    /** The agent's circuit breaker reads OPEN once this many model calls are answered (Step 2e). */
+    breakerOpenAfterModelCalls: null as number | null,
 };
 
 function recordedSettlement(): MockSettlement | null {
@@ -165,7 +169,11 @@ jest.mock('@/lib/agentic/flue/skills/tenant-mount', () => ({
     }),
 }));
 
-jest.mock('@/lib/agentic/circuit-breaker-store', () => ({ latchOnGuardBlock: jest.fn(async () => null) }));
+jest.mock('@/lib/agentic/circuit-breaker-store', () => ({
+    latchOnGuardBlock: jest.fn(async () => null),
+    // Read before every model call in both loops (Step 2e, owner decision 4).
+    readBreakerLatch: jest.fn(async () => (mockState.breakerOpenAfterModelCalls !== null && mockState.modelCalls >= mockState.breakerOpenAfterModelCalls ? { state: 'OPEN' } : null)),
+}));
 
 // THE TURN CAPS' READ (#4594), and nothing else: the resolver is the real one.
 jest.mock('@/lib/agentic/turn-caps-policy', () => ({
@@ -173,9 +181,12 @@ jest.mock('@/lib/agentic/turn-caps-policy', () => ({
         const { resolveTurnCaps } = jest.requireActual('@/lib/agentic/turn-caps') as typeof import('@/lib/agentic/turn-caps');
         return resolveTurnCaps({
             organization:
-                mockState.orgToolCallsPerTurn === null
+                mockState.orgToolCallsPerTurn === null && mockState.orgDelegationsPerTurn === null
                     ? null
-                    : { delegationsPerTurn: 3, toolCallsPerTurn: mockState.orgToolCallsPerTurn },
+                    : {
+                          delegationsPerTurn: mockState.orgDelegationsPerTurn ?? 3,
+                          toolCallsPerTurn: mockState.orgToolCallsPerTurn ?? 1,
+                      },
             workspace: null,
         });
     }),
@@ -298,7 +309,18 @@ import { KILL_UNREADABLE_MESSAGE } from '@/lib/agentic/tool-runner/execute';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
-import { describeDriverConformance, MOUNTABLE_REPOSITORY_SKILL } from '../../helpers/driver-conformance';
+import {
+    describeDriverConformance,
+    describeSubagentConformance,
+    MOUNTABLE_REPOSITORY_SKILL,
+    type SubagentConformanceObservation,
+    type SubagentConformanceRun,
+} from '../../helpers/driver-conformance';
+import { delegationSpans } from '@/lib/agentic/delegation-spans';
+import { projectRunSteps } from '@/lib/agentic/run-step-projection';
+import { BREAKER_OPEN_MESSAGE } from '@/lib/agentic/tool-runner/execute';
+import { subagentGuardSource } from '@/lib/agentic/tool-runner/tools';
+import type { ProfileSubagent } from '@/lib/agentic/agent-profile';
 import { conformanceSkillMount } from '../../helpers/driver-conformance-skills';
 import { pinForRow } from '@/lib/agentic/flue/skills/mount-gate';
 import { toolRunnerSuppliedToolNamesFor } from '@/lib/agentic/tool-runner/supplied-tools';
@@ -423,6 +445,8 @@ function reset(
     mockState.funnelCalls = [];
     mockState.funnelDelayMs = {};
     mockState.orgToolCallsPerTurn = null;
+    mockState.breakerOpenAfterModelCalls = null;
+    mockState.orgDelegationsPerTurn = null;
     mockState.settlement = null;
     mockState.updates = [];
     wire.turns = [...turns];
@@ -934,5 +958,294 @@ describe('a model answer\'s guard verdict is noted before the caps are charged (
         await runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, DEFINITION, 0, Date.now());
         expect(recordedSettlement()?.cap).toBe('TOKENS');
         expect(latchOnGuardBlock).not.toHaveBeenCalled();
+    });
+});
+
+// ─── Step 2e: inline sub-agents ─────────────────────────────────────
+
+/** A profile version run, read-only, carrying the sub-agents given. */
+function profileDef(subagents: readonly ProfileSubagent[], toolNames: readonly string[]): WorkflowDefinition {
+    return {
+        ...DEFINITION,
+        key: 'agent-profile:p1@v1:test-run',
+        profile: {
+            profileId: 'p1',
+            agentId: 'agent-conformance',
+            versionId: 'v1',
+            version: 1,
+            instructions: 'Answer the question, delegating where a sub-agent fits.',
+            instructionsHash: 'h',
+            toolNames: [...toolNames],
+            skillRefs: [],
+            modelTier: 'balanced',
+            effort: 'medium',
+            maxTurns: 10,
+            outputKind: 'ANSWER_ONLY',
+            allowedTriggers: ['TEST_RUN'],
+            ...(subagents.length > 0 ? { subagents } : {}),
+        },
+    } as unknown as WorkflowDefinition;
+}
+
+const sub = (name: string, toolNames: readonly string[], over: Partial<ProfileSubagent> = {}): ProfileSubagent => ({
+    name,
+    instructions: `You are ${name}. Use your tools and answer briefly.`,
+    toolNames: [...toolNames],
+    skillRefs: [],
+    maxTurns: 5,
+    ...over,
+});
+
+interface DriveOpts {
+    fromSeq?: number;
+    orgDelegationsPerTurn?: number | null;
+    orgToolCallsPerTurn?: number | null;
+    killAfterFunnelCalls?: number | null;
+    breakerOpenAfterModelCalls?: number | null;
+}
+
+async function driveProfile(run: ConformanceRun, def: WorkflowDefinition, opts: DriveOpts = {}) {
+    reset(run, run.turns);
+    mockState.orgDelegationsPerTurn = opts.orgDelegationsPerTurn ?? null;
+    mockState.orgToolCallsPerTurn = opts.orgToolCallsPerTurn ?? null;
+    mockState.killAfterFunnelCalls = opts.killAfterFunnelCalls ?? null;
+    mockState.breakerOpenAfterModelCalls = opts.breakerOpenAfterModelCalls ?? null;
+    return runToolRunnerDriver(context(), `run-${Math.random().toString(36).slice(2)}`, def, opts.fromSeq ?? 0, Date.now());
+}
+
+/** The ledger, with whose step each was and what refused it. */
+function ledgerSteps() {
+    return mockState.ledger.map((s) => {
+        const output = s.rec.output as { refused?: unknown } | undefined;
+        return {
+            kind: s.kind,
+            toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+            status: String(s.rec.status),
+            subagent: typeof s.rec.subagent === 'string' ? s.rec.subagent : null,
+            refused: typeof output?.refused === 'string' ? output.refused : null,
+        };
+    });
+}
+
+const requestTools = () => wire.bodies.map((b) => ((b.tools as Array<{ name: string }> | undefined) ?? []).map((t) => t.name).sort());
+
+async function runSubagentsOnToolRunner(run: SubagentConformanceRun): Promise<SubagentConformanceObservation> {
+    const versionTools = run.versionTools ?? run.tools.map((t) => t.name);
+    const def = profileDef(
+        run.subagents.map((s) => sub(s.name, s.toolNames, { ...(s.instructions ? { instructions: s.instructions } : {}), ...(s.maxTurns ? { maxTurns: s.maxTurns } : {}) })),
+        versionTools,
+    );
+    const outcome = await driveProfile(run, def);
+    const settlement = recordedSettlement();
+    return {
+        status: settlement?.status ?? outcome.status,
+        haltReason: settlement?.status === 'COMPLETED' ? null : (settlement?.reason ?? null),
+        haltedCap: settlement?.cap ?? null,
+        modelInputs: wire.bodies.map((b) => JSON.stringify(b.messages)),
+        externalModelCalls: wire.urls.filter((u) => new URL(u).origin === 'https://api.anthropic.com').length,
+        ledger: mockState.ledger.map((s) => ({
+            kind: s.kind,
+            toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+            decisionDigest: null,
+            modelCalls: null,
+        })),
+        decisionRows: [...mockState.decisionRows],
+        funnelCalls: [...mockState.funnelCalls],
+        offeredTools: requestTools()[0] ?? [],
+        reportedEngineTools: toolRunnerSuppliedToolNamesFor({ skillsMounted: false, subagentsDefined: run.subagents.length > 0 }),
+        steps: ledgerSteps(),
+        requestTools: requestTools(),
+    };
+}
+
+describeSubagentConformance({ engine: 'tool-runner', run: runSubagentsOnToolRunner });
+
+const delegate = (subagent: string, task = 'List the open risks.') => ({ toolCalls: [{ name: 'delegate', args: { subagent, task } }] });
+const call = (name: string) => ({ toolCalls: [{ name, args: {} }] });
+
+describe('Step 2e: inline sub-agents on the Tool Runner engine', () => {
+    it('a delegation runs the child under its own instructions and subset, labels every child step, and closes the span with its marker', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks', 'list_controls']);
+        reset({ tools: [LIST_RISKS, LIST_CONTROLS] }, [delegate('risk_reader'), call('list_risks'), { text: 'One risk: r1.' }, { text: 'done' }]);
+        await runToolRunnerDriver(context(), 'run-sub', def, 0, Date.now());
+
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+        expect(wire.bodies).toHaveLength(4);
+        // The child's request: its own instructions, the task, its subset.
+        const childSystem = systemTextOf(wire.bodies[1]);
+        expect(childSystem).toContain('You are risk_reader.');
+        expect(childSystem).not.toContain('Answer the question, delegating');
+        expect(JSON.stringify(wire.bodies[1].messages)).toContain('List the open risks.');
+        expect(requestTools()[1]).toEqual(['list_risks']);
+        // The parent's description lists the names and nothing of the child's text.
+        const delegateDef = (wire.bodies[0].tools as Array<{ name: string; description: string }>).find((t) => t.name === 'delegate');
+        expect(delegateDef?.description).toContain('risk_reader');
+        expect(delegateDef?.description).not.toContain('Use your tools and answer briefly');
+
+        expect(ledgerSteps()).toEqual([
+            { kind: 'MODEL_CALL', toolCalled: null, status: 'DONE', subagent: null, refused: null },
+            { kind: 'MODEL_CALL', toolCalled: null, status: 'DONE', subagent: 'risk_reader', refused: null },
+            { kind: 'TOOL_CALL', toolCalled: 'list_risks', status: 'DONE', subagent: 'risk_reader', refused: null },
+            { kind: 'MODEL_CALL', toolCalled: null, status: 'DONE', subagent: 'risk_reader', refused: null },
+            { kind: 'TOOL_CALL', toolCalled: 'delegate', status: 'DONE', subagent: null, refused: null },
+            { kind: 'MODEL_CALL', toolCalled: null, status: 'DONE', subagent: null, refused: null },
+        ]);
+        // The marker carries the span and never the task or the answer.
+        const marker = mockState.ledger[4].rec;
+        expect(marker.input).toMatchObject({ agent: 'risk_reader', taskId: 'toolu_0_0', fromSeq: 0 });
+        expect(JSON.stringify(marker)).not.toContain('List the open risks.');
+        expect(JSON.stringify(marker)).not.toContain('One risk: r1.');
+        expect(marker.output).toEqual({ outcome: 'answered', modelCalls: 2, toolCalls: 1 });
+        // The run page groups the child's steps under the delegation.
+        const rows = projectRunSteps(
+            undefined,
+            mockState.ledger.map((s, seq) => ({
+                id: `s${seq}`,
+                seq,
+                kind: s.kind,
+                status: String(s.rec.status),
+                toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+                inputJson: s.rec.input === undefined ? null : JSON.stringify(s.rec.input),
+                outputJson: null,
+                guardVerdict: null,
+                guardRuleIds: [],
+                costTokens: null,
+                at: new Date(),
+                actorUserId: null,
+                subagentName: typeof s.rec.subagent === 'string' ? s.rec.subagent : null,
+            })),
+            [],
+        );
+        const spans = delegationSpans(rows);
+        expect(spans.map((sp) => ({ agent: sp.agent, steps: sp.steps.map((r) => r.seq) }))).toEqual([
+            { agent: 'risk_reader', steps: [1, 2, 3] },
+        ]);
+        expect(rows.map((r) => r.subagent)).toEqual([null, 'risk_reader', 'risk_reader', 'risk_reader', null, null]);
+        // The child's tool call ran under the sub-agent's guard source, over the parent's invocation.
+        expect(mockState.funnelCalls.map((c) => c.name)).toEqual(['list_risks']);
+        expect(subagentGuardSource('risk_reader')).toBe('tool-runner-subagent.risk_reader');
+    });
+
+    it('a version without sub-agents is offered no delegate, and its request is unchanged', async () => {
+        await driveProfile({ tools: [LIST_RISKS], turns: [{ text: 'done' }] }, profileDef([], ['list_risks']));
+        expect(requestTools()[0]).toEqual(['list_risks']);
+        expect(systemTextOf(wire.bodies[0])).not.toContain('You are a sub-agent');
+    });
+
+    it('the parent\'s caps halt a child loop: the tool-call cap stops the child mid-delegation and settles the run at that cap', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile(
+            {
+                tools: [LIST_RISKS],
+                toolCallLimit: 1,
+                turns: [delegate('risk_reader'), call('list_risks'), call('list_risks'), { text: 'never' }, { text: 'never' }],
+            },
+            def,
+        );
+        expect(recordedSettlement()?.cap).toBe('TOOL_CALLS');
+        expect(mockState.funnelCalls).toHaveLength(1);
+        // No request after the cap latched: parent, child, child.
+        expect(wire.bodies).toHaveLength(3);
+        // The marker still closes the span, naming the run's stop.
+        const marker = mockState.ledger.find((s) => s.rec.toolCalled === 'delegate');
+        expect(marker?.rec.status).toBe('FAILED');
+        expect((marker?.rec.output as { outcome: string }).outcome).toBe('RUN_STOPPED_CAP');
+    });
+
+    it('the kill switch halts a child before its next model call', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile(
+            { tools: [LIST_RISKS], turns: [delegate('risk_reader'), call('list_risks'), { text: 'never' }, { text: 'never' }] },
+            def,
+            // Engaged while the child's tool call runs.
+            { killAfterFunnelCalls: 1 },
+        );
+        expect(recordedSettlement()?.status).toBe('ABORTED');
+        expect(recordedSettlement()?.reason).toMatch(/kill/);
+        // The parent's call and the child's first: the child's second never left.
+        expect(wire.bodies).toHaveLength(2);
+        const marker = mockState.ledger.find((s) => s.rec.toolCalled === 'delegate');
+        expect((marker?.rec.output as { outcome: string }).outcome).toBe('RUN_STOPPED_KILL');
+    });
+
+    it('the breaker is read before every model call in the parent loop: OPEN stops the run before its next call', async () => {
+        await driveProfile(
+            { tools: [LIST_RISKS], turns: [call('list_risks'), { text: 'never' }] },
+            DEFINITION,
+            { breakerOpenAfterModelCalls: 1 },
+        );
+        expect(wire.bodies).toHaveLength(1);
+        expect(recordedSettlement()).toEqual({ status: 'FAILED', reason: BREAKER_OPEN_MESSAGE, cap: null });
+    });
+
+    it('the breaker read before a child\'s model call stops the delegation and the run', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile(
+            { tools: [LIST_RISKS], turns: [delegate('risk_reader'), call('list_risks'), { text: 'never' }, { text: 'never' }] },
+            def,
+            { breakerOpenAfterModelCalls: 2 },
+        );
+        expect(wire.bodies).toHaveLength(2);
+        expect(recordedSettlement()?.reason).toBe(BREAKER_OPEN_MESSAGE);
+    });
+
+    it('each parent model call charges one STEPS before it is sent: a run with two steps left halts before its second call', async () => {
+        // Two steps left: the first model call takes one, its tool call the
+        // other, and the second model call finds none. Before Step 2e only the
+        // tool call was charged, and the second call went out.
+        reset({ tools: [LIST_RISKS] }, [call('list_risks'), { text: 'never' }]);
+        await runToolRunnerDriver(context(), 'run-steps', DEFINITION, ENGINE_CAPS.MAX_STEPS - 2, Date.now());
+        expect(wire.bodies).toHaveLength(1);
+        expect(recordedSettlement()?.cap).toBe('STEPS');
+    });
+
+    it('a delegation counts against the turn\'s tool-call cap: at one call a turn, a second call naming delegate is refused', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile(
+            {
+                tools: [LIST_RISKS],
+                turns: [
+                    { toolCalls: [{ name: 'list_risks', args: {} }, { name: 'delegate', args: { subagent: 'risk_reader', task: 'x' } }] },
+                    { text: 'done' },
+                ],
+            },
+            def,
+        );
+        const refused = ledgerSteps().filter((st) => st.refused !== null);
+        expect(refused).toEqual([
+            { kind: 'TOOL_CALL', toolCalled: 'delegate', status: 'FAILED', subagent: null, refused: 'TOOL_CALLS_PER_TURN_EXCEEDED' },
+        ]);
+        expect(wire.bodies).toHaveLength(2);
+    });
+
+    it('at a delegation cap of 0 the delegation is refused, saying delegation is disabled, and no child request leaves', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile({ tools: [LIST_RISKS], turns: [delegate('risk_reader'), { text: 'done alone' }] }, def, { orgDelegationsPerTurn: 0 });
+        expect(wire.bodies).toHaveLength(2);
+        const marker = mockState.ledger.find((st) => st.rec.toolCalled === 'delegate');
+        expect(marker?.rec.status).toBe('FAILED');
+        expect((marker?.rec.output as { outcome: string }).outcome).toBe('DELEGATIONS_PER_TURN_EXCEEDED');
+        expect(JSON.stringify(toolResultsOf(wire.bodies[1]))).toContain('delegation_disabled');
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('a name outside the enum is refused SUBAGENT_NOT_DEFINED and never echoed', async () => {
+        const def = profileDef([sub('risk_reader', ['list_risks'])], ['list_risks']);
+        await driveProfile({ tools: [LIST_RISKS], turns: [delegate('impostor_zz9'), { text: 'done' }] }, def);
+        const marker = mockState.ledger.find((st) => st.rec.toolCalled === 'delegate');
+        expect((marker?.rec.output as { outcome: string }).outcome).toBe('SUBAGENT_NOT_DEFINED');
+        expect(JSON.stringify(mockState.ledger)).not.toContain('impostor_zz9');
+        expect(JSON.stringify(toolResultsOf(wire.bodies[1]))).not.toContain('impostor_zz9');
+        expect(wire.bodies).toHaveLength(2);
+    });
+
+    it('a sub-agent whose tools the agent no longer reaches is refused with nothing sent, naming what was lost', async () => {
+        // The version names list_controls; the agent no longer holds it.
+        const def = profileDef([sub('control_reader', ['list_controls'])], ['list_risks', 'list_controls']);
+        await driveProfile({ tools: [LIST_RISKS], turns: [delegate('control_reader'), { text: 'done' }] }, def);
+        expect(wire.bodies).toHaveLength(2);
+        const marker = mockState.ledger.find((st) => st.rec.toolCalled === 'delegate');
+        expect((marker?.rec.output as { outcome: string }).outcome).toBe('SUBAGENT_HAS_NO_TOOLS');
+        expect((marker?.rec.input as { toolsLost: unknown }).toolsLost).toEqual([{ name: 'list_controls', reason: 'PROFILE_TOOL_NOT_GRANTED' }]);
     });
 });

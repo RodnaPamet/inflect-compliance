@@ -217,3 +217,281 @@ export function runsFlows(driver: AgentDriver): boolean {
  * in `agent-switches.ts`. A synchronous reader of the environment alone would
  * report a switch an organization turned on as off.
  */
+
+// ─── Inline sub-agents (Step 2e, #4594) ─────────────────────────────
+
+/**
+ * At most this many sub-agents per version (Step 2e of
+ * `docs/claude-tool-runner-design.md`, "Delegation → 1. The model").
+ */
+export const PROFILE_MAX_SUBAGENTS = 4;
+
+/**
+ * A sub-agent's name: snake case like a tool name, so it sits in a guard
+ * source (`tool-runner-subagent.<name>-tool-args:…`), a ledger column and an
+ * audit row as an identifier. The pattern admits no `-`, `:` or `.`, so in a
+ * guard source the name ends exactly at the first `-tool-`. The CHECK
+ * `WorkflowStep_subagent_name_shape` holds the same pattern.
+ */
+export const SUBAGENT_NAME_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
+
+/**
+ * One inline sub-agent of a profile version. It has NO description (owner
+ * decision 2, 2026-11-13): the parent chooses by name alone, so nothing of a
+ * child's text reaches the parent's context.
+ *
+ * Its tools and skills are SUBSETS of the version's, and its turn limit is at
+ * most the version's: a sub-agent can do less than its parent, never more.
+ */
+export interface ProfileSubagent {
+    readonly name: string;
+    /** Sanitised and scanned at the write seam, as the version's are. */
+    readonly instructions: string;
+    /** Non-empty, deduplicated, sorted; every name one of the version's `toolNames`. */
+    readonly toolNames: readonly string[];
+    /** Deduplicated, sorted; every ref one of the version's `skillRefs`. */
+    readonly skillRefs: readonly ProfileSkillRef[];
+    /** 1 to the version's own `maxTurns`. */
+    readonly maxTurns: number;
+}
+
+/** Why a version's sub-agents are refused. Each is a 400, named, never a silent drop. */
+export type ProfileSubagentRefusal =
+    | 'SUBAGENTS_TOO_MANY'
+    | 'SUBAGENTS_WITH_FLOW'
+    | 'SUBAGENT_NAME_INVALID'
+    | 'SUBAGENT_NAME_DUPLICATE'
+    | 'SUBAGENT_INSTRUCTIONS_EMPTY'
+    | 'SUBAGENT_INSTRUCTIONS_TOO_LONG'
+    | 'SUBAGENT_INSTRUCTIONS_REFUSED'
+    | 'SUBAGENT_NAMES_NO_TOOL'
+    | 'SUBAGENT_TOOL_NOT_IN_VERSION'
+    | 'SUBAGENT_SKILL_NOT_IN_VERSION'
+    | 'SUBAGENT_MAX_TURNS_ABOVE_VERSION';
+
+/** What a sub-agent's sets are checked against: the version's own. */
+export interface SubagentParentSets {
+    readonly toolNames: readonly string[];
+    readonly skillRefs: readonly ProfileSkillRef[];
+    readonly maxTurns: number;
+}
+
+export type SubagentCheck =
+    | { readonly ok: true; readonly subagents: readonly ProfileSubagent[] }
+    | {
+          readonly ok: false;
+          readonly reason: ProfileSubagentRefusal;
+          readonly message: string;
+          /** The sub-agent's name and the offending tools or skills, for `details`. */
+          readonly details: Readonly<Record<string, unknown>>;
+      };
+
+const skillRefKey = (r: ProfileSkillRef): string => `${r.origin}:${r.name}`;
+
+function compareSkillRefs(a: ProfileSkillRef, b: ProfileSkillRef): number {
+    const ka = a.origin + a.name;
+    const kb = b.origin + b.name;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+/**
+ * CHECK A VERSION'S SUB-AGENTS against the version's own sets, and put them in
+ * canonical form. Pure: the instructions are taken as the caller sanitised
+ * them, and the text scan is the caller's (it is a server module).
+ *
+ * Every rule is a refusal BY NAME, the first one found, naming the sub-agent
+ * and what it named that the version does not hold. The canonical form sorts
+ * the list by name and each list inside a sub-agent, so the stored string,
+ * and therefore the content hash, does not depend on the order the editor sent.
+ */
+export function checkProfileSubagents(
+    raw: ReadonlyArray<{
+        readonly name: string;
+        readonly instructions: string;
+        readonly toolNames: readonly string[];
+        readonly skillRefs: readonly ProfileSkillRef[];
+        readonly maxTurns: number;
+    }>,
+    version: SubagentParentSets,
+    limits: { readonly instructionsMaxChars: number },
+): SubagentCheck {
+    const refuse = (reason: ProfileSubagentRefusal, message: string, details: Record<string, unknown>): SubagentCheck => ({
+        ok: false,
+        reason,
+        message,
+        details,
+    });
+    if (raw.length > PROFILE_MAX_SUBAGENTS) {
+        return refuse(
+            'SUBAGENTS_TOO_MANY',
+            `A version has at most ${PROFILE_MAX_SUBAGENTS} sub-agents.`,
+            { max: PROFILE_MAX_SUBAGENTS, count: raw.length },
+        );
+    }
+    const versionTools = new Set(version.toolNames);
+    const versionSkills = new Set(version.skillRefs.map(skillRefKey));
+    const seen = new Set<string>();
+    const out: ProfileSubagent[] = [];
+    for (const s of raw) {
+        const name = s.name.trim();
+        if (!SUBAGENT_NAME_PATTERN.test(name)) {
+            return refuse(
+                'SUBAGENT_NAME_INVALID',
+                'A sub-agent\'s name is 2 to 40 lowercase letters, digits and underscores, starting with a letter.',
+                { subagent: name },
+            );
+        }
+        if (seen.has(name)) {
+            return refuse('SUBAGENT_NAME_DUPLICATE', `Two sub-agents are called ${name}.`, { subagent: name });
+        }
+        seen.add(name);
+        const instructions = s.instructions.trim();
+        if (instructions === '') {
+            return refuse('SUBAGENT_INSTRUCTIONS_EMPTY', `Sub-agent ${name} has no instructions.`, { subagent: name });
+        }
+        if (instructions.length > limits.instructionsMaxChars) {
+            return refuse(
+                'SUBAGENT_INSTRUCTIONS_TOO_LONG',
+                `Sub-agent ${name}'s instructions are at most ${limits.instructionsMaxChars} characters.`,
+                { subagent: name, maxChars: limits.instructionsMaxChars },
+            );
+        }
+        const toolNames = [...new Set(s.toolNames.map((t) => t.trim()))].sort();
+        if (toolNames.length === 0) {
+            return refuse('SUBAGENT_NAMES_NO_TOOL', `Sub-agent ${name} names no tool.`, { subagent: name });
+        }
+        const outsideTools = toolNames.filter((t) => !versionTools.has(t));
+        if (outsideTools.length > 0) {
+            return refuse(
+                'SUBAGENT_TOOL_NOT_IN_VERSION',
+                `Sub-agent ${name} names ${outsideTools.join(', ')}, which this version does not. A sub-agent uses a ` +
+                    'subset of its version\'s tools.',
+                { subagent: name, tools: outsideTools },
+            );
+        }
+        const skillRefs = [
+            ...new Map(s.skillRefs.map((r) => ({ origin: r.origin, name: r.name.trim() })).map((r) => [skillRefKey(r), r])).values(),
+        ].sort(compareSkillRefs);
+        const outsideSkills = skillRefs.filter((r) => !versionSkills.has(skillRefKey(r))).map(skillRefKey);
+        if (outsideSkills.length > 0) {
+            return refuse(
+                'SUBAGENT_SKILL_NOT_IN_VERSION',
+                `Sub-agent ${name} names ${outsideSkills.join(', ')}, which this version does not mount. A sub-agent ` +
+                    'uses a subset of its version\'s skills.',
+                { subagent: name, skills: outsideSkills },
+            );
+        }
+        if (!Number.isInteger(s.maxTurns) || s.maxTurns < 1 || s.maxTurns > version.maxTurns) {
+            return refuse(
+                'SUBAGENT_MAX_TURNS_ABOVE_VERSION',
+                `Sub-agent ${name}'s turn limit is 1 to the version's own (${version.maxTurns}).`,
+                { subagent: name, maxTurns: s.maxTurns, versionMaxTurns: version.maxTurns },
+            );
+        }
+        out.push({ name, instructions, toolNames, skillRefs, maxTurns: s.maxTurns });
+    }
+    out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return { ok: true, subagents: out };
+}
+
+/**
+ * The canonical stored form: JSON of the list sorted by name, each object's
+ * keys in a fixed order. NULL for an empty list, never `[]`, so a version with
+ * no sub-agents takes the content hash it has always taken.
+ */
+export function serializeProfileSubagents(subagents: readonly ProfileSubagent[]): string | null {
+    if (subagents.length === 0) return null;
+    const sorted = [...subagents].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    return JSON.stringify(
+        sorted.map((s) => ({
+            name: s.name,
+            instructions: s.instructions,
+            toolNames: [...s.toolNames],
+            skillRefs: s.skillRefs.map((r) => ({ origin: r.origin, name: r.name })),
+            maxTurns: s.maxTurns,
+        })),
+    );
+}
+
+/**
+ * A stored list, read back STRICTLY: one this build cannot parse, one that is
+ * not canonical, or one whose sets are no longer subsets of the version's own,
+ * is `null`, and the resolver compiles it to nothing. A version with
+ * sub-agents is never run as though it had none.
+ */
+export function parseStoredProfileSubagents(json: string, version: SubagentParentSets): readonly ProfileSubagent[] | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(json);
+    } catch {
+        return null;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const raw: Array<Parameters<typeof checkProfileSubagents>[0][number]> = [];
+    for (const item of parsed) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+        const keys = Object.keys(item).sort().join(',');
+        if (keys !== 'instructions,maxTurns,name,skillRefs,toolNames') return null;
+        const { name, instructions, toolNames, skillRefs, maxTurns } = item as Record<string, unknown>;
+        if (typeof name !== 'string' || typeof instructions !== 'string' || typeof maxTurns !== 'number') return null;
+        if (!Array.isArray(toolNames) || !toolNames.every((t) => typeof t === 'string')) return null;
+        if (!Array.isArray(skillRefs)) return null;
+        const refs: ProfileSkillRef[] = [];
+        for (const r of skillRefs) {
+            const { origin, name: refName } = (r ?? {}) as { origin?: unknown; name?: unknown };
+            if ((origin !== 'repository' && origin !== 'tenant') || typeof refName !== 'string') return null;
+            refs.push({ origin, name: refName });
+        }
+        raw.push({ name, instructions, toolNames: toolNames as string[], skillRefs: refs, maxTurns });
+    }
+    const checked = checkProfileSubagents(raw, version, { instructionsMaxChars: PROFILE_INSTRUCTIONS_MAX_CHARS });
+    if (!checked.ok) return null;
+    // Canonical or nothing: a list this build would have stored differently
+    // was not written by this writer.
+    if (serializeProfileSubagents(checked.subagents) !== json) return null;
+    return checked.subagents;
+}
+
+/**
+ * The sub-agents as the approver reads them: every field, every word of the
+ * instructions, in name order. Text, rendered in a `<pre>` and diffed against
+ * the version in force, so the approver approves every word a run can send.
+ */
+export function describeSubagentsForReview(subagents: readonly ProfileSubagent[]): string {
+    return [...subagents]
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .map((s) =>
+            [
+                `Sub-agent: ${s.name}`,
+                `Tools: ${s.toolNames.join(', ')}`,
+                `Skills: ${s.skillRefs.length > 0 ? s.skillRefs.map(skillRefKey).join(', ') : '(none)'}`,
+                `Turn limit: ${s.maxTurns}`,
+                'Instructions:',
+                s.instructions,
+            ].join('\n'),
+        )
+        .join('\n\n');
+}
+
+/**
+ * DOES THIS ENGINE RUN A VERSION'S INLINE SUB-AGENTS — offer the parent the
+ * `delegate` tool and run each delegation as a nested loop under the parent's
+ * caps and identity?
+ *
+ * Admission refuses a version with sub-agents on an engine whose entry is
+ * false (`PROFILE_SUBAGENTS_NOT_RUNNABLE`), before the run row exists, so a
+ * version with sub-agents is never run as though it had none. Flue's stays
+ * false: Flue runs no profile.
+ *
+ * A `Record<AgentDriver, boolean>`, as `RUNS_PROFILES` is, so a new driver is
+ * a compile error until it is classified here.
+ */
+const RUNS_SUBAGENTS: Readonly<Record<AgentDriver, boolean>> = {
+    static: false,
+    flue: false,
+    'tool-runner': false,
+};
+
+export function runsSubagents(driver: AgentDriver): boolean {
+    return RUNS_SUBAGENTS[driver];
+}

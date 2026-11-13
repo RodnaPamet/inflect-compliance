@@ -41,6 +41,11 @@
  * (`PROFILE_FLOW_NOT_RUNNABLE`, `runsFlows`) until Phase 5 gives an engine a
  * way to perform every step a flow can draw, a `subagent` step included.
  *
+ * A version carrying SUB-AGENTS (Step 2e) is compiled with them, read back
+ * strictly, and its content hash covers them. Admission, resume and the
+ * preview refuse it on an engine whose `runsSubagents` entry is false
+ * (`PROFILE_SUBAGENTS_NOT_RUNNABLE`): never run as though it had none.
+ *
  * THE WORKER does not resolve by approval: it executes what admission PINNED.
  * `resolvePinnedRunDefinition` rebuilds the definition from the run's own
  * `profileVersionId` and checks the instructions still hash to
@@ -61,9 +66,12 @@ import {
     PROFILE_MODEL_TIERS,
     PROFILE_OUTPUT_KINDS,
     PROFILE_TRIGGERS,
+    parseStoredProfileSubagents,
     runsFlows,
     runsProfiles,
+    runsSubagents,
     type ProfileSkillRef,
+    type ProfileSubagent,
     type ProfileTrigger,
 } from '@/lib/agentic/agent-profile';
 import { compileFlow, flowToolsAgree, parseStoredAgentFlow, type CompiledFlow } from '@/lib/agentic/agent-flow';
@@ -80,6 +88,7 @@ export type ProfileRunRefusal =
     | 'PROFILE_NEEDS_REASONING_ENGINE'
     | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
     | 'PROFILE_FLOW_NOT_RUNNABLE'
+    | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
     | 'PROFILE_TRIGGER_REQUIRED'
     | 'PROFILE_TRIGGER_NOT_ALLOWED';
@@ -129,6 +138,7 @@ const VERSION_SELECT = {
     instructionsHash: true,
     toolNames: true,
     flowJson: true,
+    subagentsJson: true,
     skillRefs: true,
     modelTier: true,
     effort: true,
@@ -146,6 +156,7 @@ interface VersionRow {
     instructionsHash: string;
     toolNames: string[];
     flowJson: string | null;
+    subagentsJson: string | null;
     skillRefs: unknown;
     modelTier: string;
     effort: string;
@@ -181,6 +192,21 @@ function compileProfileDefinition(
         if (!parsed || !flowToolsAgree(parsed, row.toolNames)) return null;
         flow = compileFlow(parsed);
     }
+    // The sub-agents, read back as strictly (Step 2e): a list this build
+    // cannot parse, one stored beside a flow, or one whose sets are no longer
+    // subsets of the version's own, compiles to nothing. A version with
+    // sub-agents is never run as though it had none.
+    let subagents: readonly ProfileSubagent[] | undefined;
+    if (row.subagentsJson !== null) {
+        if (row.flowJson !== null) return null;
+        const parsed = parseStoredProfileSubagents(row.subagentsJson, {
+            toolNames: row.toolNames,
+            skillRefs,
+            maxTurns: row.maxTurns,
+        });
+        if (!parsed) return null;
+        subagents = parsed;
+    }
 
     const profile: ProfileRunSpec = {
         profileId: row.profile.id,
@@ -197,6 +223,7 @@ function compileProfileDefinition(
         outputKind,
         allowedTriggers: triggers.filter((t): t is NonNullable<typeof t> => t !== null),
         ...(flow ? { flow } : {}),
+        ...(subagents ? { subagents } : {}),
     };
 
     return {
@@ -291,7 +318,7 @@ export async function resolveRunDefinition(
     if (ctx.agentId && ctx.agentId !== row.profile.agentId) {
         throw refuse('PROFILE_AGENT_MISMATCH', "A profile runs as its own agent, and this caller speaks for another.");
     }
-    if (profileContentHash(row.instructions, row.flowJson) !== row.instructionsHash) {
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== row.instructionsHash) {
         throw refuse(
             'PROFILE_HASH_MISMATCH',
             'The stored instructions or flow no longer match the hash their approval pinned. The version cannot run.',
@@ -335,11 +362,15 @@ export async function resolvePinnedRunDefinition(
         }),
     );
     if (!row || row.profile.id !== parsed.profileId || row.version !== parsed.version) return undefined;
-    if (profileContentHash(row.instructions, row.flowJson) !== run.profileInstructionsHash) return undefined;
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== run.profileInstructionsHash) return undefined;
     const def = compileProfileDefinition(run.workflowKey, row, { testRun: parsed.testRun });
     // Admission refuses a flow version on every engine; a run carrying one was
     // not admitted by this build, so it continues as nothing.
     if (!def || (def.profile?.flow && !runsFlows(def.driver ?? 'static'))) return undefined;
+    // Nor a version with sub-agents on an engine that does not run them: a run
+    // admitted by a build that did, resumed by one that does not, continues as
+    // nothing rather than half-delegated.
+    if (def.profile?.subagents && !runsSubagents(def.driver ?? 'static')) return undefined;
     return def;
 }
 
@@ -363,7 +394,8 @@ export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRu
             `The ${driver} engine does not run agent profiles. A profile runs once an engine that renders its ` +
                 'instructions is available.',
         );
-    }    // A drawn flow runs only on an engine that performs every step it can
+    }
+    // A drawn flow runs only on an engine that performs every step it can
     // draw. None does before Phase 5: a `subagent` step would be a line the
     // model cannot act on, recorded as drawn and never performed.
     if (profile.flow && !runsFlows(driver)) {
@@ -371,6 +403,15 @@ export function assertEngineRunsProfiles(driver: AgentDriver, profile: ProfileRu
             'PROFILE_FLOW_NOT_RUNNABLE',
             'This version carries a drawn flow, and no engine performs a drawn flow yet. Write a version ' +
                 'without a flow to run this profile.',
+        );
+    }
+    // A version with sub-agents runs only on an engine that runs them (Step 2e):
+    // never as though it had none.
+    if (profile.subagents && profile.subagents.length > 0 && !runsSubagents(driver)) {
+        throw refuse(
+            'PROFILE_SUBAGENTS_NOT_RUNNABLE',
+            `This version defines sub-agents, and the ${driver} engine does not run them. It is refused rather ` +
+                'than run without its sub-agents.',
         );
     }
 }
@@ -389,7 +430,11 @@ export type ProfileRunPreview =
            * run — whatever `runAs` says it would be — receives the message.
            * `PROFILE_FLOW_NOT_RUNNABLE` for any flow version until Phase 5.
            */
-          readonly runRefused: 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null;
+          readonly runRefused:
+              | 'PROFILE_FLOW_NOT_RUNNABLE'
+              | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
+              | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
+              | null;
           /** The run message, from `runMessage`, the function the engines call. */
           readonly message: string;
           /** The run is offered the read surface only. */
@@ -426,7 +471,7 @@ export async function previewProfileRunMessage(
         }),
     );
     if (!row || row.profile.agentId !== agentId) return { state: 'NOT_FOUND' };
-    if (profileContentHash(row.instructions, row.flowJson) !== row.instructionsHash) return { state: 'UNRUNNABLE' };
+    if (profileContentHash(row.instructions, row.flowJson, row.subagentsJson) !== row.instructionsHash) return { state: 'UNRUNNABLE' };
     const inForce = row.status === 'APPROVED' && row.profile.currentApprovedVersion === row.version;
     const runAs = inForce ? 'RUN' : row.status === 'SUBMITTED' ? 'TEST_RUN' : null;
     const testRun = runAs === 'TEST_RUN';
@@ -450,7 +495,7 @@ export async function previewProfileRunMessage(
  */
 function refusedOnEveryEngine(
     profile: ProfileRunSpec,
-): 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null {
+): 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_SUBAGENTS_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES' | null {
     const someEngineRuns = AGENT_DRIVERS.some((driver) => {
         try {
             assertEngineRunsProfiles(driver, profile);
@@ -461,5 +506,9 @@ function refusedOnEveryEngine(
         }
     });
     if (someEngineRuns) return null;
-    return profile.flow ? 'PROFILE_FLOW_NOT_RUNNABLE' : 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
+    if (profile.flow) return 'PROFILE_FLOW_NOT_RUNNABLE';
+    if (profile.subagents && profile.subagents.length > 0 && !AGENT_DRIVERS.some(runsSubagents)) {
+        return 'PROFILE_SUBAGENTS_NOT_RUNNABLE';
+    }
+    return 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }

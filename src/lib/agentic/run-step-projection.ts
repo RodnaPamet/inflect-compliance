@@ -88,6 +88,14 @@ export interface RunStepFeedRow {
      */
     delegation: { agent: string; taskId: string; fromSeq: number | null } | null;
     /**
+     * THE INLINE SUB-AGENT THIS STEP BELONGS TO (Step 2e, #4594), read from
+     * `WorkflowStep.subagentName`, or null for a parent step and for every step
+     * of an engine that does not label them. Read, not inferred: a run killed
+     * during a delegation never writes the marker that closes its span, and its
+     * child steps still say whose they were.
+     */
+    subagent: string | null;
+    /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
      * constraint.
@@ -114,6 +122,8 @@ export interface ProjectableStep {
     costTokens: number | null;
     at: Date;
     actorUserId: string | null;
+    /** Optional, so a caller selecting columns that predate Step 2e still fits. */
+    subagentName?: string | null;
 }
 
 /** The proposal columns the projection groups by step. */
@@ -156,6 +166,13 @@ export function decisionDigestOf(inputJson: string | null): string | null {
 }
 
 /**
+ * The tools whose TOOL_CALL step is a delegation marker: Flue's runtime `task`
+ * and the Tool Runner's own `delegate` (Step 2e). Both write the marker shape
+ * `{ agent, taskId, fromSeq }`, so one grouping reads both.
+ */
+const DELEGATION_TOOLS: ReadonlySet<string> = new Set(['task', 'delegate']);
+
+/**
  * WHAT A DELEGATION STEP DELEGATED, or null (#3473 part 3).
  *
  * Narrowed by KIND AND TOOL before the parse, not by the parse succeeding. A
@@ -171,7 +188,7 @@ export function delegationOf(
     tool: string | null,
     inputJson: string | null,
 ): { agent: string; taskId: string; fromSeq: number | null } | null {
-    if (kind !== 'TOOL_CALL' || tool !== 'task' || !inputJson) return null;
+    if (kind !== 'TOOL_CALL' || tool === null || !DELEGATION_TOOLS.has(tool) || !inputJson) return null;
     try {
         const parsed: unknown = JSON.parse(inputJson);
         if (!parsed || typeof parsed !== 'object') return null;
@@ -276,6 +293,8 @@ export function projectRunSteps(
             // reader would have to decide what a blob carrying one and not the
             // other means — which is "both, independently".
             delegation: delegationOf(s.kind, tool, s.inputJson),
+            // WHOSE STEP, from its own column (Step 2e). Null for the parent.
+            subagent: s.subagentName ?? null,
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the

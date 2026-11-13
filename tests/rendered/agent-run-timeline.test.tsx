@@ -131,6 +131,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         // #3473 part 3 — null for every step that is not a delegation, which
         // is every step in these fixtures.
         delegation: null,
+        subagent: null,
         proposals: [],
         ...over,
     };
@@ -1013,6 +1014,32 @@ describe('the delegation section', () => {
         expect(document.getElementById('step-3')).not.toHaveAttribute('data-delegates');
         // And the marker itself is not its own delegate's work.
         expect(document.getElementById('step-2')).not.toHaveAttribute('data-delegates');
+    });
+
+    it('a Tool Runner `delegate` marker groups its child steps, and each child step names its sub-agent from its own column (Step 2e)', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', subagent: 'risk_reader' }),
+            step({ seq: 2, kind: 'TOOL_CALL', tool: 'list_risks', subagent: 'risk_reader' }),
+            delegation('risk_reader', 0, { seq: 3, tool: 'delegate' }),
+            step({ seq: 4, kind: 'MODEL_CALL' }),
+        ]);
+        for (const seq of [1, 2]) {
+            expect(document.getElementById(`step-${seq}`)).toHaveAttribute('data-subagent', 'risk_reader');
+            expect(document.getElementById(`step-${seq}`)).toHaveAttribute('data-delegates', 'risk_reader');
+        }
+        expect(document.getElementById('step-0')).not.toHaveAttribute('data-subagent');
+        expect(document.getElementById('step-4')).not.toHaveAttribute('data-subagent');
+    });
+
+    it('a child step whose span was never closed (a run killed mid-delegation) still names its sub-agent', () => {
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL' }),
+            step({ seq: 1, kind: 'MODEL_CALL', subagent: 'risk_reader' }),
+        ]);
+        expect(document.getElementById('step-1')).toHaveAttribute('data-subagent', 'risk_reader');
+        expect(document.getElementById('step-1')).not.toHaveAttribute('data-delegates');
+        expect(document.getElementById('step-1')?.textContent).toContain('Sub-agent: risk_reader');
     });
 });
 

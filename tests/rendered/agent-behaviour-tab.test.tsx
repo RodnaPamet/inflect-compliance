@@ -14,7 +14,10 @@
  *     it can, and otherwise is disabled, says why, and starts nothing;
  *   • a refusal from the save is shown beside the field it concerns;
  *   • a drawn flow, which the approval hash covers, is shown and diffed for
- *     the reviewer like the instructions, and its Test run is disabled.
+ *     the reviewer like the instructions, and its Test run is disabled;
+ *   • a version's sub-agents (Step 2e), which the hash also covers, are shown
+ *     and diffed in full, and the editor's sub-agent pickers offer only the
+ *     version's own tools and skills.
  */
 import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -101,6 +104,7 @@ function version(over: Partial<ProfileVersionView> = {}): ProfileVersionView {
         instructionsHash: HASH_1,
         toolNames: ['list_risks'],
         flow: null,
+        subagents: [],
         skillRefs: [],
         modelTier: 'balanced',
         effort: 'medium',
@@ -651,5 +655,101 @@ describe('Reject', () => {
             fireEvent.click(confirm);
         });
         await waitFor(() => expect(screen.queryByTestId('behaviour-reject-confirm')).toBeNull());
+    });
+});
+
+describe('sub-agents (Step 2e, #4594)', () => {
+    const READER = {
+        name: 'risk_reader',
+        instructions: 'Read the open risks. <img src=x onerror="window.__pwned=1"> List each owner.',
+        toolNames: ['list_risks'],
+        skillRefs: [],
+        maxTurns: 4,
+    };
+
+    it('the approval view shows every sub-agent in full, as text, diffs it, and names it in the hash note', async () => {
+        renderTab(view([SUBMITTED({ subagents: [READER] }), version()]));
+        const open = screen.getByTestId('behaviour-open');
+        const body = within(open).getByTestId('behaviour-version-2-subagents').textContent ?? '';
+        expect(body).toContain('Sub-agent: risk_reader');
+        expect(body).toContain('Tools: list_risks');
+        expect(body).toContain('Turn limit: 4');
+        expect(body).toContain('List each owner.');
+        expect(body).toContain('<img src=x onerror=');
+        expect(document.querySelector('img')).toBeNull();
+        expect(within(open).getByTestId('behaviour-review-subagents-diff').textContent).toContain('List each owner.');
+        expect(within(open).getByText(copy('review.subagentsDiffIntro', { from: 1, to: 2 }))).toBeTruthy();
+        expect(open.textContent).toContain(copy('review.hashNoteWithSubagents'));
+        fetchMock.mockResolvedValue(ok({ status: 'APPROVED' }));
+        await act(async () => {
+            fireEvent.click(within(open).getByTestId('behaviour-approve'));
+        });
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ instructionsHash: HASH_2 });
+    });
+
+    it('a version with none shows no sub-agents and no sub-agent diff; the history counts them', () => {
+        renderTab(view([SUBMITTED({ subagents: [READER, { ...READER, name: 'owner_finder' }] }), version()]));
+        expect(screen.queryByTestId('behaviour-version-1-subagents')).toBeNull();
+        expect(screen.getByTestId('behaviour-version-2-subagent-count').textContent).toBe('2');
+        expect(screen.getByTestId('behaviour-version-1-subagent-count').textContent).toBe(copy('none'));
+    });
+
+    it('a version with sub-agents has its Test run disabled while the engine does not run them', () => {
+        renderTab(view([SUBMITTED({ subagents: [READER] }), version()], { testRun: { available: true } }));
+        expect((screen.getByTestId('behaviour-test-run-2-button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTestId('behaviour-test-run-2-reason').textContent).toBe(copy('testRun.reason.SUBAGENTS_NOT_RUNNABLE'));
+        expect((screen.getByTestId('behaviour-test-run-1-button') as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('the editor\'s sub-agent tool picker offers only the tools this version has chosen, never the wider grants', async () => {
+        const user = userEvent.setup();
+        // The agent is granted two tools; the version chose one.
+        renderTab(view([version({ toolNames: ['list_risks'] })]));
+        await user.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect(screen.getByTestId('behaviour-subagents-none')).toBeTruthy();
+        await user.click(screen.getByTestId('behaviour-subagent-add'));
+        await user.click(document.getElementById('behaviour-subagent-0-tools') as HTMLElement);
+        const listbox = await screen.findByRole('listbox');
+        expect(within(listbox).getAllByRole('option').map((o) => o.textContent?.trim())).toEqual(['list_risks']);
+    });
+
+    it('saving sends the sub-agents with the version, and a sub-agent outside the version is marked and blocks the save', async () => {
+        renderTab(view([version({ toolNames: ['list_risks', 'list_controls'], subagents: [{ ...READER, toolNames: ['list_controls'] }] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect((document.getElementById('behaviour-subagent-0-name') as HTMLInputElement).value).toBe('risk_reader');
+        expect(within(editor).queryByTestId('behaviour-subagent-0-outside')).toBeNull();
+
+        fetchMock.mockResolvedValue(ok({ version: 2 }));
+        await act(async () => {
+            fireEvent.click(within(editor).getByTestId('behaviour-editor-save'));
+        });
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.subagents).toEqual([{ ...READER, toolNames: ['list_controls'] }]);
+        expect(Object.keys(body.subagents[0]).sort()).toEqual(['instructions', 'maxTurns', 'name', 'skillRefs', 'toolNames']);
+    });
+
+    it('a sub-agent naming a tool the version no longer has is marked in place, and Save stays shut', async () => {
+        // The starting version's sub-agent names a tool the version (and so
+        // the editor's selection) does not hold.
+        renderTab(view([version({ toolNames: ['list_risks'], subagents: [{ ...READER, toolNames: ['list_controls'] }] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        const editor = await screen.findByTestId('behaviour-editor');
+        expect(within(editor).getByTestId('behaviour-subagent-0-outside').textContent).toContain('list_controls');
+        expect((within(editor).getByTestId('behaviour-editor-save') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('offers at most four, and none beside a drawn flow', async () => {
+        const four = ['a_one', 'b_two', 'c_three', 'd_four'].map((name) => ({ ...READER, name }));
+        renderTab(view([version({ subagents: four })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect((screen.getByTestId('behaviour-subagent-add') as HTMLButtonElement).disabled).toBe(true);
+        cleanup();
+        renderTab(view([version({ flow: FLOW_V1, toolNames: ['list_risks'] })]));
+        fireEvent.click(screen.getByTestId('behaviour-write'));
+        await screen.findByTestId('behaviour-editor');
+        expect(screen.queryByTestId('behaviour-subagents')).toBeNull();
     });
 });
