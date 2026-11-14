@@ -16,7 +16,8 @@
  *   proposals and outcomes per grant         AgentProposal, by the kind a propose tool queues
  *   card versions since the last campaign    AgentPolicyCardVersion, after the agent's
  *                                            last CLOSED AGENT campaign
- *   time-bounded grants, expired on time?    ExternalWriteJournal (`GRANT_EXPIRY_ARGS` tools)
+ *   time-bounded grants, expired on time?    ExternalWriteJournal (`GRANT_EXPIRY_ARGS` tools),
+ *                                            per agent, capped and flagged (#5317)
  *   guard flags                              AgentProposal.guardVerdict
  *   breaker trips                            AgentCircuitBreaker
  *   kill engagements                         AgentKillSwitch
@@ -63,8 +64,14 @@ import type { RequestContext } from '../types';
 const GRANTS_PER_AGENT = 200;
 /** Card versions read per agent since its last campaign. */
 const CARD_VERSIONS_PER_AGENT = 50;
-/** Time-bounded grants read per page of agents. */
-const TIME_BOUNDED_PER_PAGE = 500;
+/**
+ * Time-bounded grants read per AGENT before its section is called truncated
+ * (#5317). Per agent, so one agent issuing daily JIT grants cannot take the
+ * rows of every other agent on its page; and 25, so a page of
+ * `PACK_PAGE_SIZE` agents reads at most the 500 rows the old per-page read
+ * did, and the run's context budget is unchanged.
+ */
+export const TIME_BOUNDED_PER_AGENT = 25;
 /** Kill engagements read per page of agents. */
 const KILLS_PER_PAGE = 500;
 /** Harness items read per discovered agent (only the latest two are used). */
@@ -257,21 +264,63 @@ export async function readAgentRecertificationEvidence(
         const cardByAgent = new Map(cards.map((c) => [c.agentId, c]));
 
         // ── Time-bounded grants ──────────────────────────────────────────
-        const timeBounded = await db.externalWriteJournal.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                agentId: { in: agentIds },
-                advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
-                outcome: 'APPLIED',
-                attemptedAt: { lt: window.end },
-            },
-            select: {
-                id: true, agentId: true, advertisedToolName: true, connectionName: true,
-                argumentsJson: true, attemptedAt: true, expiryVerifiedAt: true, expiryRaisedAt: true,
-            },
-            orderBy: [{ attemptedAt: 'desc' }, { id: 'asc' }],
-            take: TIME_BOUNDED_PER_PAGE,
-        });
+        //
+        // One read PER AGENT, capped, read one past the cap so truncation is a
+        // fact the pack states (`timeBoundedTruncated`) rather than one nobody
+        // can observe. It was one 500-row read over all history for the whole
+        // page, newest first and unflagged (#5317): a single busy agent filled
+        // it, every other agent on the page was filed with an empty list, and
+        // the busy agent's oldest rows were dropped with nothing to say so.
+        //
+        // Bounded to the grants still relevant to the window: made in it, or
+        // made before it and not verified gone before it began — plus every
+        // grant the sweep RAISED, whenever. A raise is a control that failed
+        // on this agent's record; it is rare, and it is the row a reviewer
+        // must see.
+        //
+        // Read in the order the cap should spend itself: raised (OUTLIVED_WINDOW)
+        // first, then grants not yet verified gone (undetermined), then the
+        // verified ones newest first. So when the cap bites it drops the
+        // oldest grants that ended on time, never an outlived one before
+        // them. The section is re-sorted newest first below, as it always was.
+        const timeBoundedByAgent = new Map<string, {
+            rows: Array<{
+                id: string; advertisedToolName: string; connectionName: string;
+                argumentsJson: string; attemptedAt: Date; expiryVerifiedAt: Date | null; expiryRaisedAt: Date | null;
+            }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read is what let one agent starve the rest (#5317)
+            const read = await db.externalWriteJournal.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId,
+                    advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
+                    outcome: 'APPLIED',
+                    attemptedAt: { lt: window.end },
+                    OR: [
+                        { attemptedAt: { gte: window.start } },
+                        { expiryVerifiedAt: null },
+                        { expiryVerifiedAt: { gte: window.start } },
+                        { expiryRaisedAt: { not: null } },
+                    ],
+                },
+                select: {
+                    id: true, advertisedToolName: true, connectionName: true,
+                    argumentsJson: true, attemptedAt: true, expiryVerifiedAt: true, expiryRaisedAt: true,
+                },
+                orderBy: [
+                    { expiryRaisedAt: { sort: 'desc', nulls: 'last' } },
+                    { expiryVerifiedAt: { sort: 'desc', nulls: 'first' } },
+                    { attemptedAt: 'desc' },
+                    { id: 'asc' },
+                ],
+                take: TIME_BOUNDED_PER_AGENT + 1,
+            });
+            const kept = read.slice(0, TIME_BOUNDED_PER_AGENT).sort((x, y) =>
+                y.attemptedAt.getTime() - x.attemptedAt.getTime() || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+            timeBoundedByAgent.set(agentId, { rows: kept, truncated: read.length > TIME_BOUNDED_PER_AGENT });
+        }
 
         // ── Breakers and kills ───────────────────────────────────────────
         const breakers = await db.agentCircuitBreaker.findMany({
@@ -386,8 +435,7 @@ export async function readAgentRecertificationEvidence(
                 grantsTruncated: own.length >= GRANTS_PER_AGENT || grantsTruncatedOverall,
                 otherProposals,
                 cardVersions: { since: iso(since), currentVersion: card?.currentVersion ?? null, versions },
-                timeBoundedGrants: timeBounded
-                    .filter((t) => t.agentId === agentId)
+                timeBoundedGrants: (timeBoundedByAgent.get(agentId)?.rows ?? [])
                     .map((t) => ({
                         journalId: t.id,
                         toolName: t.advertisedToolName,
@@ -395,6 +443,10 @@ export async function readAgentRecertificationEvidence(
                         grantedAt: t.attemptedAt.toISOString(),
                         ...timeBoundedState(t, window.end),
                     })),
+                // This agent's own read hit its cap: the list above is its
+                // outlived and undetermined grants, then the newest that ended
+                // on time — not all of them.
+                timeBoundedTruncated: timeBoundedByAgent.get(agentId)?.truncated ?? false,
                 guardFlags,
                 breaker: breaker
                     ? {

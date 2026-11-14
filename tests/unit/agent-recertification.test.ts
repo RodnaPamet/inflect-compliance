@@ -14,6 +14,7 @@ import {
     AGENT_CAMPAIGN_EVIDENCE_SCHEMA,
     NARROWING_BASIS,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
+    RecertificationEvidenceSchema,
     USE_WINDOW_DAYS,
     agentCampaignEvidenceBytes,
     buildAgentCampaignEvidence,
@@ -156,6 +157,44 @@ describe('the pack plan', () => {
     it('malformed evidence is refused, never planned as an empty campaign', () => {
         expect(() => planAgentReviewPacks({ accessReviewId: 'ar-1' })).toThrow();
         expect(() => planAgentReviewPacks(null)).toThrow();
+    });
+});
+
+describe('the time-bounded truncation flag (#5317) moves no pack filed before it', () => {
+    // A subject as the read returned it before #5317: no `timeBoundedTruncated`
+    // key. Its pack's sections, and so its stored contentHash, were computed
+    // from the parsed evidence — this is that hash, pinned from the code
+    // before the field existed.
+    const OLD_PACK_HASH = 'sha256:7716a744dea1beb2bf0b2e4ae6fb5fab7fff31c09c3f26628d775d5330921ff1';
+    const old = subject({
+        timeBoundedGrants: [{
+            journalId: 'ewj-1', toolName: 'grant_time_bounded_access', connectionName: 'entra-pim',
+            grantedAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-08-02T00:00:00.000Z',
+            state: 'OUTLIVED_WINDOW', expiredOnTime: false,
+        }],
+    });
+
+    it('evidence recorded without the key parses to sections without it, hashing as it did', () => {
+        const subjects = (evidence([old]) as { subjects: SubjectEvidence[] }).subjects;
+        expect(subjects[0]).not.toHaveProperty('timeBoundedTruncated');
+        const reparsed = RecertificationEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence([old]))));
+        const sections = sectionsOf(reparsed.subjects[0]);
+        expect(sections).not.toHaveProperty('timeBoundedTruncated');
+        expect(sha256Of(sections)).toBe(OLD_PACK_HASH);
+    });
+
+    it('a run whose READ was recorded before the key still has its plan accepted', () => {
+        const recorded = JSON.parse(JSON.stringify(planAgentReviewPacks(evidence([old]))));
+        expect(checkedPlan(RecertificationEvidenceSchema.parse(evidence([old])), recorded)).toEqual(recorded);
+        // And the flag never changes a plan: it says nothing about which grant to delete.
+        expect(planAgentReviewPacks(evidence([{ ...old, timeBoundedTruncated: true }])))
+            .toEqual(planAgentReviewPacks(evidence([old])));
+    });
+
+    it('a new read keeps the flag through the parse, so the filed pack states it', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(evidence([{ ...old, timeBoundedTruncated: true }]));
+        expect(sectionsOf(reparsed.subjects[0]).timeBoundedTruncated).toBe(true);
+        expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_PACK_HASH);
     });
 });
 
