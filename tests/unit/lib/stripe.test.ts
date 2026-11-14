@@ -211,16 +211,17 @@ describe('handleWebhookEvent', () => {
     it('subscription.updated maps trialing + top-level period_end and unknown plan default', async () => {
         db.billingEvent.findUnique.mockResolvedValue(null);
         db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
-        await stripeLib.handleWebhookEvent(
-            makeEvent('customer.subscription.updated', {
-                id: 'sub_2',
-                customer: 'cus_2',
-                status: 'trialing',
-                metadata: {},
-                current_period_end: 1_800_000_000,
-                trial_end: 1_810_000_000,
-            }),
-        );
+        const live = {
+            id: 'sub_2',
+            customer: 'cus_2',
+            status: 'trialing',
+            metadata: {},
+            current_period_end: 1_800_000_000,
+            trial_end: 1_810_000_000,
+        };
+        stripeMock.subscriptions.retrieve.mockResolvedValue(live);
+        await stripeLib.handleWebhookEvent(makeEvent('customer.subscription.updated', live));
+        expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledWith('sub_2');
         expect(db.billingAccount.update).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ plan: 'PRO', status: 'TRIALING' }) }),
         );
@@ -232,6 +233,7 @@ describe('handleWebhookEvent', () => {
         await stripeLib.handleWebhookEvent(
             makeEvent('customer.subscription.created', { id: 's', customer: 'cus_x', status: 'past_due', metadata: { plan: 'ENTERPRISE' } }),
         );
+        expect(stripeMock.subscriptions.retrieve).not.toHaveBeenCalled();
         expect(db.billingAccount.update).not.toHaveBeenCalled();
         expect(db.billingEvent.create).not.toHaveBeenCalled();
     });
@@ -239,6 +241,7 @@ describe('handleWebhookEvent', () => {
     it('subscription.deleted marks CANCELED', async () => {
         db.billingEvent.findUnique.mockResolvedValue(null);
         db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
+        stripeMock.subscriptions.retrieve.mockResolvedValue({ id: 's', customer: 'cus_3', status: 'canceled' });
         await stripeLib.handleWebhookEvent(
             makeEvent('customer.subscription.deleted', { id: 's', customer: 'cus_3', status: 'canceled' }),
         );
@@ -253,13 +256,11 @@ describe('handleWebhookEvent', () => {
             jest.clearAllMocks();
             db.billingEvent.findUnique.mockResolvedValue(null);
             db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
-            await stripeLib.handleWebhookEvent(
-                makeEvent('customer.subscription.updated', {
-                    id: 'sub_e', customer: 'cus_e', status, metadata: { plan: 'ENTERPRISE' },
-                }),
-            );
+            const live = { id: 'sub_e', customer: 'cus_e', status, metadata: { plan: 'ENTERPRISE' } };
+            stripeMock.subscriptions.retrieve.mockResolvedValue(live);
+            await stripeLib.handleWebhookEvent(makeEvent('customer.subscription.updated', live));
             expect(db.billingAccount.update).toHaveBeenCalledWith(
-                expect.objectContaining({ data: expect.objectContaining({ plan: 'FREE', status: 'CANCELED' }) }),
+                expect.objectContaining({ data: { status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null } }),
             );
         }
     });
@@ -267,11 +268,9 @@ describe('handleWebhookEvent', () => {
     it('a status this build does not know is not read as ACTIVE (#5082)', async () => {
         db.billingEvent.findUnique.mockResolvedValue(null);
         db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1' });
-        await stripeLib.handleWebhookEvent(
-            makeEvent('customer.subscription.updated', {
-                id: 'sub_p', customer: 'cus_p', status: 'paused', metadata: { plan: 'PRO' },
-            }),
-        );
+        const live = { id: 'sub_p', customer: 'cus_p', status: 'paused', metadata: { plan: 'PRO' } };
+        stripeMock.subscriptions.retrieve.mockResolvedValue(live);
+        await stripeLib.handleWebhookEvent(makeEvent('customer.subscription.updated', live));
         expect(db.billingAccount.update).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ status: 'INCOMPLETE' }) }),
         );
@@ -318,6 +317,176 @@ describe('handleWebhookEvent', () => {
     it('logs and ignores an unhandled event type (default arm)', async () => {
         db.billingEvent.findUnique.mockResolvedValue(null);
         await stripeLib.handleWebhookEvent(makeEvent('customer.created', {}));
+        expect(db.billingAccount.update).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * #5316 item 28 (owner decision 2026-11-14). Stripe delivers webhook events
+ * out of order and re-delivers late ones, so applying an event's embedded
+ * subscription let an older event overwrite newer billing state. Every
+ * subscription branch now re-fetches the live subscription and applies that.
+ *
+ * These cases run ORDERED SEQUENCES of events against a stateful fake billing
+ * row and a Stripe mock whose `retrieve` answers the live state, and assert
+ * the state the sequence ends in.
+ */
+describe('handleWebhookEvent applies the live subscription, never the event snapshot (#5316)', () => {
+    type Row = {
+        tenantId: string;
+        stripeCustomerId: string;
+        stripeSubscriptionId: string | null;
+        plan: string;
+        status: string;
+    };
+    let row: Row;
+    let seenEvents: Set<string>;
+
+    const event = (id: string, type: string, object: Record<string, unknown>) =>
+        ({ id, type, data: { object } }) as never;
+
+    beforeEach(() => {
+        row = {
+            tenantId: 't1',
+            stripeCustomerId: 'cus_1',
+            stripeSubscriptionId: null,
+            plan: 'FREE',
+            status: 'ACTIVE',
+        };
+        seenEvents = new Set();
+        db.billingAccount.findUnique.mockImplementation(
+            async ({ where }: { where: { stripeCustomerId: string } }) =>
+                where.stripeCustomerId === row.stripeCustomerId ? { ...row } : null,
+        );
+        db.billingAccount.update.mockImplementation(
+            async ({ data }: { data: Partial<Row> }) => {
+                row = { ...row, ...data };
+                return { ...row };
+            },
+        );
+        db.billingEvent.findUnique.mockImplementation(
+            async ({ where }: { where: { stripeEventId: string } }) =>
+                seenEvents.has(where.stripeEventId) ? { id: where.stripeEventId } : null,
+        );
+        db.billingEvent.create.mockImplementation(
+            async ({ data }: { data: { stripeEventId: string } }) => {
+                seenEvents.add(data.stripeEventId);
+                return { id: data.stripeEventId };
+            },
+        );
+    });
+
+    it('a late customer.subscription.created (incomplete) does not undo a completed checkout', async () => {
+        // Live: the checkout has completed and the subscription is active.
+        stripeMock.subscriptions.retrieve.mockResolvedValue({
+            id: 'sub_1', customer: 'cus_1', status: 'active', metadata: { plan: 'PRO' },
+        });
+
+        await stripeLib.handleWebhookEvent(
+            event('evt_checkout', 'checkout.session.completed', { customer: 'cus_1', subscription: 'sub_1' }),
+        );
+        expect(row).toMatchObject({ status: 'ACTIVE', plan: 'PRO', stripeSubscriptionId: 'sub_1' });
+
+        // The earlier created event arrives late, carrying the old snapshot.
+        await stripeLib.handleWebhookEvent(
+            event('evt_created', 'customer.subscription.created', {
+                id: 'sub_1', customer: 'cus_1', status: 'incomplete', metadata: { plan: 'PRO' },
+            }),
+        );
+
+        expect(row).toMatchObject({ status: 'ACTIVE', plan: 'PRO', stripeSubscriptionId: 'sub_1' });
+        expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledTimes(2);
+    });
+
+    it('a delayed customer.subscription.updated after the deletion does not revive the subscription', async () => {
+        row = { ...row, stripeSubscriptionId: 'sub_1', plan: 'PRO', status: 'ACTIVE' };
+        // Live: the subscription has been cancelled.
+        stripeMock.subscriptions.retrieve.mockResolvedValue({
+            id: 'sub_1', customer: 'cus_1', status: 'canceled', metadata: { plan: 'PRO' },
+        });
+
+        await stripeLib.handleWebhookEvent(
+            event('evt_deleted', 'customer.subscription.deleted', {
+                id: 'sub_1', customer: 'cus_1', status: 'canceled', metadata: { plan: 'PRO' },
+            }),
+        );
+        expect(row).toMatchObject({ status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null });
+
+        // An update from before the cancellation arrives late, still saying active.
+        await stripeLib.handleWebhookEvent(
+            event('evt_updated', 'customer.subscription.updated', {
+                id: 'sub_1', customer: 'cus_1', status: 'active', metadata: { plan: 'PRO' },
+            }),
+        );
+
+        expect(row).toMatchObject({ status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null });
+    });
+
+    it('a retrieve failure other than resource_missing writes nothing and propagates', async () => {
+        row = { ...row, stripeSubscriptionId: 'sub_1', plan: 'PRO', status: 'ACTIVE' };
+        const before = { ...row };
+        for (const failure of [
+            new Error('socket hang up'),
+            Object.assign(new Error('Too many requests'), { type: 'StripeRateLimitError', code: 'rate_limit', statusCode: 429 }),
+        ]) {
+            stripeMock.subscriptions.retrieve.mockRejectedValueOnce(failure);
+            await expect(
+                stripeLib.handleWebhookEvent(
+                    event('evt_upd_fail', 'customer.subscription.updated', {
+                        id: 'sub_1', customer: 'cus_1', status: 'canceled', metadata: {},
+                    }),
+                ),
+            ).rejects.toBeInstanceOf(stripeLib.SubscriptionRefetchError);
+        }
+
+        expect(db.billingAccount.update).not.toHaveBeenCalled();
+        expect(db.billingEvent.create).not.toHaveBeenCalled();
+        expect(row).toEqual(before);
+        // Not recorded as processed, so Stripe's re-delivery is not skipped.
+        expect(seenEvents.has('evt_upd_fail')).toBe(false);
+    });
+
+    it('a failed retrieve on checkout.session.completed also writes nothing and propagates', async () => {
+        stripeMock.subscriptions.retrieve.mockRejectedValueOnce(new Error('ECONNRESET'));
+        await expect(
+            stripeLib.handleWebhookEvent(
+                event('evt_co_fail', 'checkout.session.completed', { customer: 'cus_1', subscription: 'sub_1' }),
+            ),
+        ).rejects.toBeInstanceOf(stripeLib.SubscriptionRefetchError);
+        expect(db.billingAccount.update).not.toHaveBeenCalled();
+        expect(db.billingEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('Stripe answering resource_missing is applied as a deletion', async () => {
+        row = { ...row, stripeSubscriptionId: 'sub_1', plan: 'PRO', status: 'ACTIVE' };
+        stripeMock.subscriptions.retrieve.mockRejectedValue(
+            Object.assign(new Error('No such subscription: sub_1'), {
+                type: 'StripeInvalidRequestError',
+                code: 'resource_missing',
+                statusCode: 404,
+            }),
+        );
+
+        await stripeLib.handleWebhookEvent(
+            event('evt_upd_missing', 'customer.subscription.updated', {
+                id: 'sub_1', customer: 'cus_1', status: 'active', metadata: { plan: 'PRO' },
+            }),
+        );
+
+        expect(db.billingAccount.update).toHaveBeenCalledWith({
+            where: { stripeCustomerId: 'cus_1' },
+            data: { status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null },
+        });
+        expect(row).toMatchObject({ status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null });
+        expect(seenEvents.has('evt_upd_missing')).toBe(true);
+    });
+
+    it('an idempotent re-delivery still skips before any re-fetch', async () => {
+        seenEvents.add('evt_dup');
+        await stripeLib.handleWebhookEvent(
+            event('evt_dup', 'customer.subscription.updated', { id: 'sub_1', customer: 'cus_1', status: 'active' }),
+        );
+        expect(stripeMock.subscriptions.retrieve).not.toHaveBeenCalled();
         expect(db.billingAccount.update).not.toHaveBeenCalled();
     });
 });
