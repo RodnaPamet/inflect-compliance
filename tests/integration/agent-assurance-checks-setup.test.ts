@@ -1,5 +1,5 @@
 /**
- * SCHEDULING THE FOUR AGENT ASSURANCE CHECKS, AGAINST A REAL DATABASE (#5014).
+ * SCHEDULING THE AGENT ASSURANCE CHECKS, AGAINST A REAL DATABASE (#5014).
  *
  * The register's Assurance section read "never run" for every check in every
  * tenant, because nothing in the product could create a plan carrying a check's
@@ -50,6 +50,7 @@ const FIRST_CODE = {
     AGENTIC_TOOL_MANIFEST_INTEGRITY: 'ASI04',
     AGENTIC_REVIEW_QUALITY: 'ASI09',
     AGENTIC_KILL_SWITCH_DRILL: 'ASI08',
+    AGENTIC_A2A_INTEGRITY: 'ASI07',
 } as const;
 
 let requirementIds: Record<string, string> = {};
@@ -94,7 +95,7 @@ describeFn('setUpAgentAssuranceChecks', () => {
             data: { key: `${SUITE}-asi`, name: 'OWASP Agentic Top 10 (test)', sourceUrn: ASI_LIBRARY_URN },
         });
         requirementIds = {};
-        for (const [i, code] of ['ASI02', 'ASI03', 'ASI04', 'ASI08', 'ASI09', 'ASI10'].entries()) {
+        for (const [i, code] of ['ASI02', 'ASI03', 'ASI04', 'ASI07', 'ASI08', 'ASI09', 'ASI10'].entries()) {
             const r = await prisma.frameworkRequirement.create({
                 data: { frameworkId: framework.id, code, title: `${code} (test)`, sortOrder: i },
             });
@@ -224,6 +225,7 @@ describeFn('setUpAgentAssuranceChecks', () => {
             await linkedControl(t.tenantId, 'ASI02');
             await linkedControl(t.tenantId, 'ASI04');
             await linkedControl(t.tenantId, 'ASI09');
+            await linkedControl(t.tenantId, 'ASI07');
             const asi10 = await linkedControl(t.tenantId, 'ASI10');
             const r = await setUpAgentAssuranceChecks(t.ctx, { apply: false });
             if (!r.ok) throw new Error(r.detail);
@@ -237,6 +239,7 @@ describeFn('setUpAgentAssuranceChecks', () => {
             const second = await linkedControl(t.tenantId, 'ASI04', 'Supply chain review');
             await linkedControl(t.tenantId, 'ASI09');
             await linkedControl(t.tenantId, 'ASI08');
+            await linkedControl(t.tenantId, 'ASI07');
 
             const before = await footprint(t.tenantId);
             const refused = await setUpAgentAssuranceChecks(t.ctx, { apply: true });

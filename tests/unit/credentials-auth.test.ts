@@ -81,7 +81,7 @@ jest.mock('@/lib/auth/security-events', () => ({
 }));
 
 import { authenticateWithPassword } from '@/lib/auth/credentials';
-import { BCRYPT_COST } from '@/lib/auth/passwords';
+import { BCRYPT_COST, prehashForBcrypt } from '@/lib/auth/passwords';
 import { hashForLookup } from '@/lib/security/encryption';
 
 beforeEach(() => {
@@ -111,12 +111,24 @@ async function makeUser(
         password?: string | null;
         emailVerified?: Date | null;
         hashCost?: number;
+        /**
+         * Which SCHEME the stored hash is in (#5592 deploy 2).
+         *
+         * `'legacy'` is the default because it is what every row written
+         * before the flip holds: bcrypt over the raw plaintext. `'current'`
+         * is the pre-hashed form `hashPassword` writes now. The distinction
+         * matters to `rehash on verify`, which migrates a legacy row on the
+         * next sign-in — so a fixture that did not express it could only test
+         * one side of that.
+         */
+        scheme?: 'legacy' | 'current';
     } = {},
 ) {
     const password = opts.password ?? 'Tr0ub4dor&3!';
+    const bcryptInput = opts.scheme === 'current' ? prehashForBcrypt(password) : password;
     const passwordHash = opts.password === null
         ? null
-        : await bcrypt.hash(password, opts.hashCost ?? BCRYPT_COST);
+        : await bcrypt.hash(bcryptInput, opts.hashCost ?? BCRYPT_COST);
     return {
         id: opts.id ?? 'usr_1',
         email: opts.email ?? 'alice@example.com',
@@ -281,10 +293,55 @@ describe('authenticateWithPassword — rehash on verify', () => {
         expect(args.data.passwordHash).toMatch(new RegExp(`^\\$2[aby]\\$${BCRYPT_COST}\\$`));
     });
 
-    it('does NOT rehash when the stored hash is already at BCRYPT_COST', async () => {
-        const u = await makeUser({ hashCost: BCRYPT_COST });
+    it('does NOT rehash a CURRENT-scheme hash already at BCRYPT_COST', async () => {
+        // Nothing to do: right cost, right scheme. This is the steady state
+        // after #5592 deploy 2, and the case that must stay quiet — were it
+        // not, every sign-in would rewrite the row for ever.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'current' });
         mockFindUnique.mockResolvedValue(u);
 
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+        expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('DOES rehash a legacy-scheme hash at the current cost — the #5592 migration', async () => {
+        // The deploy-2 behaviour. The cost is already right, so `needsRehash`
+        // alone says nothing to do; only `legacyScheme` catches it. Before the
+        // flip this user kept a hash built from input bcrypt had truncated at
+        // 72 bytes, for ever, because nothing else can convert a stored hash —
+        // the plaintext is in hand only at sign-in.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'legacy' });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockResolvedValue(u);
+
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+
+        expect(result.ok).toBe(true);
+        expect(mockUpdate).toHaveBeenCalledTimes(1);
+        const args = mockUpdate.mock.calls[0][0] as {
+            where: { id: string };
+            data: { passwordHash: string };
+        };
+        expect(args.where.id).toBe(u.id);
+        expect(args.data.passwordHash).not.toBe(u.passwordHash);
+    });
+
+    it('the migrated hash is the CURRENT scheme, so the next sign-in is quiet', async () => {
+        // Otherwise the migration would re-fire on every login — the failure
+        // deploy 1 deliberately avoided by not consulting the flag at all.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'legacy' });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockResolvedValue(u);
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+
+        const written = (mockUpdate.mock.calls[0][0] as { data: { passwordHash: string } })
+            .data.passwordHash;
+
+        mockUpdate.mockClear();
+        mockFindUnique.mockResolvedValue({ ...u, passwordHash: written });
         await authenticateWithPassword({ email: u.email, password: u._plaintext });
         expect(mockUpdate).not.toHaveBeenCalled();
     });

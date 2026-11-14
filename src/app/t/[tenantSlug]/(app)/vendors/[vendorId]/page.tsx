@@ -34,7 +34,11 @@ import { CopyText } from '@/components/ui/copy-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { normaliseHref } from '@/lib/security/safe-url';
 import { apiErrorMessage, validationIssueMessages } from '@/lib/api-error';
-import { isVendorActivationNeedsReview, isVendorNameTaken } from '@/lib/vendor-refusal-reasons';
+import {
+    isVendorActivationNeedsReview,
+    isVendorNameTaken,
+    isVendorReassessmentInProgress,
+} from '@/lib/vendor-refusal-reasons';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { Heading } from '@/components/ui/typography';
@@ -568,12 +572,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             });
             if (res.ok) { setVendor(await res.json()); setEditing(false); return; }
             const err = await res.json().catch(() => ({}));
-            // The two named refusals get the page's own sentence: the
+            // The three named refusals get the page's own sentence: the
             // server's is English. Anything else shows the server's reason.
             if (isVendorNameTaken(err)) {
                 setEditError({ field: 'name', message: tx('form.nameTaken') });
             } else if (isVendorActivationNeedsReview(err)) {
                 setEditError({ field: null, message: tx('detail.activationNeedsReview') });
+            } else if (isVendorReassessmentInProgress(err)) {
+                setEditError({ field: null, message: tx('detail.activationReassessmentInProgress') });
             } else {
                 const issues = validationIssueMessages(err);
                 setEditError({

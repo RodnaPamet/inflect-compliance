@@ -294,6 +294,70 @@ describe('updateVendor — completed-review activation gate (PR-T: single gate i
         ).rejects.toThrow(/completed assessment review/);
     });
 
+    // #5318 item 31, owner decision 2026-11-14: the gate stays strict on the
+    // LATEST assessment, so an open reassessment still blocks activation of a
+    // vendor whose earlier review completed — and the refusal now says so,
+    // rather than telling the admin to send an assessment they already sent.
+    it.each(['SENT', 'IN_PROGRESS', 'SUBMITTED', 'DRAFT'])(
+        'refuses with VENDOR_REASSESSMENT_IN_PROGRESS when an earlier review completed and the latest is %s',
+        async (latestStatus) => {
+            const findFirst = jest.fn().mockResolvedValue({
+                status: 'ONBOARDING',
+                assessments: [{ status: latestStatus, riskRating: null }],
+                _count: { assessments: 1 },
+            });
+            mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ vendor: { findFirst } } as never));
+
+            await expect(
+                updateVendor(makeRequestContext('ADMIN'), 'v1', { status: 'ACTIVE' }),
+            ).rejects.toMatchObject({
+                status: 400,
+                message: expect.stringMatching(/reassessment is in progress/),
+                details: { reason: 'VENDOR_REASSESSMENT_IN_PROGRESS' },
+            });
+            expect(mockVendorUpdate).not.toHaveBeenCalled();
+            // The count it decided on is of completed, RATED reviews only.
+            expect(findFirst.mock.calls[0][0].include._count.select.assessments.where).toEqual({
+                status: { in: ['REVIEWED', 'CLOSED', 'APPROVED'] },
+                riskRating: { not: null },
+            });
+        },
+    );
+
+    it('keeps VENDOR_ACTIVATION_NEEDS_REVIEW for a first assessment still open', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                vendor: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        status: 'ONBOARDING',
+                        assessments: [{ status: 'SENT', riskRating: null }],
+                        _count: { assessments: 0 },
+                    }),
+                },
+            } as never),
+        );
+        await expect(
+            updateVendor(makeRequestContext('ADMIN'), 'v1', { status: 'ACTIVE' }),
+        ).rejects.toMatchObject({ details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' } });
+    });
+
+    it('keeps VENDOR_ACTIVATION_NEEDS_REVIEW for a latest review completed without a rating', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                vendor: {
+                    findFirst: jest.fn().mockResolvedValue({
+                        status: 'ONBOARDING',
+                        assessments: [{ status: 'REVIEWED', riskRating: null }],
+                        _count: { assessments: 1 },
+                    }),
+                },
+            } as never),
+        );
+        await expect(
+            updateVendor(makeRequestContext('ADMIN'), 'v1', { status: 'ACTIVE' }),
+        ).rejects.toMatchObject({ details: { reason: 'VENDOR_ACTIVATION_NEEDS_REVIEW' } });
+    });
+
     it('allows promotion to ACTIVE when latest assessment is a completed review with a rating', async () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({

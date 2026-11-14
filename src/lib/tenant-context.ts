@@ -47,6 +47,15 @@ const ROLE_ORDER: Record<Role, number> = {
     AI_ADMIN: 1,
 };
 
+/**
+ * A role's rung on the coarse ladder (`ROLE_ORDER`), 0 for a value the ladder
+ * does not know. Exported so a caller comparing two coarse tiers reads THIS
+ * ladder rather than a copy of it (#5306: the per-request API-key raise).
+ */
+export function coarseRoleLevel(role: Role): number {
+    return ROLE_ORDER[role] ?? 0;
+}
+
 export function computePermissions(role: Role): Permissions {
     const level = ROLE_ORDER[role] ?? 0;
     return {

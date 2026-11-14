@@ -65,6 +65,7 @@ import type { PermissionMode } from './assert-permission';
 export { assertPermission } from './assert-permission';
 export type { PermissionMode } from './assert-permission';
 import type { PermissionKey } from './permission-key';
+import { raiseApiKeyCoarseTier } from './api-key-coarse-raise';
 
 // ─── Handler signature plumbing ─────────────────────────────────────
 
@@ -197,7 +198,15 @@ export function requirePermission<
             path: safePath(req),
         });
 
-        return handler(req, { ...routeArgs, params: resolvedParams }, ctx) as Promise<TResponse>;
+        // An API key's coarse tier is derived from its scopes, so an `admin:*`
+        // key read EDITOR and was refused by the `assertCanAdmin` behind a
+        // route it had just passed by name. Having passed, the key gets the
+        // coarse tier of the lowest built-in role holding these keys, for THIS
+        // request only (#5306, owner decision 2026-11-14). A session context
+        // and an agent-bound key are returned unchanged; see the module.
+        const handlerCtx = raiseApiKeyCoarseTier(ctx, keys, mode);
+
+        return handler(req, { ...routeArgs, params: resolvedParams }, handlerCtx) as Promise<TResponse>;
     };
 }
 

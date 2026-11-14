@@ -283,6 +283,33 @@ truth. The webhook handler is responsible for moving the row from
 still `PRO`, the webhook didn't fire or didn't apply (look at
 `BillingEvent` for the trail).
 
+### How the webhook applies a subscription event
+
+`handleWebhookEvent` in [`src/lib/stripe.ts`](../src/lib/stripe.ts)
+never writes the subscription a Stripe event carries. Stripe does not
+deliver events in order and re-delivers late ones, so that snapshot can
+be older than the state already stored. For `checkout.session.completed`
+and `customer.subscription.created` / `.updated` / `.deleted`, the
+event only names the subscription. The handler re-fetches it from
+Stripe and writes the live answer. The order events arrive in therefore
+decides nothing (#5316).
+
+* A live status of `canceled` or `incomplete_expired`, or Stripe
+  answering `resource_missing`, is written as a deletion: `status =
+  CANCELED`, `plan = FREE`, `stripeSubscriptionId = null`.
+* Any other live status is written as it stands: plan from the
+  subscription's `metadata.plan`, status mapped from Stripe's, period
+  end and trial end from the subscription.
+* If the re-fetch fails for any other reason (network, rate limit,
+  Stripe outage), nothing is written and the event is not recorded in
+  `BillingEvent`. `/api/stripe/webhook` answers `503`, so Stripe
+  delivers the event again, and the retry re-fetches.
+
+Signature verification and the `BillingEvent.stripeEventId` idempotency
+check run before any of this, unchanged. `invoice.payment_failed` and
+`invoice.payment_succeeded` still write a status from the event type
+without a re-fetch.
+
 ### "We just added a new gated resource and limits aren't applying"
 
 Three things to verify in order:
