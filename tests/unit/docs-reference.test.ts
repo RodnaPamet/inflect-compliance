@@ -230,6 +230,119 @@ describe('page actions — the calls a page makes', () => {
     });
 });
 
+/**
+ * #5661. The resolver reads a name at ONE use site, so it may only answer from
+ * declarations that site can see: a parameter, then an enclosing scope, then
+ * the file's imports. It used to answer from a flat whole-file map of every
+ * `const` by name — any scope, and on a miss a declaration AFTER the use — so
+ * it reported routes a page does not call and left the real one uncounted.
+ */
+describe('page actions — a name resolves from the scopes its use site can see', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const segmentsOf = (text: string, files: Record<string, string> = {}) => {
+        const src = memory({ ...files, [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src)).map((c) => c.segments);
+    };
+
+    // The shape it was found in: a `postJson(url, …)` helper fetches its own
+    // parameter, and the file's only `const url` is 800 lines below, inside an
+    // unrelated callback. One name, two use sites, two different answers.
+    const helperAndCallSite = [
+        'async function postJson(url: string, body: unknown) {',
+        "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+        '}',
+        'export default function P() {',
+        "    const url = '/api/t/x/agent-samples/1';",
+        '    return postJson(url, {});',
+        '}',
+    ].join('\n');
+
+    it('reads a parameter as unresolvable, and the same name at a call site as that scope own const', () => {
+        expect(segmentsOf(helperAndCallSite)).toEqual([null, ['api', 't', 'x', 'agent-samples', '1']]);
+    });
+
+    it('lists the parameter call rather than attributing it to the const route', () => {
+        const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+        const a = pageActions(page, memory({ [page]: helperAndCallSite }), [
+            route('src/app/api/t/[tenantSlug]/agent-samples/[sampleId]/route.ts', "export const POST = withApiErrorHandling(requirePermission('access_reviews.decide', h));"),
+        ]);
+        expect(a.resolved.map((x) => `${x.method} ${x.route.url} ${x.permission.join(',')} @${x.sites.map((y) => y.line).join(',')}`)).toEqual([
+            'POST /api/t/[tenantSlug]/agent-samples/[sampleId] access_reviews.decide @6',
+        ]);
+        expect(a.unresolved.map((u) => `${u.line} ${u.expression} — ${u.why}`)).toEqual(['2 url — the URL is built in a way the scan cannot follow']);
+    });
+
+    // Without the parameter check this one still resolves: a top-level const is
+    // in every use site chain, so the scope walk alone does not refuse a
+    // parameter that SHADOWS one.
+    it('reads a parameter that shadows a top-level const as unresolvable, not as that const', () => {
+        expect(
+            segmentsOf(
+                [
+                    "const url = '/api/t/x/fallback';",
+                    'export function Direct() {',
+                    '    return fetch(url);',
+                    '}',
+                    'export function Shadow(url: string) {',
+                    '    return fetch(url);',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'fallback'], null]);
+    });
+
+    it('resolves a const an enclosing scope declares before the use', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Enclosing() {',
+                    "    const base = '/api/widgets';",
+                    '    const load = () => fetch(base);',
+                    '    return load;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'widgets']]);
+    });
+
+    it('does not reach into a sibling scope, nor forward to a declaration below the use', () => {
+        // `G` has no `url` of its own — its prop is destructured, so it is not
+        // even a named parameter — and the only one in the file belongs to
+        // `other`, below. Answering from it attributes one component call to
+        // another route.
+        expect(
+            segmentsOf(
+                [
+                    'export function G({ url }: { url: string }) {',
+                    '    return fetch(url);',
+                    '}',
+                    "function other() { const url = '/api/other'; return fetch(url); }",
+                ].join('\n'),
+            ),
+        ).toEqual([null, ['api', 'other']]);
+    });
+
+    it('still resolves a top-level const and one the file imports by name', () => {
+        expect(
+            segmentsOf(
+                [
+                    "import { BULK } from './endpoints';",
+                    "const LIST = '/api/list';",
+                    'export function C() {',
+                    '    fetch(LIST);',
+                    '    fetch(BULK);',
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+                { 'src/app/t/[tenantSlug]/(app)/x/endpoints.ts': "export const BULK = '/api/bulk';" },
+            ),
+        ).toEqual([
+            ['api', 'list'],
+            ['api', 'bulk'],
+        ]);
+    });
+});
+
 describe('the page inventory', () => {
     const sidebar = parse(
         'SidebarNav.tsx',

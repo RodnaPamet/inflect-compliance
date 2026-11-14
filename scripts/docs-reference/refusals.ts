@@ -13,7 +13,7 @@
  */
 import ts from 'typescript';
 import { resolveImport } from './page-actions';
-import { lineOf, literalText, walk } from './source';
+import { enclosingConst, enclosingParam, lineOf, literalText, walk } from './source';
 
 export const ERRORS_FILE = 'src/lib/errors/types.ts';
 
@@ -187,30 +187,6 @@ function unwrapType(t: ts.TypeNode): ts.TypeNode {
     return ts.isParenthesizedTypeNode(t) ? unwrapType(t.type) : t;
 }
 
-/** The parameter `name` of the function enclosing `at`, if it has one. */
-function enclosingParam(name: string, at: ts.Node): ts.ParameterDeclaration | null {
-    for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
-        if (ts.isFunctionLike(n)) {
-            const p = n.parameters.find((x) => ts.isIdentifier(x.name) && x.name.text === name);
-            if (p) return p;
-        }
-    }
-    return null;
-}
-
-/** A `const` named `name` declared in a scope enclosing `at`, nearest first. */
-function enclosingConst(name: string, at: ts.Node): ts.Expression | null {
-    for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
-        if (ts.isBlock(n) || ts.isSourceFile(n)) {
-            for (const st of n.statements) {
-                if (!ts.isVariableStatement(st) || st.pos > at.pos) continue;
-                const d = st.declarationList.declarations.find((x) => ts.isIdentifier(x.name) && x.name.text === name);
-                if (d?.initializer) return d.initializer;
-            }
-        }
-    }
-    return null;
-}
 
 /** Every value an expression naming a reason can take. */
 function reasonValues(e: ts.Expression, sf: ts.SourceFile, io: Lookup, at: ts.Node): string[] {
