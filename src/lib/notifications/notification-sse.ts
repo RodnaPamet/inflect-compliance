@@ -29,63 +29,67 @@ export function notificationStreamResponse(
     subscriber: { tenantId: string; userId: string },
     signal: AbortSignal,
 ): Response {
-
-    // Teardown is ONE path, run at most once, whichever arrives first: the
-    // request signal aborting, the stream being cancelled, or an enqueue
-    // failing on a controller that is already gone. A failed enqueue used to
-    // only set `closed`, which made the later abort's cleanup a no-op — the
-    // 25 s heartbeat then ran for the life of the process and the subscriber
-    // stayed in the bus's Set (#5316).
-    let tornDown = false;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    let unsubscribe: (() => void) | undefined;
-    let closeController: (() => void) | undefined;
-
-    const cleanup = () => {
-        if (tornDown) return;
-        tornDown = true;
-        if (heartbeat !== undefined) clearInterval(heartbeat);
-        unsubscribe?.();
-        signal.removeEventListener('abort', cleanup);
-        closeController?.();
-    };
+    // Hoisted out of `start` so `cancel` can reach it: the two are sibling
+    // methods of the same source object and do not share `start`'s scope.
+    let teardown: (() => void) | undefined;
 
     const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-            closeController = () => {
+            // TWO flags, because one carried two meanings and that was the
+            // leak (#5624). `closed` means "do not enqueue"; `torn` means
+            // "the heartbeat and the subscription are gone". A failed enqueue
+            // set the single old flag, and cleanup read it as the second
+            // meaning and returned before clearing the interval or
+            // unsubscribing — so the 25s timer ran for the life of the
+            // process and the subscriber stayed in the bus's module-level Set,
+            // which every publish iterates.
+            let closed = false;
+            let torn = false;
+            let heartbeat: ReturnType<typeof setInterval> | undefined;
+            let unsubscribe: (() => void) | undefined;
+
+            // A `function` declaration, not a `const` arrow, because it is
+            // hoisted: the first `safeEnqueue` below runs before this point,
+            // and reaching a TDZ ReferenceError from the catch would break
+            // exactly the failure path this fix exists for.
+            function cleanup(): void {
+                if (torn) return;
+                torn = true;
+                closed = true;
+                if (heartbeat !== undefined) clearInterval(heartbeat);
+                heartbeat = undefined;
+                unsubscribe?.();
+                unsubscribe = undefined;
+                signal.removeEventListener('abort', cleanup);
                 try {
                     controller.close();
                 } catch {
                     // Already closed or cancelled upstream — fine.
                 }
-            };
+            }
+            teardown = cleanup;
 
             const safeEnqueue = (chunk: string) => {
-                if (tornDown) return;
+                if (closed) return;
                 try {
                     controller.enqueue(encoder.encode(chunk));
                 } catch {
-                    // Stream already torn down (client disconnected
-                    // mid-flush). Drop the chunk, and stop everything
-                    // that would try again.
+                    // The client went away mid-flush. TEAR DOWN rather than
+                    // only recording that we cannot write: this is the one
+                    // path that reliably observes the disconnect, and it used
+                    // to be the path that disabled every other one. Note it
+                    // also means `send` never throws back to
+                    // `publishNotificationEvent`, whose own poison-pill
+                    // removal therefore never fired either; cleanup
+                    // unsubscribes directly, which is strictly stronger.
                     cleanup();
                 }
             };
-
-            // Client closed the tab, navigated away, or lost the
-            // network. The browser sends a TCP FIN which Next
-            // surfaces as an `abort` on the request signal.
-            if (signal.aborted) {
-                cleanup();
-                return;
-            }
-            signal.addEventListener('abort', cleanup);
 
             // Initial comment so the client knows the channel is
             // open. EventSource doesn't fire `onopen` for some
             // browsers until at least one byte has been received.
             safeEnqueue(': connected\n\n');
-            if (tornDown) return;
 
             unsubscribe = subscribeToNotifications({
                 tenantId: subscriber.tenantId,
@@ -96,9 +100,24 @@ export function notificationStreamResponse(
             heartbeat = setInterval(() => {
                 safeEnqueue(': hb\n\n');
             }, HEARTBEAT_INTERVAL_MS);
+
+            // Client closed the tab, navigated away, or lost the
+            // network. The browser sends a TCP FIN which Next
+            // surfaces as an `abort` on the request signal.
+            signal.addEventListener('abort', cleanup);
+
+            // An ALREADY-aborted signal never fires the listener above, so a
+            // request that died before the stream started would subscribe and
+            // then never be cleaned up. Checked after registering, so the two
+            // orderings cannot both miss, and cleanup is idempotent.
+            if (signal.aborted) cleanup();
         },
+
+        // The consumer cancelled the stream without the request signal
+        // aborting — a different way to lose the reader, and previously one
+        // that tore nothing down.
         cancel() {
-            cleanup();
+            teardown?.();
         },
     });
 

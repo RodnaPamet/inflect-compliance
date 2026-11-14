@@ -35,6 +35,7 @@ import { forbidden, internal, notFound } from '@/lib/errors/types';
 import {
     canonicalStatement,
     rawEd25519PublicKeyHex,
+    storedReceiptVerificationKey,
     verifyStoredA2aReceipt,
     type SignedA2aReceipt,
 } from '@/lib/agentic/a2a/receipt';
@@ -147,10 +148,7 @@ export async function listPeerMessages(ctx: RequestContext, peerId: string, inpu
         rows.filter((r) => r.direction === 'OUTBOUND').map((r) => r.signerKeyFingerprint),
     );
     return rows.map((r) => {
-        const key =
-            r.direction === 'INBOUND'
-                ? r.signerKeyFingerprint === peer.signingKeyFingerprint ? peer.signingPublicKey : null
-                : ownKeys.get(r.signerKeyFingerprint) ?? null;
+        const key = storedReceiptVerificationKey(r, peer, ownKeys);
         return {
             id: r.id,
             direction: r.direction,

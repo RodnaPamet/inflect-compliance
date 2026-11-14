@@ -185,6 +185,20 @@ describe('vendor detail — a refused save says why and keeps the form (#4534)',
         expect(document.getElementById('save-vendor-btn')).not.toBeNull();
     });
 
+    it('an activation refused while a reassessment is in progress says so (#5318)', async () => {
+        patchAnswer = {
+            status: 400,
+            body: envelope('BAD_REQUEST', 'Cannot activate vendor while a reassessment is in progress.', {
+                reason: 'VENDOR_REASSESSMENT_IN_PROGRESS',
+            }),
+        };
+        await openEditAndSave();
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(/can't be made Active while a reassessment is in progress/);
+        expect(alert).not.toHaveTextContent(/until an assessment has been sent/);
+        expect(document.getElementById('save-vendor-btn')).not.toBeNull();
+    });
+
     it('a validation refusal shows each refused field’s reason, not "Invalid request payload"', async () => {
         patchAnswer = {
             status: 400,
