@@ -9,8 +9,14 @@
  * off could add risks through AI Assist, and a refusal wrote no AUTHZ_DENIED
  * row.
  *
- * Dismiss creates nothing and keeps its usecase gate; the last case holds
- * that it is not swept up in the change.
+ * Dismiss takes `risks.create` too (owner decision, 2026-11-14, #5303 item
+ * 11). #4327 left it ungated on the grounds that it creates nothing; that
+ * decision was reversed on 2026-11-14. Dismissing decides the session — it
+ * stamps the human's Art 14 outcome as REJECTED and closes the session to
+ * apply — so it is the other half of the same decision the apply route makes,
+ * and it takes the same key, with the same AUTHZ_DENIED row on a refusal.
+ * `dismissSession` still asserts the AI feature gate, the coarse write tier
+ * and the session's state (#5596).
  */
 import { strictMock } from '../helpers/strict-mock';
 
@@ -111,6 +117,8 @@ const dismiss = () =>
 describe.each([
     ['generate', generate, generateMock],
     ['apply', apply, applyMock],
+    // #4327 left dismiss ungated; reversed by the owner on 2026-11-14 (#5303).
+    ['dismiss', dismiss, dismissMock],
 ] as const)('POST %s is gated risks.create at the route', (_name, call, usecase) => {
     it('refuses a caller without risks.create with a 403 and an AUTHZ_DENIED row', async () => {
         getTenantCtxMock.mockResolvedValue(editorWithoutCreate);
@@ -151,10 +159,7 @@ it('the body still reaches the usecase validated', async () => {
     expect(generateMock).toHaveBeenCalledWith(editor, { frameworks: ['ISO27001'], assetIds: [], context: undefined });
 });
 
-it('dismiss creates nothing and is NOT gated risks.create — the same caller still reaches it', async () => {
-    getTenantCtxMock.mockResolvedValue(editorWithoutCreate);
-    const res = await dismiss();
-    expect(res.status).toBe(200);
-    expect(dismissMock).toHaveBeenCalledTimes(1);
-    expect(mockAppendAuditEntryOrQueue).not.toHaveBeenCalled();
+it('dismiss reaches the usecase with the session id from the path', async () => {
+    await dismiss();
+    expect(dismissMock).toHaveBeenCalledWith(editor, 's-1');
 });
