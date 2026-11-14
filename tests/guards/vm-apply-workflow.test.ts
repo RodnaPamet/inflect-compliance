@@ -25,7 +25,7 @@
  * carrying secret-shaped lines, so each assertion is on a value or a
  * behaviour, not on a substring of a whole file.
  */
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -51,6 +51,7 @@ const choices = [...(inputs.action?.options ?? [])];
 const VM_SH = 'deploy/vm-apply/vm.sh';
 const REMOTE_SH = 'deploy/vm-apply/remote.sh';
 const APPLY_SH = 'deploy/apply.sh';
+const IAP_SH = 'deploy/lib/iap.sh';
 const SCRIPTS = [VM_SH, REMOTE_SH];
 
 /** Code lines: comments and blank lines dropped. */
@@ -215,7 +216,8 @@ describe('nothing in the runner’s environment steers apply.sh', () => {
     it('vm.sh sets or clears every variable apply.sh reads', () => {
         // Derived from apply.sh, so a new knob there fails here until vm.sh
         // decides it.
-        const knobs = [...new Set([...read(APPLY_SH).matchAll(/\$\{([A-Z_]+):-/g)].map((m) => m[1]))];
+        // apply.sh and the IAP helper it sources (deploy/lib/iap.sh).
+        const knobs = [...new Set([APPLY_SH, IAP_SH].flatMap((rel) => [...read(rel).matchAll(/\$\{([A-Z_]+):-/g)].map((m) => m[1])))];
         expect(knobs.length).toBeGreaterThan(5);
         const vm = commands(VM_SH);
         const unset = vm.filter((l) => /^unset\s/.test(l)).flatMap((l) => l.replace(/^unset\s+/, '').split(/\s+/));
@@ -374,7 +376,7 @@ describe('the scripts it runs print shape, never content', () => {
     });
 
     it('vm.sh touches nothing on the VM but its own stage directory', () => {
-        const calls = code(VM_SH).filter((l) => /^\s*ssh_vm\s/.test(l));
+        const calls = code(VM_SH).filter((l) => /^\s*ssh_vm(_once)?\s/.test(l));
         expect(calls.length).toBeGreaterThan(0);
         expect(calls.filter((l) => !l.includes('vm-apply-stage'))).toEqual([]);
     });
@@ -516,6 +518,323 @@ describe('apply.sh on a runner with no ssh key', () => {
             expect(r.out).toContain('every backup (2) IS the live file');
         } finally {
             vm.cleanup();
+        }
+    });
+});
+
+/**
+ * A dropped IAP connection is retried, and never read as an answer
+ * (owner decision 2026-11-14).
+ *
+ * ssh exits 255 when its CONNECTION fails; a remote command's status is
+ * relayed as itself. Two VM apply runs read a dropped connection as a verdict:
+ * 43604116595 refused an unchanged, already-validated Caddyfile as "caddy
+ * rejected it", and 43605285337 reported an existing unit file as "absent".
+ * apply.sh is RUN here in its CADDY_ONLY and HOST_CONFIG_ONLY preflights
+ * against a fake VM (a directory, and a fake caddy container) through a fake
+ * `gcloud` that drops chosen calls: before the command runs, or after it ran
+ * and only the answer was lost.
+ */
+describe('apply.sh over an IAP connection that drops', () => {
+    type Drop = { match: string; times: number | 'always'; when?: 'before' | 'after' };
+
+    function fakeVm(opts: { drop?: Drop; caddyRejects?: boolean } = {}) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-apply-iap-'));
+        const bin = path.join(root, 'bin');
+        const vm = path.join(root, 'vm');
+        const container = path.join(root, 'container');
+        const home = path.join(root, 'home');
+        for (const d of [bin, vm, container, home, path.join(home, '.ssh'), path.join(vm, 'caddy'), path.join(container, 'etc/caddy'), path.join(container, 'tmp')]) {
+            fs.mkdirSync(d, { recursive: true });
+        }
+        fs.writeFileSync(path.join(home, '.ssh/google_compute_engine'), '');
+        const caddyfile = read('deploy/caddy/Caddyfile');
+        fs.writeFileSync(path.join(vm, 'caddy/Caddyfile'), caddyfile);
+        fs.writeFileSync(path.join(container, 'etc/caddy/Caddyfile'), caddyfile);
+        const calls = path.join(root, 'calls');
+        const exe = (name: string, src: string) => fs.writeFileSync(path.join(bin, name), src, { mode: 0o755 });
+        exe(
+            'gcloud',
+            [
+                '#!/usr/bin/env bash',
+                'kind="$2"; cmd=""; args=(); skip=0',
+                'for a in "$@"; do',
+                '  if [ $skip = 1 ]; then skip=0; continue; fi',
+                '  case "$a" in --zone|--command) skip=1 ;; --*|compute|ssh|scp) ;; *) args+=("$a") ;; esac',
+                'done',
+                'while [ $# -gt 0 ]; do [ "$1" = "--command" ] && { cmd="$2"; shift; }; shift; done',
+                'if [ "$kind" = scp ]; then line="scp ${args[*]}"; else line="ssh $(printf %s "$cmd" | tr "\\n" " ")"; fi',
+                'printf "%s\\n" "$line" >> "$FAKE_CALLS"',
+                'run() {',
+                '  if [ "$kind" = scp ]; then n=${#args[@]}; dest="${args[$((n-1))]}"; cp "${args[@]:0:$((n-1))}" "${dest#*:}"; else bash -c "$cmd"; fi',
+                '}',
+                'if [ -n "${FAKE_DROP_MATCH:-}" ] && printf "%s" "$line" | grep -qE -- "$FAKE_DROP_MATCH"; then',
+                '  n=$(cat "$FAKE_DROP_COUNT" 2>/dev/null || echo 0)',
+                '  if [ "$FAKE_DROPS" = always ] || [ "$n" -lt "$FAKE_DROPS" ]; then',
+                '    echo $((n + 1)) > "$FAKE_DROP_COUNT"',
+                '    if [ "$FAKE_DROP_WHEN" = after ]; then run >/dev/null 2>&1; fi',
+                '    echo "ERROR: (gcloud.compute.$kind) [/usr/bin/$kind] exited with return code [255]." >&2',
+                '    exit 255',
+                '  fi',
+                'fi',
+                'run',
+                '',
+            ].join('\n'),
+        );
+        exe('sudo', '#!/usr/bin/env bash\ncase "$*" in "test -x /opt/google-cloud-ops-agent/"*) exit 0 ;; esac\ncase "$1" in /opt/google-cloud-ops-agent/*) echo "Valid configuration"; exit 0 ;; esac\nexec "$@"\n');
+        // The caddy container: `docker cp` into it, `docker exec` runs there.
+        exe(
+            'docker',
+            [
+                '#!/usr/bin/env bash',
+                'name() { [ "$1" = inflect-caddy-1 ] || { echo "Error response from daemon: No such container: $1" >&2; exit 1; }; }',
+                'case "$1" in',
+                '  cp) name "${3%%:*}"; exec cp "$2" "$FAKE_CONTAINER${3#*:}" ;;',
+                '  exec) name "$2"; shift 2; [ "$1" = rm ] && exec rm -f "$FAKE_CONTAINER${!#}"; exec "$@" ;;',
+                'esac',
+                'exit 0',
+                '',
+            ].join('\n'),
+        );
+        exe(
+            'caddy',
+            [
+                '#!/usr/bin/env bash',
+                'sub="$1"; shift; cfg=""',
+                'while [ $# -gt 0 ]; do [ "$1" = --config ] && { cfg="$2"; shift; }; shift; done',
+                'f="$FAKE_CONTAINER$cfg"',
+                'case "$sub" in',
+                '  validate)',
+                '    [ -f "$f" ] || { echo "Error: open $cfg: no such file or directory"; exit 1; }',
+                '    if [ -n "${FAKE_CADDY_REJECTS:-}" ]; then echo "Error: adapting config using caddyfile: $cfg:3: unrecognized directive: bogus"; exit 1; fi',
+                '    echo "Valid configuration" ;;',
+                '  adapt) grep -oE "[a-z0-9.-]+\\.(bg|io)" "$f" | sort -u | sed "s/.*/\\"&\\"/" ;;',
+                'esac',
+                '',
+            ].join('\n'),
+        );
+        const run = (mode: Record<string, string>, script?: string) => {
+            const env: Record<string, string> = {
+                NODE_ENV: 'test',
+                PATH: `${bin}:/usr/bin:/bin`,
+                HOME: home,
+                REMOTE_DIR: vm,
+                APPLY_PUBLIC_LOG: '1',
+                IAP_BACKOFF_SECONDS: '0',
+                FAKE_CALLS: calls,
+                FAKE_CONTAINER: container,
+                FAKE_DROP_COUNT: path.join(root, 'drops'),
+                ...mode,
+            };
+            if (opts.drop) {
+                env.FAKE_DROP_MATCH = opts.drop.match;
+                env.FAKE_DROPS = String(opts.drop.times);
+                env.FAKE_DROP_WHEN = opts.drop.when ?? 'before';
+            }
+            if (opts.caddyRejects) env.FAKE_CADDY_REJECTS = '1';
+            // stdout AND stderr whatever the status: the retry notes are on stderr.
+            const argv = script === undefined ? [path.join(REPO_ROOT, APPLY_SH)] : ['-c', script];
+            const p = spawnSync('bash', argv, { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+            const status = p.status;
+            const out = `${p.stdout}${p.stderr}`;
+            const lines = out.split('\n').map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/^\[apply\]( ERROR:)?\s*/, '').trim());
+            const made = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
+            return { status, lines, calls: made };
+        };
+        return { run, vm, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+    }
+
+    const CADDY = { CADDY_ONLY: '1' };
+    const VALIDATE = 'caddy validate';
+    const startsWith = (lines: string[], prefix: string) => lines.filter((l) => l.startsWith(prefix));
+
+    it('with no drop, the Caddyfile preflight passes (the control for every case below)', () => {
+        const vm = fakeVm();
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(0);
+            expect(startsWith(r.lines, 'unchanged ')).toHaveLength(1);
+            expect(startsWith(r.lines, 'config OK')).toHaveLength(1);
+            expect(startsWith(r.lines, 'PREFLIGHT ONLY')).toHaveLength(1);
+            expect(startsWith(r.lines, '[iap]')).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it.each(['before', 'after'] as const)('a validation whose connection drops once (%s it ran) is retried, and passes', (when) => {
+        const vm = fakeVm({ drop: { match: VALIDATE, times: 1, when } });
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(0);
+            expect(r.calls.filter((c) => c.includes(VALIDATE))).toHaveLength(2);
+            expect(startsWith(r.lines, '[iap] ssh to the VM failed (exit 255), attempt 1 of 3')).toHaveLength(1);
+            expect(startsWith(r.lines, 'config OK')).toHaveLength(1);
+            expect(r.lines.filter((l) => l.includes('caddy rejected it'))).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a hash read whose connection drops once is retried, and reads the real hash', () => {
+        const vm = fakeVm({ drop: { match: 'sha256sum', times: 1 } });
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(0);
+            expect(startsWith(r.lines, 'unchanged ')).toHaveLength(1);
+            expect(startsWith(r.lines, 'WOULD CREATE')).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a move whose answer is lost is not repeated into a failure: place_staged is idempotent', () => {
+        // The move ran, the connection dropped before its answer: the retry
+        // finds no staged file, and the target already holds the pushed bytes.
+        const vm = fakeVm({ drop: { match: 'sudo mv ', times: 1, when: 'after' } });
+        try {
+            const staged = path.join(vm.vm, 'staged');
+            const target = path.join(vm.vm, 'target');
+            fs.writeFileSync(staged, 'pushed\n');
+            fs.writeFileSync(target, 'old\n');
+            const want = execFileSync('sha256sum', [staged], { encoding: 'utf8' }).split(' ')[0];
+            // A one-line function is its own line; place_staged closes in column 0.
+            const oneLine = (n: string) => read(APPLY_SH).split('\n').filter((l) => l.startsWith(`${n}() {`) && l.trimEnd().endsWith('}'));
+            const fns = [...['first_sha', 'err', 'ssh_vm'].flatMap(oneLine), shellFunction(APPLY_SH, 'place_staged')].join('\n');
+            const script = [
+                'set -euo pipefail',
+                'VM_NAME=vm VM_ZONE=z QUIET_FLAG=--quiet',
+                `. '${path.join(REPO_ROOT, IAP_SH)}'`,
+                fns,
+                `place_staged '${staged}' '${target}' '${want}' && echo PLACED`,
+            ].join('\n');
+            const r = vm.run({}, script);
+            expect(r.status).toBe(0);
+            expect(r.calls.filter((c) => c.includes('sudo mv '))).toHaveLength(2);
+            expect(r.lines.filter((l) => l === 'PLACED')).toHaveLength(1);
+            expect(fs.readFileSync(target, 'utf8')).toBe('pushed\n');
+            expect(fs.existsSync(staged)).toBe(false);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a copy that fails once is retried', () => {
+        const vm = fakeVm({ drop: { match: '^scp .*Caddyfile\\.validate', times: 1 } });
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(0);
+            expect(r.calls.filter((c) => /^scp .*Caddyfile\.validate/.test(c))).toHaveLength(2);
+            expect(startsWith(r.lines, '[iap] scp to the VM failed (exit 255), attempt 1 of 3')).toHaveLength(1);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a validation that never connects stops the run as unreachable, never as "caddy rejected it"', () => {
+        const vm = fakeVm({ drop: { match: VALIDATE, times: 'always' } });
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(1);
+            expect(r.calls.filter((c) => c.includes(VALIDATE))).toHaveLength(3);
+            expect(startsWith(r.lines, '[iap] ERROR: could not reach the VM over IAP (ssh exit 255 after 3 attempts).')).toHaveLength(1);
+            expect(r.lines.filter((l) => /rejected|NOT valid|config OK|PREFLIGHT ONLY/.test(l))).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a hash read that never connects stops the run, never reporting the file absent (run 43605285337)', () => {
+        const vm = fakeVm({ drop: { match: 'sha256sum', times: 'always' } });
+        try {
+            for (const mode of [CADDY, { HOST_CONFIG_ONLY: '1' }]) {
+                const r = vm.run(mode);
+                expect(r.status).toBe(1);
+                expect(startsWith(r.lines, '[iap] ERROR: could not reach the VM over IAP (ssh exit 255 after 3 attempts).')).toHaveLength(1);
+                expect(r.lines.filter((l) => /WOULD CREATE|absent|WOULD CHANGE|unchanged /.test(l))).toEqual([]);
+            }
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('caddy rejecting the file is a verdict: not retried, and reported as a rejection', () => {
+        const vm = fakeVm({ caddyRejects: true });
+        try {
+            const r = vm.run(CADDY);
+            expect(r.status).toBe(1);
+            expect(r.calls.filter((c) => c.includes(VALIDATE))).toHaveLength(1);
+            expect(startsWith(r.lines, 'the repo Caddyfile is NOT valid — caddy rejected it.')).toHaveLength(1);
+            expect(r.lines.filter((l) => l.includes('unrecognized directive'))).toHaveLength(1);
+            expect(startsWith(r.lines, '[iap]')).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+
+    it('a validation that fails before caddy runs is not retried, and is not reported as a rejection', () => {
+        // docker cp exits 1 when the container is gone: a real remote failure,
+        // so no retry — and no `caddy-validate-exit` line, so no verdict.
+        const vm = fakeVm();
+        try {
+            const r = vm.run({ ...CADDY, CADDY_CONTAINER: 'no-such-container' });
+            expect(r.status).toBe(1);
+            expect(r.calls.filter((c) => c.includes(VALIDATE))).toHaveLength(1);
+            expect(startsWith(r.lines, 'caddy validate did not run in no-such-container (exit 1). This is NOT a')).toHaveLength(1);
+            expect(r.lines.filter((l) => /rejected|NOT valid/.test(l))).toEqual([]);
+            expect(startsWith(r.lines, '[iap]')).toEqual([]);
+        } finally {
+            vm.cleanup();
+        }
+    });
+});
+
+describe('check-drift.sh over an IAP connection that never connects', () => {
+    it('exits 2, UNKNOWN, and reports no drift', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'drift-iap-'));
+        try {
+            const bin = path.join(root, 'bin');
+            fs.mkdirSync(bin);
+            fs.writeFileSync(path.join(bin, 'gcloud'), '#!/usr/bin/env bash\necho x >> "$FAKE_CALLS"\nexit 255\n', { mode: 0o755 });
+            let status = 0;
+            let out = '';
+            try {
+                execFileSync('bash', [path.join(REPO_ROOT, 'deploy/check-drift.sh')], {
+                    env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, HOME: root, IAP_BACKOFF_SECONDS: '0', FAKE_CALLS: path.join(root, 'calls') },
+                    encoding: 'utf8',
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
+            } catch (e) {
+                const x = e as { status: number; stdout: string; stderr: string };
+                status = x.status;
+                out = `${x.stdout}${x.stderr}`;
+            }
+            expect(status).toBe(2);
+            expect(fs.readFileSync(path.join(root, 'calls'), 'utf8').split('\n').filter(Boolean)).toHaveLength(3);
+            expect(out.split('\n').filter((l) => l.startsWith('[iap] ERROR: could not reach the VM over IAP (ssh exit 255 after 3 attempts).'))).toHaveLength(1);
+            expect(out.split('\n').filter((l) => /DRIFT|in sync/.test(l))).toEqual([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('every call to the VM goes through deploy/lib/iap.sh', () => {
+    const DEPLOY_SCRIPTS = [APPLY_SH, 'deploy/check-drift.sh', VM_SH, 'deploy/vm-check/vm.sh', 'deploy/capacity/vm.sh', 'deploy/harness-scanner/vm.sh'];
+
+    it.each(DEPLOY_SCRIPTS)('%s sources it and runs gcloud ssh/scp only inside iap_retry or iap_once', (rel) => {
+        const lines = executable(rel).filter((l) => !/^\s*(ROLLBACK|echo)\b/.test(l) && !/^\s*\[ -n "\$f" \] && err /.test(l));
+        expect(lines.filter((l) => /^\. "\$\{?(SCRIPT_DIR|HERE)\}?\/(\.\.\/)?lib\/iap\.sh"$/.test(l.trim()))).toHaveLength(1);
+        const gcloud = lines.filter((l) => /\bgcloud compute (ssh|scp)\b/.test(l));
+        expect(gcloud.length).toBeGreaterThan(0);
+        expect(gcloud.filter((l) => !/\biap_(retry|once)\b/.test(l))).toEqual([]);
+    });
+
+    it('a remote.sh action that writes is attempted once, never retried', () => {
+        for (const rel of [VM_SH, 'deploy/harness-scanner/vm.sh']) {
+            const runs = code(rel).filter((l) => /remote\.sh/.test(l) && /sudo bash/.test(l));
+            expect(runs).toHaveLength(1);
+            expect(runs[0].trim().startsWith('ssh_vm_once ')).toBe(true);
         }
     });
 });
