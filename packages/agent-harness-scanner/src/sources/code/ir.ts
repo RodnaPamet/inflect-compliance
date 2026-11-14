@@ -108,6 +108,13 @@ export interface FileFacts {
      * named function, `Class.method` for a method; null at the top level).
      */
     readonly calls: readonly { readonly call: CallExpr; readonly boundTo: string | null; readonly within: string | null }[];
+    /**
+     * Python: the lines of calls whose callee only a star import could have
+     * bound, in a file whose star imports are of more than one family, so which
+     * module the name came from cannot be told (#5312). They are left
+     * unqualified and reported unresolved, never guessed. Absent for JavaScript.
+     */
+    readonly ambiguousCalls?: readonly number[];
 }
 
 /** The modules whose members the recogniser knows. Nothing else is resolved. */

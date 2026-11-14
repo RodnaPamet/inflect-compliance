@@ -248,17 +248,25 @@ describe('2. the proto zero value is not enforcement', () => {
         ['the numeric audit value', 2],
         ['the numeric zero', 0],
         ['a value this reader does not recognise', 'NETWORK_ENFORCEMENT_MODE_FUTURE_THING'],
-    ])('%s evidences nothing, and names no evidence', async (_label, enforcement) => {
+    ])('%s in a loaded policy is a "no", pointing at the policy that says so', async (_label, enforcement) => {
+        // The zero value is the permissive mode the runtime applies, so a
+        // non-enforcing endpoint in FORCE is evidence of a "no", and the "no"
+        // names the policy it was read from (#5312). It is never a "yes".
         const result = await read(gateway({ policyFor: () => policy({ enforcement }) }));
         for (const c of CRITERIA) {
-            expect(result.observations[0].verdicts.find((x) => x.criterion === c)).toMatchObject({ met: false, evidence: null });
+            const v = result.observations[0].verdicts.find((x) => x.criterion === c);
+            expect(v).toMatchObject({ met: false });
+            expect(v?.evidence).toMatch(/^openshell-policy:sha256:/);
         }
     });
 
     it('an ABSENT enforcement field is as fatal as an explicit audit one — the same bytes on the wire', async () => {
         const absent = await read(gateway({ policyFor: () => policy({}) }));
         const audit = await read(gateway({ policyFor: () => policy({ enforcement: 'NETWORK_ENFORCEMENT_MODE_AUDIT' }) }));
-        expect(absent.observations[0].verdicts).toEqual(audit.observations[0].verdicts);
+        // The answers, not the pointers: each "no" names its own policy's digest.
+        const answers = (r: SourceRead) => r.observations[0].verdicts.map(({ criterion, met }) => ({ criterion, met }));
+        expect(answers(absent)).toEqual(answers(audit));
+        expect(answers(absent).length).toBeGreaterThan(0);
         expect(absent.observations[0].verdicts.every((v) => v.met === false)).toBe(true);
     });
 
@@ -270,14 +278,16 @@ describe('2. the proto zero value is not enforcement', () => {
             },
         });
         expect(facts.enforcement).toEqual(['enforce', 'audit']);
-        expect(verdictsFor(facts).every((v) => v.met === false)).toBe(true);
+        const v = verdictsFor(facts, { loaded: true });
+        expect(v.find((x) => x.criterion === 'H3.egress_enforced')).toMatchObject({ met: false });
+        expect(v.some((x) => x.met)).toBe(false);
     });
 
-    it('a policy with NO endpoints evidences nothing — it is not vacuously enforced', () => {
+    it('a policy with NO endpoints answers nothing — neither vacuously enforced nor an unevidenced "no" (#5312)', () => {
         for (const empty of [{}, { network_policies: {} }, { network_policies: { a: { endpoints: [] } } }, null]) {
             const facts = policyFacts(empty);
             expect(facts.endpoints).toBe(0);
-            expect(verdictsFor(facts).every((v) => v.met === false)).toBe(true);
+            expect(verdictsFor(facts, { loaded: true })).toEqual([]);
         }
     });
 
@@ -288,7 +298,7 @@ describe('2. the proto zero value is not enforcement', () => {
         const v = result.observations[0].verdicts;
         // Egress is enforced; the hosts are not allow-listed. The two differ.
         expect(v.find((x) => x.criterion === 'H3.egress_enforced')).toMatchObject({ met: true });
-        expect(v.find((x) => x.criterion === 'H2.tools_allowlisted')).toMatchObject({ met: false, evidence: null });
+        expect(v.find((x) => x.criterion === 'H2.tools_allowlisted')).toMatchObject({ met: false });
     });
 
     it('enforcementWord maps only the three it knows, and defaults to unspecified', () => {
@@ -303,10 +313,13 @@ describe('3. best-effort landlock is not confinement, and raises nothing either 
     it.each(['best_effort', '', 'hard_requirement', 'something_else'])(
         'compatibility %p raises no filesystem criterion',
         (compatibility) => {
-            const facts = policyFacts({ landlock: { compatibility }, network_policies: {} });
+            const facts = policyFacts({
+                landlock: { compatibility },
+                network_policies: { a: { endpoints: [{ host: 'h', enforcement: 'NETWORK_ENFORCEMENT_MODE_ENFORCE' }] } },
+            });
             expect(facts.landlock).toBe(compatibility);
-            const criteria = verdictsFor(facts).map((v) => v.criterion);
-            expect(criteria).toEqual(['H3.egress_enforced', 'H2.tools_allowlisted', 'H3.payloads_guarded', 'H2.credential_bound']);
+            const criteria = verdictsFor(facts, { loaded: true, credentialBound: true }).map((v) => v.criterion);
+            expect(criteria).toEqual(['H3.egress_enforced', 'H2.tools_allowlisted', 'H2.credential_bound']);
             expect(criteria.some((c) => /filesystem|confine|landlock/i.test(c))).toBe(false);
         },
     );
@@ -457,13 +470,14 @@ describe('7. a policy in a drawer is not a policy in force', () => {
         const inForce = await read(gateway({ policyFor: enforcing, activeVersion: 1 }));
         const drawer = await read(gateway({ policyFor: enforcing, activeVersion: 2 }));
         expect(met(inForce, 'H3.egress_enforced')).toBe(true);
-        expect(met(drawer, 'H3.egress_enforced')).toBe(false);
-        expect(drawer.observations[0].verdicts.every((v) => v.met === false)).toBe(true);
+        // Unanswered, not "no" (#5312): the drawer says nothing about what runs.
+        expect(met(drawer, 'H3.egress_enforced')).toBeUndefined();
+        expect(drawer.observations[0].verdicts).toEqual([]);
     });
 
-    it('a status that could not be read is not evidence that it is loaded', async () => {
+    it('a status that could not be read is not evidence that it is loaded, and answers nothing', async () => {
         const result = await read(gateway({ policyFor: () => policy({ enforcement: 'NETWORK_ENFORCEMENT_MODE_ENFORCE' }), activeVersion: null }));
-        expect(result.observations[0].verdicts.every((v) => v.met === false)).toBe(true);
+        expect(result.observations[0].verdicts).toEqual([]);
     });
 
     it('policyIsLoaded requires a matching integer on both sides', () => {
@@ -517,8 +531,8 @@ describe('8. payloads_guarded needs a stage that both selects and fails closed',
 describe('9. credential_bound comes from the profile, and only with the opt-in', () => {
     const bound = (r: SourceRead) => r.observations[0].verdicts.find((v) => v.criterion === 'H2.credential_bound')?.met;
 
-    it('is unevidenced without the opt-in, because there is no profile to read', async () => {
-        expect(bound(await read(gateway({})))).toBe(false);
+    it('is unanswered without the opt-in, because there is no profile to read (#5312)', async () => {
+        expect(bound(await read(gateway({})))).toBeUndefined();
     });
 
     it('is met when every attached provider profile names a host', async () => {
@@ -529,9 +543,16 @@ describe('9. credential_bound comes from the profile, and only with the opt-in',
         ['a profile with no endpoints', { id: 'p', endpoints: [] }],
         ['a profile with a hostless endpoint', { id: 'p', endpoints: [{ port: 443 }] }],
         ['a profile with one hostless among hosts', { id: 'p', endpoints: [{ host: 'h' }, { port: 443 }] }],
-        ['no profile at all', null],
     ])('%s does not bind the credential', async (_label, profile) => {
         expect(bound(await readWithProviders(gateway({ profileFor: () => profile })))).toBe(false);
+    });
+
+    it('a profile that did not come back is unanswered, never a met and never an unevidenced "no"', async () => {
+        expect(bound(await readWithProviders(gateway({ profileFor: () => null })))).toBeUndefined();
+    });
+
+    it('no attached provider answers nothing', async () => {
+        expect(bound(await readWithProviders(gateway({ providers: [] })))).toBeUndefined();
     });
 
     it('one unscoped provider among scoped ones fails the sandbox', async () => {
@@ -544,7 +565,7 @@ describe('9. credential_bound comes from the profile, and only with the opt-in',
 
     it('a provider without a plain type is not silently treated as bound', async () => {
         const g = gateway({ providers: [{ name: 'a' }] });
-        expect(bound(await readWithProviders(g))).toBe(false);
+        expect(bound(await readWithProviders(g))).toBeUndefined();
     });
 
     it('profileBindsCredential, driven directly', () => {

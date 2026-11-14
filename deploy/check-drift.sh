@@ -33,15 +33,11 @@
 #   1 = drift in a file apply.sh can push (reconcile, then run apply.sh)
 #   2 = could not reach the VM (UNKNOWN — never read this as "no drift")
 #   3 = the only differences are in UNRECONCILED files — an outstanding
-#       decision, not something apply.sh can fix. One entry today: the
-#       Caddyfile.
-#
-#       This note used to say the array was EMPTY as of 2026-09-26 and that
-#       exit 3 was therefore unreachable. It was wrong when it was written —
-#       the entry is right there below, and on 2026-09-26 what got reconciled
-#       was the Caddyfile's CONTENT, not its entry. The two are different
-#       claims and the header collapsed them, which is how a reader ends up
-#       treating a reachable exit code as dead.
+#       decision, not something apply.sh can fix. UNREACHABLE today: the
+#       array has been EMPTY since 2026-10-15 (#3589), when the Caddyfile
+#       entry moved to APPLIABLE. A Caddyfile difference is now ordinary
+#       exit-1 drift, fixed by `CADDY_ONLY=1 deploy/apply.sh`. Add an entry
+#       to UNRECONCILED and exit 3 becomes reachable again.
 set -euo pipefail
 
 VM_NAME="${VM_NAME:-inflect-compliance}"
@@ -80,8 +76,8 @@ fi
 # tests/guards/deploy-canonical-set-is-watched.test.ts asserts this array and
 # apply.sh's two push arrays name the same files, in both directions. A file
 # pushed but unwatched drifts silently; a file watched but unpushed is a
-# standing warning nobody can action — the Caddyfile has been exactly that
-# since 2026-09-26.
+# standing warning nobody can action — the Caddyfile was exactly that from
+# 2026-09-26 until apply.sh learned to push it (2026-10-15, #3589).
 APPLIABLE=(
     "${SCRIPT_DIR}/${COMPOSE_BASENAME}:${REMOTE_DIR}/${COMPOSE_BASENAME}"
     "${SCRIPT_DIR}/init-roles.sh:${REMOTE_DIR}/init-roles.sh"
@@ -161,7 +157,12 @@ for entry in "${APPLIABLE[@]}"; do
 done
 
 UNRECONCILED_DRIFT=0
-for entry in "${UNRECONCILED[@]}"; do
+# The `+` form expands to NOTHING for an empty array. A bare
+# "${UNRECONCILED[@]}" on an empty array is an unbound-variable error under
+# `set -u` on bash older than 4.4 — stock macOS bash 3.2 — which aborted the
+# script with exit 1 ("drift apply.sh can push") after reporting every file
+# in sync (#5308).
+for entry in ${UNRECONCILED[@]+"${UNRECONCILED[@]}"}; do
     local_path="${entry%%:*}"; rest="${entry#*:}"
     remote_path="${rest%%:*}"; reason="${rest#*:}"
     lsha="$(sha256sum "$local_path" 2>/dev/null | awk '{print $1}')"

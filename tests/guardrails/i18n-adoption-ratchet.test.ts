@@ -301,7 +301,6 @@ function rel(abs: string): string {
 // A file with next-intl and zero hardcoded strings scores 0 and needs no entry,
 // which is the state the old set was trying to describe by omission.
 const STRING_BUDGET: Readonly<Record<string, number>> = {
-    'packages/ui/src/components/ui/charts/time-series-chart.tsx': 1, // no-intl, 1 jsx
     'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx': 2, // partial, 2 prop
     'src/app/org/[orgSlug]/(app)/tenants/new/NewTenantForm.tsx': 2, // partial, 2 prop
     // 23 -> 24: #3272 (Step 5a) added `label: 'Access reviews'` to the scope
@@ -328,7 +327,6 @@ const STRING_BUDGET: Readonly<Record<string, number>> = {
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 9, // partial, 9 prop
     'src/app/t/[tenantSlug]/(app)/admin/trust-center/TrustCenterAdminClient.tsx': 3, // partial, 3 prop
     'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx': 1, // partial, 1 prop
-    'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap.tsx': 1, // partial, 1 prop
     'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx': 2, // partial, 1 jsx + 1 prop
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection.tsx': 1, // partial, 1 jsx
     'src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx': 1, // partial, 1 prop
