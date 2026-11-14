@@ -20,6 +20,8 @@ const mockCreateAccount = jest.fn();
 const mockDisable = jest.fn(async (_id: string, _prior: unknown) => undefined);
 const mockPolicy = jest.fn();
 const mockStarters = jest.fn();
+/** The stubbed plan's refusal. Null unless a test says otherwise. */
+let mockPlanRefusal: string | null = null;
 
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -84,7 +86,7 @@ jest.mock('@/app-layer/usecases/identity-joiner-pass', () => ({
     planJoinerPass: (args: { mode: string; starters: readonly { employeeId: string }[] }) => ({
         mode: args.mode,
         clamp: 'AUTOMATIC',
-        refusal: null,
+        refusal: mockPlanRefusal,
         detail: 'fixture plan',
         // Present so the plan's record can be written: without it the row
         // write threw inside `safeRecordPlan` and the record was silently lost.
@@ -275,6 +277,26 @@ it('CREATES for a planned decision — the call nothing in src/ made before', as
 
         expect(mockResolveProvisioner).not.toHaveBeenCalled();
         expect(mockCreateAccount).not.toHaveBeenCalled();
+    });
+
+    it('does not act on a plan carrying ANY refusal, including one the planner does not have yet', async () => {
+        // The gate is `refusal === null`, not a list of today's kinds
+        // (owner decision 2026-11-14). The three real refusals are proved
+        // with the real planner in `joiner-refused-plan-creates-nothing`;
+        // this one is a kind no list could have named, with a PLANNED
+        // decision in it, at AUTOMATIC.
+        mockPlanRefusal = 'A_REFUSAL_ADDED_LATER';
+        try {
+            const r = await run();
+
+            expect(r.refusal).toBe('A_REFUSAL_ADDED_LATER');
+            expect(mockResolveProvisioner).not.toHaveBeenCalled();
+            expect(mockResolveWriter).not.toHaveBeenCalled();
+            expect(mockCreateAccount).not.toHaveBeenCalled();
+            expect(r.created).toBe(0);
+        } finally {
+            mockPlanRefusal = null;
+        }
     });
 });
 
