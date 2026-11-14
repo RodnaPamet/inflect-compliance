@@ -199,7 +199,14 @@ done
 # Three classes now, and only one of them is an exposure:
 #
 #   SECRET    a credential-shaped assignment whose value is a LITERAL, readable
-#             beyond root. This is the #2889 class. Exit 1.
+#             beyond root. This is the #2889 class. Exit 1. Also, BY NAME and
+#             whatever it holds, a host secret env file readable beyond root
+#             (HOST_SECRET_ENV_FILES below): `.env`, `.env.prod`, the scanner's
+#             `.env.scanner` and the pipelock overlay's `.env.pipelock` (#5308).
+#             Those files are credentials by purpose, and the content test is a
+#             heuristic over variable NAMES: a bearer key under a name it does
+#             not recognise would otherwise score TIDY. A same-named repo file
+#             never makes one of them public either.
 #   REQUIRED  bind-mounted into a container running as a NON-ROOT user, so a
 #             narrower mode breaks that container. Expected; not a finding.
 #   TIDY      neither: dead config or a non-secret file that happens to be 644.
@@ -227,9 +234,20 @@ ok "checking deploy-directory permissions"
 #   and scores the canonical compose at 4 literal credentials -- a file a
 #   guard already proves has none. The `:?` is compose's fail-fast syntax, so
 #   the very token that triggered the false positive is PROOF of interpolation.
+#
+# The host secret env files, SECRET by name. Defined once, here, and handed to
+# the remote script as its second argument (the heredoc is quoted, so it cannot
+# expand a variable of this script). The public-copy exemption below reads the
+# same list and never applies to them: their purpose is the credential, so a
+# repo file of the same name, were one ever committed, would be the leak rather
+# than proof the VM copy is public. Their public templates
+# (`.env.prod.example`, `.env.pipelock.example`) are other names, exempted by
+# hash like any other tracked file.
+HOST_SECRET_ENV_FILES=".env .env.prod .env.scanner .env.pipelock"
 CLASSIFY=$(cat <<'REMOTE'
 set -e
 REMOTE_DIR_X="$1"
+HOST_SECRET_ENV_FILES_X="$2"
 # every mount source under the deploy dir belonging to a non-root container
 required=""
 for c in $(sudo docker ps --format '{{.Names}}' 2>/dev/null); do
@@ -242,6 +260,9 @@ $src";; esac
     done
 done
 sudo find "$REMOTE_DIR_X" -maxdepth 1 -type f \( -perm /o+r -o -perm /g+r \) 2>/dev/null | sort | while read -r f; do
+    case " $HOST_SECRET_ENV_FILES_X " in
+        *" $(basename "$f") "*) echo "SECRET $f"; continue ;;
+    esac
     if printf '%s\n' "$required" | grep -qxF "$f"; then
         echo "REQUIRED $f"
     elif sudo grep -aE '^[^#]*(PASSWORD|SECRET|_KEY|TOKEN)[A-Z_]*[=:][[:space:]]*"?[^${?"[:space:]]' "$f" >/dev/null 2>&1; then
@@ -253,7 +274,7 @@ done
 REMOTE
 )
 CLASSIFIED=$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
-    --command "sh -s '${REMOTE_DIR}'" <<< "$CLASSIFY" 2>/dev/null || true)
+    --command "sh -s '${REMOTE_DIR}' '${HOST_SECRET_ENV_FILES}'" <<< "$CLASSIFY" 2>/dev/null || true)
 
 SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
 
@@ -266,9 +287,14 @@ SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
 # Compared by HASH against the repo copy rather than by name: a same-named file
 # that has DRIFTED from the tracked one is exactly the case worth flagging, and
 # a name match alone would wave it through.
+# HOST_SECRET_ENV_FILES (defined above CLASSIFY) skip the exemption.
 SECRETS=""
 for f in $SECRET_CANDIDATES; do
     [ -n "$f" ] || continue
+    case " $HOST_SECRET_ENV_FILES " in
+        *" $(basename "$f") "*) SECRETS="${SECRETS}${f}
+"; continue ;;
+    esac
     repo_copy="${SCRIPT_DIR}/$(basename "$f")"
     if [ -f "$repo_copy" ] \
        && [ "$(sha256sum "$repo_copy" | awk '{print $1}')" = "$(remote_sha "$f")" ]; then
