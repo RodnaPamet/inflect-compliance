@@ -230,7 +230,8 @@ async function readJoinerEntitlementConfig(ctx: RequestContext): Promise<{
 
     // Both halves are read, and NEITHER is defaulted. A missing settings row
     // and a row with a null column are the same state — no fallback — and the
-    // planner names it NO_DEFAULT_GROUP rather than choosing a group.
+    // planner names it NO_DEFAULT_GROUP rather than choosing a group, whenever
+    // a planned starter's department is unmapped and so needs one.
     return {
         departmentGroups,
         defaultGroupId: settings?.identityDefaultGroupId ?? null,

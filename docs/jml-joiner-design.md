@@ -615,7 +615,7 @@ not carry across.
 | `LINK_COVERAGE_TOO_LOW` | Too few ACTIVE employees hold a fresh, uncontradicted link, so "has no account" is not yet evidence of anything. See [the absence-fails-open note](#absence-fails-open) below. |
 | `TARGET_TOPOLOGY_UNOBSERVED` | No fresh on-prem observation exists across this connection's accounts, so the create has no substitute for the leaver's write-target rail. See [there is no write-target rail for a create](#there-is-no-write-target-rail-for-a-create). |
 | `NO_DEPARTMENT_MAP` | No department→group map configured at all. |
-| `NO_DEFAULT_GROUP` | Decision 5's required refusal: a fallback is only safe when the fallback has a name. |
+| `NO_DEFAULT_GROUP` | Decision 5's required refusal: a fallback is only safe when the fallback has a name. Asked only when a planned starter's department has no rule and so needs the fallback (owner decision 2026-11-14); a pass whose planned starters are all mapped needs none. |
 | `CREDENTIAL_POLICY_DISABLED` | Decision 2's **required refusal**. TAP policy is off. There is no password arm in the interface to fall back to. |
 | `CREDENTIAL_POLICY_UNCONSENTED` | The policy probe returned 403 — the connection lacks `Policy.Read.All` (`entra-id/index.ts:165`). **Distinct from unobserved**, naming the missing permission. |
 | `CREDENTIAL_POLICY_UNOBSERVED` | No probe has run for this connection yet. Clears itself overnight. |
