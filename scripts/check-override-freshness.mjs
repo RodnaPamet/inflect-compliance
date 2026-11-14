@@ -166,6 +166,51 @@ function rangeShape(spec) {
 }
 
 /**
+ * The FLOOR a spec establishes — the lowest version it still admits (#5651).
+ *
+ * This was `spec.startsWith('^') ? spec.slice(1) : null` inline at the floor
+ * check, which skipped every shape but a caret. The comment above that check
+ * says the decay it exists to catch is "a follow-up advisory lands on a
+ * package already PINNED" — so it skipped exactly the case it names, and the
+ * four exact pins in `overrides` (`sharp`, two `@radix-ui` packages,
+ * `@conventional-changelog/template`) plus the bounded `nwsapi` produced no
+ * finding and read as a pass.
+ *
+ * `rangeShape` already knew all three shapes and is self-tested on
+ * `rangeShape('0.35.5') === 'pin'` — `sharp`'s version. Deriving the floor
+ * from it rather than from a second hand-rolled caret test is what keeps the
+ * two halves agreeing about what a spec means.
+ *
+ * Returns null only for a shape with no derivable floor, which the caller
+ * must REPORT rather than skip.
+ */
+function floorOf(spec) {
+    const r = String(spec).trim();
+    switch (rangeShape(r)) {
+        case 'caret':
+            return r.slice(1);
+        case 'pin':
+            // The pin IS the floor, and also the ceiling. An advisory that
+            // covers it is not "raise the floor" but "the pinned version is
+            // affected", which the finding's wording has to say.
+            return r;
+        case 'bounded': {
+            // `>=2.2.16 <2.2.25` — the lower bound is the floor; the upper is
+            // a deliberate ceiling and says nothing about exposure.
+            // The terminator set matters: advisories and specs both write
+            // conjunctions with a comma (`>= 8.0.0, <= 8.6.5`), and a floor
+            // captured as `8.0.0,` fails `parse()` and would be reported as
+            // unanalysable — a self-inflicted coverage gap. The self-test
+            // below carries that exact spec for this reason.
+            const m = /(?:^|[\s|])>=\s*v?([0-9][^\s|<>=,]*)/.exec(r);
+            return m ? m[1] : null;
+        }
+        default:
+            return null;
+    }
+}
+
+/**
  * Can the freshness half reason about this range AT ALL?
  *
  * `satisfiesCaret` understands `^X.Y.Z` and nothing else — every other
@@ -519,6 +564,25 @@ if (process.argv.includes('--self-test')) {
         ['shape of a caret', rangeShape('^1.2.3'), 'caret'],
         ['shape of a pin', rangeShape('0.35.5'), 'pin'],
         ['shape of a conjunction', rangeShape('>=2.2.16 <2.2.25'), 'bounded'],
+
+        // #5651 completes what #4428 started. That change taught the FRESHNESS
+        // half to read pins and conjunctions — see the two inverted cases above
+        // — and the floor half kept a hand-rolled `startsWith('^')`, so the
+        // four exact pins and `nwsapi` produced no floor finding and read as a
+        // pass. These are the shapes `floorOf` must answer for.
+        ['floor of a caret', floorOf('^4.12.27'), '4.12.27'],
+        ['floor of a PIN is the pin itself', floorOf('0.35.5'), '0.35.5'],
+        ['floor of a conjunction is its LOWER bound', floorOf('>=2.2.16 <2.2.25'), '2.2.16'],
+        ['floor ignores the deliberate ceiling', floorOf('>=1.0.0 <2.0.0'), '1.0.0'],
+        ['floor tolerates a v prefix', floorOf('>=v1.2.3 <2.0.0'), '1.2.3'],
+        ['floor of a comma conjunction', floorOf('>= 8.0.0, <= 8.6.5'), '8.0.0'],
+        // No derivable floor must be NULL so the caller reports it, never ''
+        // or a guess — a guessed floor would be compared against an advisory
+        // range and could answer "not affected" about a version nobody pinned.
+        ['tilde has no derivable floor', floorOf('~1.2.3'), null],
+        ['dist-tag has no derivable floor', floorOf('latest'), null],
+        ['bare upper bound has no floor', floorOf('<2.0.0'), null],
+        ['empty spec has no floor', floorOf(''), null],
     ];
     const failed = checks.filter(([, actual, expected]) => actual !== expected);
     for (const [label, actual, expected] of failed) {
@@ -730,20 +794,40 @@ for (const o of versionForcingOverrides()) {
     // 4. Is the floor itself still an affected version? The decay that
     //    hit tmp and protobufjs — a follow-up advisory lands on a
     //    package already pinned, and the floor silently stops excluding.
-    const floor = o.spec.startsWith('^') ? o.spec.slice(1) : null;
-    if (floor && parse(floor)) {
+    const shape = rangeShape(o.spec);
+    const floor = floorOf(o.spec);
+    if (!floor || !parse(floor)) {
+        // ACCOUNTED FOR, not dropped — the same rule `analysableRange` states
+        // for the freshness half. A floor this check could not read is a gap
+        // in coverage, and the shape it skipped silently was the pins.
+        findings.push({
+            level: 'unanalysable',
+            name: o.name,
+            spec: o.spec,
+            key: o.key,
+            note: `no floor could be derived from this ${shape} spec, so the floor check was NOT evaluated for this entry — this is a gap in coverage, not a clean result`,
+        });
+    } else {
         for (const a of pkgAdvisories) {
             for (const v of entriesFor(a, o.name)) {
                 if (withinAdvisoryRange(floor, v.vulnerable_version_range) !== true) continue;
+                // The ACTION differs by shape, and "raise the floor to ^X" is
+                // wrong advice for a pin — there the pin itself has to move.
+                const action = shape === 'pin'
+                    ? `the pinned version is itself affected — move the pin to ${v.first_patched_version}`
+                    : shape === 'bounded'
+                        ? `raise the range's lower bound to >=${v.first_patched_version}, keeping the deliberate ceiling`
+                        : `raise the floor to ^${v.first_patched_version}`;
                 findings.push({
                     level: 'floor',
                     name: o.name,
                     spec: o.spec,
+                    shape,
                     advisory: a.ghsa_id,
                     severity: a.severity,
                     vulnerableRange: v.vulnerable_version_range,
                     fixedIn: v.first_patched_version,
-                    note: `the override floor ${floor} is itself affected by ${a.ghsa_id} (${v.vulnerable_version_range}) — raise the floor to ^${v.first_patched_version}`,
+                    note: `the override floor ${floor} is itself affected by ${a.ghsa_id} (${v.vulnerable_version_range}) — ${action}`,
                 });
             }
         }
