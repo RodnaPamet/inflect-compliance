@@ -322,6 +322,69 @@ describe('page actions — a name resolves from the scopes its use site can see'
         ).toEqual([null, ['api', 'other']]);
     });
 
+    // A prop is the one name a use site cannot resolve on its own: its value is
+    // written at the render site. This codebase hands `apiBase` to sibling
+    // components in the same file, so the render site is where to read it.
+    it('resolves a destructured prop from the render sites in the same file, including a renamed one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel() {',
+                    "    const apiBase = '/api/exceptions';",
+                    '    return <Child apiBase={apiBase} />;',
+                    '}',
+                    'function Child({ apiBase: base }: { apiBase: string }) {',
+                    "    return <button onClick={() => fetch(base, { method: 'POST' })} />;",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'exceptions']]);
+    });
+
+    it('unions the values when two render sites pass different ones', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel() {',
+                    "    return <><Child to={'/api/one'} /><Child to={'/api/two'} /></>;",
+                    '}',
+                    'function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'one'], ['api', 'two']]);
+    });
+
+    it('reports the call when a render site spreads its props, rather than answering from the others', () => {
+        // One unknown member makes the union unknown. Answering from the rest
+        // would report a route the page may not call and omit one it does.
+        expect(
+            segmentsOf(
+                [
+                    'export function Panel(props: Props) {',
+                    "    return <><Child to={'/api/one'} /><Child {...props} /></>;",
+                    '}',
+                    'function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('reports the call when the component is never rendered in this file', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function Child({ to }: { to: string }) {',
+                    '    return <button onClick={() => fetch(to)} />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
     it('still resolves a top-level const and one the file imports by name', () => {
         expect(
             segmentsOf(

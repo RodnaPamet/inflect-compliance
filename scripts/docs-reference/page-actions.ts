@@ -131,6 +131,64 @@ function isSwrFetcherParam(arg: ts.Expression): boolean {
     return false;
 }
 
+/**
+ * The component whose PROPS destructure `name`, if `at` sits inside one, and
+ * the attribute that supplies it — `{ apiBase: base }` is read as `base`
+ * locally and `apiBase` in JSX.
+ *
+ * A prop is the one name a use site legitimately cannot resolve on its own:
+ * its value is written at the render site. In this codebase a panel computes
+ * `const apiBase` and hands it to sibling components in the same file under
+ * the same name, so refusing the name outright costs the reference a dozen
+ * calls it can read — and resolving it from a same-named `const` elsewhere in
+ * the file, as the old resolver did, is a guess that happened to be right.
+ * Reading the render site is neither.
+ */
+function destructuredProp(name: string, at: ts.Node): { component: string; attribute: string } | null {
+    for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
+        if (!ts.isFunctionLike(n)) continue;
+        let attribute: string | null = null;
+        for (const p of n.parameters) {
+            if (!ts.isObjectBindingPattern(p.name)) continue;
+            const el = p.name.elements.find((x) => ts.isIdentifier(x.name) && x.name.text === name);
+            if (el) attribute = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : name;
+        }
+        if (!attribute) continue;
+        // Only a NAMED component can be found again in JSX.
+        if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) return { component: n.name.text, attribute };
+        if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
+            const d = n.parent;
+            return ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) ? { component: d.name.text, attribute } : null;
+        }
+        return null;
+    }
+    return null;
+}
+
+/**
+ * Every expression a render site in THIS file passes for one attribute of one
+ * component. Fail-closed: a render that spreads its props, or omits the
+ * attribute, or a component this file never renders, means at least one value
+ * is unknown — and a union missing one of its members is not a union, so the
+ * call is reported rather than answered from the rest.
+ */
+function propValues(sf: ts.SourceFile, component: string, attribute: string): ts.Expression[] | null {
+    const values: ts.Expression[] = [];
+    let unknown = false;
+    walk(sf, (n) => {
+        if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n)) return;
+        if (!ts.isIdentifier(n.tagName) || n.tagName.text !== component) return;
+        const attr = n.attributes.properties.find((a) => ts.isJsxAttribute(a) && ts.isIdentifier(a.name) && a.name.text === attribute);
+        const init = attr && ts.isJsxAttribute(attr) ? attr.initializer : undefined;
+        if (!init || !ts.isJsxExpression(init) || !init.expression) {
+            unknown = true;
+            return;
+        }
+        values.push(init.expression);
+    });
+    return unknown || values.length === 0 ? null : values;
+}
+
 const TENANT_URL_BUILDERS = new Set(['apiUrl', 'buildApiUrl', 'tenantApiUrl']);
 
 /**
@@ -328,6 +386,12 @@ export class UrlResolver {
         if (ts.isIdentifier(e)) {
             const target = this.identifier(e.text, sf, e);
             if (target && !ts.isObjectLiteralExpression(target.expr)) return this.paths(target.expr, target.sf, depth + 1);
+            const prop = destructuredProp(e.text, e);
+            const values = prop ? propValues(sf, prop.component, prop.attribute) : null;
+            if (values) {
+                const each = values.map((v) => this.paths(v, sf, depth + 1));
+                if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];
+            }
         }
         // `useMemo(() => …, deps)`: the key is what the factory returns —
         // every `return` of a block body.
