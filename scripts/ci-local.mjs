@@ -42,6 +42,14 @@ const env = {
     ...envVars,
     DATABASE_URL: TEST_DB_URL,
     DATABASE_URL_TEST: TEST_DB_URL,
+    // THE LOAD-BEARING LINE (#5641). `prisma migrate reset` below resolves its
+    // URL through `prisma.config.ts`, which reads
+    // `DIRECT_DATABASE_URL ?? DATABASE_URL` — so without this it targets
+    // whatever the developer has exported, and `.env.example` ships one
+    // pointing at the DEV database. `--force` suppresses the confirmation that
+    // would have saved them. `e2e-local.mjs` has had this line all along; the
+    // two scripts reset the same database and disagreed about which.
+    DIRECT_DATABASE_URL: TEST_DB_URL,
     SKIP_ENV_VALIDATION: '1',
     NODE_ENV: 'test',
 };
@@ -87,7 +95,18 @@ run('npm run lint', '4/7  Lint (next lint)');
 run('npm run typecheck', '5/7  Typecheck (tsc --noEmit)');
 
 // ── 6. Migrate + Test ──
-run('npx prisma migrate reset --force --skip-seed', '6/7a Reset test database (migrate reset)');
+// The flag below was `--force --skip-seed`. `--skip-seed` was removed in
+// Prisma 7 (installed: 7.10.1, whose `migrate reset --help` lists only
+// `-f, --force`), so this step died on an unknown option and
+// `npm run ci:local` could never pass. Dropping it changes nothing: there is
+// no `prisma.seed` in package.json and no `migrations.seed` in
+// prisma.config.ts, so reset has no seed to skip.
+//
+// Note the ORDER this was fixed in: the broken flag was MASKING #5641's other
+// half, because the step died before Prisma connected to anything. Removing it
+// without the DIRECT_DATABASE_URL line above makes this command work — against
+// the developer's own database.
+run('npx prisma migrate reset --force', '6/7a Reset test database (migrate reset)');
 run('npm run test:ci', '6/7b Run tests (Jest)');
 
 // ── 7. Build ──
