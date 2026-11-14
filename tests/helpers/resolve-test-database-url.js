@@ -69,12 +69,15 @@ function resolveTestDatabaseUrl({ current, marker, workerId, markerNamed }) {
         const recorded = Array.isArray(marker.workerDbs)
             ? marker.workerDbs[Number(workerId) - 1]
             : null;
-        // Take the name globalSetup RECORDED creating rather than re-deriving
-        // it — re-derivation is how this site drifted before, spelling
-        // `baseName + '_w' + wid` while the helper that creates them moved on.
-        const name = recorded || `${marker.baseName}_w${workerId}`;
         const u = new URL(marker.baseUrl);
-        u.pathname = `/${name}`;
+        // The RECORDED name, inline in the assignment on purpose. Re-derivation
+        // is how this site drifted before — it spelled `baseName + '_w' + wid`
+        // while the helper that creates the databases moved on — and
+        // `per-worker-db-naming` pins the ASSIGNMENT rather than a mention,
+        // because an earlier version of that test survived a mutation which
+        // kept the lookup and dropped it from the pathname. Holding `recorded`
+        // behind a local would put it back out of that assertion's reach.
+        u.pathname = '/' + (recorded || `${marker.baseName}_w${workerId}`);
         return { url: u.toString(), reason: 'per-worker-clone' };
     }
 
