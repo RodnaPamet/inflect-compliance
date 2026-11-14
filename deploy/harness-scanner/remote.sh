@@ -166,26 +166,41 @@ dry-run)
     # proxy is up before the scan, and the scan runs without re-creating it.
     # The report goes to a summariser and nowhere else; the scanner's own log
     # lines (kinds and counts) stay on stderr. `--dry-run` drops the `inflect`
-    # output and prints the signed agent report as the first line of stdout
-    # (an integrations report, which this configuration does not make, would
-    # be a second line), so the summariser reads the first line only.
+    # output and prints each signed report on a line of its own: the agent
+    # report first, then the integrations report (scanent 0.16.0's
+    # `scanent-integrations/1`). The summariser prints kinds, states and
+    # counts of each, and refuses unless every source of both is COMPLETE.
     compose up -d harness-egress
     compose run --rm --no-deps -T harness-scanner scan --dry-run --config "$CONFIG_IN_CONTAINER" \
         | docker run --rm -i --network none --entrypoint node "$IMAGE" -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
-    let r;
-    try { r = JSON.parse(s.split("\n")[0]); } catch { console.log("dry run: no report"); process.exit(1); }
-    const sources = (r.population && r.population.sources) || [];
-    for (const x of sources) {
-        console.log(`${x.kind}: ${x.status}${x.reason ? " " + x.reason : ""} (${x.rows ?? "?"} rows)`);
+    const reports = [];
+    for (const line of s.split("\n")) {
+        if (line.trim() === "") continue;
+        try { reports.push(JSON.parse(line)); } catch { console.log("dry run: a line that is not a report"); process.exit(1); }
     }
-    console.log(`agents: ${(r.agents || []).length}`);
-    for (const a of r.agents || []) {
+    const agents = reports.find((r) => String(r.contract || "").startsWith("inflect-agent-harness/"));
+    const integrations = reports.find((r) => String(r.contract || "").startsWith("scanent-integrations/"));
+    if (!agents) { console.log("dry run: no agent report"); process.exit(1); }
+    const line = (x) => console.log(`${x.kind}: ${x.status}${x.reason ? " " + x.reason : ""} (${x.rows ?? "?"} rows)`);
+    const agentSources = (agents.population && agents.population.sources) || [];
+    agentSources.forEach(line);
+    console.log(`agents: ${(agents.agents || []).length}`);
+    for (const a of agents.agents || []) {
         const v = (a.verdicts || []).find((x) => x.criterion === "H3.egress_enforced");
         if (v) console.log(`egress: ${v.met ? "enforced" : "NOT enforced"} (${v.evidence})`);
     }
-    const complete = sources.length > 0 && sources.every((x) => x.status === "COMPLETE");
+    let all = agentSources;
+    if (integrations) {
+        const sources = integrations.sources || [];
+        sources.forEach(line);
+        console.log(`applications: ${(integrations.applications || []).length}`);
+        all = all.concat(sources);
+    } else {
+        console.log("integrations: no report");
+    }
+    const complete = all.length > 0 && all.every((x) => x.status === "COMPLETE");
     console.log(complete ? "every source COMPLETE" : "NOT every source is COMPLETE: do not start the schedule");
     process.exit(complete ? 0 : 3);
 });'

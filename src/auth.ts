@@ -42,6 +42,7 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
+import { hashEmailForLog } from '@/lib/auth/security-events';
 import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
@@ -754,7 +755,10 @@ export const authOptions: NextAuthOptions = {
                 edgeLogger.warn('signIn rejected: provider reported email_verified=false', {
                     component: 'auth',
                     provider: account.provider,
-                    email: user.email ?? undefined,
+                    // Never the raw address: the operational log carries no
+                    // tenant scope or retention policy. The hash is the same
+                    // per-identifier key the other auth events log.
+                    identifierHash: user.email ? hashEmailForLog(user.email) : undefined,
                 });
                 return false;
             }

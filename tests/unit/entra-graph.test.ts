@@ -47,8 +47,24 @@ describe('fetchUserGroupsFromGraph', () => {
         const fetchImpl = jest.fn().mockResolvedValue(
             jsonRes({ value: [{ id: 'g' }], '@odata.nextLink': 'loop' }),
         );
-        await fetchUserGroupsFromGraph('t', fetchImpl as unknown as typeof fetch, 3);
+        const groups = await fetchUserGroupsFromGraph('t', fetchImpl as unknown as typeof fetch, 3);
         expect(fetchImpl).toHaveBeenCalledTimes(3);
+        // Pages left unread: the list is incomplete, so nothing is resolved.
+        expect(groups).toEqual([]);
+    });
+
+    it('a failure after the first page returns [], never the partial list (#5306)', async () => {
+        const throttled = jest
+            .fn()
+            .mockResolvedValueOnce(jsonRes({ value: [{ id: 'editors' }], '@odata.nextLink': 'https://graph/p2' }))
+            .mockResolvedValueOnce(jsonRes({}, false));
+        expect(await fetchUserGroupsFromGraph('t', throttled as unknown as typeof fetch)).toEqual([]);
+
+        const dropped = jest
+            .fn()
+            .mockResolvedValueOnce(jsonRes({ value: [{ id: 'editors' }], '@odata.nextLink': 'https://graph/p2' }))
+            .mockRejectedValueOnce(new Error('socket hang up'));
+        expect(await fetchUserGroupsFromGraph('t', dropped as unknown as typeof fetch)).toEqual([]);
     });
 });
 

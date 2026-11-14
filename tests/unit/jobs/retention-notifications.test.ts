@@ -148,6 +148,13 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
                 where: { tenantId, type: 'EVIDENCE_EXPIRING' },
             });
             expect(outbox.length).toBeGreaterThanOrEqual(1);
+            // #5307 — the dedupe key is logged on every failed send, so it
+            // carries a HASH of the address, never the address itself.
+            for (const row of outbox) {
+                expect(row.toEmail).toContain('@');
+                expect(row.dedupeKey).not.toContain(row.toEmail);
+                expect(row.dedupeKey).not.toContain('@');
+            }
 
             const audit = await prisma.auditLog.findMany({
                 where: { tenantId, action: 'EVIDENCE_EXPIRING_SOON', entityId: ev.id },

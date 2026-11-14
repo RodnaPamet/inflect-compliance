@@ -34,10 +34,6 @@ export const CREDENTIALS_RATE_LIMIT = {
 // ── Upstash / memory fallback (same pattern as authRateLimit.ts) ──────
 
 let _limiter: Ratelimit | null = null;
-// The bare Redis client is kept alongside the Ratelimit wrapper so
-// `resetCredentialsBackoff` can issue a per-key `DEL` against Upstash —
-// the Ratelimit API doesn't expose per-key clearing on its own.
-let _redis: Redis | null = null;
 let _initialized = false;
 
 function initLimiter() {
@@ -45,9 +41,8 @@ function initLimiter() {
     _initialized = true;
     if (env.RATE_LIMIT_MODE !== 'upstash') return;
     try {
-        _redis = Redis.fromEnv();
         _limiter = new Ratelimit({
-            redis: _redis,
+            redis: Redis.fromEnv(),
             limiter: Ratelimit.slidingWindow(
                 CREDENTIALS_RATE_LIMIT.maxAttempts,
                 `${CREDENTIALS_RATE_LIMIT.windowSeconds} s`,
@@ -162,7 +157,8 @@ export async function checkCredentialsAttempt(
  *
  * Both stores get cleared:
  *   • the in-process memory fallback (one `Map.delete`)
- *   • Upstash, if initialised — a `DEL` on the sliding-window key
+ *   • Upstash, if initialised — through the limiter's own
+ *     `resetUsedTokens`, which deletes every per-window key it wrote
  *
  * Fails open on a Redis error: the worst case is the user has to wait
  * for the bucket to age out of the 15-minute window naturally, which
@@ -174,17 +170,19 @@ export async function resetCredentialsBackoff(email: string): Promise<void> {
     const key = `rl:cred:id:${ident}`;
     _memoryAttempts.delete(key);
 
-    // Clear Upstash too when we're in upstash mode. The Ratelimit
-    // wrapper stores its sliding-window state under the raw key the
-    // limiter prefixes onto, so a direct `DEL` on the same string
-    // wipes the bucket.
+    // Clear Upstash too when we're in upstash mode. The sliding window
+    // does NOT store its state under `key`: it writes
+    // `<prefix>:<key>:<window>` for the current and previous window, so a
+    // `DEL` on the bare key deleted nothing (#5306). `resetUsedTokens`
+    // builds the prefixed pattern itself and also drops the limiter's
+    // in-process block cache for the identifier.
     initLimiter();
-    if (_redis) {
+    if (_limiter) {
         try {
-            await _redis.del(key);
+            await _limiter.resetUsedTokens(key);
         } catch (err) {
             edgeLogger.warn(
-                'Credential rate-limit reset: Upstash DEL failed; bucket will age out naturally',
+                'Credential rate-limit reset: Upstash reset failed; bucket will age out naturally',
                 { component: 'rate-limit', err: String(err) },
             );
         }
@@ -201,6 +199,5 @@ export async function resetCredentialsBackoff(email: string): Promise<void> {
 export function __resetCredentialsRateLimitForTests(): void {
     _memoryAttempts.clear();
     _limiter = null;
-    _redis = null;
     _initialized = false;
 }

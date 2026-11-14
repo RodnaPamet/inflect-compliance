@@ -203,7 +203,7 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             }
         });
 
-        it('opens them PENDING, assigned to the agent’s registered owner', async () => {
+        it('opens them PENDING — and UNASSIGNED here, because the agent’s owner approved them (#5307)', async () => {
             const audits = await prisma.agentProposalSampleAudit.findMany({
                 where: { tenantId: TENANT },
             });
@@ -214,7 +214,11 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
                 expect(audit.outcome).toBe('PENDING');
                 expect(audit.reviewedByUserId).toBeNull();
                 expect(audit.reviewedAt).toBeNull();
-                expect(audit.assignedToUserId).toBe(APPROVER);
+                // The agent's owner IS the approver of every seeded proposal,
+                // and the answer path refuses an approver — so the review is
+                // not routed to them. The positive case (owner assigned when
+                // they did not approve) is its own describe below.
+                expect(audit.assignedToUserId).toBeNull();
                 expect(audit.samplingEpoch).toBe(EPOCH);
             }
         });
@@ -533,6 +537,103 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
      * isolation only if the same read returns something for its own tenant —
      * otherwise a listing that was simply broken would pass.
      */
+    describe('the review is never ASSIGNED to an approver of the proposal (#5307)', () => {
+        const ASSIGN_TENANT = `t-${SUITE}-assign`;
+        const OWNER_U = `u-${SUITE}-agent-owner`;
+        const OTHER_APPROVER = `u-${SUITE}-other-approver`;
+        // No case for the owner holding a FIRST signature: the database refuses
+        // that already (AGENT_PROPOSAL_APPROVAL_OWNER_SELF_REVIEW), so the
+        // reachable shape is the owner as the sole, final approver.
+        const proposals: Record<'byOther' | 'byOwner', string> = { byOther: '', byOwner: '' };
+
+        beforeAll(async () => {
+            await prisma.tenant.upsert({
+                where: { id: ASSIGN_TENANT },
+                update: {},
+                create: { id: ASSIGN_TENANT, name: ASSIGN_TENANT, slug: ASSIGN_TENANT },
+            });
+            for (const id of [OWNER_U, OTHER_APPROVER]) {
+                const email = `${id}@example.test`;
+                await prisma.user.upsert({
+                    where: { id },
+                    update: {},
+                    create: { id, email, emailHash: hashForLookup(email) },
+                });
+                await prisma.tenantMembership.upsert({
+                    where: { tenantId_userId: { tenantId: ASSIGN_TENANT, userId: id } },
+                    update: { role: 'OWNER', status: 'ACTIVE' },
+                    create: { tenantId: ASSIGN_TENANT, userId: id, role: 'OWNER', status: 'ACTIVE' },
+                });
+            }
+            const aiSystem = await prisma.aiSystem.create({
+                data: { tenantId: ASSIGN_TENANT, name: `${SUITE} assign host`, ownerUserId: OWNER_U },
+            });
+            const agent = await prisma.registeredAgent.create({
+                data: {
+                    tenantId: ASSIGN_TENANT,
+                    aiSystemId: aiSystem.id,
+                    name: `${SUITE} assign agent`,
+                    autonomyLevel: 2,
+                    dataAccessScope: 'READ_TENANT_DATA',
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: OWNER_U,
+                    status: 'ACTIVE',
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
+                },
+            });
+            const make = async (n: number, reviewedByUserId: string) =>
+                (await prisma.agentProposal.create({
+                    data: {
+                        tenantId: ASSIGN_TENANT,
+                        kind: 'RISK',
+                        status: 'ACCEPTED',
+                        payloadJson: JSON.stringify({ title: `${SUITE} assign ${n}`, description: 'seeded' }),
+                        rationale: `${SUITE} assign rationale ${n}`,
+                        agentId: agent.id,
+                        policyCardVersion: 1,
+                        reviewedByUserId,
+                        reviewedAt: new Date(),
+                        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                    },
+                    select: { id: true },
+                })).id;
+            proposals.byOther = await make(1, OTHER_APPROVER);
+            proposals.byOwner = await make(2, OWNER_U);
+            // Each run draws at least one of what is left, so two runs in two
+            // epochs sample both.
+            for (const epoch of ['assign-1', 'assign-2']) {
+                await runAgentProposalSampleAudit(prisma, {
+                    tenantId: ASSIGN_TENANT, seed: TEST_SEED, epoch,
+                });
+            }
+        }, 60_000);
+
+        const assigneeOf = async (proposalId: string) =>
+            (await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, proposalId },
+            })).assignedToUserId;
+
+        it('assigns the agent’s owner when somebody else approved the proposal', async () => {
+            expect(await assigneeOf(proposals.byOther)).toBe(OWNER_U);
+        });
+
+        it('leaves it unassigned when the owner was the final approver', async () => {
+            expect(await assigneeOf(proposals.byOwner)).toBeNull();
+        });
+
+        it('the AGENT_PROPOSAL_SAMPLED row names the same assignee as the audit', async () => {
+            const audit = await prisma.agentProposalSampleAudit.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, proposalId: proposals.byOwner },
+            });
+            const row = await prisma.auditLog.findFirstOrThrow({
+                where: { tenantId: ASSIGN_TENANT, entityId: audit.id, action: 'AGENT_PROPOSAL_SAMPLED' },
+            });
+            expect((row.detailsJson as Record<string, unknown>).assignedToUserId).toBeNull();
+        });
+    });
+
     describe('tenant isolation — a second tenant reaches none of this', () => {
         const OTHER_TENANT = `t-${SUITE}-other`;
         const OTHER_USER = `u-${SUITE}-other`;

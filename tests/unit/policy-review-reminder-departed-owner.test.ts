@@ -93,4 +93,43 @@ describe('policy review reminder — owners who have left', () => {
         expect(mockCreateTask).toHaveBeenCalledTimes(2);
         expect(res.processed).toBe(2);
     });
+
+    it('the outbox dedupe key carries no raw email (#5307)', async () => {
+        // `processOutbox` logs the key on every failed send.
+        const { db, outboxCreate } = fakeDb(['here']);
+        await processOverdueReminders(db);
+        const keys = outboxCreate.mock.calls.map(
+            (c) => (c as unknown as [{ data: { dedupeKey: string } }])[0].data.dedupeKey,
+        );
+        expect(keys).toHaveLength(1);
+        expect(keys[0]).not.toContain('here@acme.test');
+        expect(keys[0]).not.toContain('@');
+        expect(keys[0]).toContain('p-live');
+    });
+});
+
+describe('policy review reminder — the scan is not capped (#5307)', () => {
+    it('processes every due policy past the old 1000-row cap, paging by id', async () => {
+        const all = Array.from({ length: 1203 }, (_, i) =>
+            policy(`p-${String(i).padStart(5, '0')}`, 'here'));
+        // A page-serving double: honours `cursor` / `skip` / `take` over a
+        // list sorted by id, the way the real read does.
+        const policyFindMany = jest.fn(async (args: { take: number; cursor?: { id: string }; skip?: number }) => {
+            const start = args.cursor ? all.findIndex((p) => p.id === args.cursor!.id) + (args.skip ?? 0) : 0;
+            return all.slice(start, start + args.take);
+        });
+        const db = {
+            policy: { findMany: policyFindMany },
+            taskLink: { findMany: jest.fn(async () => []) },
+            tenantMembership: { findMany: jest.fn(async () => [{ tenantId: 't-1', userId: 'here' }]) },
+            auditLog: { create: jest.fn(async () => ({})) },
+            notificationOutbox: { create: jest.fn(async () => ({})) },
+        } as unknown as PrismaClient;
+
+        const res = await processOverdueReminders(db);
+
+        expect(res.processed).toBe(1203);
+        expect(mockCreateTask).toHaveBeenCalledTimes(1203);
+        expect(policyFindMany.mock.calls.length).toBeGreaterThan(1);
+    });
 });

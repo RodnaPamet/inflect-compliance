@@ -132,14 +132,17 @@
 #   only the digest, and remote.sh refuses any other image), then the
 #   `Scanner VM` workflow's `configure` and `start`. The signing key is kept,
 #   so the registered public key stays valid either way.
+#   Rolling back only a scanent version is this file's two digests, then
+#   `configure` and `start`. scanent 0.15.0 was
+#     ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171
 #
 services:
   harness-scanner:
-    # scanent 0.15.0, the multi-arch index digest of
-    # ghcr.io/rodnapamet/scanent:0.15.0, signed by
-    # https://github.com/RodnaPamet/scanent/.github/workflows/release.yml@refs/tags/v0.15.0
+    # scanent 0.16.0, the multi-arch index digest of
+    # ghcr.io/rodnapamet/scanent:0.16.0, signed by
+    # https://github.com/RodnaPamet/scanent/.github/workflows/release.yml@refs/tags/v0.16.0
     # (cosign verify, and its SLSA provenance by `gh attestation verify`).
-    image: ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171
+    image: ghcr.io/rodnapamet/scanent@sha256:7f9005ae540ca51abec195c21903fc593d5a3cf0c63478f4dc5eed6fbdb08493
     restart: unless-stopped
     # The image's own default command, stated so the mount below and the
     # command cannot drift apart.
@@ -194,7 +197,7 @@ services:
     # The SAME digest as the scanner: the proxy is scanent's reviewed code,
     # shipped in its image, not a third-party image. `vm.sh` refuses two
     # digests.
-    image: ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171
+    image: ghcr.io/rodnapamet/scanent@sha256:7f9005ae540ca51abec195c21903fc593d5a3cf0c63478f4dc5eed6fbdb08493
     restart: unless-stopped
     # As scanent's deploy/compose.egress.yaml starts it. `node` is on the
     # distroless image's PATH (/nodejs/bin).
