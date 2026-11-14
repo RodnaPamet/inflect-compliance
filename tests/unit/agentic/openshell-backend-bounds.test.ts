@@ -219,3 +219,51 @@ describe('4. all FOUR deletion outcomes are handled, not the three the issue nam
         expect(calls.awaited).toEqual(shouldWait ? ['sb-1'] : []);
     });
 });
+
+describe('5. the deletion wait is not bounded by the tool deadline it follows (#5304)', () => {
+    it('a timed-out run still waits for an ACCEPTED deletion, and records it settled', async () => {
+        // The wait used to take the tool's deadline signal. The deletion runs in
+        // the `finally`, AFTER the deadline aborted that signal, so the wait
+        // threw at once and every timed-out run recorded `settled: false` and
+        // logged a possible leak for a deletion nobody waited for.
+        const timers = makeTimers();
+        const waitSignals: AbortSignal[] = [];
+        const decisions: unknown[] = [];
+        let finished!: () => void;
+        const recorded = new Promise<void>((r) => (finished = r));
+        const { transport } = fakeTransport({
+            // Runs until the deadline aborts it, as a real exec stream does.
+            execSandbox: ({ signal }) =>
+                new Promise((_resolve, reject) => {
+                    if (signal.aborted) reject(new Error('aborted'));
+                    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+                }),
+            deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_ACCEPTED' as const }),
+            awaitDeleted: async ({ signal }) => {
+                waitSignals.push(signal);
+                if (signal.aborted) throw new Error('aborted while awaiting sandbox deletion');
+            },
+        });
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+                if (d.kind === 'sandbox-deleted') finished();
+            },
+        });
+
+        const pending = run(exec, timers);
+        const assertion = expect(pending).rejects.toThrow(ToolExecutionTimeoutError);
+        timers.fire();
+        await assertion;
+        await recorded;
+
+        expect(waitSignals).toHaveLength(1);
+        expect(waitSignals[0].aborted).toBe(false);
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_ACCEPTED',
+            settled: true,
+        });
+    });
+});

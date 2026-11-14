@@ -61,13 +61,19 @@ describe('the tenant-wide artefacts are byte-for-byte what they were before #370
     // Computed on e81c933b2 by these same calls. Do not regenerate them to make
     // this pass: a moved value means every tenant-wide artefact in production
     // would be rewritten on its next tick with an unchanged population.
+    //
+    // The two CONTENT hashes were moved once, deliberately, by #5304: the body's
+    // digest line said "SHA-256 over the sorted record ids", which no assessor
+    // could reproduce. The digests above did not move, and the emitter's
+    // `unchanged` branch is keyed on the digest, so no stored body is rewritten
+    // for that edit; a body takes the corrected line when its population moves.
     const GOLDEN = {
         receiptDigest: 'ad5f3c11a4d0f1d2396fc492effa809a9419c3ff7789affbf012dd6274a75ba8',
         decisionDigest: 'c12a53ddd6f10615c1fff44aef2c90f3b333defd250f6e02f53abe2b68d5c7b7',
         receiptTitle: 'Agent action receipts — 2026-10',
-        receiptContentSha256: 'fe77f10bfb5376156db19abd2190f67564880e3f0faf25ba1937897be82bb9e5',
+        receiptContentSha256: '7f99ac0f7e88287b95acfd6c0809a9a693aa5f2ecb0d218fa709ca2397d193eb',
         decisionTitle: 'AI decision records (EU AI Act Art 12) — 2026-10',
-        decisionContentSha256: 'a89ad593b7e6352a305facf5c869bf5ffa46e47cffe755fa60d115c04e44999d',
+        decisionContentSha256: '6c857c39420570260ccf98332175c00c447e71f57dd0928b1b97c86ecbf63caa',
     };
 
     it('keeps the receipt digest and body', () => {
@@ -162,6 +168,9 @@ describe('a per-agent body', () => {
         expect(body.content).toMatch(/^Agent: agent-a \(agent register id\)\n/);
         expect(body.content).toContain('submitted with an API key bound to this agent');
         expect(body.content).toContain('counted in the tenant-wide artefact');
+        // The tenant-wide digest line it ends with does not name the agent or
+        // the bound, so the preamble says the per-agent digest binds both (#5304).
+        expect(body.content).toContain('also binds the agent id and whether the read stopped at its bound');
         expect(body.content).not.toContain('BOUNDED');
     });
 

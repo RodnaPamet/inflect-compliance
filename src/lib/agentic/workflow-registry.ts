@@ -99,12 +99,19 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
  * on a duplicate key so two definitions can never silently shadow each other.
  */
 export function registerWorkflow(def: WorkflowDefinition): void {
-    if (REGISTRY[def.key]) throw new Error(`Duplicate workflow key: ${def.key}`);
+    if (Object.hasOwn(REGISTRY, def.key)) throw new Error(`Duplicate workflow key: ${def.key}`);
     REGISTRY[def.key] = def;
 }
 
+/**
+ * The definition registered under `key`, or `undefined`. OWN keys only
+ * (#5304): `REGISTRY` is a plain object, so `REGISTRY['constructor']` or
+ * `REGISTRY['toString']` returned an `Object.prototype` member, and a run
+ * started with such a key passed the "unknown workflow" check, was admitted,
+ * and crashed in the driver instead of being refused.
+ */
 export function getWorkflowDefinition(key: string): WorkflowDefinition | undefined {
-    return REGISTRY[key];
+    return Object.hasOwn(REGISTRY, key) ? REGISTRY[key] : undefined;
 }
 
 export function listWorkflowDefinitions(): WorkflowDefinition[] {

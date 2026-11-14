@@ -809,7 +809,7 @@ describe('tools the runtime supplies, which nobody granted', () => {
         {
             name: 'task',
             appearsWhen: 'always',
-            boundedBy: 'No subagent is declared, so it has no valid agent value.',
+            boundedBy: 'Delegates to one of four declared specialists, within this run\'s resolved set.',
         },
         {
             name: 'activate_skill',
@@ -848,7 +848,7 @@ describe('tools the runtime supplies, which nobody granted', () => {
         // surface where the bound is stated beside the tool.
         mockReads({ runtimeProvided: RUNTIME });
         renderTab();
-        expect(screen.getByText(/No subagent is declared/)).toBeInTheDocument();
+        expect(screen.getByText(/four declared specialists/)).toBeInTheDocument();
         expect(screen.getByText(/already mounted/)).toBeInTheDocument();
     });
 

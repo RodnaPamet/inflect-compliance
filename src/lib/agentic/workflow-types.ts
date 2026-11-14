@@ -139,8 +139,11 @@ export interface WorkflowDefinition {
      * disagreement resolves to `static`. A workflow definition is a piece of
      * configuration, so it must not be able to widen its own authority.
      *
-     * `tool-runner` is a request no build can grant yet (Step 2b): its
-     * `DRIVER_IMPLEMENTED` flag is false.
+     * `tool-runner` is grantable since Step 2c (#4150): its
+     * `DRIVER_IMPLEMENTED` flag is true, so a run that asks for it gets it
+     * when `AGENT_DRIVER_TOOL_RUNNER` (or the organization's choice, while the
+     * switch is unset) makes the engine available and the tenant chose
+     * TOOL_RUNNER. Today an agent profile's definition is what asks for it.
      */
     driver?: AgentDriver;
 
