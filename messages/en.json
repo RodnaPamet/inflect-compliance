@@ -6896,6 +6896,10 @@
               "label": "SAML SSO enrichment",
               "description": "Read inbound SAML assignments so the SSO check reflects real coverage (default on; needs the cloud-identity.inboundsso.readonly scope)."
             },
+            "enrichOrgUnits": {
+              "label": "Org-unit SSO resolution",
+              "description": "Resolve which org units a SAML assignment covers, so the SSO check can pass for a tenant that enforces SAML through its top-level org unit and can name the accounts a partial rollout leaves out. OFF by default, because it needs ONE MORE scope authorised in your Admin console for this service account: https://www.googleapis.com/auth/admin.directory.orgunit.readonly. It is requested in a token exchange of its own, so leaving it unauthorised costs only this enrichment and never the directory sync. Without it, a SAML assignment scoped to an org unit reads as unknown rather than as coverage."
+            },
             "serviceAccountJson": {
               "label": "Service-account JSON",
               "description": "A domain-wide-delegated service-account key (JSON) — paste the whole file."

@@ -71,6 +71,10 @@ describe('GoogleWorkspaceProvider — descriptor', () => {
             'maxAdmins',
             'dormantDays',
             'enrichSso',
+            // #5571 — opt-in, and OFF by default, because resolving an
+            // assignment's org unit needs one more scope authorised in the
+            // customer's own Admin console.
+            'enrichOrgUnits',
         ]);
         expect(p.configSchema.secretFields[0].key).toBe('serviceAccountJson');
     });
