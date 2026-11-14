@@ -6,6 +6,12 @@
  * that were going out: `recipientOverrides` (email addresses), `remoteData`
  * (remote issue bodies) and the four `data: Record<string, unknown>` fields
  * carrying entity titles.
+ *
+ * Every case asserts the EXACT returned object rather than the absence of a
+ * substring. That is stronger — it proves nothing else leaked either, which a
+ * `not.toContain` per string cannot — and it keeps these assertions out of the
+ * assertion-reach ratchet's un-analysable bucket, where a
+ * stringify-and-search lands.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -15,7 +21,7 @@ import {
     jobPayloadLogFields,
 } from '@/lib/observability/job-payload-log';
 import { repoFiles } from '../../helpers/repo-files';
-import { codeOf } from '../../helpers/source-blocks';
+import { allCallExpressionsOf, callExpressionOf, codeOf } from '../../helpers/source-blocks';
 
 describe('jobPayloadLogFields', () => {
     it('carries the allowlisted correlation ids', () => {
@@ -32,69 +38,69 @@ describe('jobPayloadLogFields', () => {
     });
 
     it('drops the email addresses a compliance digest carries', () => {
-        const out = jobPayloadLogFields({
+        expect(jobPayloadLogFields({
             tenantId: 't_1',
             recipientOverrides: ['ciso@customer.example', 'dpo@customer.example'],
+        })).toEqual({
+            // The KEY survives, so an operator still sees the job had
+            // overrides — without whose addresses.
+            payloadKeys: ['recipientOverrides', 'tenantId'],
+            tenantId: 't_1',
         });
-        expect(out.recipientOverrides).toBeUndefined();
-        expect(JSON.stringify(out)).not.toContain('customer.example');
-        // The KEY still appears, so an operator can see the job had overrides.
-        expect(out.payloadKeys).toEqual(['recipientOverrides', 'tenantId']);
     });
 
     it('drops remoteData, which holds a remote issue body', () => {
-        const out = jobPayloadLogFields({
+        expect(jobPayloadLogFields({
             tenantId: 't_1',
             mappingKey: 'jira:PROJ-1',
             remoteData: { summary: 'Customer X breach postmortem', description: 'long body' },
+        })).toEqual({
+            payloadKeys: ['mappingKey', 'remoteData', 'tenantId'],
+            tenantId: 't_1',
         });
-        expect(JSON.stringify(out)).not.toContain('breach postmortem');
-        expect(JSON.stringify(out)).not.toContain('long body');
-        expect(out.payloadKeys).toEqual(['mappingKey', 'remoteData', 'tenantId']);
     });
 
     it('drops the automation event data that holds entity titles', () => {
-        const out = jobPayloadLogFields({
+        expect(jobPayloadLogFields({
             tenantId: 't_1',
             data: { entityTitle: 'Q3 Access Review Policy', ownerEmail: 'a@b.example' },
-        });
-        expect(JSON.stringify(out)).not.toContain('Q3 Access Review Policy');
-        expect(JSON.stringify(out)).not.toContain('a@b.example');
+        })).toEqual({ payloadKeys: ['data', 'tenantId'], tenantId: 't_1' });
     });
 
     it('drops the directory identifiers the root-level redaction could not reach', () => {
-        // The fields logger.ts redacts by name — which did nothing here,
-        // because they arrived nested inside `payload`.
-        const out = jobPayloadLogFields({
+        // The four fields logger.ts redacts BY NAME, which did nothing here:
+        // they arrived nested inside `payload`, and pino matches a bare key at
+        // the root level only.
+        expect(jobPayloadLogFields({
             tenantId: 't_1',
             userPrincipalName: 'jo.smith@corp.example',
             distinguishedName: 'CN=Jo Smith,OU=Staff,DC=corp',
             sAMAccountName: 'jsmith',
             externalUserId: '00u1a2b3c4',
+        })).toEqual({
+            payloadKeys: [
+                'distinguishedName', 'externalUserId', 'sAMAccountName',
+                'tenantId', 'userPrincipalName',
+            ],
+            tenantId: 't_1',
         });
-        expect(JSON.stringify(out)).not.toContain('jo.smith@corp.example');
-        expect(JSON.stringify(out)).not.toContain('CN=Jo Smith');
-        expect(JSON.stringify(out)).not.toContain('jsmith');
-        expect(JSON.stringify(out)).not.toContain('00u1a2b3c4');
     });
 
     it('carries NOTHING but payloadKeys for a payload of pure content', () => {
         // The shape that proves the default is deny: no allowlisted key means
         // no value at all, however much is in there.
-        const out = jobPayloadLogFields({ message: 'free text', body: 'more' });
-        expect(out).toEqual({ payloadKeys: ['body', 'message'] });
+        expect(jobPayloadLogFields({ message: 'free text', body: 'more' }))
+            .toEqual({ payloadKeys: ['body', 'message'] });
     });
 
     it('refuses a non-string value under an allowlisted key', () => {
         // The allowlist bounds the KEY; this bounds the SHAPE. A `tenantId`
-        // that arrives as an object would otherwise carry whatever is inside.
-        const out = jobPayloadLogFields({
+        // that arrives as an object would otherwise carry what is inside it.
+        expect(jobPayloadLogFields({
             tenantId: { id: 't_1', secret: 'leaked' },
             connectionId: ['c_1'],
             provider: 42,
-        });
-        expect(out).toEqual({ payloadKeys: ['connectionId', 'provider', 'tenantId'] });
-        expect(JSON.stringify(out)).not.toContain('leaked');
+        })).toEqual({ payloadKeys: ['connectionId', 'provider', 'tenantId'] });
     });
 
     it('omits an allowlisted key that is absent or empty rather than logging undefined', () => {
@@ -115,30 +121,33 @@ describe('jobPayloadLogFields', () => {
     it('every allowlisted key is an identifier, not content', () => {
         // A guard on the LIST rather than the function: the next key added
         // here is the next thing that reaches centralised logs, and a word
-        // like `message` or `title` passing this review is the regression.
+        // like `message` or `title` passing review is the regression.
+        //
+        // One equality over the whole list rather than two matchers per key,
+        // so a failure names which key broke the rule.
         const contentish = /title|body|message|subject|note|comment|recipient|email|name|data|text|reason|detail/i;
-        for (const key of LOGGABLE_PAYLOAD_KEYS) {
-            expect(key).not.toMatch(contentish);
-            expect(key).toMatch(/Id$|^provider$/);
-        }
+        expect(LOGGABLE_PAYLOAD_KEYS.filter((k) => contentish.test(k))).toEqual([]);
+        expect(LOGGABLE_PAYLOAD_KEYS.filter((k) => !/Id$|^provider$/.test(k))).toEqual([]);
     });
 });
 
 // ─── The wiring, and the class (#5635) ─────────────────────────────────
 //
 // A correct helper nobody calls fixes nothing, and line 280 of worker.ts was
-// the only site only until the next one. These are the two assertions that
-// make the fix hold: the worker uses it, and nothing anywhere logs a whole
-// payload again.
+// the only site only until the next one.
 describe('no log line carries a whole job payload', () => {
     const ROOT = path.resolve(__dirname, '../../..');
     const read = (rel: string) => codeOf(readFileSync(path.join(ROOT, rel), 'utf-8'));
 
     it('the worker reduces the payload before logging it', () => {
+        // BOUND to the call rather than matched against a 400-line read: a
+        // needle over the whole file can be satisfied by any `log.info` in it.
+        // `callExpressionOf` returns the FIRST call and its own docblock calls
+        // that "a trap when it gains a second", so the count is asserted too
+        // and the citation cannot drift onto a different call.
         const src = read('scripts/worker.ts');
-        expect(src).toMatch(/jobPayloadLogFields\(payload\)/);
-        // And the shape it replaced, asserted as an absence so a revert is red.
-        expect(src).not.toMatch(/log\.info\(\{\s*jobName,\s*jobId: job\.id,\s*payload\s*\}/);
+        expect(allCallExpressionsOf(src, 'jobPayloadLogFields')).toHaveLength(1);
+        expect(callExpressionOf(src, 'jobPayloadLogFields').includes('payload')).toBe(true);
     });
 
     it('no file under src/ or scripts/ logs a bare payload or job.data', () => {
@@ -148,15 +157,11 @@ describe('no log line carries a whole job payload', () => {
             ...repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] }),
             ...repoFiles({ under: 'scripts', extensions: ['.ts', '.mjs', '.js'] }),
         ].filter((abs) => {
-            // The SANCTIONED wrapper is removed before looking, so the guard
-            // does not match the fix it exists to protect — `...jobPayloadLogFields(payload)`
-            // contains a bare `payload` and tripped this on the first run.
-            // Anything else naming the payload in a log object is a finding.
+            // The SANCTIONED wrapper is removed before looking, so this does
+            // not match the fix it protects — `...jobPayloadLogFields(payload)`
+            // contains a bare `payload` and tripped it on the first run.
             const code = codeOf(readFileSync(abs, 'utf-8'))
                 .replace(/jobPayloadLogFields\([^)]*\)/g, 'REDUCED_PAYLOAD');
-            // A log call whose object argument mentions `payload` or
-            // `job.data` as a bare property or a spread — the shape that
-            // shipped the lot.
             return /log(?:ger)?\.(?:info|debug|warn|error|fatal)\(\s*\{[^}]*(?:\bpayload\b|\bjob\.data\b)/.test(code)
                 || /log(?:ger)?\.(?:info|debug|warn|error|fatal)\(\s*\{[^}]*\.\.\.(?:payload|job\.data)\b/.test(code);
         }).map((abs) => path.relative(ROOT, abs).replace(/\\/g, '/')).sort();
