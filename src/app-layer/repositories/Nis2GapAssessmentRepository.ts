@@ -131,10 +131,15 @@ export class Nis2GapAssessmentRepository {
      * Mark an assessment COMPLETED. Partial completion is valid — the
      * caller may complete with unanswered questions. `updateMany` carries
      * the explicit `tenantId` guard (defence in depth on top of RLS).
+     *
+     * A run already COMPLETED or ARCHIVED is left as it is (#5305): marking
+     * it again moved its `completedAt` to now, and with it the run's place in
+     * the trend and the history. The predicate is in the write, so a second
+     * finalize racing the first changes nothing either.
      */
     static async markAssessmentCompleted(db: PrismaTx, ctx: RequestContext, id: string) {
         await db.nis2SelfAssessment.updateMany({
-            where: { id, tenantId: ctx.tenantId },
+            where: { id, tenantId: ctx.tenantId, status: { notIn: ['COMPLETED', 'ARCHIVED'] } },
             data: { status: 'COMPLETED', completedAt: new Date() },
         });
         return db.nis2SelfAssessment.findFirst({ where: { id, tenantId: ctx.tenantId } });

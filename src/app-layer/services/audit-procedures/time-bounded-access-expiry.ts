@@ -110,12 +110,27 @@ export const timeBoundedAccessExpiry: ProcedureModule = {
                 });
                 // T4 asks only whether a GRANT_EXPIRY task names the row. The
                 // copies of the end date in its metadata are never read.
+                //
+                // The read is narrowed to the SAMPLED rows' ids (#5305). It
+                // read every GRANT_EXPIRY task up to POPULATION_CAP in no
+                // order, so a tenant past the cap could miss the task that
+                // names a sampled row, and T4 then recorded a false
+                // OUTLIVED_GRANT_NOT_TASKED — a finding that no follow-up was
+                // raised when one was. The sample is small, so one
+                // JSON-path equality per raised row is a bounded OR.
                 const raised = journal.filter((r) => r.expiryRaisedAt !== null).map((r) => r.id);
                 const tasks =
                     raised.length === 0
                         ? []
                         : await db.task.findMany({
-                              where: { tenantId, source: 'GRANT_EXPIRY', deletedAt: null },
+                              where: {
+                                  tenantId,
+                                  source: 'GRANT_EXPIRY',
+                                  deletedAt: null,
+                                  OR: raised.map((id) => ({
+                                      metadataJson: { path: ['externalWriteJournalId'], equals: id },
+                                  })),
+                              },
                               select: { metadataJson: true },
                               take: POPULATION_CAP,
                           });

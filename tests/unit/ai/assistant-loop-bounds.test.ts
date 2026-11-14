@@ -172,6 +172,7 @@ describe('each bound halts the loop AND reports halting', () => {
             'halted-iterations',
             'halted-tool-calls',
             'halted-wall-clock',
+            'halted-output-limit',
             'halted-provider-unavailable',
         ] as const;
         for (const o of outcomes) {
@@ -258,6 +259,90 @@ describe('fail closed, and never manufacture a signal', () => {
         expect(r.text).toMatch(/may be incomplete/);
         // The partial body is kept, not discarded — the notice is appended.
         expect(r.text).toMatch(/You have 3 open f/);
+    });
+
+    it('a cut reply is reported as the output limit, not as the iteration cap (#5305)', async () => {
+        // One round trip, cut at max_tokens. It used to read "I stopped after
+        // 3 reasoning steps" and record `halted-iterations`, misattributing an
+        // output truncation to a cap the turn never reached.
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([{ text: 'You have 3 open f', toolCalls: [], stopReason: 'max_tokens' }]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings')],
+            bounds: BOUNDS,
+            now: () => 0,
+        });
+
+        expect(r.iterations).toBe(1);
+        expect(r.outcome).toBe('halted-output-limit');
+        expect(r.text).not.toMatch(/reasoning steps/);
+        expect(r.text).toMatch(/length limit/);
+    });
+});
+
+describe('the wall-clock bound holds DURING a call, not only between steps (#5305)', () => {
+    /** Never settles on its own; rejects only when its signal aborts. */
+    const untilAborted = (signal?: AbortSignal): Promise<never> =>
+        new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        });
+
+    it('a model call that outlives the budget is aborted and reported as the wall-clock halt', async () => {
+        const r = await runAssistantLoop({
+            provider: { complete: (req) => untilAborted(req.signal) },
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [tool('list_findings')],
+            bounds: { ...BOUNDS, wallClockMs: 30 },
+        });
+
+        // Not `halted-provider-unavailable`: the model did not fail, the turn ran out of time.
+        expect(r.outcome).toBe('halted-wall-clock');
+        expect(r.text).toMatch(/may be incomplete/);
+    });
+
+    it('a tool call that outlives the budget is aborted and the turn stops there', async () => {
+        let calls = 0;
+        const r = await runAssistantLoop({
+            provider: scriptedProvider([wantsTool('c', 'slow')]),
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [
+                {
+                    ...tool('slow'),
+                    run: (_args: unknown, signal?: AbortSignal) => {
+                        calls += 1;
+                        return untilAborted(signal);
+                    },
+                },
+            ],
+            bounds: { ...BOUNDS, wallClockMs: 30, iterations: 999, toolCalls: 999 },
+        });
+
+        expect(r.outcome).toBe('halted-wall-clock');
+        expect(calls).toBe(1);
+        expect(r.calls).toEqual([expect.objectContaining({ name: 'slow', ok: false })]);
+    });
+
+    it('the caller\'s own signal still aborts a call', async () => {
+        const controller = new AbortController();
+        const pending = runAssistantLoop({
+            provider: { complete: (req) => untilAborted(req.signal) },
+            specifier: 'spec',
+            system: 'sys',
+            question: 'q',
+            tools: [],
+            bounds: { ...BOUNDS, wallClockMs: 60_000 },
+            signal: controller.signal,
+        });
+        controller.abort();
+        const r = await pending;
+        // A disconnect is not the turn's budget running out.
+        expect(r.outcome).toBe('halted-provider-unavailable');
     });
 });
 

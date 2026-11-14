@@ -162,13 +162,15 @@ describe('NOTIFY_USER', () => {
         expect(db.notification.createMany).not.toHaveBeenCalled();
     });
 
-    it('filters recipients to members of the firing tenant', async () => {
+    it('filters recipients to ACTIVE members of the firing tenant', async () => {
         db.tenantMembership.findMany.mockResolvedValue([{ userId: 'u-1' }]);
 
         const res = await notify({ userIds: ['u-1', 'foreign-1'] });
 
+        // ACTIVE only (#5305): a DEACTIVATED or INVITED member is not told the
+        // rule's message, which is business content.
         expect(db.tenantMembership.findMany).toHaveBeenCalledWith({
-            where: { tenantId: 't-1', userId: { in: ['u-1', 'foreign-1'] } },
+            where: { tenantId: 't-1', userId: { in: ['u-1', 'foreign-1'] }, status: 'ACTIVE' },
             select: { userId: true },
         });
         // Only the real member is written — a foreign id can neither be

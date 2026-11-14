@@ -314,17 +314,25 @@ export async function buildFileExposureReport(opts: {
     }
 
     // ─── 2. Every egress recorded against any of them ───
+    //
+    // NEWEST first, then put back in time order (#5305). Read oldest-first,
+    // a file distributed more than the cap kept its oldest rows — whose
+    // signed URLs expired long ago — and dropped exactly the recent ones
+    // whose URLs still work, so the report said `liveSignedUrls: 0` for the
+    // part an incident responder must act on now. When the cap bites
+    // (`exhaustive: false`) it is the OLDEST distributions that are left
+    // out, and `firstDistributedAt` is the earliest one read.
     const rows = await client.auditLog.findMany({
         where: {
             tenantId: opts.tenantId,
             action: FILE_DISTRIBUTED_ACTION,
             entityId: { in: [...ids] },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: EXPOSURE_ROW_CAP + 1,
     });
     if (rows.length > EXPOSURE_ROW_CAP) exhaustive = false;
-    const ledger = rows.slice(0, EXPOSURE_ROW_CAP);
+    const ledger = rows.slice(0, EXPOSURE_ROW_CAP).reverse();
 
     // ─── 3. Fold ───
     const byChannel: Record<string, number> = {};

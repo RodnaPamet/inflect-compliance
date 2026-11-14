@@ -225,6 +225,15 @@ function toPathEdge(edge: ResolvedMappingEdge, depth: number): MappingPathEdge {
  * Once a requirement is expanded, it is never expanded again (even if reached
  * via a different path). This ensures termination and avoids exponential blowup.
  *
+ * Strongest shortest path: a requirement reached a second time AT THE SAME
+ * DEPTH by a stronger path replaces the path recorded for it (#5305). BFS
+ * finds every path of length d+1 while it expands depth d, before any node of
+ * depth d+1 is expanded, so the replacement also reaches everything below it.
+ * Keeping the first path instead made the result depend on edge order: S
+ * RELATED→ X EQUAL→ T beat S EQUAL→ Y EQUAL→ T whenever the loader returned
+ * S→X first, and the gap report showed T as REVIEW_NEEDED, not COVERED. A
+ * LONGER path is never preferred, whatever its strength: depth ranks first.
+ *
  * @param query - The traceability query
  * @param loadEdges - Function to load outgoing edges for a requirement
  * @returns Complete trace result with all discovered paths
@@ -264,6 +273,13 @@ export async function resolveMapping(
 
     const allPaths: MappingPath[] = [];
 
+    /**
+     * The path recorded for each requirement reached, so a stronger path of the
+     * SAME depth found later can replace it: the queue entry (not yet expanded,
+     * by BFS order) and the reported path (when it matched the framework filter).
+     */
+    const reached = new Map<string, { depth: number; rank: number; entry: QueueEntry; pathIndex: number | null }>();
+
     // Source info — will be populated from the first edge that references the source
     let sourceInfo: MappingTraceResult['source'] | null = null;
 
@@ -291,15 +307,31 @@ export async function resolveMapping(
                 };
             }
 
-            // Skip if already visited (cycle detection)
-            if (visited.has(targetReqId)) continue;
-
             const pathEdge = toPathEdge(edge, current.depth + 1);
             const newPath = [...current.pathEdges, pathEdge];
 
             // Compute effective strength for the full path
             const effectiveStrength = computeEffectiveStrength(newPath);
             const effectiveRank = MAPPING_STRENGTH_RANK[effectiveStrength];
+
+            // Already reached (cycle detection) — unless by a weaker path of
+            // the same depth, which this stronger one replaces (#5305).
+            if (visited.has(targetReqId)) {
+                const prior = reached.get(targetReqId);
+                if (prior && prior.depth === current.depth + 1 && effectiveRank > prior.rank) {
+                    prior.rank = effectiveRank;
+                    prior.entry.pathEdges = newPath;
+                    if (prior.pathIndex !== null) {
+                        allPaths[prior.pathIndex] = {
+                            ...allPaths[prior.pathIndex],
+                            edges: newPath,
+                            effectiveStrength,
+                            effectiveStrengthRank: effectiveRank,
+                        };
+                    }
+                }
+                continue;
+            }
 
             // Apply minimum strength filter
             if (effectiveRank < minStrengthRank) continue;
@@ -324,18 +356,23 @@ export async function resolveMapping(
             const matchesFramework = !targetFrameworkKeys ||
                 targetFrameworkKeys.includes(edge.target.frameworkKey);
 
-            if (matchesFramework) {
-                allPaths.push(mappingPath);
-            }
+            const pathIndex = matchesFramework ? allPaths.push(mappingPath) - 1 : null;
 
             // Mark as visited and enqueue for further expansion
             // (even if filtered out by framework — it might lead to valid targets)
             visited.add(targetReqId);
-            queue.push({
+            const entry: QueueEntry = {
                 requirementId: targetReqId,
                 pathEdges: newPath,
                 depth: current.depth + 1,
+            };
+            reached.set(targetReqId, {
+                depth: entry.depth,
+                rank: effectiveRank,
+                entry,
+                pathIndex,
             });
+            queue.push(entry);
         }
     }
 

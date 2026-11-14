@@ -232,10 +232,13 @@ async function notifyUser(db: Db, rule: ExecutableRule, event: ActionEvent): Pro
     if (!(await isNotificationsEnabled(db as never, event.tenantId))) {
         return { ok: true, summary: 'Notifications disabled for tenant', detail: { notified: 0 } };
     }
-    // Only notify actual members of the firing tenant — drops stale/foreign ids
-    // (tenant-isolation safety + avoids a dangling-FK insert).
+    // Only notify ACTIVE members of the firing tenant — drops stale/foreign ids
+    // (tenant-isolation safety + avoids a dangling-FK insert), and a member an
+    // admin has since deactivated or who has not yet joined (#5305): the bell
+    // row carries the rule's name and message, which is business content.
+    // The SLA sweep's breach recipients are filtered the same way.
     const members = await db.tenantMembership.findMany({
-        where: { tenantId: event.tenantId, userId: { in: requested } },
+        where: { tenantId: event.tenantId, userId: { in: requested }, status: 'ACTIVE' },
         select: { userId: true },
     });
     const userIds = members.map((m: { userId: string }) => m.userId);
@@ -608,11 +611,17 @@ async function fireWebhook(rule: ExecutableRule, event: ActionEvent): Promise<Ac
  *
  * ── RECURSION ──────────────────────────────────────────────────────────────
  *
- * Carried exactly as `invokeSubflow` carries it, and for the reason that
- * comment gives: a rule whose agent run re-fires the same rule recursed without
- * bound before the sub-flow dispatcher was capped. `__agentInvokeDepth` is
- * stamped on the data handed forward, so an agent run that triggers a rule that
- * invokes an agent is depth 2, and the dispatcher refuses above the cap.
+ * The depth is READ from `__agentInvokeDepth` on the event and enqueued one
+ * higher, and the dispatcher refuses above `MAX_AGENT_INVOKE_DEPTH`. But NOTHING
+ * STAMPS `__agentInvokeDepth` today (#5305): unlike `__subflowDepth`, which the
+ * sub-flow dispatcher writes onto the data it hands forward, an agent run does
+ * not record its depth, and the automation events its effects cause carry
+ * none. So every invoke is enqueued at depth 1 and the cap bounds only what a
+ * payload itself carries. An agent ↔ rule cycle is bounded today only by each
+ * lap needing an automation event that a usecase the run's effects reach
+ * emits, not by this counter.
+ * Making the cap real means recording the depth on the `WorkflowRun` and
+ * stamping it on the events that run causes.
  */
 async function invokeAgent(rule: ExecutableRule, event: ActionEvent): Promise<ActionResult> {
     const cfg = rule.actionConfigJson as {

@@ -397,6 +397,53 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             expect(again.findings).toBe(1);
         });
 
+        it('a re-run links only the findings of exceptions it still finds (#5305)', async () => {
+            const f = await seedTenant('leaver-relink');
+            const conn = await identityConnection(f.tenantId, 'okta');
+            const leaver = async (name: string, endDate: Date | null) => {
+                const emp = await prisma.employee.create({
+                    data: { tenantId: f.tenantId, fullName: name, workEmail: `${next()}@relink.example.test`, status: 'TERMINATED', endDate },
+                });
+                await account(f.tenantId, conn, 'okta', { status: 'ACTIVE', email: emp.workEmail });
+                return emp;
+            };
+            // A is undated (a population-level exception), B is dated (the one
+            // sampled unit), so both are exceptions on the first run.
+            const a = await leaver('Leaver A', null);
+            const b = await leaver('Leaver B', at('2026-08-12T00:00:00Z'));
+
+            const planId = await seedPlan(f, config);
+            const first = await run(f, planId);
+            const firstEx = exceptionsOf(first.workpapers[0]);
+            expect(firstEx.map((e) => e.unitId).sort()).toEqual([a.id, b.id].sort());
+
+            // People accept both proposals as findings.
+            const findingFor = new Map<string, string>();
+            for (const e of firstEx) {
+                const finding = await prisma.finding.create({
+                    data: { tenantId: f.tenantId, title: `from ${e.unitId}`, description: 'accepted', severity: 'MEDIUM', type: 'NONCONFORMITY', status: 'OPEN' },
+                });
+                await prisma.agentProposal.update({
+                    where: { id: e.proposalId as string },
+                    data: { status: 'ACCEPTED', createdEntityId: finding.id, reviewedAt: NOW(), reviewedByUserId: U_SECOND },
+                });
+                findingFor.set(e.unitId as string, finding.id);
+            }
+
+            // A is no longer a leaver; B still is.
+            await prisma.employee.update({ where: { id: a.id }, data: { status: 'ACTIVE' } });
+            const again = await run(f, planId);
+            const againEx = exceptionsOf(again.workpapers[0]);
+            expect(againEx.map((e) => e.unitId)).toEqual([b.id]);
+
+            const linked = await prisma.auditWorkpaperFinding.findMany({
+                where: { tenantId: f.tenantId, workpaperId: again.workpapers[0].id },
+                select: { findingId: true },
+            });
+            // B's finding only: this workpaper's exceptions no longer include A.
+            expect(linked.map((l) => l.findingId)).toEqual([findingFor.get(b.id)]);
+        });
+
         it('is INCONCLUSIVE on an empty population, and does not stamp lastTested', async () => {
             const f = await seedTenant('leaver-empty');
             const planId = await seedPlan(f, config);
@@ -945,6 +992,38 @@ describeFn('library v1 audit procedures, run as the registered auditor agent', (
             );
             expect(r.proposals).toHaveLength(3);
             expect(r.findings).toBe(0);
+        });
+
+        it('finds the task that names a sampled outlived grant past the read cap (#5305)', async () => {
+            // More GRANT_EXPIRY tasks than the old unordered read took, every
+            // one written before the task that names the sampled row. The
+            // capped read returned the first 5000 and missed it, so T4 said
+            // no follow-up was raised when one was.
+            const f = await seedTenant('expiry-many-tasks');
+            const outlived = await grant(f.tenantId, { attemptedAt: at('2026-07-25T00:00:00Z'), end: '2026-08-20T00:00:00Z', raised: at('2026-08-22T00:00:00Z') });
+            await prisma.task.createMany({
+                data: Array.from({ length: 5_001 }, (_, i) => ({
+                    tenantId: f.tenantId,
+                    title: `older follow-up ${i}`,
+                    createdByUserId: U_SECOND,
+                    source: 'GRANT_EXPIRY' as const,
+                    metadataJson: { externalWriteJournalId: `other-journal-${i}` },
+                })),
+            });
+            await prisma.task.create({
+                data: {
+                    tenantId: f.tenantId,
+                    title: 'grant follow-up',
+                    createdByUserId: U_SECOND,
+                    source: 'GRANT_EXPIRY',
+                    metadataJson: { externalWriteJournalId: outlived.id },
+                },
+            });
+
+            const r = await run(f, await seedPlan(f, config));
+            const codes = exceptionsOf(r.workpapers[0]).map((e) => e.code);
+            expect(codes).toContain('GRANT_OUTLIVED_WINDOW');
+            expect(codes).not.toContain('OUTLIVED_GRANT_NOT_TASKED');
         });
 
         it('is INCONCLUSIVE when no time-bounded grant ended in the period', async () => {

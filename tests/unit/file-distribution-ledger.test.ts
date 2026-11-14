@@ -230,6 +230,46 @@ describe('buildFileExposureReport', () => {
         expect(report.exhaustive).toBe(false);
         expect(report.totalDistributions).toBe(500);
     });
+
+    it('past the cap keeps the NEWEST rows, so a still-live signed URL is counted (#5305)', async () => {
+        // 501 downloads: 500 an hour ago (their URLs long expired) and the
+        // latest a minute ago, whose URL still works. The ledger client
+        // honours `orderBy` and `take` as the database does.
+        const old = Array.from({ length: 500 }, (_, i) =>
+            ledgerRow({
+                createdAt: new Date(Date.parse('2026-08-21T10:00:00.000Z') + i * 1000),
+                detailsJson: { ...ledgerRow().detailsJson, signedUrlExpiresAt: '2026-08-21T10:15:00.000Z' },
+            }),
+        );
+        const recent = ledgerRow({
+            createdAt: new Date('2026-08-21T11:59:00.000Z'),
+            detailsJson: { ...ledgerRow().detailsJson, signedUrlExpiresAt: '2026-08-21T12:04:00.000Z' },
+        });
+        const all = [...old, recent];
+        const ordered = {
+            fileRecord: { findMany: jest.fn(async () => [{ id: 'file-1' }]) },
+            auditLog: {
+                findMany: jest.fn(async (args: any) => {
+                    const first = Array.isArray(args.orderBy) ? args.orderBy[0] : args.orderBy;
+                    const dir = first?.createdAt === 'desc' ? -1 : 1;
+                    return [...all]
+                        .sort((a, b) => dir * (a.createdAt.getTime() - b.createdAt.getTime()))
+                        .slice(0, args.take);
+                }),
+            },
+        } as any;
+
+        const report = await buildFileExposureReport({
+            tenantId: 't1', fileRecordId: 'file-1', sha256: HASH, now: NOW, client: ordered,
+        });
+
+        expect(report.exhaustive).toBe(false);
+        expect(report.liveSignedUrls).toBe(1);
+        expect(report.signedUrlExposureEndsAt).toBe('2026-08-21T12:04:00.000Z');
+        expect(report.lastDistributedAt).toBe('2026-08-21T11:59:00.000Z');
+        // Still reported in time order.
+        expect(Date.parse(report.firstDistributedAt as string)).toBeLessThan(Date.parse(report.lastDistributedAt as string));
+    });
 });
 
 describe('assessExposureOnInfection', () => {

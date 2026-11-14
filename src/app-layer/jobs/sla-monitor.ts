@@ -116,7 +116,10 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
             const deadline = startedAtMs + windowMin * 60_000;
             if (now.getTime() < deadline) continue; // not breached yet
 
-            await AutomationExecutionRepository.recordCompletion(db, ctx, exec.id, {
+            // Settled only if it is STILL running (#5305): a dispatcher that
+            // committed SUCCEEDED after the read above has finished the action,
+            // and neither a breach row nor a breach notification is true of it.
+            const settled = await AutomationExecutionRepository.recordCompletionIfRunning(db, ctx, exec.id, {
                 status: 'FAILED',
                 outcome: {
                     slaBreached: true,
@@ -126,6 +129,7 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 },
                 errorMessage: `SLA window of ${windowMin}m breached`,
             });
+            if (!settled) continue;
 
             await logEvent(db, ctx, {
                 action: 'AUTOMATION_SLA_BREACHED',

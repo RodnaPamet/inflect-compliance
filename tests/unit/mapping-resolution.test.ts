@@ -412,6 +412,55 @@ describe('Mapping Resolution Engine', () => {
         });
     });
 
+    describe('Strongest shortest path (#5305)', () => {
+        // S ──RELATED──▶ X ──EQUAL──▶ T
+        // S ──EQUAL────▶ Y ──EQUAL──▶ T    (and T ──EQUAL──▶ U below it)
+        const node = (id: string, fw = 'F') => ({ reqId: `req-${id}`, code: id, title: id, fwKey: fw, fwName: fw });
+        const S = node('S', 'SRC');
+        const X = node('X', 'MID');
+        const Y = node('Y', 'MID');
+        const T = node('T', 'TGT');
+        const U = node('U', 'TGT');
+        const graph = (sFirst: 'X' | 'Y'): MappingEdgeLoader => async (id) => {
+            if (id === 'req-S') {
+                const toX = makeEdge('sx', S, X, 'RELATED');
+                const toY = makeEdge('sy', S, Y, 'EQUAL');
+                return sFirst === 'X' ? [toX, toY] : [toY, toX];
+            }
+            if (id === 'req-X') return [makeEdge('xt', X, T, 'EQUAL')];
+            if (id === 'req-Y') return [makeEdge('yt', Y, T, 'EQUAL')];
+            if (id === 'req-T') return [makeEdge('tu', T, U, 'EQUAL')];
+            return [];
+        };
+        const pathTo = (r: Awaited<ReturnType<typeof resolveMapping>>, code: string) =>
+            r.paths.find((p) => p.target.requirementCode === code);
+
+        it.each(['X', 'Y'] as const)(
+            'reaches T at EQUAL whichever edge the loader returns first (S→%s first)',
+            async (first) => {
+                const r = await resolveMapping({ sourceRequirementId: 'req-S', maxDepth: 3 }, graph(first));
+                const t = pathTo(r, 'T');
+                expect(t?.effectiveStrength).toBe('EQUAL');
+                expect(t?.edges.map((e) => e.id)).toEqual(['sy', 'yt']);
+                // Everything below T inherits the stronger route too.
+                expect(pathTo(r, 'U')?.effectiveStrength).toBe('EQUAL');
+                // One path per target, as before.
+                expect(r.paths.filter((p) => p.target.requirementCode === 'T')).toHaveLength(1);
+            },
+        );
+
+        it('the reported target framework filter still applies to the replaced path', async () => {
+            const r = await resolveMapping(
+                { sourceRequirementId: 'req-S', maxDepth: 3, targetFrameworkKeys: ['TGT'] },
+                graph('X'),
+            );
+            expect(r.paths.map((p) => [p.target.requirementCode, p.effectiveStrength])).toEqual([
+                ['T', 'EQUAL'],
+                ['U', 'EQUAL'],
+            ]);
+        });
+    });
+
     // ─── Target Framework Filtering ──────────────────────────────
     describe('Target framework filtering', () => {
         it('filters results to specific target framework', async () => {

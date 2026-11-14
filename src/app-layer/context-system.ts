@@ -568,9 +568,10 @@ export async function borrowedJobActor(input: {
  * Resolve the context for a job that does what one named member asked for:
  * the initiator of an evidence import, the actor of a SharePoint sync.
  *
- * Returns `null` when that member has no ACTIVE membership in the tenant. That
- * is a REFUSAL, exactly as for `resolveMemberContext`: the caller stops, and
- * never falls back to a system context.
+ * Returns `null` when that member has no ACTIVE membership in the tenant, or the
+ * tenant is soft-deleted. That is a REFUSAL, exactly as for
+ * `resolveMemberContext`: the caller stops, and never falls back to a system
+ * context.
  *
  * Differs from `resolveMemberContext` only in what these jobs always carried:
  * the caller's own `requestId`, and no `tenantSlug`.
@@ -581,7 +582,17 @@ export async function resolveInitiatorContext(input: {
     requestId: string;
 }): Promise<RequestContext | null> {
     const membership = await prisma.tenantMembership.findFirst({
-        where: { userId: input.userId, tenantId: input.tenantId, status: 'ACTIVE' },
+        // A soft-deleted tenant refuses too (#5305). Its memberships are left
+        // in place by the delete, so without this a job a member queued from
+        // a session before the delete wrote into a tenant that is meant to be
+        // inaccessible everywhere — while the same job queued with an API key
+        // was refused `tenant_deleted` by `resolveApiKeyForJob`.
+        where: {
+            userId: input.userId,
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            tenant: { deletedAt: null },
+        },
         select: {
             role: true,
             customRole: { select: { baseRole: true, permissionsJson: true } },
