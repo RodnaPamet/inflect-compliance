@@ -63,6 +63,14 @@ export interface TldrawCanvasExportMenuProps {
     mapId?: string;
     /** External disable signal (saving, no active map). */
     disabled?: boolean;
+    /**
+     * The viewer may upload evidence (`evidence.upload`, which the upload
+     * route's usecase asks). Attaching the map to evidence is that upload, so
+     * without it the item is not offered — a read-only viewer otherwise met an
+     * "export failed" toast for a write the page hides everywhere else
+     * (#5309). Absent reads as no.
+     */
+    canAttachEvidence?: boolean;
 }
 
 export function TldrawCanvasExportMenu({
@@ -71,6 +79,7 @@ export function TldrawCanvasExportMenu({
     tenantSlug,
     mapId,
     disabled,
+    canAttachEvidence = false,
 }: TldrawCanvasExportMenuProps) {
     const t = useTranslations('automation.exportMenu');
     const [open, setOpen] = useState(false);
@@ -167,13 +176,15 @@ export function TldrawCanvasExportMenu({
                             >
                                 {t('exportAsPdf')}
                             </Popover.Item>
-                            <Popover.Item
-                                data-testid="tldraw-export-evidence"
-                                onClick={() => void run('evidence')}
-                                disabled={busy}
-                            >
-                                {t('attachToEvidence')}
-                            </Popover.Item>
+                            {canAttachEvidence && (
+                                <Popover.Item
+                                    data-testid="tldraw-export-evidence"
+                                    onClick={() => void run('evidence')}
+                                    disabled={busy}
+                                >
+                                    {t('attachToEvidence')}
+                                </Popover.Item>
+                            )}
                         </>
                     )}
                 </Popover.Menu>

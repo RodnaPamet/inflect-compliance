@@ -14,8 +14,11 @@
  *     `/org/{orgSlug}` (overview, tenant health, drill-downs).
  *
  *   • any **individual child tenant** — the per-tenant workspace at
- *     `/t/{tenantSlug}/dashboard`. The CISO's auto-provisioned AUDITOR
- *     membership unlocks read access there under RLS.
+ *     `/t/{tenantSlug}/dashboard`. An ORG_ADMIN or ORG_OWNER holds an
+ *     auto-provisioned ADMIN membership in every child tenant
+ *     (`org-provisioning.ts`), which is what opens it. An ORG_READER is
+ *     provisioned nothing: a tenant row opens only where they hold a
+ *     membership of their own.
  *
  * Visual semantics:
  *

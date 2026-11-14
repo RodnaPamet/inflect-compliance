@@ -235,6 +235,7 @@ export function ProcessInspector({
     // VR-4 — automation-mode inspector branch (hook stays unconditional).
     const isAutomation = useIsAutomationMode();
     const t = useTranslations("automation.inspector");
+    const tKinds = useTranslations("automation.palette.kinds");
 
     // Sync local mirror when the selected node changes.
     useEffect(() => {
@@ -323,7 +324,7 @@ export function ProcessInspector({
             >
                 {kindMeta && (
                     <span className="text-[10px] uppercase tracking-wide text-content-subtle">
-                        {kindMeta.label}
+                        {tKinds(kindMeta.id)}
                     </span>
                 )}
                 <label className="flex flex-col gap-tight">

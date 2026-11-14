@@ -195,7 +195,7 @@ export function CommandPalette() {
     const entityMeta = useMemo(() => buildEntityMeta(t), [t]);
 
     const [query, setQuery] = useState('');
-    const { loading, results, disabled: searchDisabled } = useEntitySearch(
+    const { loading, results, disabled: searchDisabled, failed: searchFailed } = useEntitySearch(
         query,
         tenantSlug,
     );
@@ -456,7 +456,7 @@ export function CommandPalette() {
                                                 count === 0 && !active && 'opacity-60',
                                             )}
                                         >
-                                            <span className="capitalize">{SEARCH_TYPE_DEFAULTS[kind].category}</span>
+                                            <span>{entityMeta[kind].heading}</span>
                                             <span className="text-[10px] tabular-nums opacity-80">{count}</span>
                                         </button>
                                     );
@@ -480,9 +480,11 @@ export function CommandPalette() {
                                     ? t('searching')
                                     : searchDisabled
                                       ? t('searchSignedOut')
-                                      : activeKinds.size > 0 && results.length > 0
-                                        ? t('noMatchesInCategories')
-                                        : t('noResults')}
+                                      : searchFailed
+                                        ? t('searchFailed')
+                                        : activeKinds.size > 0 && results.length > 0
+                                          ? t('noMatchesInCategories')
+                                          : t('noResults')}
                             </Command.Empty>
 
                             {/* Recents — visible only when the user
@@ -774,6 +776,7 @@ function RecentsGroup({
     ) => void;
 }) {
     const t = useTranslations('commandPalette');
+    const entityMeta = useMemo(() => buildEntityMeta(t), [t]);
     return (
         <Command.Group
             heading={t('groupRecent')}
@@ -812,7 +815,7 @@ function RecentsGroup({
                 >
                     <span className="min-w-0 flex-1 break-words">{item.title}</span>
                     <span className="text-[10px] uppercase tracking-wider text-content-subtle">
-                        {SEARCH_TYPE_DEFAULTS[item.type].category}
+                        {entityMeta[item.type]?.heading ?? SEARCH_TYPE_DEFAULTS[item.type]?.category}
                     </span>
                 </Command.Item>
             ))}

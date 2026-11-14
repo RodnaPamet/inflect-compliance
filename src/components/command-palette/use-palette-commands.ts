@@ -55,6 +55,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 
 import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
@@ -82,6 +83,14 @@ export interface PaletteCommand {
     /** Populated for `Actions`. Closes the palette automatically after invocation. */
     perform?: () => void;
     /**
+     * The command's English name, MATCH-ONLY (#5309). The rendered `label`
+     * is in the reader's language; this keeps every word that found the row
+     * before the labels were translated finding it still, so a Bulgarian
+     * reader typing "risks" is not turned away. In English it equals the
+     * label and adds nothing.
+     */
+    matchLabel?: string;
+    /**
      * MATCH-ONLY vocabulary. Never rendered — `command-palette.tsx` draws
      * `label` and nothing else.
      *
@@ -102,6 +111,7 @@ function tenantPath(slug: string, path: string): string {
 }
 
 export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] {
+    const t = useTranslations('commandPalette.commands');
     const { toggle: toggleTheme } = useTheme();
     // `available` is registered by the launcher on mount, not re-derived from
     // the AI_ASSISTANT_ENABLED flag — that flag is server env and a second
@@ -123,70 +133,80 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:dashboard',
                 group: 'Navigation',
-                label: 'Go to Dashboard',
+                label: t('goToDashboard'),
+                matchLabel: 'Go to Dashboard',
                 icon: LayoutDashboard,
                 href: href('/dashboard'),
             },
             {
                 id: 'nav:controls',
                 group: 'Navigation',
-                label: 'Go to Controls',
+                label: t('goToControls'),
+                matchLabel: 'Go to Controls',
                 icon: ShieldCheck,
                 href: href('/controls'),
             },
             {
                 id: 'nav:risks',
                 group: 'Navigation',
-                label: 'Go to Risks',
+                label: t('goToRisks'),
+                matchLabel: 'Go to Risks',
                 icon: Triangle,
                 href: href('/risks'),
             },
             {
                 id: 'nav:policies',
                 group: 'Navigation',
-                label: 'Go to Policies',
+                label: t('goToPolicies'),
+                matchLabel: 'Go to Policies',
                 icon: FileText,
                 href: href('/policies'),
             },
             {
                 id: 'nav:evidence',
                 group: 'Navigation',
-                label: 'Go to Evidence',
+                label: t('goToEvidence'),
+                matchLabel: 'Go to Evidence',
                 icon: Paperclip,
                 href: href('/evidence'),
             },
             {
                 id: 'nav:tasks',
                 group: 'Navigation',
-                label: 'Go to Tasks',
+                label: t('goToTasks'),
+                matchLabel: 'Go to Tasks',
                 icon: ClipboardList,
                 href: href('/tasks'),
             },
             {
                 id: 'nav:calendar',
                 group: 'Navigation',
-                label: 'Go to Calendar',
+                label: t('goToCalendar'),
+                matchLabel: 'Go to Calendar',
                 icon: CalendarIcon,
                 href: href('/calendar'),
             },
             {
                 id: 'nav:frameworks',
                 group: 'Navigation',
-                label: 'Go to Frameworks',
+                label: t('goToFrameworks'),
+                matchLabel: 'Go to Frameworks',
                 icon: Layers,
                 href: href('/frameworks'),
             },
             {
                 id: 'nav:vendors',
                 group: 'Navigation',
-                label: 'Go to Vendors',
+                label: t('goToVendors'),
+                matchLabel: 'Go to Vendors',
                 icon: Truck,
                 href: href('/vendors'),
             },
             {
                 id: 'nav:reports',
                 group: 'Navigation',
-                label: 'Go to Reports',
+                label: t('goToReports'),
+                matchLabel: 'Go to Reports',
                 icon: Activity,
                 href: href('/reports'),
             },
@@ -233,7 +253,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:agents',
                 group: 'Navigation',
-                label: 'Go to Agent register',
+                label: t('goToAgentRegister'),
+                matchLabel: 'Go to Agent register',
                 icon: Robot,
                 href: href('/agents'),
                 keywords: [
@@ -253,7 +274,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:agent-proposals',
                 group: 'Navigation',
-                label: 'Go to Agent proposals',
+                label: t('goToAgentProposals'),
+                matchLabel: 'Go to Agent proposals',
                 icon: Robot,
                 href: href('/agents/proposals'),
                 keywords: [
@@ -270,7 +292,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:agent-quarantine',
                 group: 'Navigation',
-                label: 'Go to Agent quarantine',
+                label: t('goToAgentQuarantine'),
+                matchLabel: 'Go to Agent quarantine',
                 icon: Robot,
                 href: href('/agents/quarantine'),
                 keywords: [
@@ -314,7 +337,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:agent-suspend',
                 group: 'Navigation',
-                label: 'Suspend an agent',
+                label: t('suspendAgent'),
+                matchLabel: 'Suspend an agent',
                 icon: Robot,
                 href: href('/agents?status=ACTIVE'),
                 keywords: ['pause', 'disable', 'deactivate', 'stop', 'halt'],
@@ -322,7 +346,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:agent-kill-switch',
                 group: 'Navigation',
-                label: 'Kill switch',
+                label: t('killSwitch'),
+                matchLabel: 'Kill switch',
                 icon: Robot,
                 href: href('/agents'),
                 keywords: [
@@ -340,7 +365,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'nav:admin',
                 group: 'Navigation',
-                label: 'Go to Admin',
+                label: t('goToAdmin'),
+                matchLabel: 'Go to Admin',
                 icon: Settings,
                 href: href('/admin'),
             },
@@ -354,7 +380,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                       {
                           id: 'action:open-assistant',
                           group: 'Actions' as const,
-                          label: 'Ask the assistant',
+                          label: t('askAssistant'),
+                          matchLabel: 'Ask the assistant',
                           icon: Sparkles,
                           perform: openAssistant,
                       },
@@ -363,24 +390,26 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             {
                 id: 'action:toggle-theme',
                 group: 'Actions',
-                label: 'Toggle theme',
+                label: t('toggleTheme'),
+                matchLabel: 'Toggle theme',
                 icon: Moon,
                 perform: toggleTheme,
             },
             {
                 id: 'action:sign-out',
                 group: 'Actions',
-                label: 'Sign out',
+                label: t('signOut'),
+                matchLabel: 'Sign out',
                 icon: LogOut,
                 perform: doSignOut,
             },
         ];
-    }, [tenantSlug, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
+    }, [t, tenantSlug, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
 }
 
 /**
- * Case-insensitive substring filter on the command label OR any of its
- * match-only `keywords`. cmdk's own filter is disabled at the palette level
+ * Case-insensitive substring filter on the command label, its English
+ * `matchLabel`, OR any of its match-only `keywords`. cmdk's own filter is disabled at the palette level
  * (`command-palette.tsx` passes `shouldFilter={false}`, because entity search
  * is backend-filtered), so this is not one matcher of two — it is the whole
  * command-matching mechanism, and a word absent from both channels here
@@ -395,6 +424,7 @@ export function filterPaletteCommands(
     return commands.filter(
         (c) =>
             c.label.toLowerCase().includes(q) ||
+            c.matchLabel?.toLowerCase().includes(q) ||
             c.keywords?.some((k) => k.toLowerCase().includes(q)),
     );
 }

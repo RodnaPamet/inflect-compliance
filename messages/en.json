@@ -10590,7 +10590,7 @@
       "openRun": "Open this run",
       "openQueue": "Open the proposals queue",
       "stepLabel": "Queued by step {seq}",
-      "windowCloses": "The run's approval window closes at {at}. A decision taken after it will not resume the run.",
+      "windowCloses": "The run's approval window closes at {at} (UTC). A decision taken after it will not resume the run.",
       "flaggedBlocked": "The output guard flagged this proposal ({rules}), so it is approved in the proposals queue rather than from the map — the rule ids and the run's own record are there.",
       "truncated": "This checkpoint queued more proposals than fit here. Review the rest in the proposals queue."
     },
@@ -15012,7 +15012,9 @@
       "cancel": "Cancel",
       "selectedCount": "{count} selected",
       "importCount": "Import {count}",
-      "select": "Select"
+      "select": "Select",
+      "loadMore": "Load more",
+      "morePages": "This folder has more items than are shown."
     },
     "bia": {
       "protects": "Protects",
@@ -16032,7 +16034,9 @@
       "agentWorkflowPlaceholder": "Choose a workflow",
       "agentInputMappingLabel": "Input mapping",
       "agentInputMappingHint": "One per line, as inputKey: triggerField. Field names only — never free text.",
-      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity"
+      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity",
+      "detailLoading": "Loading this rule…",
+      "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving."
     },
     "autoInspector": {
       "actionNotify": "Notify user",
@@ -16148,7 +16152,22 @@
       "paletteAria": "Process palette",
       "tools": "Tools",
       "dragToAdd": "Drag to add a {label} node",
-      "clickToAdd": "Add a {label} step (click, or drag onto the canvas)"
+      "clickToAdd": "Add a {label} step (click, or drag onto the canvas)",
+      "kinds": {
+        "processStep": "Process step",
+        "decision": "Decision",
+        "control": "Control",
+        "risk": "Risk",
+        "asset": "Asset",
+        "external": "External party",
+        "annotation": "Annotation",
+        "group": "Group",
+        "trigger": "Trigger",
+        "condition": "Condition",
+        "action": "Action",
+        "agent": "Agent",
+        "slaGate": "SLA gate"
+      }
     },
     "canvasBase": {
       "emptyState": "Drag a process step from the palette to begin.",
@@ -16401,7 +16420,29 @@
     "entityTest": "Tests",
     "entityEvidence": "Evidence",
     "entityFramework": "Frameworks",
-    "entityAsset": "Assets"
+    "entityAsset": "Assets",
+    "commands": {
+      "goToDashboard": "Go to Dashboard",
+      "goToControls": "Go to Controls",
+      "goToRisks": "Go to Risks",
+      "goToPolicies": "Go to Policies",
+      "goToEvidence": "Go to Evidence",
+      "goToTasks": "Go to Tasks",
+      "goToCalendar": "Go to Calendar",
+      "goToFrameworks": "Go to Frameworks",
+      "goToVendors": "Go to Vendors",
+      "goToReports": "Go to Reports",
+      "goToAgentRegister": "Go to Agent register",
+      "goToAgentProposals": "Go to Agent proposals",
+      "goToAgentQuarantine": "Go to Agent quarantine",
+      "suspendAgent": "Suspend an agent",
+      "killSwitch": "Kill switch",
+      "goToAdmin": "Go to Admin",
+      "askAssistant": "Ask the assistant",
+      "toggleTheme": "Toggle theme",
+      "signOut": "Sign out"
+    },
+    "searchFailed": "Search failed. Try again in a moment."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",

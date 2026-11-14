@@ -61,6 +61,7 @@ import { CanvasHistorySidebar } from '@/components/processes/CanvasHistorySideba
 import { ProcessInspector } from '@/components/processes/ProcessInspector';
 import { ProcessPalette } from '@/components/processes/ProcessPalette';
 import { TldrawCanvasExportMenu } from '@/components/processes/TldrawCanvasExportMenu';
+import { usePermissions } from '@/lib/tenant-context-provider';
 import { TldrawProcessMap } from '@/components/processes/TldrawProcessMap';
 import { drillTrail } from '@/components/processes/tldraw/drill-scope-host';
 import { useCanvasDrillStack } from '@/lib/processes/use-canvas-drill-stack';
@@ -262,6 +263,10 @@ function Inner({
     focusStepKey = null,
 }: TldrawProcessWorkspaceProps) {
     const toast = useToast();
+    // "Attach to evidence" is an evidence upload; offered only to a viewer the
+    // upload route would take it from (#5309).
+    // A context with no permission set (a bare test mount) reads as no.
+    const canAttachEvidence = usePermissions()?.evidence?.upload === true;
     const [editor, setEditor] = useState<Editor | null>(null);
     const [version, setVersion] = useState<number | undefined>(undefined);
     const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>('idle');
@@ -550,6 +555,7 @@ function Inner({
                             tenantSlug={tenantSlug}
                             mapId={activeId}
                             disabled={bar.busy.saving}
+                            canAttachEvidence={canAttachEvidence}
                         />
                     ) : null
                 }
