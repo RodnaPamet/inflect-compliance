@@ -49,9 +49,12 @@ export function InheritedTestPlansPanel({
 }) {
     const [rows, setRows] = useState<InheritedTestPlanRow[]>([]);
     const [loading, setLoading] = useState(true);
+    // A failed or refused load is not "nothing inherited": a reviewer would
+    // read the empty state as a coverage gap (#5309).
+    const [failed, setFailed] = useState(false);
     const t = useTranslations('panels');
     const tr = useTranslations();
-    const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel;
+    const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel === 'policy' ? t('inherited.entityPolicy') : entityLabel;
     const PLAN_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
         ACTIVE: tr('controlTests.filterEnums.status.ACTIVE'), PAUSED: tr('controlTests.filterEnums.status.PAUSED'),
         ARCHIVED: tr('controlTests.filterEnums.status.ARCHIVED'),
@@ -65,13 +68,18 @@ export function InheritedTestPlansPanel({
         let cancelled = false;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
+        setFailed(false);
         void (async () => {
             try {
                 const res = await fetch(endpoint);
-                const data = res.ok ? await res.json() : [];
+                if (!res.ok) throw new Error(String(res.status));
+                const data = await res.json();
                 if (!cancelled) setRows(Array.isArray(data) ? data : []);
             } catch {
-                if (!cancelled) setRows([]);
+                if (!cancelled) {
+                    setRows([]);
+                    setFailed(true);
+                }
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -149,20 +157,24 @@ export function InheritedTestPlansPanel({
                 integration checks are per-control and not rolled up here, so the
                 picture would otherwise read as silently half-complete. */}
             <p className="text-xs text-content-subtle">{t('inherited.checksNote')}</p>
-            <DataTable<InheritedTestPlanRow>
-                data={rows}
-                columns={columns}
-                loading={loading}
-                getRowId={(r) => r.id}
-                emptyState={
-                    <EmptyState
-                        size="sm"
-                        variant="no-records"
-                        title={t('inherited.testsEmpty')}
-                        description={t('inherited.testsEmptyDesc', { entity: entityWord })}
-                    />
-                }
-            />
+            {failed ? (
+                <InlineNotice variant="error">{t('inherited.testsLoadError')}</InlineNotice>
+            ) : (
+                <DataTable<InheritedTestPlanRow>
+                    data={rows}
+                    columns={columns}
+                    loading={loading}
+                    getRowId={(r) => r.id}
+                    emptyState={
+                        <EmptyState
+                            size="sm"
+                            variant="no-records"
+                            title={t('inherited.testsEmpty')}
+                            description={t('inherited.testsEmptyDesc', { entity: entityWord })}
+                        />
+                    }
+                />
+            )}
         </div>
     );
 }

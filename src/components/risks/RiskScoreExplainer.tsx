@@ -104,9 +104,14 @@ export function RiskScoreExplainer({
             .catch(() => setState('error'));
     };
 
+    // Fetched on EVERY open, never cached for the chip's lifetime: the score
+    // can change on the same page (the assessment panel sits under the header
+    // chip), and a reopened explainer must not show the old score, band and
+    // provenance (#5309). Still lazy — nothing is requested until opened.
     const onOpenChange = (next: boolean) => {
         setOpen(next);
-        if (next && !data && state !== 'loading') {
+        if (next && state !== 'loading') {
+            setData(null);
             loadExplanation();
         }
     };

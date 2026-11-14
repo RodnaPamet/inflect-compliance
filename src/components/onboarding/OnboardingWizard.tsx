@@ -275,14 +275,18 @@ export default function OnboardingWizard() {
     };
 
     // ─── Save step data ───
-    const handleSaveStep = async (step: StepKey, data: StepData) => {
+    // Resolves to whether the save landed, so Save & exit can stay put on a
+    // failure instead of leaving with the step's data unsaved (#5309).
+    const handleSaveStep = async (step: StepKey, data: StepData): Promise<boolean> => {
         try {
             setSaving(true);
             setError(null);
             await apiFetch(apiUrl(tenantSlug, 'step'), 'POST', { step, action: 'save', data });
             setLocalData(prev => ({ ...prev, [step]: data }));
+            return true;
         } catch (e) {
             setError(describeError(t, e, t('wizard.errors.save')));
+            return false;
         } finally {
             setSaving(false);
         }
@@ -404,7 +408,10 @@ export default function OnboardingWizard() {
         }
         const stepLocalData = localData[currentStepKey] || {};
         if (Object.keys(stepLocalData).length > 0) {
-            await handleSaveStep(currentStepKey, stepLocalData);
+            const saved = await handleSaveStep(currentStepKey, stepLocalData);
+            // The error notice is on the wizard; leaving would hide it and
+            // drop what was entered.
+            if (!saved) return;
         }
         router.push(tenantHref('/dashboard'));
     };

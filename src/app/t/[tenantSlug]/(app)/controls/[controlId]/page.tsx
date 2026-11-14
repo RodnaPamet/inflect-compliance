@@ -167,7 +167,7 @@ export default function ControlDetailPage() {
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, appPermissions, tenantSlug } = useTenantContext();
+    const { permissions, appPermissions, tenantSlug, userId: currentUserId } = useTenantContext();
     // Attaching evidence here links it to this control: the link route takes
     // `controls.edit`, and so does an upload that names a control (#4326).
     /**
@@ -1421,6 +1421,7 @@ export default function ControlDetailPage() {
                         // rejecting ask `admin.manage` (#4387).
                         canWrite={canEditControl}
                         canAdmin={permissions.canAdmin && appPermissions.admin.manage}
+                        currentUserId={currentUserId}
                     />
                 </div>
             )}

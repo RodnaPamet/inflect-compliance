@@ -3531,7 +3531,8 @@
         "ADMIN": "Admin",
         "EDITOR": "Editor",
         "READER": "Reader",
-        "AUDITOR": "Auditor"
+        "AUDITOR": "Auditor",
+        "AI_ADMIN": "AI admin"
       },
       "audienceUsers": "Specific users",
       "usersLabel": "Users",
@@ -14666,18 +14667,22 @@
       "linkFailed": "The control could not be linked."
     },
     "inherited": {
-      "entityAsset": "asset",
-      "entityRisk": "risk",
-      "evidenceNotice": "Evidence is inherited from the controls mapped to this {entity}. Manage it on each control.",
+      "entityAsset": "this asset",
+      "entityRisk": "this risk",
+      "evidenceNotice": "Evidence is inherited from the controls mapped to {entity}. Manage it on each control.",
       "evidenceEmpty": "No inherited evidence",
-      "evidenceEmptyDesc": "No evidence is attached to the controls mapped to this {entity} yet.",
-      "mappingsNotice": "Framework mappings are inherited from the controls mapped to this {entity}. Manage them on each control.",
+      "evidenceEmptyDesc": "No evidence is attached to the controls mapped to {entity} yet.",
+      "mappingsNotice": "Framework mappings are inherited from the controls mapped to {entity}. Manage them on each control.",
       "mappingsEmpty": "No inherited mappings",
-      "mappingsEmptyDesc": "None of the controls mapped to this {entity} are linked to a framework requirement yet.",
-      "testsNotice": "Tests run on the controls mapped to this {entity}. Manage test plans on each control.",
+      "mappingsEmptyDesc": "None of the controls mapped to {entity} are linked to a framework requirement yet.",
+      "testsNotice": "Tests run on the controls mapped to {entity}. Manage test plans on each control.",
       "testsEmpty": "No inherited tests",
-      "testsEmptyDesc": "No test plans exist on the controls mapped to this {entity} yet.",
-      "checksNote": "Automated integration checks are per-control and are not inherited here — view them on each control."
+      "testsEmptyDesc": "No test plans exist on the controls mapped to {entity} yet.",
+      "checksNote": "Automated integration checks are per-control and are not inherited here — view them on each control.",
+      "entityPolicy": "this policy",
+      "evidenceLoadError": "Couldn't load the inherited evidence. Reload the page to try again.",
+      "mappingsLoadError": "Couldn't load the inherited mappings. Reload the page to try again.",
+      "testsLoadError": "Couldn't load the inherited tests. Reload the page to try again."
     },
     "linkedTasks": {
       "empty": "No linked tasks",
