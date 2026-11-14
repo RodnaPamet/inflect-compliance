@@ -9,6 +9,16 @@ import { EDGE_ADMIN_ROLES } from './edge-admin-roles';
 import { sanitizeRedirectPath } from './redirect-path';
 
 // ─── Public path allowlist ───
+//
+// The workspace picker (`/tenants`) is deliberately NOT here. It was, from
+// R-1, "so it is reachable before an active tenant is set", but no gate in
+// the middleware needs an active tenant for a path outside `/t/`, so the
+// carve-out only changed what an UNAUTHENTICATED request got: the page's own
+// `redirect('/login')`, which Next sends as a 307 carrying the whole root
+// layout (about 800 KB, every i18n message; DAST rule 10044, 2026-11-13).
+// Behind the gate it gets the edge's bodyless login redirect, and a session
+// still owing its second factor is sent to the challenge rather than shown
+// its workspaces.
 
 const PUBLIC_PATH_PREFIXES = [
     '/login',
@@ -16,7 +26,6 @@ const PUBLIC_PATH_PREFIXES = [
     '/forgot-password',  // Password-reset request page — unauthenticated users must reach it
     '/reset-password',   // Password-reset confirm page — reached from an emailed token link
     '/no-tenant',        // Landing page for uninvited users — must not gate-loop
-    '/tenants',          // R-1: tenant picker — must be reachable before active-tenant is set
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers
     '/api/invites/',     // Tenant invite redemption API (public) + start-signin cookie setter
