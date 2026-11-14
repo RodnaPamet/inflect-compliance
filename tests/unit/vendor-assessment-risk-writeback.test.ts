@@ -12,7 +12,9 @@
  */
 
 const mockTx = {
-    vendorAssessment: { findFirst: jest.fn(), update: jest.fn() },
+    vendorAssessment: { findFirst: jest.fn(), update: jest.fn(),
+        // The status transition is claimed with a conditional write (#5318).
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     vendorAssessmentAnswer: { updateMany: jest.fn(), findMany: jest.fn() },
     vendorAssessmentTemplateQuestion: { findMany: jest.fn() },
     vendorAssessmentTemplate: { findUnique: jest.fn() },

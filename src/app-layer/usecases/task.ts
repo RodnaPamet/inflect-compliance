@@ -977,7 +977,7 @@ async function applyTaskStatusPostWrite(
     writeAudit: () => Promise<unknown>,
 ): Promise<void> {
     await writeAudit();
-    await reconcileTaskSource(db, ctx, change.taskId, change.toStatus);
+    await reconcileTaskSource(db, ctx, change.taskId, change.toStatus, change.fromStatus);
 }
 
 /**
@@ -1955,6 +1955,10 @@ function bulkStatusRefusalPrefix(task: { title?: string | null } | undefined): s
 
 export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], status: string, resolution?: string) {
     assertCanWriteTasks(ctx);
+    // One change per task (#5318). A repeated id was written once but
+    // audited, reconciled and announced once per occurrence — a CONTROL_GAP
+    // task queued two test runs, a POLICY_REVIEW task wrote two reviews.
+    taskIds = [...new Set(taskIds)];
 
     // Audit Coherence S8 (2026-05-24) — bulk path enforces the same
     // resolution + transition gates as the single-task path. Bulk

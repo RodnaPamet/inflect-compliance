@@ -115,6 +115,7 @@ jest.mock('@/lib/storage', () => ({
         createSignedDownloadUrl: (...a: unknown[]) => createSignedDownloadUrlMock(...a),
         readStream: (...a: unknown[]) => readStreamMock(...a),
     }),
+    sanitizeFileName: jest.requireActual('@/lib/storage').sanitizeFileName,
     assertTenantKey: (pathKey: string, tenantId: string) => {
         if (!pathKey.startsWith(`tenants/${tenantId}/`)) throw new Error('Tenant isolation violation');
     },

@@ -43,6 +43,24 @@ describe('htmlToSections', () => {
         expect(out[1].title).toBe('S');
     });
 
+    it('keeps h4-h6 sub-clause headings as paragraphs of their section (#5305)', () => {
+        // A Word document pulled from SharePoint uses Heading 4 for sub-clauses;
+        // the export used to drop every one of them.
+        const out = htmlToSections('<h2>Access</h2><h4>4.1 Accounts</h4><p>One per person.</p><h5>4.1.1 Review</h5><p>Quarterly.</p>');
+        expect(out).toHaveLength(1);
+        expect(out[0].body).toBe('4.1 Accounts\n\nOne per person.\n\n4.1.1 Review\n\nQuarterly.');
+    });
+
+    it('keeps loose top-level text and inline elements as one paragraph (#5305)', () => {
+        const out = htmlToSections('<h2>S</h2>Loose text with <strong>bold</strong> words.<p>Then a paragraph.</p>');
+        expect(out[0].body).toBe('Loose text with bold words.\n\nThen a paragraph.');
+    });
+
+    it('unwraps section-like wrappers and leaves no style or script text in the body', () => {
+        const out = htmlToSections('<style>p{color:red}</style><section><h2>S</h2><p>Body.</p></section>');
+        expect(out).toEqual([{ title: 'S', body: 'Body.' }]);
+    });
+
     it('returns a single empty Policy section for empty input', () => {
         expect(htmlToSections('')).toEqual([{ title: 'Policy', body: '' }]);
     });

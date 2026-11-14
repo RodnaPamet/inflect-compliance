@@ -38,6 +38,8 @@ import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { Nis2GapAssessmentRepository } from '@/app-layer/repositories/Nis2GapAssessmentRepository';
 import { createTask } from '@/app-layer/usecases/task';
+import { logEvent } from '@/app-layer/events/audit';
+import { snapshotNis2Readiness } from '@/app-layer/usecases/nis2-readiness';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const repo = Nis2GapAssessmentRepository as jest.Mocked<typeof Nis2GapAssessmentRepository>;
@@ -340,9 +342,32 @@ describe('submitAssignmentAnswers', () => {
 });
 
 describe('finalizeAssessment', () => {
-    function d(assignments: unknown[]) {
-        return { nis2GapAssignment: { findMany: jest.fn().mockResolvedValue(assignments) } };
+    function d(assignments: unknown[], run: { status: string } | null = { status: 'IN_PROGRESS' }) {
+        return {
+            nis2SelfAssessment: { findFirst: jest.fn().mockResolvedValue(run) },
+            nis2GapAssignment: { findMany: jest.fn().mockResolvedValue(assignments) },
+        };
     }
+
+    it('refuses an id this tenant does not hold: 404, and no FINALIZED audit row (#5305)', async () => {
+        // No assignments were found for it, so `outstanding` was 0 and it was
+        // "finalized" — with a hash-chained row for an entity that does not exist.
+        withDb(d([], null));
+        await expect(finalizeAssessment(ctx(), 'nope')).rejects.toMatchObject({ status: 404 });
+        expect(repo.markAssessmentCompleted).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it.each(['COMPLETED', 'ARCHIVED'])(
+        'leaves a %s run as it was: no re-stamp, no audit row, still reported finalized (#5305)',
+        async (status) => {
+            withDb(d([{ status: 'SUBMITTED' }], { status }));
+            await expect(finalizeAssessment(ctx(), 'a1')).resolves.toEqual({ finalized: true });
+            expect(repo.markAssessmentCompleted).not.toHaveBeenCalled();
+            expect(logEvent).not.toHaveBeenCalled();
+            expect(snapshotNis2Readiness).not.toHaveBeenCalled();
+        },
+    );
 
     it('rejects finalize while assignments are outstanding (no force)', async () => {
         withDb(d([{ status: 'SUBMITTED' }, { status: 'PENDING' }]));

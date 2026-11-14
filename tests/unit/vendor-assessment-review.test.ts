@@ -15,7 +15,9 @@
 // ─── Mocks ─────────────────────────────────────────────────────────
 
 const mockTx = {
-    vendorAssessment: { findFirst: jest.fn(), update: jest.fn() },
+    vendorAssessment: { findFirst: jest.fn(), update: jest.fn(),
+        // The status transition is claimed with a conditional write (#5318).
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     vendorAssessmentAnswer: { updateMany: jest.fn(), findMany: jest.fn() },
     vendorAssessmentTemplateQuestion: { findMany: jest.fn() },
     vendorAssessmentTemplate: { findUnique: jest.fn() },
@@ -115,6 +117,8 @@ beforeEach(() => {
     );
     mockLogEvent.mockReset();
     mockLogEvent.mockResolvedValue(undefined);
+    // Every test transitions the row it reads (#5318's conditional claim).
+    mockTx.vendorAssessment.updateMany.mockResolvedValue({ count: 1 });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -425,5 +429,37 @@ describe('closeAssessment', () => {
             closedByUserId: 'user-reviewer',
             reviewerNotes: 'Archived after retention review',
         });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 7. Concurrent transitions (#5318)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('a transition lost to a concurrent request is refused before any side effect', () => {
+    it('reviewAssessment: the claim is conditional on SUBMITTED, and a lost claim writes nothing', async () => {
+        setupReviewMocks({ status: 'SUBMITTED' });
+        mockTx.vendorAssessment.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        await expect(reviewAssessment(makeCtx(), 'a-1', {})).rejects.toThrow(/already been reviewed/);
+
+        expect(mockTx.vendorAssessment.updateMany.mock.calls[0][0].where).toMatchObject({
+            id: 'a-1', status: 'SUBMITTED',
+        });
+        expect(mockTx.vendorAssessment.update).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('closeAssessment: the claim is conditional on REVIEWED, and a lost claim writes nothing', async () => {
+        mockTx.vendorAssessment.findFirst.mockResolvedValueOnce({ id: 'a-1', status: 'REVIEWED' });
+        mockTx.vendorAssessment.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        await expect(closeAssessment(makeCtx(), 'a-1')).rejects.toThrow(/already been closed/);
+
+        expect(mockTx.vendorAssessment.updateMany.mock.calls[0][0].where).toMatchObject({
+            id: 'a-1', status: 'REVIEWED',
+        });
+        expect(mockTx.vendorAssessment.update).not.toHaveBeenCalled();
+        expect(mockLogEvent).not.toHaveBeenCalled();
     });
 });

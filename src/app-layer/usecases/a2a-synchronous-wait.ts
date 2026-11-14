@@ -115,6 +115,19 @@ function dispositionOf(status: string): RunDisposition {
     return DISPOSITION[status as WorkflowRunStatus] ?? 'IN_FLIGHT';
 }
 
+/**
+ * `settled` / `parked` for a status read ONCE, by the same table the wait uses.
+ *
+ * The host consumer's `tasks/get` follow-up reads the status a single time and
+ * must classify it exactly as `awaitRunSettled` would: a second allowlist there
+ * omitted `EMPTY_CATALOGUE`, so a run that was over was reported as "still
+ * running" on every follow-up (#5317).
+ */
+export function runStateOf(status: string): { readonly settled: boolean; readonly parked: boolean } {
+    const disposition = dispositionOf(status);
+    return { settled: disposition === 'TERMINAL', parked: disposition === 'PARKED_ON_A_PERSON' };
+}
+
 export type RunWaitOutcome = {
     /** The status as last read. */
     readonly status: string;

@@ -84,13 +84,29 @@ export class IncidentRepository {
     }
 
     /**
-     * Next tenant-scoped reference for the current year — INC-YYYY-NNN.
+     * Next tenant-scoped reference for the year — INC-YYYY-NNN.
      * Counts existing incidents whose reference shares the year prefix
-     * and bumps the ordinal. Tenant-bound + reference-unique, so a race
-     * surfaces as a P2002 the caller retries.
+     * and bumps the ordinal.
+     *
+     * MUST be called inside the transaction that inserts the incident: it
+     * takes a transaction-scoped advisory lock on (tenant, year) first, so
+     * two creates in one workspace at the same moment — common during a real
+     * incident — serialise here and the second counts the first's committed
+     * row. This said a race "surfaces as a P2002 the caller retries"; no
+     * caller retried, so the second create failed on
+     * `@@unique([tenantId, reference])` (#5305). The lock releases at commit
+     * or rollback.
+     *
+     * The key is namespaced so it never shares a queue with the audit chain's
+     * per-tenant lock (`hashtext(tenantId)`), which the same transaction takes
+     * later when it audits the create.
      */
     static async nextReference(db: PrismaTx, ctx: RequestContext, year: number) {
         const prefix = `INC-${year}-`;
+        await db.$executeRawUnsafe(
+            `SELECT pg_advisory_xact_lock(hashtext($1))`,
+            `incident-reference:${ctx.tenantId}:${year}`,
+        );
         const count = await db.incident.count({
             where: { tenantId: ctx.tenantId, reference: { startsWith: prefix } },
         });

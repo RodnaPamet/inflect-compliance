@@ -397,7 +397,14 @@ async function runGoverned(
     //
     // Deliberately AFTER the egress guard and BEFORE the decision-log row, so
     // what gets recorded is what the user was actually shown.
-    const guidance = checkGuidanceRoutes(answer.message);
+    //
+    // NOT a proposal outcome (#5317). That sentence is COMPOSED by
+    // `proposalOutcomeMessage` from the funnel's result, not written by the
+    // model, so it names no screen — only the item's title, which the person
+    // chose and may contain a path ("missing auth on /api/upload"). Replacing
+    // it hid a proposal that exists, inviting a second, duplicate request.
+    const composedProposalOutcome = answer.kind === 'proposal' || answer.proposalStatus !== undefined;
+    const guidance = composedProposalOutcome ? { ok: true as const } : checkGuidanceRoutes(answer.message);
     if (!guidance.ok) {
         logger.warn('assistant.guidance_route_refused', {
             tenantId: ctx.tenantId,
@@ -597,8 +604,11 @@ async function answerFromKeywords(ctx: RequestContext, q: string): Promise<Assis
             `Posture: ${stats.controls} control(s), ${stats.risks} risk(s) (${stats.highRisks} high), ${stats.openFindings} open finding(s), ${stats.openTasks} open task(s), ${stats.evidence} evidence item(s).`,
         );
     }
+    // No offer to queue actions (#5317): this router runs only when no model is
+    // configured, and without a model nothing here can turn a request into a
+    // proposal, however it is phrased.
     return say(
-        'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage) and queue actions (raise a finding, create a risk) for a reviewer to approve. What would you like to know?',
+        'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage). What would you like to know?',
     );
 }
 

@@ -110,6 +110,31 @@ export const UNCAPPED_GAPS: GapLimits = {
     issues: Number.POSITIVE_INFINITY,
 };
 
+/**
+ * Gap rows read beyond which an export stops listing (it still COUNTS them).
+ * An export asks for every gap (`UNCAPPED_GAPS`), but a query needs a bound.
+ */
+const EXPORT_GAP_ROW_CAP = 10_000;
+
+/**
+ * Read a gap list bounded by `limit`, and its TRUE count (#5317).
+ *
+ * The task reads were `take: 20`, so an export of 60 overdue tasks listed 20
+ * without saying so and the breakdown said `overdue: 20` — the silent
+ * truncation #4728 removed elsewhere. The count is the row count when the read
+ * did not reach its bound, and a `count()` when it did.
+ */
+async function readGapRows<T>(
+    limit: number,
+    read: (take: number) => Promise<T[]>,
+    count: () => Promise<number>,
+): Promise<{ rows: T[]; count: number }> {
+    const cap = Number.isFinite(limit) ? Math.max(limit, 20) : EXPORT_GAP_ROW_CAP;
+    const rows = await read(cap + 1);
+    if (rows.length <= cap) return { rows, count: rows.length };
+    return { rows: rows.slice(0, cap), count: await count() };
+}
+
 // ─── ISO27001 Weights ───
 const ISO_WEIGHTS = { coverage: 0.35, implementation: 0.25, evidence: 0.25, tasks: 0.10, issues: 0.05 };
 
@@ -396,7 +421,10 @@ async function computeGenericReadiness(
                 where: {
                     tenantId: ctx.tenantId,
                     requirementId: { in: reqIds },
-                    control: { applicability: 'APPLICABLE' },
+                    // A soft-deleted control covers nothing (#5317): the
+                    // relation filter is not reached by the soft-delete
+                    // extension, which filters top-level reads only.
+                    control: { applicability: 'APPLICABLE', deletedAt: null },
                 },
                 select: { requirementId: true },
             }),
@@ -535,9 +563,14 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle, 
         }));
         totalReqs = reqs.length;
 
+        // Links to the counted requirements only (not deprecated ones), from
+        // live controls (#5317) — as `framework/coverage.ts` reads them, so
+        // `mapped` never exceeds `total` and a requirement only a deleted
+        // control covered is reported unmapped.
+        const reqIds = reqs.map((r) => r.id);
         const mappedReqIds = await runInTenantContext(ctx, (tdb) =>
             tdb.controlRequirementLink.findMany({
-                where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
+                where: { tenantId: ctx.tenantId, requirementId: { in: reqIds }, control: { deletedAt: null } },
                 select: { requirementId: true },
             }));
         const mappedSet = new Set(mappedReqIds.map((l) => l.requirementId));
@@ -588,17 +621,21 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle, 
         }));
 
     // 4) Overdue tasks
-    const overdueTasks = await runInTenantContext(ctx, (tdb) =>
-        tdb.task.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_TASK_STATUSES] },
-                dueAt: { lt: new Date() },
-            },
-            select: { id: true, title: true, dueAt: true },
-            take: 20,
-        }));
-    const overdueCount = overdueTasks.length;
+    const overdueWhere = {
+        tenantId: ctx.tenantId,
+        status: { notIn: [...TERMINAL_TASK_STATUSES] },
+        dueAt: { lt: new Date() },
+    };
+    const { rows: overdueTasks, count: overdueCount } = await readGapRows(
+        limits.tasks,
+        (take) => runInTenantContext(ctx, (tdb) =>
+            tdb.task.findMany({
+                where: overdueWhere,
+                select: { id: true, title: true, dueAt: true },
+                take,
+            })),
+        () => runInTenantContext(ctx, (tdb) => tdb.task.count({ where: overdueWhere })),
+    );
     const taskScore = Math.max(0, 100 - (overdueCount * 10));
 
     overdueTasks.slice(0, limits.tasks).forEach((t) => gaps.push({
@@ -608,20 +645,25 @@ async function computeISO27001Readiness(ctx: RequestContext, cycle: AuditCycle, 
     }));
 
     // 5) Open issues
-    const openIssues = await runInTenantContext(ctx, (tdb) =>
-        tdb.task.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_TASK_STATUSES] },
-                type: { in: ['CONTROL_GAP', 'AUDIT_FINDING'] },
-            },
-            select: { id: true, title: true, severity: true },
-            take: 20,
-        }));
+    const isoIssueWhere = {
+        tenantId: ctx.tenantId,
+        status: { notIn: [...TERMINAL_TASK_STATUSES] },
+        type: { in: ['CONTROL_GAP' as const, 'AUDIT_FINDING' as const] },
+    };
+    const { rows: openIssues, count: openIssueCount } = await readGapRows(
+        limits.issues,
+        (take) => runInTenantContext(ctx, (tdb) =>
+            tdb.task.findMany({
+                where: isoIssueWhere,
+                select: { id: true, title: true, severity: true },
+                take,
+            })),
+        () => runInTenantContext(ctx, (tdb) => tdb.task.count({ where: isoIssueWhere })),
+    );
     // feat/audit-cycle-unify — real open findings on the cycle's audits
     // count as issues alongside the legacy Task-based proxy.
     const openFindingCount = await countOpenCycleFindings(ctx, cycle.id, cycle.frameworkKey);
-    const issueCount = openIssues.length + openFindingCount;
+    const issueCount = openIssueCount + openFindingCount;
     const issueScore = Math.max(0, 100 - (issueCount * 15));
 
     openIssues.slice(0, limits.issues).forEach((i) => gaps.push({
@@ -690,9 +732,14 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle, limi
         }));
         totalReqs = reqs.length;
 
+        // Links to the counted requirements only (not deprecated ones), from
+        // live controls (#5317) — as `framework/coverage.ts` reads them, so
+        // `mapped` never exceeds `total` and a requirement only a deleted
+        // control covered is reported unmapped.
+        const reqIds = reqs.map((r) => r.id);
         const mappedReqIds = await runInTenantContext(ctx, (tdb) =>
             tdb.controlRequirementLink.findMany({
-                where: { tenantId: ctx.tenantId, requirement: { frameworkId: fw.id } },
+                where: { tenantId: ctx.tenantId, requirementId: { in: reqIds }, control: { deletedAt: null } },
                 select: { requirementId: true },
             }));
         const mappedSet = new Set(mappedReqIds.map((l) => l.requirementId));
@@ -765,19 +812,24 @@ async function computeNIS2Readiness(ctx: RequestContext, cycle: AuditCycle, limi
         }));
 
     // 4) Open issues
-    const openIssues = await runInTenantContext(ctx, (tdb) =>
-        tdb.task.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                status: { notIn: [...TERMINAL_TASK_STATUSES] },
-            },
-            select: { id: true, title: true, severity: true, type: true },
-            take: 20,
-        }));
+    const nis2IssueWhere = {
+        tenantId: ctx.tenantId,
+        status: { notIn: [...TERMINAL_TASK_STATUSES] },
+    };
+    const { rows: openIssues, count: openIssueCount } = await readGapRows(
+        limits.issues,
+        (take) => runInTenantContext(ctx, (tdb) =>
+            tdb.task.findMany({
+                where: nis2IssueWhere,
+                select: { id: true, title: true, severity: true, type: true },
+                take,
+            })),
+        () => runInTenantContext(ctx, (tdb) => tdb.task.count({ where: nis2IssueWhere })),
+    );
     // feat/audit-cycle-unify — fold real open findings on this cycle's
     // audits into the issue count.
     const openFindingCount = await countOpenCycleFindings(ctx, cycle.id, cycle.frameworkKey);
-    const issueCount = openIssues.length + openFindingCount;
+    const issueCount = openIssueCount + openFindingCount;
     const issueScore = Math.max(0, 100 - (issueCount * 10));
 
     openIssues.slice(0, limits.issues).forEach((i) => gaps.push({

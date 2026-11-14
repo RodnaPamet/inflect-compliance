@@ -14,7 +14,7 @@
  * unique index does.
  */
 
-const stored: Array<{ userId: string; title: string; message: string; linkUrl: string | null; dedupeKey: string; type: string }> = [];
+const stored: Array<{ id?: string; userId: string; title: string; message: string; linkUrl: string | null; dedupeKey: string; type: string }> = [];
 const mockPublish = jest.fn();
 
 /** `createMany` with `skipDuplicates`: a stored `dedupeKey` is skipped, as the unique index does. */
@@ -22,11 +22,17 @@ const createManyImpl = async ({ data }: any) => {
     let count = 0;
     for (const row of data) {
         if (stored.some((n) => n.dedupeKey === row.dedupeKey)) continue;
-        stored.push(row);
+        stored.push({ ...row, id: `notif-${stored.length + 1}` });
         count++;
     }
     return { count };
 };
+
+/** The read-back of inserted rows by `dedupeKey`, which gives each SSE event its row id (#5305). */
+const findManyImpl = async ({ where }: any) =>
+    stored
+        .filter((n) => where.dedupeKey.in.includes(n.dedupeKey))
+        .map((n) => ({ id: n.id, dedupeKey: n.dedupeKey, createdAt: new Date('2026-10-01T00:00:00Z') }));
 
 const db: any = {
     user: {
@@ -40,7 +46,7 @@ const db: any = {
         update: jest.fn(async () => ({})),
         count: jest.fn(async () => 0),
     },
-    notification: { createMany: jest.fn(createManyImpl) },
+    notification: { createMany: jest.fn(createManyImpl), findMany: jest.fn(findManyImpl) },
 };
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: db, prisma: db }));
@@ -104,6 +110,10 @@ describe('a SCIM deprovision of an AI admin notifies every active Owner', () => 
             }),
         );
         expect(mockPublish).toHaveBeenCalledTimes(2);
+        // Each event carries the ROW's id, so the bell can mark it read (#5305).
+        expect(mockPublish.mock.calls.map((c) => (c[2] as { id: string }).id)).toEqual(
+            stored.map((n) => n.id),
+        );
     });
 
     it('notifies nobody for a role other than AI admin', async () => {

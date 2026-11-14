@@ -141,6 +141,7 @@ import {
     listRisksWithDeleted,
     linkControlToRisk,
     bulkAssignRisk,
+    bulkDeleteRisk,
 } from '@/app-layer/usecases/risk';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -454,6 +455,17 @@ describe('deleteRisk', () => {
 
     it('rejects EDITOR (admin gate)', async () => {
         await expect(deleteRisk(editorCtx, 'r-1')).rejects.toBeDefined();
+    });
+});
+
+describe('bulkDeleteRisk', () => {
+    it('invalidates the risk list cache, as deleteRisk does (#5318)', async () => {
+        (RiskRepository.listByIds as jest.Mock).mockResolvedValue([{ id: 'r-1' }, { id: 'r-2' }]);
+        mockDb.riskTreatmentPlan.findMany = jest.fn(async () => []);
+        mockDb.risk.deleteMany = jest.fn(async () => ({ count: 2 }));
+
+        await expect(bulkDeleteRisk(adminCtx, ['r-1', 'r-2'])).resolves.toEqual({ deleted: 2 });
+        expect(bumpEntityCacheVersion).toHaveBeenCalledWith(adminCtx, 'risk');
     });
 });
 

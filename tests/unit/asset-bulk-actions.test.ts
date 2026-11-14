@@ -19,6 +19,7 @@
 
 const mockDb = {
     asset: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    tenantMembership: { findFirst: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -58,6 +59,7 @@ beforeEach(() => {
     mockListByIds.mockResolvedValue([]);
     mockBulkUpdate.mockResolvedValue({ count: 0 });
     mockDb.asset.deleteMany.mockResolvedValue({ count: 0 });
+    mockDb.tenantMembership.findFirst.mockResolvedValue({ userId: 'u1' });
 });
 
 const rows = (...ids: string[]) => ids.map((id) => ({ id, name: `asset ${id}` }));
@@ -188,5 +190,27 @@ describe('bulkSetAssetStatus — status value', () => {
             changedFields: ['status'],
             after: { status },
         });
+    });
+});
+
+describe('bulkAssignAsset — the owner must be an ACTIVE member (#5317)', () => {
+    it('refuses an owner with no ACTIVE membership in this tenant, writing nothing', async () => {
+        mockListByIds.mockResolvedValue(rows('a1'));
+        mockDb.tenantMembership.findFirst.mockResolvedValue(null);
+        await expect(bulkAssignAsset(makeRequestContext('EDITOR'), ['a1'], 'gone-user')).rejects.toThrow(
+            /active member/,
+        );
+        expect(mockDb.tenantMembership.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: makeRequestContext('EDITOR').tenantId, userId: 'gone-user', status: 'ACTIVE' },
+            }),
+        );
+        expect(mockBulkUpdate).not.toHaveBeenCalled();
+    });
+
+    it('clearing the owner asks no membership', async () => {
+        mockListByIds.mockResolvedValue(rows('a1'));
+        await expect(bulkAssignAsset(makeRequestContext('EDITOR'), ['a1'], null)).resolves.toEqual({ updated: 1 });
+        expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
     });
 });

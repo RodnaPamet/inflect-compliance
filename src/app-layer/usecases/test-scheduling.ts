@@ -141,8 +141,15 @@ export async function scheduleTestPlan(
         if (!plan) throw notFound('Test plan not found');
         await assertMayScheduleAuditProcedure(db, ctx, plan.automationConfig, input.automationConfig);
 
-        // Recompute nextRunAt under the NEW (or just-cleared) schedule.
-        const tz = input.scheduleTimezone ?? null;
+        // Recompute nextRunAt under the NEW (or just-cleared) schedule, in
+        // the timezone the plan will STORE (#5318): an omitted
+        // `scheduleTimezone` keeps the stored one (see the write below), so
+        // it must also be the zone the first run is computed in and the
+        // audit row records. Reading `input.scheduleTimezone ?? null` here
+        // computed a Europe/London plan's first run in UTC.
+        const tz = input.scheduleTimezone === undefined
+            ? plan.scheduleTimezone
+            : input.scheduleTimezone;
         const nextRunAt = input.schedule
             ? computeNextRunFromCron(input.schedule, tz, new Date())
             : null;

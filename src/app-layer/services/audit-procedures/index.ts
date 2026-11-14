@@ -257,10 +257,34 @@ async function raiseExceptions(
               });
     // Live: pending, or decided by a person. An EXPIRED one nobody decided is raised again.
     const live = new Map(priorRows.filter((p) => p.status !== 'EXPIRED').map((p) => [p.id, p] as const));
+
+    let reused = 0;
+    const toRaise: RaisedException[] = [];
+    const reusedIds = new Set<string>();
+    for (const e of exceptions) {
+        const earlier = priorProposal.get(exceptionKey(e.unitId, e.code));
+        if (earlier && live.has(earlier)) {
+            e.proposalId = earlier;
+            reusedIds.add(earlier);
+            reused += 1;
+        } else {
+            toRaise.push(e);
+        }
+    }
+
+    // The findings THIS workpaper evidences: those a person made from a
+    // proposal one of THIS run's exceptions reused (#5305). It took every
+    // prior proposal's finding, so a re-run that no longer found an earlier
+    // exception still linked that exception's finding to its workpaper.
     const createdFindings = [
         ...new Set(
             priorRows
-                .filter((p) => (p.status === 'ACCEPTED' || p.status === 'EDITED') && p.createdEntityId)
+                .filter(
+                    (p) =>
+                        reusedIds.has(p.id) &&
+                        (p.status === 'ACCEPTED' || p.status === 'EDITED') &&
+                        p.createdEntityId,
+                )
                 .map((p) => p.createdEntityId as string),
         ),
     ];
@@ -272,18 +296,6 @@ async function raiseExceptions(
                   select: { id: true },
                   take: createdFindings.length,
               });
-
-    let reused = 0;
-    const toRaise: RaisedException[] = [];
-    for (const e of exceptions) {
-        const earlier = priorProposal.get(exceptionKey(e.unitId, e.code));
-        if (earlier && live.has(earlier)) {
-            e.proposalId = earlier;
-            reused += 1;
-        } else {
-            toRaise.push(e);
-        }
-    }
 
     let proposed = 0;
     let refusal: string | null = null;

@@ -86,10 +86,11 @@ export async function getControlDashboard(ctx: RequestContext) {
             // disagreeing on what evidence counts is the failure this avoids.
             //
             // Three exclusions, each load-bearing:
-            //   - `status: { not: 'NOT_APPLICABLE' }` mirrors the report's
-            //     filter. Note it keys on STATUS, not the `applicability`
-            //     field a sibling scorer uses — picking the other one would
-            //     make this card disagree with the tile it was moved from.
+            //   - a control scoped out by EITHER column is excluded (#4793):
+            //     `status` NOT_APPLICABLE or `applicability` NOT_APPLICABLE,
+            //     both in `controlsMissingEvidenceWhere`. Do not narrow it back
+            //     to status alone — that counted an N/A-by-applicability
+            //     control as missing evidence (#5317 corrected this note).
             //   - `deletedAt: null` on the LINKED evidence: the soft-delete
             //     extension injects that at the top level only, never inside
             //     a nested relation filter, so a soft-deleted evidence row

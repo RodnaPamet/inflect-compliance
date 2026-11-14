@@ -22,9 +22,11 @@ const BodySchema = z.object({
  */
 export const POST = withApiErrorHandling(
     requirePermission<Params>('vendors.edit', async (req, { params }, ctx) => {
-        const { docId } = await params;
+        const { vendorId, docId } = await params;
         const body = await parseJsonBody(req, BodySchema);
-        const result = await extractVendorDocument(ctx, { documentId: docId, ...body });
+        // The URL's vendor is passed through so a document of another vendor
+        // is refused rather than extracted under this one (#5318).
+        const result = await extractVendorDocument(ctx, { ...body, documentId: docId, vendorId });
         return jsonResponse(result, { status: 201 });
     }),
 );

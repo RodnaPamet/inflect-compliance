@@ -29,6 +29,15 @@
  * Anything else is refused with a named reason, so a key naming another
  * tenant's profile is indistinguishable from one naming no profile at all.
  *
+ * ONE registered workflow is held to its start paths the same way: the ad-hoc
+ * question resolves for the `ASK` trigger, which only `startInteractiveRun`
+ * (the questions route, through `askAdHocQuestion`) names, and for the two
+ * other paths that already started it, and is refused
+ * `AD_HOC_QUESTION_USE_QUESTIONS_ROUTE` from the generic start route and any
+ * path added later (#5304, owner decision 2026-11-14). The questions route is
+ * where the question is sanitised and the asker rate-limited; the generic
+ * start route does neither.
+ *
  * A resolved profile asks for the Tool Runner engine, the one engine that runs
  * a profile (`runsProfiles`). Admission refuses it on any other engine before
  * the run row exists.
@@ -61,6 +70,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ValidationError, badRequest } from '@/lib/errors/types';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { adHocQuestionWorkflow } from '@/lib/agentic/workflows/ad-hoc-question';
 import type { ProfileRunSpec, WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { AGENT_DRIVERS, isReasoningEngine, type AgentDriver } from '@/lib/agentic/agent-driver';
 import {
@@ -99,7 +109,8 @@ export type ProfileRunRefusal =
     | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
     | 'PROFILE_TEST_RUN_KEY'
     | 'PROFILE_TRIGGER_REQUIRED'
-    | 'PROFILE_TRIGGER_NOT_ALLOWED';
+    | 'PROFILE_TRIGGER_NOT_ALLOWED'
+    | 'AD_HOC_QUESTION_USE_QUESTIONS_ROUTE';
 
 function refuse(reason: ProfileRunRefusal, message: string): AppError {
     if (reason === 'PROFILE_AGENT_MISMATCH') {
@@ -293,6 +304,31 @@ export async function resolveRunDefinition(
     if (!isProfileRunKey(workflowKey)) {
         const def = getWorkflowDefinition(workflowKey);
         if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+        // THE GENERIC START ROUTE STARTS NO AD-HOC QUESTION (#5304, owner
+        // decision 2026-11-14). The questions route sanitises the question and
+        // rate-limits the asker; `POST /agent-runs` does neither, so a question
+        // started there skipped both. Held the way a profile's Test-run key is,
+        // by the start path rather than its URL: the generic route names no
+        // trigger and is no A2A delivery, and that is the start refused.
+        //
+        // Written as an ALLOWLIST of the paths that may start it, so a path
+        // added later is refused until somebody decides otherwise:
+        //   · ASK — `startInteractiveRun`, the questions route's own door;
+        //   · AUTOMATION — an `INVOKE_AGENT` rule, which already started it
+        //     and was not the subject of the decision;
+        //   · an A2A delivery (`ctx.a2aInbound`), whose task is fenced, scanned
+        //     and capped by the A2A door, and which the host-consumer pilot
+        //     runbook allowlists this key for.
+        // Before anything else is read: the refusal is about the request.
+        const adHocQuestionStartAllowed =
+            opts.trigger === 'ASK' || opts.trigger === 'AUTOMATION' || ctx.a2aInbound !== undefined;
+        if (def.key === adHocQuestionWorkflow.key && !adHocQuestionStartAllowed) {
+            throw refuse(
+                'AD_HOC_QUESTION_USE_QUESTIONS_ROUTE',
+                'An ad-hoc question is asked on the Ask page, through POST /agents/questions, which ' +
+                    'sanitises it and rate-limits the asker. This start is not that route.',
+            );
+        }
         return { def };
     }
 

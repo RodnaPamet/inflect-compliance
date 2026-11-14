@@ -393,7 +393,19 @@ export async function finalizeAssessment(
     options: { force?: boolean } = {},
 ): Promise<{ finalized: true }> {
     assertCanWrite(ctx);
-    await runInTenantContext(ctx, async (db) => {
+    const finalizedNow = await runInTenantContext(ctx, async (db) => {
+        // The run itself first (#5305). An id this tenant does not hold found
+        // no assignments, so `outstanding` was 0: it then wrote a hash-chained
+        // NIS2_ASSESSMENT_FINALIZED row for an entity that does not exist and
+        // answered `finalized: true`. And a run already finalised was marked
+        // again, which moved its completedAt.
+        const run = await db.nis2SelfAssessment.findFirst({
+            where: { id: assessmentId, tenantId: ctx.tenantId },
+            select: { status: true },
+        });
+        if (!run) throw notFound('Assessment not found');
+        if (isFinalizedRun(run.status)) return false;
+
         const assignments = await db.nis2GapAssignment.findMany({
             where: { tenantId: ctx.tenantId, assessmentId },
             select: { status: true },
@@ -409,7 +421,11 @@ export async function finalizeAssessment(
             entityId: assessmentId,
             detailsJson: { category: 'custom', event: 'nis2_assessment_finalized', forced: !!options.force, outstanding },
         });
+        return true;
     });
+    // Already finalised: nothing was written, so there is nothing new to
+    // snapshot. The answer is still that the run is finalised.
+    if (!finalizedNow) return { finalized: true };
     // Snapshot outside the tenant tx (its own tenant context) — best-effort.
     await snapshotNis2Readiness(ctx).catch(() => { /* snapshot failure must not fail finalize */ });
     return { finalized: true };

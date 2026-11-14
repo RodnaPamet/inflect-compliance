@@ -56,6 +56,22 @@ describe('GAP-2 — Redis-backed AI rate limiter', () => {
         expect(redis.ttl.get('airl:user-rpm:tenant-1:user-1')).toBe(60 * 1000);
     });
 
+    it('re-applies the window when a key was left without a TTL, so a lock-out heals (#5305)', async () => {
+        // The EXPIRE after the first INCR failed: the counter exists with no TTL.
+        redis.store.set('airl:user-rpm:tenant-1:user-1', LIMITS.USER_PER_MINUTE_LIMIT + 3);
+        redis.store.set('airl:tenant-daily:tenant-1', 7);
+        await recordGeneration('tenant-1', 'user-1');
+        expect(redis.ttl.get('airl:user-rpm:tenant-1:user-1')).toBe(60 * 1000);
+        expect(redis.ttl.get('airl:tenant-daily:tenant-1')).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('leaves a running window alone — the control', async () => {
+        redis.store.set('airl:user-rpm:tenant-1:user-1', 2);
+        redis.ttl.set('airl:user-rpm:tenant-1:user-1', 12_345);
+        await recordGeneration('tenant-1', 'user-1');
+        expect(redis.ttl.get('airl:user-rpm:tenant-1:user-1')).toBe(12_345);
+    });
+
     it('enforces the tenant daily quota off the Redis counter', async () => {
         redis.store.set('airl:tenant-daily:tenant-1', LIMITS.TENANT_DAILY_QUOTA);
         redis.ttl.set('airl:tenant-daily:tenant-1', 3_600_000);

@@ -109,6 +109,20 @@ function resolveAppOrigin(override?: string): string {
     return 'http://localhost:3000';
 }
 
+/**
+ * The sender's display name for the invitation email, or undefined (#5318).
+ * The email goes to a third party: it used to name the sender by raw user id,
+ * which read wrong and handed an internal id outside. The template omits the
+ * "from …" clause when this is undefined, as the reminder does.
+ */
+async function senderNameFor(
+    db: import('@/lib/db-context').PrismaTx,
+    userId: string,
+): Promise<string | undefined> {
+    const user = await db.user.findUnique({ where: { id: userId }, select: { name: true } });
+    return user?.name?.trim() || undefined;
+}
+
 // ─── Entry point ───────────────────────────────────────────────────
 
 /**
@@ -229,7 +243,7 @@ export async function sendAssessment(
                 templateName: template.name,
                 responseUrl,
                 expiresAtIso: expiresAt.toISOString(),
-                inviterName: ctx.userId, // best-effort — replaced by name lookup later
+                inviterName: await senderNameFor(db, ctx.userId),
             },
             requestId: ctx.requestId,
         });
@@ -342,7 +356,7 @@ export async function resendAssessmentInvite(
                 templateName: assessment.templateVersion?.name ?? '',
                 responseUrl,
                 expiresAtIso: expiresAt.toISOString(),
-                inviterName: ctx.userId,
+                inviterName: await senderNameFor(db, ctx.userId),
             },
             requestId: ctx.requestId,
         });

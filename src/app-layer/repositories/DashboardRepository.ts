@@ -409,8 +409,16 @@ export class DashboardRepository {
                 },
             }),
             db.evidence.count({ where: { tenantId, status: 'SUBMITTED' } }),
+            // Overdue for re-review: the SAME predicate `getEvidenceExpiry`'s
+            // `overdue` uses (#5305). Without the expiry scope this counted
+            // archived evidence, so the assistant's figure disagreed with the
+            // dashboard tile for any tenant that had archived stale rows.
             db.evidence.count({
-                where: { tenantId, nextReviewDate: { lt: new Date() }, status: { not: 'APPROVED' } },
+                where: {
+                    ...evidenceExpiryScopeWhere(tenantId),
+                    nextReviewDate: { lt: new Date() },
+                    status: EVIDENCE_OUTSTANDING_STATUS_FILTER,
+                },
             }),
         ]);
 

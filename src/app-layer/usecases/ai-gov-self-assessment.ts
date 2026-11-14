@@ -16,7 +16,7 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanManageOnboarding } from '../policies/onboarding.policies';
@@ -62,7 +62,7 @@ export async function getAiGovAssessmentState(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ) {
-    if (!ctx.permissions.canRead) throw badRequest('Read access required.');
+    if (!ctx.permissions.canRead) throw forbidden('Read access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 
@@ -197,7 +197,7 @@ export async function raiseFindingsFromAiGovGaps(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ): Promise<{ created: string[] }> {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 

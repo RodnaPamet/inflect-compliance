@@ -6249,7 +6249,7 @@
         "stalenessTriggerOther": "Another change the register recorded ({trigger}).",
         "stalenessTrigger": {
           "AUTONOMY_RAISED": "Its autonomy level was raised.",
-          "TOOL_GRANTED": "It holds more tools than it did when it was scored.",
+          "TOOL_GRANTED": "It was granted a tool after it was scored.",
           "DATA_SCOPE_WIDENED": "Its declared data access was widened.",
           "REVERSIBILITY_WORSENED": "Its actions became harder to undo.",
           "PROVENANCE_WIDENED": "It now depends on a third-party supplier.",

@@ -12,6 +12,12 @@ import { StubRiskSuggestionProvider } from './stub-provider';
 import { logger } from '@/lib/observability/logger';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+/**
+ * Bound on one suggestion call, headers AND body — the Anthropic provider's
+ * figure (#5305). Without it a stalled gateway held the request until
+ * undici's 300 s default, so the fallback below never fired in time.
+ */
+export const OPENROUTER_RISK_TIMEOUT_MS = 30_000;
 // AISVS C6 (model supply chain): PIN to a dated model snapshot rather than the
 // floating `anthropic/claude-3.5-sonnet` alias, so an upstream model swap can't
 // silently change risk-assessment behaviour. Updating the model is a deliberate,
@@ -76,6 +82,7 @@ export class OpenRouterRiskSuggestionProvider implements RiskSuggestionProvider 
                 max_tokens: 4096,
                 response_format: { type: 'json_object' },
             }),
+            signal: AbortSignal.timeout(OPENROUTER_RISK_TIMEOUT_MS),
         });
 
         if (!response.ok) {
