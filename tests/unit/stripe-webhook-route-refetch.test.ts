@@ -28,6 +28,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/stripe/webhook/route';
+import { logger } from '@/lib/observability/logger';
 
 const OLD_ENV = process.env;
 
@@ -91,5 +92,74 @@ describe('POST /api/stripe/webhook — live subscription re-fetch', () => {
         expect(db.billingAccount.update).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ status: 'PAST_DUE' }) }),
         );
+    });
+});
+
+/**
+ * #5316 item 28 follow-up (owner decision 2026-11-14): every processing error
+ * after the signature check answers non-2xx, so Stripe delivers the event
+ * again. The route answered 200 to all of them but a failed re-fetch, and the
+ * event was lost.
+ */
+describe('POST /api/stripe/webhook — any processing error is retried', () => {
+    beforeEach(() => {
+        stripeMock.subscriptions.retrieve.mockResolvedValue({
+            id: 'sub_1', customer: 'cus_1', status: 'past_due', metadata: { plan: 'PRO' },
+        });
+    });
+
+    it('answers 500 and records no BillingEvent when the account write fails', async () => {
+        db.billingAccount.update.mockRejectedValueOnce(
+            Object.assign(new Error('Invalid `prisma.billingAccount.update()` invocation'), {
+                name: 'PrismaClientKnownRequestError',
+                code: 'P1017',
+            }),
+        );
+
+        const res = await POST(webhookRequest());
+
+        expect(res.status).toBe(500);
+        expect(db.billingEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('answers 500 when recording the BillingEvent fails after the write', async () => {
+        db.billingEvent.create.mockRejectedValueOnce(new Error('connection terminated'));
+
+        const res = await POST(webhookRequest());
+
+        expect(res.status).toBe(500);
+    });
+
+    it('answers 500 when the idempotency read fails', async () => {
+        db.billingEvent.findUnique.mockRejectedValueOnce(new Error('connection terminated'));
+
+        const res = await POST(webhookRequest());
+
+        expect(res.status).toBe(500);
+        expect(db.billingAccount.update).not.toHaveBeenCalled();
+    });
+
+    it('logs the event id and type, never the payload', async () => {
+        db.billingAccount.update.mockRejectedValueOnce(new Error('connection terminated'));
+
+        await POST(webhookRequest());
+
+        expect(logger.error).toHaveBeenCalledTimes(1);
+        const [, fields] = (logger.error as jest.Mock).mock.calls[0];
+        expect(fields).toMatchObject({ eventId: 'evt_1', eventType: 'customer.subscription.updated' });
+        const logged = JSON.stringify((logger.error as jest.Mock).mock.calls[0]);
+        expect(logged).not.toContain('metadata');
+        expect(logged).not.toContain('"customer"');
+    });
+
+    it('still answers 400 to a signature failure', async () => {
+        stripeMock.webhooks.constructEvent.mockImplementationOnce(() => {
+            throw new Error('No signatures found matching the expected signature');
+        });
+
+        const res = await POST(webhookRequest());
+
+        expect(res.status).toBe(400);
+        expect(db.billingEvent.findUnique).not.toHaveBeenCalled();
     });
 });
