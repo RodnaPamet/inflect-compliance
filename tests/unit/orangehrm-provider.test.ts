@@ -1486,3 +1486,95 @@ describe('a Test that rotates the refresh token keeps the new one (#5195)', () =
         expect(persistSecret).toHaveBeenCalledWith(rotated);
     });
 });
+
+// ─── a run that reads nothing must not move the cursor backwards (#5577) ───
+
+describe('the read budget and the one-page rewind', () => {
+    /**
+     * Offset of a resume token, without re-deriving the codec here.
+     *
+     * `string | null | undefined`, matching `ListEmployeesResult.resumeToken`,
+     * which is OPTIONAL. Narrowing it to `string | null` typechecks under jest
+     * and fails `tsc` — the same split that bit #5557.
+     */
+    const offsetOf = (token: string | null | undefined) => Number(String(token).split('@')[0]);
+
+    const SPENT = { readDeadlineAt: 0, now: () => new Date(1_000) };
+
+    it('hands back the cursor it was GIVEN, not one page earlier', async () => {
+        // The defect: the budget is evaluated before the first page, so this
+        // run reads nothing — and `offset` is still `startOffset`, which for a
+        // resume is `cursor.offset - ORANGEHRM_PAGE_SIZE`. It stored a cursor
+        // 50 rows behind the one it was handed.
+        const fetchImpl = pagedFetch(10_000);
+        const given = formatResumeCursor(150, 120);
+
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', given, { fetchImpl, ...SPENT });
+
+        expect(pageCalls(fetchImpl)).toBe(0);
+        expect(r.complete).toBe(false);
+        expect(r.resumeToken).toBe(given);
+        expect(offsetOf(r.resumeToken)).not.toBe(150 - ORANGEHRM_PAGE_SIZE);
+    });
+
+    it('is idempotent across repeated budget-starved runs — the backslide compounded', async () => {
+        // The shape that made this worth fixing rather than noting: each such
+        // run backed off another page, so a throttled instance walked its own
+        // cursor backwards and re-read pages it had already consumed.
+        const fetchImpl = pagedFetch(10_000);
+        let token: string | null | undefined = formatResumeCursor(150, 120);
+
+        for (let i = 0; i < 3; i += 1) {
+            const r = await readOrangeHrmRoster({ host: HOST }, 'tok', token, { fetchImpl, ...SPENT });
+            token = r.resumeToken;
+        }
+
+        expect(pageCalls(fetchImpl)).toBe(0);
+        expect(token).toBe(formatResumeCursor(150, 120));
+    });
+
+    it('a FRESH pass that reads nothing still returns a token, never null', async () => {
+        // `HrisSyncDeps` records that `complete: false` with no token lands in
+        // the usecase's permanently-non-retryable arm — "a connection that can
+        // never finish a pass". So echoing a first run's null `resumeFrom`
+        // would be a worse bug than the one being fixed.
+        const fetchImpl = pagedFetch(10_000);
+
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl, ...SPENT });
+
+        expect(pageCalls(fetchImpl)).toBe(0);
+        expect(r.complete).toBe(false);
+        expect(r.resumeToken).not.toBeNull();
+        expect(r.resumeToken).toBe('0');
+    });
+
+    it('POSITIVE CONTROL — a run that DOES read pages advances past the rewind', async () => {
+        // Without this, freezing the cursor unconditionally would satisfy every
+        // test above: a reader that never advanced at all would look correct.
+        // The mark is 0 so the re-read page is kept rather than discarded as
+        // already-consumed, which is what makes the advance observable.
+        const fetchImpl = pagedFetch(10_000);
+        const given = formatResumeCursor(150, 0);
+
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', given, { fetchImpl });
+
+        expect(pageCalls(fetchImpl)).toBeGreaterThan(0);
+        expect(r.complete).toBe(false);
+        expect(offsetOf(r.resumeToken)).toBeGreaterThan(150);
+    });
+
+    it('and the rewind itself is still applied — the first request re-reads a page', async () => {
+        // The rewind is the mechanism this fix must not remove: it exists to
+        // cover rows deleted ahead of the cursor between runs.
+        const fetchImpl = pagedFetch(10_000);
+
+        await readOrangeHrmRoster({ host: HOST }, 'tok', formatResumeCursor(150, 0), { fetchImpl });
+
+        const firstPage = fetchImpl.mock.calls
+            .map((c) => String(c[0]))
+            .find((u) => u.includes('/pim/employees?'));
+        expect(new URL(String(firstPage)).searchParams.get('offset')).toBe(
+            String(150 - ORANGEHRM_PAGE_SIZE),
+        );
+    });
+});
