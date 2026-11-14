@@ -16,7 +16,9 @@
  * If it had either, there would be two answers to "what is the deadline" and
  * the honest one would be whichever ran first. The one timer here bounds the
  * wait for an ACCEPTED deletion to settle, which is not the tool's deadline
- * (see `SANDBOX_DELETION_WAIT_MS`).
+ * (see `SANDBOX_DELETION_WAIT_MS`). The deletion is not inside the deadline
+ * race either: the executor hands its result over through `onResultCaptured`
+ * before it deletes, and the wrapper waits for the deletion outside the race.
  *
  * ═══ A SANDBOX THAT CANNOT BE CREATED IS A REFUSAL (4.2b, #3963) ═══
  *
@@ -193,7 +195,15 @@ export function openShellToolExecutor(
                 error = { code: run.exitCode, signal: null };
             }
 
-            return { error, stdout: run.stdout, stderr: run.stderr };
+            const result: RawExecResult = { error, stdout: run.stdout, stderr: run.stderr };
+            // Handed to the wrapper BEFORE the deletion below (#5304). The
+            // deadline bounds the tool, and the tool is done: the wrapper
+            // disarms it and waits for the deletion outside the race, so a tool
+            // that finished just inside its deadline keeps its output however
+            // long an ACCEPTED deletion takes to settle. The deletion still runs
+            // here, in the `finally`, on its own bound.
+            options.onResultCaptured?.(result);
+            return result;
         } finally {
             const deletion = await deleteSandboxQuietly(transport, sandbox.id);
             await record({

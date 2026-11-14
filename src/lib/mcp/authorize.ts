@@ -1143,7 +1143,18 @@ export async function authorizeToolCall(
      * reach a higher rung by sending something malformed.
      */
     rawArgs?: unknown,
-): Promise<void> {
+    /**
+     * `deferCharge: true` (#5304): run every gate, but leave the policy card's
+     * budgets unspent and the call unobserved, and return the step that spends
+     * and observes for the caller to run once the call has SUCCEEDED. The
+     * propose funnel uses it so a batch refused by its own content (a schema
+     * or content-guard refusal on any item) is not charged as an action.
+     * The returned step can still refuse (the daily budget), so the caller runs
+     * it BEFORE it writes anything. Without the option every step runs here and
+     * the returned step does nothing.
+     */
+    options?: { readonly deferCharge?: boolean },
+): Promise<() => Promise<void>> {
     // 0. Is a kill switch in force? Ahead of everything, including the
     //    credential checks — a stop somebody already pulled is not conditional on
     //    this caller being correctly configured. See `assertNotKilled`.
@@ -1269,30 +1280,40 @@ export async function authorizeToolCall(
         }
     }
 
-    // 10b. Spend the policy card's daily and per-run budgets. Last among the
-    //     gates, so a call refused by the credential's capability or scope, a
-    //     permission key or the shared policy spends nothing (#5233).
-    await spendPolicyCardBudget();
+    // Once only: a second run would spend a second unit for one call.
+    let charged = false;
+    const charge = async (): Promise<void> => {
+        if (charged) return;
+        charged = true;
+        // 10b. Spend the policy card's daily and per-run budgets. Last among the
+        //     gates, so a call refused by the credential's capability or scope, a
+        //     permission key or the shared policy spends nothing (#5233) — nor,
+        //     with `deferCharge`, a call its own content refused (#5304).
+        await spendPolicyCardBudget();
 
-    // 11. Observe. Not a gate — every gate has passed, and this is the only step
-    //     that writes something other than a denial. It never throws: the store
-    //     swallows its own failure, because turning an observability write into
-    //     an outage for a call ten checks have already allowed is the wrong
-    //     trade in the only direction that matters.
-    if (inv.governedAgentId !== null) {
-        await recordAuthorizedCall(
-            inv.ctx.tenantId,
-            inv.governedAgentId,
-            breakerLatch,
-            tool.capabilityClass,
-            tool.name,
-            // The invocation's OWN clock, the one `assertCredentialLive` and the
-            // daily budget already read. A second, independent `new Date()` here
-            // would put the observation in a different window from the
-            // reservation that admitted it whenever a call straddles the hour.
-            inv.now(),
-        );
-    }
+        // 11. Observe. Not a gate — every gate has passed, and this is the only step
+        //     that writes something other than a denial. It never throws: the store
+        //     swallows its own failure, because turning an observability write into
+        //     an outage for a call ten checks have already allowed is the wrong
+        //     trade in the only direction that matters.
+        if (inv.governedAgentId !== null) {
+            await recordAuthorizedCall(
+                inv.ctx.tenantId,
+                inv.governedAgentId,
+                breakerLatch,
+                tool.capabilityClass,
+                tool.name,
+                // The invocation's OWN clock, the one `assertCredentialLive` and the
+                // daily budget already read. A second, independent `new Date()` here
+                // would put the observation in a different window from the
+                // reservation that admitted it whenever a call straddles the hour.
+                inv.now(),
+            );
+        }
+    };
+    if (options?.deferCharge) return charge;
+    await charge();
+    return async () => {};
 }
 
 /**

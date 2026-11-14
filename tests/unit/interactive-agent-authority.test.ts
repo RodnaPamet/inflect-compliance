@@ -223,7 +223,9 @@ describe('THE DETERMINATION: a READER bound to a propose-granted agent', () => {
         const inv = await sessionInvocation('EDITOR');
         await expect(
             authorizeToolCall(inv, { ...PROPOSE_RISKS, capabilityClass: 'propose' } as never, {}),
-        ).resolves.toBeUndefined();
+            // Admitted: it resolves (to the already-run charge step, #5304)
+            // rather than refusing.
+        ).resolves.toBeInstanceOf(Function);
     });
 
     it('the tool declares the human route it mirrors, which IS the invariant', async () => {
