@@ -219,3 +219,98 @@ describe('backfillTenantDeks', () => {
         );
     });
 });
+
+// ─── #5648: the dry run must terminate ─────────────────────────────────
+//
+// None of the cases above could catch this, and the reason is the fake:
+// `makeDeps` serves a pre-scripted `batches` array with `shift()`, so it
+// advances whether or not the code paginates. A fake that cannot repeat a page
+// cannot express a loop that never advances.
+//
+// This one answers from the PREDICATE instead — ids strictly greater than the
+// cursor, with a written tenant leaving the DEK-less set — so a non-advancing
+// loop sees the same page for ever, exactly as Postgres would.
+function makeCursorDeps(tenantCount: number, opts?: { maxQueries?: number }) {
+    const dekless = new Set(
+        Array.from({ length: tenantCount }, (_, i) => `t_${String(i).padStart(4, '0')}`),
+    );
+    const queryCalls: Array<{ cursor: string; returned: number }> = [];
+    const written: string[] = [];
+    // A loop that does not advance would otherwise HANG the suite until the
+    // jest timeout, which reads as a slow test rather than a wrong one. The cap
+    // turns it into a named failure on the first extra page.
+    const maxQueries = opts?.maxQueries ?? Math.ceil(tenantCount / 10) + 3;
+
+    const prisma = {
+        async $queryRawUnsafe<T>(_sql: string, ...params: unknown[]): Promise<T> {
+            const limit = params[0] as number;
+            const cursor = (params[1] ?? '') as string;
+            if (queryCalls.length >= maxQueries) {
+                throw new Error(
+                    `the loop did not advance: ${maxQueries} pages read for ${tenantCount} `
+                    + `tenants (last cursor ${JSON.stringify(cursor)}) — the cursor is not moving`,
+                );
+            }
+            const page = [...dekless].filter((id) => id > cursor).sort().slice(0, limit);
+            queryCalls.push({ cursor, returned: page.length });
+            return page.map((id) => ({ id })) as unknown as T;
+        },
+        async $executeRawUnsafe(_sql: string, ...params: unknown[]): Promise<number> {
+            const id = params[1] as string;
+            written.push(id);
+            dekless.delete(id);
+            return 1;
+        },
+    };
+
+    const log: TenantDekBackfillDeps['log'] = () => undefined;
+    return { prisma, log, queryCalls, written };
+}
+
+describe('backfillTenantDeks — the dry run terminates (#5648)', () => {
+    it('drains a full first page without writing anything', async () => {
+        // 25 tenants at batch 10: the first two pages are FULL, so the old
+        // `rows.length < batchSize` exit never fired and nothing shrank the
+        // predicate. This is the case that looped for ever.
+        const deps = makeCursorDeps(25);
+        const result = await backfillTenantDeks(deps, { execute: false, batchSize: 10 });
+
+        expect(result.scanned).toBe(25);
+        expect(result.backfilled).toBe(25);
+        expect(deps.written).toEqual([]);
+        // 10 + 10 + 5: the short page is what ends it, and it is only reachable
+        // because the cursor advanced past the first twenty.
+        expect(deps.queryCalls.map((c) => c.returned)).toEqual([10, 10, 5]);
+    });
+
+    it('advances the cursor past the last id of each page', async () => {
+        const deps = makeCursorDeps(25);
+        await backfillTenantDeks(deps, { execute: false, batchSize: 10 });
+        expect(deps.queryCalls.map((c) => c.cursor)).toEqual(['', 't_0009', 't_0019']);
+    });
+
+    it('terminates at exactly a multiple of the batch size, where no page is short', async () => {
+        // 20 at batch 10 gives two full pages and then an EMPTY one. The empty
+        // page is the only exit here, so this is the shape with no slack at all.
+        const deps = makeCursorDeps(20);
+        const result = await backfillTenantDeks(deps, { execute: false, batchSize: 10 });
+        expect(result.scanned).toBe(20);
+        expect(deps.queryCalls.map((c) => c.returned)).toEqual([10, 10, 0]);
+    });
+
+    it('still drains under --execute, where the write used to do the advancing', async () => {
+        // The control: execute mode worked before the fix because the UPDATE
+        // shrank the predicate. It must still work now that the cursor does.
+        const deps = makeCursorDeps(25);
+        const result = await backfillTenantDeks(deps, { execute: true, batchSize: 10 });
+        expect(result.backfilled).toBe(25);
+        expect(deps.written).toHaveLength(25);
+    });
+
+    it('reads the cursor as a bound parameter, never interpolated', async () => {
+        // The cursor is a tenant id from the database. It goes in as $2.
+        const deps = makeCursorDeps(5);
+        await backfillTenantDeks(deps, { execute: false, batchSize: 10 });
+        expect(deps.queryCalls[0].cursor).toBe('');
+    });
+});
