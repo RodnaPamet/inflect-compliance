@@ -36,10 +36,10 @@ import { harnessKeyFingerprint } from '@/lib/agentic/harness-contract';
 import {
     compareAgentCard,
     evaluatePeerAdmission,
+    pinnedCardHashesOf,
     type AgentCardHashes,
     type CardVerdict,
     type PeerAdmission,
-    type PinnedCardHashes,
 } from '@/lib/agentic/peer-agent-card';
 import { fetchAgentCard, type AgentCardFetchOptions, type AgentCardFetchResult } from '@/lib/agentic/peer-agent-card-fetch';
 import { recordPeerCardCheck } from '@/lib/observability/integration-metrics';
@@ -151,22 +151,8 @@ async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, vendorId:
     if (!vendor) throw badRequest('The selected vendor does not exist in this tenant');
 }
 
-function pinOf(row: {
-    pinnedCardHash: string | null;
-    pinnedTextHash: string | null;
-    pinnedEndpointHash: string | null;
-    pinnedOtherHash: string | null;
-    pinRevision: number;
-}): PinnedCardHashes | null {
-    if (!row.pinnedCardHash || !row.pinnedTextHash || !row.pinnedEndpointHash || !row.pinnedOtherHash) return null;
-    return {
-        cardHash: row.pinnedCardHash,
-        textHash: row.pinnedTextHash,
-        endpointHash: row.pinnedEndpointHash,
-        otherHash: row.pinnedOtherHash,
-        revision: row.pinRevision,
-    };
-}
+/** The stored pin, read by the one reader the scheduled ASI07 check shares. */
+const pinOf = pinnedCardHashesOf;
 
 function outcomeOf(read: AgentCardFetchResult, verdict: CardVerdict | null): string {
     if (!read.ok) return read.reason;

@@ -26,6 +26,18 @@ export const VENDOR_NAME_TAKEN = 'VENDOR_NAME_TAKEN' as const;
  */
 export const VENDOR_ACTIVATION_NEEDS_REVIEW = 'VENDOR_ACTIVATION_NEEDS_REVIEW' as const;
 
+/**
+ * The write would make the vendor ACTIVE while a REASSESSMENT is in progress:
+ * the vendor has an earlier completed review with a risk rating, but its
+ * LATEST assessment has not been reviewed yet (#5318 item 31, owner decision
+ * 2026-11-14). The gate reads the latest assessment of any status on purpose,
+ * so an open reassessment still blocks activation; this reason says that is
+ * why, where `VENDOR_ACTIVATION_NEEDS_REVIEW` would tell the admin to send an
+ * assessment they have already sent. The vendors dashboard's "assessed" count
+ * reads completed assessments only and is unchanged.
+ */
+export const VENDOR_REASSESSMENT_IN_PROGRESS = 'VENDOR_REASSESSMENT_IN_PROGRESS' as const;
+
 function reasonOf(body: unknown): unknown {
     return (body as { error?: { details?: { reason?: unknown } } } | null)?.error?.details
         ?.reason;
@@ -39,4 +51,9 @@ export function isVendorNameTaken(body: unknown): boolean {
 /** True when a parsed API error body is the activation refusal. */
 export function isVendorActivationNeedsReview(body: unknown): boolean {
     return reasonOf(body) === VENDOR_ACTIVATION_NEEDS_REVIEW;
+}
+
+/** True when a parsed API error body is the reassessment-in-progress refusal. */
+export function isVendorReassessmentInProgress(body: unknown): boolean {
+    return reasonOf(body) === VENDOR_REASSESSMENT_IN_PROGRESS;
 }
