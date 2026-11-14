@@ -140,6 +140,20 @@ export const SubjectEvidenceSchema = z.object({
         })),
     }),
     timeBoundedGrants: z.array(TimeBoundedGrantSchema),
+    /**
+     * True when this agent's time-bounded-grant read hit its cap (#5317): the
+     * list holds its outlived and undetermined grants, then the newest that
+     * ended on time, and not all of them.
+     *
+     * OPTIONAL, and with no default, on purpose. A pack filed before #5317 —
+     * and a pack-preparation run whose READ was recorded before it — carries
+     * no such key, and its stored `contentHash` is `sha256Of` its sections as
+     * they were. A default would add the key when that evidence is re-parsed,
+     * so the sections the usecase stores and hashes would no longer be the
+     * sections the read recorded. Absent means "not stated": that read
+     * shared one 500-row cap across its page and could not tell.
+     */
+    timeBoundedTruncated: z.boolean().optional(),
     guardFlags: StatusCounts,
     breaker: z.object({
         state: z.string(),
