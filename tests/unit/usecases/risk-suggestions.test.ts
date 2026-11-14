@@ -550,6 +550,25 @@ describe('dismissSession', () => {
             expect.objectContaining({ action: 'AI_RISK_SUGGESTIONS_DISMISSED' }),
         );
     });
+
+    // #5303 — a second click, or another tab, after Apply used to flip an
+    // APPLIED session to DISMISSED and audit a rejection of suggestions that
+    // had been applied.
+    it.each(['APPLIED', 'DISMISSED'])('refuses a session already %s, writing nothing', async (status) => {
+        const update = jest.fn();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                riskSuggestionSession: {
+                    findFirst: jest.fn().mockResolvedValue({ id: 's1', provider: 'mock', modelName: 'm', status }),
+                    update,
+                },
+            } as never),
+        );
+
+        await expect(dismissSession(makeRequestContext('ADMIN'), 's1')).rejects.toThrow(/already/);
+        expect(update).not.toHaveBeenCalled();
+        expect(mockLog).not.toHaveBeenCalled();
+    });
 });
 
 // ─── getSession ─────────────────────────────────────────────────────

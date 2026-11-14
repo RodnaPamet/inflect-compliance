@@ -73,14 +73,32 @@ export async function listPriorStateReads(
 }
 
 /**
+ * Refuse a tool name that is not on the connection the caller is acting on
+ * (#5303). The operator surface is per connection — its URL names one — and a
+ * request on connection A's URL that names connection B's tool would set or
+ * remove B's pairing through A's page.
+ */
+function assertOnConnection(connectionId: string | undefined, ...toolNames: string[]): void {
+    if (connectionId === undefined) return;
+    for (const name of toolNames) {
+        if (parseExternalToolName(name)?.connectionId !== connectionId) {
+            throw badRequest(`"${name}" is not a tool of this connection`);
+        }
+    }
+}
+
+/**
  * Nominate the read that runs before a write.
  *
  * Four things are checked, and none of them is expressible as a database
  * constraint — which is why they are here rather than in the migration.
+ * `connectionId`, when given (the route always gives the one in its URL),
+ * must be the connection both tools are on.
  */
 export async function setPriorStateRead(
     ctx: RequestContext,
     input: PriorStateReadPairing,
+    connectionId?: string,
 ): Promise<PriorStateReadPairing> {
     const write = parseExternalToolName(input.writeToolName);
     const read = parseExternalToolName(input.readToolName);
@@ -90,6 +108,7 @@ export async function setPriorStateRead(
     if (!write || !read) {
         throw badRequest('Both tools must be external MCP tools (mcp__<connectionId>__<tool>)');
     }
+    assertOnConnection(connectionId, input.writeToolName, input.readToolName);
 
     // 2. The SAME connection. A read on a different server tells us the prior
     //    state of a different system — which is not merely useless, it is a
@@ -182,13 +201,21 @@ export async function setPriorStateRead(
 }
 
 /**
- * Remove a pairing.
+ * Remove a pairing, and say how many rows went (0 or 1).
  *
  * Which makes the write undispatchable again — a narrowing, so it is never gated
  * on anything the setter has to satisfy. An operator withdrawing an authority
- * must not be told to wait or to prove something first.
+ * must not be told to wait or to prove something first. The count is returned
+ * so the caller can tell the operator when nothing was removed (#5303), rather
+ * than report a withdrawal that did not happen. `connectionId`, when given, must
+ * be the write's connection.
  */
-export async function clearPriorStateRead(ctx: RequestContext, writeToolName: string): Promise<void> {
+export async function clearPriorStateRead(
+    ctx: RequestContext,
+    writeToolName: string,
+    connectionId?: string,
+): Promise<number> {
+    assertOnConnection(connectionId, writeToolName);
     const res = await runInTenantContext(ctx, async (db) => {
         const removed = await db.externalToolPriorStateRead.deleteMany({
             where: { tenantId: ctx.tenantId, writeToolName },
@@ -226,4 +253,5 @@ export async function clearPriorStateRead(ctx: RequestContext, writeToolName: st
             writeToolName,
         });
     }
+    return res.count;
 }

@@ -26,6 +26,14 @@
 
 export const LIST_BACKFILL_CAP = 5000;
 
+/**
+ * Cap on the Tasks Deleted view's flat (uncursored) read. The view is a
+ * recovery tool, not a browsable archive, so the most recently deleted rows
+ * are what matter. Here rather than in the repository so the page's
+ * truncation banner can name it (#5303).
+ */
+export const TASK_DELETED_LIST_CAP = 200;
+
 export interface CappedList<T> {
     rows: T[];
     truncated: boolean;
