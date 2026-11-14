@@ -179,6 +179,28 @@ export interface PinnedCardHashes extends AgentCardHashes {
     readonly revision: number;
 }
 
+/**
+ * A peer row's stored pin, or `null` when it was never approved. The pin
+ * columns are all-or-nothing (CHECK `PeerAgent_pin_all_or_nothing`); a row
+ * missing any one of them reads as unpinned, never as a partial pin.
+ */
+export function pinnedCardHashesOf(row: {
+    pinnedCardHash: string | null;
+    pinnedTextHash: string | null;
+    pinnedEndpointHash: string | null;
+    pinnedOtherHash: string | null;
+    pinRevision: number;
+}): PinnedCardHashes | null {
+    if (!row.pinnedCardHash || !row.pinnedTextHash || !row.pinnedEndpointHash || !row.pinnedOtherHash) return null;
+    return {
+        cardHash: row.pinnedCardHash,
+        textHash: row.pinnedTextHash,
+        endpointHash: row.pinnedEndpointHash,
+        otherHash: row.pinnedOtherHash,
+        revision: row.pinRevision,
+    };
+}
+
 export type CardVerdict =
     | { readonly status: 'UNPINNED' }
     | { readonly status: 'MATCH'; readonly revision: number }
