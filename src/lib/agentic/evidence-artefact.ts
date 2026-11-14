@@ -493,15 +493,34 @@ export function periodForKind(kind: string, periodStart: Date): ArtefactPeriod {
 // ── Population digest ───────────────────────────────────────────────────────
 
 /**
- * SHA-256 over the SORTED ids of the records an artefact counted, bound to the
- * kind and the period.
+ * What the receipt and decision bodies say their digest covers. It must be the
+ * recipe `sourcePopulationDigest` computes, because the body tells an assessor
+ * how to re-derive the figure; it said "the sorted record ids" after the digest
+ * had moved to the rendered facts, which no assessor could reproduce.
+ */
+export const POPULATION_DIGEST_BASIS =
+    'SHA-256 over the canonical JSON of the kind, the period start (ISO 8601) and the ' +
+    'sorted canonical JSON of each record\'s fact: its id and every field this body counts';
+
+/** The extra terms a per-agent digest binds, stated in its preamble. */
+export const PER_AGENT_DIGEST_BASIS =
+    'The population digest below also binds the agent id and whether the read stopped at its ' +
+    'bound: it is SHA-256 over the canonical JSON of the kind, the period start (ISO 8601), the ' +
+    'agent id, that bounded flag and the sorted canonical JSON of each record\'s fact.';
+
+/**
+ * SHA-256 (hex) over `canonicalJson({ kind, periodStart, facts })`, where
+ * `periodStart` is the ISO string and `facts` is the SORTED list of each
+ * rendered fact's own canonical JSON — every field the body renders, not the
+ * record ids alone (see below). `POPULATION_DIGEST_BASIS` is the sentence the
+ * body prints, so an assessor re-derives the digest from this recipe.
  *
  * Sorted because the database's row order is not a fact about the population:
  * two runs that read the same records in different orders describe the same
  * month and must digest identically, or every tick would look like a change.
  *
  * Bound to kind + period so a digest cannot be mistaken for one of a different
- * population that happens to hold the same ids.
+ * population that happens to hold the same facts.
  */
 export function sourcePopulationDigest(
     kind: AgenticArtefactKind,
@@ -775,7 +794,7 @@ export function buildReceiptArtefact(
             facts.map((f) => f.toolProvenance ?? 'unrecorded'),
         )}`,
         '',
-        `Population digest (SHA-256 over the sorted record ids): ${digest}`,
+        `Population digest (${POPULATION_DIGEST_BASIS}): ${digest}`,
         '',
         REDACTION_CONTRACT,
     ];
@@ -843,7 +862,7 @@ export function buildDecisionArtefact(
         `Output-guard verdicts — ${tally(facts.map((f) => f.guardVerdict ?? 'none'))}`,
         `Human outcomes — ${tally(facts.map((f) => f.humanOutcome))}`,
         '',
-        `Population digest (SHA-256 over the sorted record ids): ${digest}`,
+        `Population digest (${POPULATION_DIGEST_BASIS}): ${digest}`,
         '',
         REDACTION_CONTRACT,
     ];
@@ -861,6 +880,7 @@ function perAgentPreamble(agentId: string, records: string, bounded: boolean): s
         `Agent: ${agentId} (agent register id)`,
         `Attribution: ${records} No other record is counted here; every record of the tenant, ` +
             'attributed or not, is counted in the tenant-wide artefact for the same period and control.',
+        PER_AGENT_DIGEST_BASIS,
     ];
     if (bounded) {
         lines.push(

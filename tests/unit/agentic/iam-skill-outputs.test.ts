@@ -228,6 +228,26 @@ describe('attribution output can only be a suggestion, never a confirmed link', 
             expect(parseOwnershipAttribution({ discoveredAgentId: AGENT, status: 'AMBIGUOUS', signals: tie.slice(0, 1) })).toMatchObject({ ok: false });
         });
 
+        it('is not a tie when one person has the strongest signal: that is a suggestion (#5304)', () => {
+            const ambiguous = (signals: OwnerSignal[]) => parseOwnershipAttribution({ discoveredAgentId: AGENT, status: 'AMBIGUOUS', signals });
+            // An identity owner beats a deployment owner; two names is not a tie.
+            const unequal = [signal('IDENTITY_OWNER', 'usr_21'), signal('DEPLOYMENT_OWNER', 'usr_22')];
+            expect(ambiguous(unequal)).toMatchObject({ ok: false });
+            expect(parseOwnershipAttribution(suggested({ proposedOwnerRef: 'usr_21', signals: unequal }))).toMatchObject({ ok: true });
+            // A departed person is never one half of a tie...
+            expect(ambiguous([signal('IDENTITY_OWNER', 'usr_21'), signal('IDENTITY_OWNER', 'usr_22', false)])).toMatchObject({ ok: false });
+            // ...and one named as strongly as the tied pair makes it an orphan.
+            const behindDeparted = [
+                signal('IDENTITY_OWNER', 'usr_30', false),
+                signal('IDENTITY_OWNER', 'usr_21'),
+                signal('IDENTITY_OWNER', 'usr_22'),
+            ];
+            expect(ambiguous(behindDeparted)).toMatchObject({ ok: false });
+            // A tie at a weaker rank still stands when nothing stronger names anyone still here.
+            const weakerTie = [signal('DEPLOYMENT_OWNER', 'usr_21'), signal('DEPLOYMENT_OWNER', 'usr_22'), signal('NAMING_PATTERN', 'usr_23', null)];
+            expect(ambiguous(weakerTie)).toMatchObject({ ok: true });
+        });
+
         it('a person who has left is never proposed: that is an orphan', () => {
             const departed = [signal('IDENTITY_OWNER', 'usr_30', false)];
             expect(parseOwnershipAttribution(suggested({ proposedOwnerRef: 'usr_30', grade: 'WEAK', signals: departed }))).toMatchObject({ ok: false });

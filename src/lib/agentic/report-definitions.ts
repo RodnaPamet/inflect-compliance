@@ -780,7 +780,7 @@ export const METRIC_DEFINITIONS = {
         excludes: [
             'workpapers the keyed draw passed over at a rate below 100% (at the ' +
                 'pilot\u2019s 100% there are none)',
-            'workpapers written since the last monthly sweep, which are not drawn yet',
+            'workpapers written since the last daily sweep (09:40 UTC), which are not drawn yet',
         ],
     },
     'assurance.workpaper_reviews_unassigned': {

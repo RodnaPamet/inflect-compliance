@@ -97,6 +97,9 @@ jest.mock('@/lib/agentic/policy-card-store', () => ({
 // assertion about the loader rather than about a throw further down.
 jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     createAgentProposal: jest.fn().mockResolvedValue({ id: 'proposal-1' }),
+    // The real schema check: the funnel validates every item before it queues
+    // any (#5304), and a stub here would let a malformed item through unseen.
+    parseProposalPayload: jest.requireActual('@/app-layer/usecases/agent-proposals').parseProposalPayload,
 }));
 
 import prisma from '@/lib/prisma';
@@ -376,7 +379,7 @@ describe('a tool that appears after the session began is not callable', () => {
 
         const message = await refusalOf(() =>
             runProposeTool(inv, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
             }),
         );
 
@@ -486,6 +489,21 @@ describe('the propose funnel refuses before it writes', () => {
         expect(proposals).not.toHaveBeenCalled();
     });
 
+    it('a batch with one item its schema refuses queues NONE of the items (#5304)', async () => {
+        // The loop writes as it goes. A malformed third item used to fail the
+        // call after the first two were PENDING; the agent, seeing a failure
+        // with no ids, resent all three and reviewers got two duplicates.
+        const inv = invocationFor();
+        const good = { severity: 'LOW', type: 'OBSERVATION', title: 'ok' };
+
+        await expect(
+            runProposeTool(inv, 'propose_finding', {
+                items: [good, good, { severity: 'LOW', type: 'NOT_A_TYPE', title: 'bad' }],
+            }),
+        ).rejects.toThrow(/Item 3 of 3 for "propose_finding" is invalid, so none of the 3 was proposed/);
+        expect(proposals).not.toHaveBeenCalled();
+    });
+
     it('pins NO_POLICY_CARD — not null — when no card was in force', async () => {
         // `pinFromCard(inv.policyCard?.inForce ?? null)`. `invocationFor()`
         // leaves `policyCard` null, which `assertPolicyCardAllows` ALLOWS by
@@ -499,7 +517,7 @@ describe('the propose funnel refuses before it writes', () => {
         const inv = invocationFor();
 
         await runProposeTool(inv, 'propose_finding', {
-            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+            items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
         });
 
         expect(proposals).toHaveBeenCalledTimes(1);
@@ -515,7 +533,7 @@ describe('the propose funnel refuses before it writes', () => {
         const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
 
         await runProposeTool(inv, 'propose_finding', {
-            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+            items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
         });
 
         const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];

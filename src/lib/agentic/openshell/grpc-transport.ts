@@ -289,6 +289,16 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
             );
             let stdout = '';
             let stderr = '';
+            // ONE streaming decoder per stream (#5304). A chunk boundary can
+            // fall inside a multi-byte UTF-8 character; decoding each Buffer on
+            // its own turned both halves into replacement characters, so a
+            // non-ASCII resource name in collector evidence no longer matched
+            // the resource it named. `stream: true` holds the partial bytes
+            // until the next chunk, and the final `decode()` flushes them.
+            const stdoutDecoder = new TextDecoder('utf-8');
+            const stderrDecoder = new TextDecoder('utf-8');
+            const decode = (decoder: TextDecoder, data: Buffer | string): string =>
+                typeof data === 'string' ? data : decoder.decode(data, { stream: true });
             let exitCode: number | null = null;
             let sawExit = false;
 
@@ -306,8 +316,8 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
                             stderr?: { data?: Buffer | string };
                             exit?: { exit_code?: number };
                         };
-                        if (ev.stdout?.data !== undefined) stdout += String(ev.stdout.data);
-                        else if (ev.stderr?.data !== undefined) stderr += String(ev.stderr.data);
+                        if (ev.stdout?.data !== undefined) stdout += decode(stdoutDecoder, ev.stdout.data);
+                        else if (ev.stderr?.data !== undefined) stderr += decode(stderrDecoder, ev.stderr.data);
                         else if (ev.exit !== undefined) {
                             // The authoritative end of the run. Recorded as a
                             // flag as well as a value, because exit code 0 is
@@ -328,6 +338,10 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
             } finally {
                 input.signal.removeEventListener('abort', onAbort);
             }
+            // Flush any bytes held back for a character the stream never
+            // completed: they become one replacement character, not nothing.
+            stdout += stdoutDecoder.decode();
+            stderr += stderrDecoder.decode();
 
             if (!sawExit) {
                 /*

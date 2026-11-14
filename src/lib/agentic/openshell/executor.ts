@@ -12,9 +12,11 @@
  * than re-implementing them, and `code` / `signal` / `failure` stay separated by
  * the one `describeChildExit` the repository already shares.
  *
- * That is also why this file contains no timer and no byte counter. If it had
- * either, there would be two answers to "what is the deadline" and the honest
- * one would be whichever ran first.
+ * That is also why this file contains no deadline timer and no byte counter.
+ * If it had either, there would be two answers to "what is the deadline" and
+ * the honest one would be whichever ran first. The one timer here bounds the
+ * wait for an ACCEPTED deletion to settle, which is not the tool's deadline
+ * (see `SANDBOX_DELETION_WAIT_MS`).
  *
  * ═══ A SANDBOX THAT CANNOT BE CREATED IS A REFUSAL (4.2b, #3963) ═══
  *
@@ -46,6 +48,19 @@ import {
     unconfiguredTransport,
 } from './transport';
 import type { SandboxDecision } from './sandbox-decisions';
+
+/**
+ * How long the executor waits for an ACCEPTED (or UNSPECIFIED) deletion to
+ * settle before recording it unsettled (#5304).
+ *
+ * The wait has its OWN signal. It used to take the tool's deadline signal, and
+ * the deletion runs in the `finally` — so a tool that hit its deadline reached
+ * the wait with that signal already aborted, the wait threw at once, and every
+ * timed-out run logged a possible leak and recorded `settled: false` for a
+ * deletion nobody waited for. The tool's deadline bounds the tool; this bounds
+ * the clean-up that follows it, whatever stopped the tool.
+ */
+export const SANDBOX_DELETION_WAIT_MS = 30_000;
 
 /** Label put on every sandbox this backend creates, so a leak is attributable. */
 export const SANDBOX_OWNER_LABEL = 'inflect.dev/created-by';
@@ -180,7 +195,7 @@ export function openShellToolExecutor(
 
             return { error, stdout: run.stdout, stderr: run.stderr };
         } finally {
-            const deletion = await deleteSandboxQuietly(transport, sandbox.id, options.signal);
+            const deletion = await deleteSandboxQuietly(transport, sandbox.id);
             await record({
                 kind: 'sandbox-deleted',
                 sandboxId: sandbox.id,
@@ -204,7 +219,6 @@ export function openShellToolExecutor(
 async function deleteSandboxQuietly(
     transport: SandboxTransport,
     sandboxId: string,
-    signal: AbortSignal,
 ): Promise<{ readonly outcome: DeletionOutcome; readonly settled: boolean }> {
     /*
         RETURNS the outcome rather than discarding it — 5.1 (#3971).
@@ -233,7 +247,14 @@ async function deleteSandboxQuietly(
                 outcome,
             });
         }
-        await transport.awaitDeleted({ sandboxId, signal });
+        // Its own bounded signal, never the tool's: see `SANDBOX_DELETION_WAIT_MS`.
+        const wait = new AbortController();
+        const timer = setTimeout(() => wait.abort(), SANDBOX_DELETION_WAIT_MS);
+        try {
+            await transport.awaitDeleted({ sandboxId, signal: wait.signal });
+        } finally {
+            clearTimeout(timer);
+        }
         // The wait is what settles it: the outcome stays as the gateway
         // reported, and `settled` records that we went on to confirm.
         return { outcome, settled: true };
