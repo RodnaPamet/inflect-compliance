@@ -927,12 +927,15 @@ export const authOptions: NextAuthOptions = {
                 //    `groups` claim is omitted for users in > ~200 groups
                 //    (Entra sets `_claim_names.groups` instead) — fall back to
                 //    a Graph `/me/memberOf` fetch in that overage case. A Graph
-                //    failure resolves to [] and never blocks sign-in.
+                //    failure never blocks sign-in: the read reports itself
+                //    incomplete and the sync below declines to decide, which is
+                //    not the same as the `[]` this comment used to claim
+                //    (#5600).
                 if (account.provider === 'microsoft-entra-id') {
                     const { resolveEntraGroupClaims } = await import(
                         '@/lib/auth/entra-group-claims'
                     );
-                    const { groups, overage } = await resolveEntraGroupClaims({
+                    const { groups, overage, complete } = await resolveEntraGroupClaims({
                         profile,
                         accessToken: account.access_token as string | undefined,
                     });
@@ -958,6 +961,11 @@ export const authOptions: NextAuthOptions = {
                             const results = await syncEntraMembershipRolesAtSignIn({
                                 userId: token.userId,
                                 aadGroups: groups,
+                                // A PREFIX of the membership decides nothing
+                                // (#5600): the sync then writes no role and
+                                // reaches no gate verdict, rather than demoting
+                                // the member on groups it has not read yet.
+                                aadGroupsComplete: complete,
                                 // Mappings apply only to each workspace's own
                                 // Microsoft directory and allowed domains
                                 // (src/lib/auth/entra-group-sync.ts).
