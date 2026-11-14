@@ -30,52 +30,75 @@ export function notificationStreamResponse(
     signal: AbortSignal,
 ): Response {
 
+    // Teardown is ONE path, run at most once, whichever arrives first: the
+    // request signal aborting, the stream being cancelled, or an enqueue
+    // failing on a controller that is already gone. A failed enqueue used to
+    // only set `closed`, which made the later abort's cleanup a no-op — the
+    // 25 s heartbeat then ran for the life of the process and the subscriber
+    // stayed in the bus's Set (#5316).
+    let tornDown = false;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let closeController: (() => void) | undefined;
+
+    const cleanup = () => {
+        if (tornDown) return;
+        tornDown = true;
+        if (heartbeat !== undefined) clearInterval(heartbeat);
+        unsubscribe?.();
+        signal.removeEventListener('abort', cleanup);
+        closeController?.();
+    };
+
     const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-            let closed = false;
+            closeController = () => {
+                try {
+                    controller.close();
+                } catch {
+                    // Already closed or cancelled upstream — fine.
+                }
+            };
 
             const safeEnqueue = (chunk: string) => {
-                if (closed) return;
+                if (tornDown) return;
                 try {
                     controller.enqueue(encoder.encode(chunk));
                 } catch {
                     // Stream already torn down (client disconnected
-                    // mid-flush). Drop the chunk silently.
-                    closed = true;
-                }
-            };
-
-            // Initial comment so the client knows the channel is
-            // open. EventSource doesn't fire `onopen` for some
-            // browsers until at least one byte has been received.
-            safeEnqueue(': connected\n\n');
-
-            const unsubscribe = subscribeToNotifications({
-                tenantId: subscriber.tenantId,
-                userId: subscriber.userId,
-                send: (event) => safeEnqueue(sseFormat(event)),
-            });
-
-            const heartbeat = setInterval(() => {
-                safeEnqueue(': hb\n\n');
-            }, HEARTBEAT_INTERVAL_MS);
-
-            const cleanup = () => {
-                if (closed) return;
-                closed = true;
-                clearInterval(heartbeat);
-                unsubscribe();
-                try {
-                    controller.close();
-                } catch {
-                    // Already closed by upstream — fine.
+                    // mid-flush). Drop the chunk, and stop everything
+                    // that would try again.
+                    cleanup();
                 }
             };
 
             // Client closed the tab, navigated away, or lost the
             // network. The browser sends a TCP FIN which Next
             // surfaces as an `abort` on the request signal.
+            if (signal.aborted) {
+                cleanup();
+                return;
+            }
             signal.addEventListener('abort', cleanup);
+
+            // Initial comment so the client knows the channel is
+            // open. EventSource doesn't fire `onopen` for some
+            // browsers until at least one byte has been received.
+            safeEnqueue(': connected\n\n');
+            if (tornDown) return;
+
+            unsubscribe = subscribeToNotifications({
+                tenantId: subscriber.tenantId,
+                userId: subscriber.userId,
+                send: (event) => safeEnqueue(sseFormat(event)),
+            });
+
+            heartbeat = setInterval(() => {
+                safeEnqueue(': hb\n\n');
+            }, HEARTBEAT_INTERVAL_MS);
+        },
+        cancel() {
+            cleanup();
         },
     });
 

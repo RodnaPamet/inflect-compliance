@@ -1295,3 +1295,32 @@ describe('a tie with no evidence is UNMATCHED, never AMBIGUOUS (#3550)', () => {
         expect(reached.length).toBeGreaterThanOrEqual(0);
     });
 });
+
+// ─── EMAIL_EXACT is emailKey byte-equality on the RAW value (#5316) ────────
+
+describe('a folded address never reaches EMAIL_EXACT', () => {
+    it.each([
+        ['fullwidth', 'ｊｓｍｉｔｈ@corp.example.test'],
+        ['zero-width spliced', 'js​mith@corp.example.test'],
+    ])('a %s legacy address is a suggestion, not a link', (_label, email) => {
+        const r = reconcile({
+            accounts: [{ accountKey: 'legacy-1', email }],
+            roster: [
+                {
+                    id: 'e-1',
+                    fullName: 'John Smith',
+                    status: 'ACTIVE',
+                    workEmail: 'jsmith@corp.example.test',
+                },
+            ],
+            directory: [],
+            aliases: [],
+            now: NOW,
+        });
+        const [res] = r.resolutions;
+        expect(res.outcome).not.toBe('LINKED');
+        const kinds = res.candidates.flatMap((c) => c.signals.map((s) => s.kind));
+        expect(kinds).not.toContain('EMAIL_EXACT');
+        expect(kinds).toContain('EMAIL_UNTAGGED');
+    });
+});

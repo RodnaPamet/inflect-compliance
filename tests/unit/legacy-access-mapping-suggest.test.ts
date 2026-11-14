@@ -148,7 +148,7 @@ describe('name and profile together', () => {
 });
 
 describe('mayExposeValueSet — each condition blocks on its own', () => {
-    const ok = { distinctCount: 4, nonNullCount: 100, emailShare: 0 };
+    const ok = { distinctCount: 4, nonNullCount: 100, emailShare: 0, minValueCount: 25 };
 
     it('accepts a genuine vocabulary', () => {
         expect(mayExposeValueSet(ok)).toBe(true);
@@ -167,6 +167,17 @@ describe('mayExposeValueSet — each condition blocks on its own', () => {
         // floor. This is the case that keeps a tiny tenant's name column out.
         expect(mayExposeValueSet({ distinctCount: 10, nonNullCount: 20, emailShare: 0 })).toBe(false);
         expect(VALUE_SET_MIN_REPETITION).toBe(4);
+    });
+
+    it('refuses a column whose AVERAGE recurs but whose rarest value is one person (#5316)', () => {
+        // 48 rows: 37 x `sysadmin` plus 11 different people's logins. The
+        // average is exactly four; the singletons are individuals.
+        expect(mayExposeValueSet({ distinctCount: 12, nonNullCount: 48, emailShare: 0, minValueCount: 1 })).toBe(false);
+        expect(mayExposeValueSet({ ...ok, minValueCount: VALUE_SET_MIN_REPETITION - 1 })).toBe(false);
+    });
+
+    it('refuses a profile that does not say how rare its rarest value is', () => {
+        expect(mayExposeValueSet({ distinctCount: 4, nonNullCount: 100, emailShare: 0 })).toBe(false);
     });
 
     it('refuses anything that looks like an email, however low the cardinality', () => {
@@ -189,8 +200,13 @@ describe('mayExposeValueSet — each condition blocks on its own', () => {
 
 describe('a vocabulary column suggests status', () => {
     it('suggests status for a small recurring value set', () => {
-        const s = suggest(profile({ name: 'COL_7', distinctCount: 3, nonNullCount: 100 }));
+        const s = suggest(profile({ name: 'COL_7', distinctCount: 3, nonNullCount: 100, minValueCount: 30 }));
         expect(s.suggested).toBe('status');
+    });
+
+    it('does not suggest status when one value is a singleton (#5316)', () => {
+        const s = suggest(profile({ name: 'COL_7', distinctCount: 12, nonNullCount: 48, minValueCount: 1 }));
+        expect(s.suggested).not.toBe('status');
     });
 
     it('never echoes a value set into the operator-facing note', () => {

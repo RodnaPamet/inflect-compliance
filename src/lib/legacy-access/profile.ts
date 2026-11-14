@@ -113,7 +113,7 @@ export function computeColumnProfiles(
         // column's accumulator: the row count here is ONE page, and per-column
         // keeps each `Set` scoped so a wide table does not hold every column's
         // distinct values at once.
-        const distinct = new Set<string>();
+        const distinct = new Map<string, number>();
         let nonNull = 0;
         let emails = 0;
         let dates = 0;
@@ -128,7 +128,7 @@ export function computeColumnProfiles(
             if (raw.length > maxLength) maxLength = Math.min(raw.length, MAX_MEASURED_LENGTH);
             // Bounded: a page is capped by the transport, so this Set is bounded
             // by rows-per-page and not by the table.
-            distinct.add(raw);
+            distinct.set(raw, (distinct.get(raw) ?? 0) + 1);
             if (looksLikeEmail(raw)) emails += 1;
             if (looksLikeDate(raw)) dates += 1;
             if (looksLikeInteger(raw)) integers += 1;
@@ -146,14 +146,24 @@ export function computeColumnProfiles(
             integerShare: share(integers),
             booleanShare: share(booleans),
             maxLength,
+            // The rarest value's count, so the gate can require EVERY value to
+            // recur rather than the average (#5316).
+            minValueCount: rarestCount(distinct),
         };
 
         // The gate, applied HERE and nowhere else. A caller that wants the values
         // cannot ask for them; it gets them only when the statistics say they are
         // a vocabulary.
         if (!mayExposeValueSet(base)) return base;
-        return { ...base, valueSet: [...distinct].sort() };
+        return { ...base, valueSet: [...distinct.keys()].sort() };
     });
+}
+
+/** The smallest count in a value → count tally; 0 for an empty one. */
+function rarestCount(tally: ReadonlyMap<string, number>): number {
+    let min = Infinity;
+    for (const n of tally.values()) if (n < min) min = n;
+    return min === Infinity ? 0 : min;
 }
 
 /**

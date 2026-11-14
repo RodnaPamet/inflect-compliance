@@ -18,12 +18,14 @@
 import { NextRequest } from 'next/server';
 
 const consumeDownloadTokenMock = jest.fn();
+const resolveDownloadTokenMock = jest.fn();
 const findUniqueMock = jest.fn();
 const createSignedDownloadUrlMock = jest.fn();
 
 jest.mock('@/lib/trust-center/gated', () => ({
     __esModule: true,
     consumeDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
+    resolveDownloadToken: (...a: unknown[]) => resolveDownloadTokenMock(...a),
 }));
 
 jest.mock('@/lib/prisma', () => ({
@@ -57,6 +59,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     // A VALID, correctly-consumed token in every test below. The point is that
     // token validity alone must not be sufficient to be served bytes.
+    resolveDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1' });
     consumeDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1' });
     createSignedDownloadUrlMock.mockResolvedValue('https://signed.example/blob');
 });
@@ -155,7 +158,7 @@ describe('trust-center download — blocked is indistinguishable from absent', (
     });
 
     it('still rejects an invalid or expired token before touching the DB', async () => {
-        consumeDownloadTokenMock.mockResolvedValue(null);
+        resolveDownloadTokenMock.mockResolvedValue(null);
 
         const res = await GET(req(), ctx);
 
@@ -205,5 +208,38 @@ describe('trust-center download — the signed URL is short-lived', () => {
         // Seconds, not milliseconds — the value goes straight to the S3
         // presigner, where 300_000 would read as ~3.5 days.
         expect(expiresIn).toBeGreaterThan(0);
+    });
+});
+
+describe('trust-center download — the token is spent only on a servable file (#5316)', () => {
+    it('a file still PENDING its scan does not spend the single-use token', async () => {
+        findUniqueMock.mockResolvedValue({ ...servable, scanStatus: 'PENDING' });
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(404);
+        expect(resolveDownloadTokenMock).toHaveBeenCalledWith(TOKEN);
+        expect(consumeDownloadTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('a servable file spends the token, once, before the URL is minted', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(302);
+        expect(consumeDownloadTokenMock).toHaveBeenCalledTimes(1);
+        expect(consumeDownloadTokenMock.mock.invocationCallOrder[0])
+            .toBeLessThan(createSignedDownloadUrlMock.mock.invocationCallOrder[0]);
+    });
+
+    it('a token another request spent first mints no URL', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+        consumeDownloadTokenMock.mockResolvedValue(null);
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(404);
+        expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
     });
 });

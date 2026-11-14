@@ -169,6 +169,16 @@ describe('back affordance — no navigation cycles', () => {
         expect(backHref(child, parent, false)).toBe(parent);
     });
 
+    it('a literal route is not read as its dynamic sibling (#5316)', () => {
+        // `/agents/parameter-sets` used to resolve to `/agents/[agentId]`, so it
+        // and External tools shared the parent `/agents` and Back skipped the
+        // page the operator came from.
+        const page = `${T}/agents/parameter-sets`;
+        const from = `${T}/agents/external-tools`;
+        expect(backHref(page, from, false)).toBe(from);
+        expect(backHref(from, page, false)).toBe(`${T}/agents`);
+    });
+
     it('refuses a descendant referrer and ascends instead', () => {
         const page = `${T}/frameworks/x-frameworkkey`;
         const descendant = `${T}/frameworks/x-frameworkkey/install`;

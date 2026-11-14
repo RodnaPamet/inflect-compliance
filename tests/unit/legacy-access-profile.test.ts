@@ -146,6 +146,17 @@ describe('valueSet exposure — the only path a value takes to the screen', () =
         expect(byName(computeColumnProfiles(rows, ['S']), 'S').valueSet).toBeUndefined();
     });
 
+    it('does NOT expose a dominant value plus a handful of singleton people (#5316)', () => {
+        // 48 rows: 37 x `sysadmin`, 11 different logins once each. Twelve
+        // distinct, four on AVERAGE — but eleven of them name one person each.
+        const rows = rowsOf(48, (i) => ({ CREATED_BY: i < 37 ? 'sysadmin' : `person${i}` }));
+        const p = byName(computeColumnProfiles(rows, ['CREATED_BY']), 'CREATED_BY');
+        expect(p.distinctCount).toBe(12);
+        expect(p.minValueCount).toBe(1);
+        expect(p.valueSet).toBeUndefined();
+        expect(JSON.stringify(p)).not.toContain('person');
+    });
+
     it('no value reaches the output except through valueSet', () => {
         // The whole-module claim, asserted over a realistic wide page: identity
         // columns, a vocabulary column, and a free-text column together.

@@ -259,7 +259,9 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
                 const start = await startGateway();
                 if (!gatewayIsReady(start.outcome)) {
                     throw new SandboxUnreachableError(
-                        `the gateway VM did not become ready: ${start.outcome} after ${start.waitedMs}ms`,
+                        `the gateway VM did not become ready: ${start.outcome}` +
+                            (start.status !== undefined ? ` (HTTP ${start.status})` : '') +
+                            ` after ${start.waitedMs}ms`,
                     );
                 }
             }

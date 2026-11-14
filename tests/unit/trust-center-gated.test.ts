@@ -10,7 +10,7 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-import { requestTrustCenterAccess, consumeDownloadToken, listPublicTrustCenterDocuments, getPublicGatedDocuments } from '@/lib/trust-center/gated';
+import { requestTrustCenterAccess, consumeDownloadToken, resolveDownloadToken, listPublicTrustCenterDocuments, getPublicGatedDocuments } from '@/lib/trust-center/gated';
 import { prisma } from '@/lib/prisma';
 import * as tcAdmin from '@/app-layer/usecases/trust-center-documents';
 
@@ -54,6 +54,22 @@ describe('requestTrustCenterAccess', () => {
         expect(withNda?.downloadToken).toBeUndefined();
     });
 
+    it('a trust center requiring its NDA refuses a request that did not accept it, and stores nothing (#5316)', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', accessDomainAllowlist: [], ndaRequired: true });
+        for (const ndaAccepted of [undefined, false]) {
+            await expect(
+                requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted }, NOW),
+            ).rejects.toMatchObject({ status: 400, message: 'nda_required' });
+        }
+        expect(m.trustCenterAccessRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('a request that accepted the NDA records when', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', accessDomainAllowlist: [], ndaRequired: true });
+        await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted: true }, NOW);
+        expect(m.trustCenterAccessRequest.create.mock.calls[0][0].data.ndaSignedAt).toEqual(NOW);
+    });
+
     it('returns null for a disabled/missing slug (no existence disclosure)', async () => {
         m.trustCenter.findFirst.mockResolvedValue(null);
         expect(await requestTrustCenterAccess('nope', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW)).toBeNull();
@@ -76,6 +92,14 @@ describe('consumeDownloadToken', () => {
         expect(r).toEqual({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
         // the consume was atomic on downloadedAt: null
         expect(m.trustCenterAccessRequest.updateMany.mock.calls[0][0].where.downloadedAt).toBeNull();
+    });
+
+    it('resolveDownloadToken answers the same request and spends nothing (#5316)', async () => {
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toEqual({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
+        expect(m.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: NOW, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 
     it('rejects an already-downloaded token', async () => {

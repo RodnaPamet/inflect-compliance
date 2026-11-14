@@ -54,9 +54,11 @@ export const VALUE_SET_MAX_DISTINCT = 12;
 export const VALUE_SET_MIN_ROWS = 20;
 
 /**
- * How often each value must recur. `distinct * 4 <= nonNull` means every value
- * appears four times on average — which is what separates a status vocabulary
- * from a short list of different people.
+ * How often EACH value must recur: the rarest value in the column appears at
+ * least this many times. An AVERAGE would not do — 37 rows of `sysadmin` and
+ * eleven different people's logins average four apiece and would put all eleven
+ * on the screen (#5316). Every value recurring is what separates a status
+ * vocabulary from a short list of different people.
  */
 export const VALUE_SET_MIN_REPETITION = 4;
 
@@ -76,13 +78,18 @@ export interface ColumnProfile {
     readonly booleanShare: number;
     readonly maxLength: number;
     /**
+     * How many times the column's RAREST value occurs. A count, never a value.
+     * Absent reads as 0, so a profile that does not carry it exposes nothing.
+     */
+    readonly minValueCount?: number;
+    /**
      * The column's distinct values — present ONLY when they are a vocabulary.
      *
      * This is the single place a real value reaches the mapping screen, and the
      * conditions are the safety property rather than a convenience:
      * `distinctCount <= VALUE_SET_MAX_DISTINCT`, `nonNullCount >=
      * VALUE_SET_MIN_ROWS`, every value recurring at least
-     * `VALUE_SET_MIN_REPETITION` times on average, and no value that looks like
+     * `VALUE_SET_MIN_REPETITION` times (`minValueCount`), and no value that looks like
      * an email. Together those mean the column holds a small closed set each of
      * whose members describes MANY rows — `A`/`I`/`LOCKD`, `Y`/`N` — which is a
      * schema fact about the application, not data about a person.
@@ -107,11 +114,14 @@ export function mayExposeValueSet(p: {
     readonly distinctCount: number;
     readonly nonNullCount: number;
     readonly emailShare: number;
+    readonly minValueCount?: number;
 }): boolean {
     if (p.distinctCount === 0) return false;
     if (p.distinctCount > VALUE_SET_MAX_DISTINCT) return false;
     if (p.nonNullCount < VALUE_SET_MIN_ROWS) return false;
     if (p.distinctCount * VALUE_SET_MIN_REPETITION > p.nonNullCount) return false;
+    // Per value, not on average: one singleton is one person's value.
+    if ((p.minValueCount ?? 0) < VALUE_SET_MIN_REPETITION) return false;
     // Belt and braces. An email column is never a status vocabulary, and a
     // deployment with twenty rows and twelve shared mailboxes should not be the
     // case that disproves this module.

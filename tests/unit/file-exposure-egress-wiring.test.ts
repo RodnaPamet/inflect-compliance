@@ -129,6 +129,9 @@ const consumeDownloadTokenMock = jest.fn();
 jest.mock('@/lib/trust-center/gated', () => ({
     __esModule: true,
     consumeDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
+    // The route resolves without spending, then consumes once the file is
+    // servable (#5316); both answer the same request here.
+    resolveDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
 }));
 
 // ─── Evidence download route ───

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeDownloadToken } from '@/lib/trust-center/gated';
+import { consumeDownloadToken, resolveDownloadToken } from '@/lib/trust-center/gated';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
@@ -30,10 +30,13 @@ const TRUST_DOWNLOAD_URL_TTL_SECONDS = 300;
 /** PR-8 — PUBLIC: download a gated document via a single-use, expiring token. */
 export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }: { params: Promise<{ token: string }> }) => {
     const { token } = await p;
-    const resolved = await consumeDownloadToken(token);
-    if (!resolved) return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
+    // Resolve WITHOUT spending: the token is consumed below, only once the
+    // file has passed the AV + lifecycle gate. Spending it first made a file
+    // still PENDING its scan burn the requester's single-use link (#5316).
+    const pending = await resolveDownloadToken(token);
+    if (!pending) return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
     const file = await prisma.fileRecord.findUnique({
-        where: { id: resolved.fileRecordId },
+        where: { id: pending.fileRecordId },
         // scanStatus / status / deletedAt are SELECTED so they can be gated on
         // below. Selecting only pathKey + originalName is what made this route
         // serve INFECTED, mid-scan and soft-deleted files: a column you don't
@@ -61,12 +64,19 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
     if (file.status !== 'STORED' || file.deletedAt || !isDownloadAllowed(file.scanStatus)) {
         logger.warn('trust-center download blocked', {
             component: 'trust-center',
-            fileRecordId: resolved.fileRecordId,
+            fileRecordId: pending.fileRecordId,
             status: file.status,
             scanStatus: file.scanStatus,
             softDeleted: Boolean(file.deletedAt),
         });
         return jsonResponse({ error: 'not_found' }, { status: 404 });
+    }
+
+    // The file is servable: spend the token now. A concurrent request that
+    // claimed it first, or a token revoked in between, gets the same 404.
+    const resolved = await consumeDownloadToken(token);
+    if (!resolved || resolved.fileRecordId !== pending.fileRecordId) {
+        return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
     }
 
     const url = await getStorageProvider().createSignedDownloadUrl(file.pathKey, {

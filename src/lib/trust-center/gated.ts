@@ -15,6 +15,7 @@
  */
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
+import { badRequest } from '@/lib/errors/types';
 
 export interface PublicGatedDocument {
     id: string;
@@ -88,14 +89,21 @@ export interface AccessRequestResult {
  *
  * Returns null for a missing/disabled slug or unknown/ungated document (no
  * existence disclosure). On a valid request the caller returns a UNIFORM
- * "request received" response regardless of allowlist/NDA state, so the
+ * "request received" response regardless of allowlist state, so the
  * endpoint can't be used as an allowlist-probing oracle.
+ *
+ * A trust center that requires its NDA refuses a request that did not accept
+ * it (400 `nda_required`). The public page already blocked that in the
+ * browser, but a direct POST was stored with `ndaSignedAt` null and could be
+ * approved (#5316). The refusal discloses nothing: the public page shows
+ * whether the NDA is required.
  */
 export async function requestTrustCenterAccess(slug: string, documentId: string, input: AccessRequestInput, now: Date = new Date()): Promise<AccessRequestResult | null> {
     const tc = await prisma.trustCenter.findFirst({ where: { slug, enabled: true }, select: { id: true, tenantId: true, ndaRequired: true } });
     if (!tc) return null;
     const doc = await prisma.trustCenterDocument.findFirst({ where: { id: documentId, trustCenterId: tc.id, gated: true }, select: { id: true } });
     if (!doc) return null;
+    if (tc.ndaRequired && input.ndaAccepted !== true) throw badRequest('nda_required');
 
     const email = input.requesterEmail.trim().toLowerCase();
 
@@ -129,13 +137,16 @@ export interface ResolvedDownload {
     accessRequestId: string;
 }
 
+interface ValidRequest {
+    id: string;
+    fileRecordId: string;
+}
+
 /**
- * Resolve + CONSUME a download token: hash lookup, must be APPROVED, not
- * expired, not already downloaded. Marks it downloaded (single-use) and
- * returns the fileRecordId plus the request it came from. Returns null on any
- * failure (no disclosure).
+ * The approved, unexpired, unconsumed request a token names on an ENABLED trust
+ * center, or null. Reads only.
  */
-export async function consumeDownloadToken(token: string, now: Date = new Date()): Promise<ResolvedDownload | null> {
+async function readValidRequest(token: string, now: Date): Promise<ValidRequest | null> {
     if (!token || !token.startsWith('ictc_')) return null;
     const req = await prisma.trustCenterAccessRequest.findUnique({
         where: { downloadTokenHash: hashToken(token) },
@@ -155,6 +166,32 @@ export async function consumeDownloadToken(token: string, now: Date = new Date()
     if (!req.document.trustCenter.enabled) return null;
     if (req.downloadedAt) return null; // single-use — already consumed
     if (req.expiresAt && req.expiresAt < now) return null;
+    return { id: req.id, fileRecordId: req.document.fileRecordId };
+}
+
+/**
+ * Resolve a download token WITHOUT spending it: the same checks as
+ * {@link consumeDownloadToken}, and no write. The download route resolves
+ * first, gates the file (AV scan, lifecycle), and consumes only once the file
+ * is servable — a token spent on a file still PENDING its scan used to be
+ * burnt by a 404, and the requester needed a re-issue once the scan came back
+ * CLEAN (#5316).
+ */
+export async function resolveDownloadToken(token: string, now: Date = new Date()): Promise<ResolvedDownload | null> {
+    const req = await readValidRequest(token, now);
+    if (!req) return null;
+    return { fileRecordId: req.fileRecordId, accessRequestId: req.id };
+}
+
+/**
+ * Resolve + CONSUME a download token: hash lookup, must be APPROVED, not
+ * expired, not already downloaded. Marks it downloaded (single-use) and
+ * returns the fileRecordId plus the request it came from. Returns null on any
+ * failure (no disclosure).
+ */
+export async function consumeDownloadToken(token: string, now: Date = new Date()): Promise<ResolvedDownload | null> {
+    const req = await readValidRequest(token, now);
+    if (!req) return null;
 
     // Consume atomically: only succeeds if still un-downloaded.
     const claim = await prisma.trustCenterAccessRequest.updateMany({
@@ -162,5 +199,5 @@ export async function consumeDownloadToken(token: string, now: Date = new Date()
         data: { downloadedAt: now },
     });
     if (claim.count === 0) return null; // lost the race
-    return { fileRecordId: req.document.fileRecordId, accessRequestId: req.id };
+    return { fileRecordId: req.fileRecordId, accessRequestId: req.id };
 }

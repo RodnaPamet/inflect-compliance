@@ -148,7 +148,20 @@ describe('every variant records its scheme, and the order is deterministic', () 
 describe('emailKey is built on, never replaced', () => {
     it('key is exactly what emailKey returns', () => {
         for (const raw of ['Ivan.Ivanov@Example.TEST', ' ivan@example.test ', 'not-an-email', '']) {
-            expect(normaliseEmail(raw).key).toBe(emailKey(baseClean(raw) || null));
+            expect(normaliseEmail(raw).key).toBe(emailKey(raw));
+        }
+    });
+
+    it('key is NOT folded: a fullwidth or zero-width-spliced address keeps its own key (#5316)', () => {
+        // Legacy data is untrusted. NFKC folding and invisible-stripping belong to
+        // the SUPPORTING layer; if they reached `key`, EMAIL_EXACT — a STRONG
+        // signal — would link an address the JML chain treats as different.
+        for (const raw of ['\uFF4A\uFF53\uFF4D\uFF49\uFF54\uFF48@corp.com', 'js\u200Bmith@corp.com']) {
+            const n = normaliseEmail(raw);
+            expect(n.key).toBe(emailKey(raw));
+            expect(n.key).not.toBe(emailKey('jsmith@corp.com'));
+            // …while the folded comparison layer still sees the same mailbox.
+            expect(n.untagged).toBe('jsmith@corp.com');
         }
     });
 

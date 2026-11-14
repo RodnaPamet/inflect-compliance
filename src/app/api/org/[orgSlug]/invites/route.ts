@@ -21,7 +21,7 @@ import {
     listPendingOrgInvites,
 } from '@/app-layer/usecases/org-invites';
 import { forbidden } from '@/lib/errors/types';
-import { resolvePublicOrigin } from '@/lib/http/request-origin';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
 import { sendInviteEmail } from '@/lib/email/invite-email';
 
 interface RouteContext {
@@ -52,7 +52,11 @@ export const POST = withApiErrorHandling(
         // and `emailSent` tells the admin whether it went out.
         const { sent } = await sendInviteEmail({
             to: result.invite.email,
-            acceptUrl: resolvePublicOrigin(req) + result.url,
+            // The link leaves this request in an email from our own sender,
+            // so its host is the configured one, never X-Forwarded-Host
+            // (#5316): a caller who reaches the app without the proxy
+            // controls that header.
+            acceptUrl: publicBaseUrl(req) + result.url,
             kind: 'organization',
             spaceName: ctx.orgSlug,
             roleLabel: ORG_ROLE_LABEL[body.role] ?? body.role,

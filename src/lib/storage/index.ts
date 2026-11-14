@@ -34,7 +34,8 @@ let _provider: StorageProvider | null = null;
 
 /**
  * Get the configured storage provider (singleton).
- * Default: 'local' if STORAGE_PROVIDER is not set.
+ * Default: 's3' if STORAGE_PROVIDER is not set (as `src/env.ts` declares),
+ * so an unset value needs S3_BUCKET — local disk is an explicit opt-in.
  *
  * PRODUCTION GUARD: Logs a warning if local provider is used in production.
  * All production deployments should use cloud storage ('s3').

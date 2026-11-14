@@ -221,9 +221,12 @@ export function translitVariants(token: string): Variant[] {
 // ‾‾‾ Email ‾‾‾
 
 export interface NormalisedEmail {
-    /** `emailKey`'s answer, unmodified. The ONLY value the JML chain joins on. */
+    /** `emailKey(raw)`, unmodified. The ONLY value the JML chain joins on. */
     readonly key: string | null;
-    /** `key` with a `+tag` removed. A SEPARATE layer — see below. */
+    /**
+     * The `baseClean`-folded address with a `+tag` removed and the domain
+     * made equivalent. A SEPARATE layer — see below.
+     */
     readonly untagged: string | null;
     /** The local part of `untagged`, for name-shaped comparison. */
     readonly localPart: string | null;
@@ -247,19 +250,28 @@ export const DOMAIN_EQUIVALENCE: Readonly<Record<string, string>> = {
 /**
  * Normalise an address WITHOUT touching `emailKey`.
  *
- * `key` is whatever `emailKey` returns, unchanged, because that is the value the
- * reconciler and the joiner both already use. The extra fields are strictly
- * additive and are used for scoring, never for identity.
+ * `key` is `emailKey(raw)` and nothing else — computed on the RAW value, not on
+ * the `baseClean` form — because that is the value the JML chain joins
+ * `Employee.workEmail` to `ConnectedIdentityAccount.email` on, and `EMAIL_EXACT`
+ * promises byte-equality with it. `baseClean` NFKC-folds and strips invisible
+ * characters, so a key built on it would let a fullwidth `ｊｓｍｉｔｈ@corp.com`
+ * or a zero-width-spliced address from an untrusted legacy snapshot reach the
+ * STRONG signal against an employee the leaver could never act on (#5316).
+ *
+ * The folded form feeds the extra fields, which are strictly additive and used
+ * for scoring, never for identity: such an address still earns the
+ * SUPPORTING `EMAIL_UNTAGGED` signal, so a reviewer is shown it.
  */
 export function normaliseEmail(raw: string | null | undefined): NormalisedEmail {
-    const key = emailKey(baseClean(raw) || null);
-    if (!key) return { key: null, untagged: null, localPart: null, domain: null };
+    const key = emailKey(raw);
+    const folded = emailKey(baseClean(raw) || null);
+    if (!folded) return { key, untagged: null, localPart: null, domain: null };
 
-    const at = key.lastIndexOf('@');
-    if (at <= 0 || at === key.length - 1) return { key, untagged: key, localPart: null, domain: null };
+    const at = folded.lastIndexOf('@');
+    if (at <= 0 || at === folded.length - 1) return { key, untagged: folded, localPart: null, domain: null };
 
-    const local = key.slice(0, at);
-    const rawDomain = key.slice(at + 1);
+    const local = folded.slice(0, at);
+    const rawDomain = folded.slice(at + 1);
     const domain = DOMAIN_EQUIVALENCE[rawDomain] ?? rawDomain;
     // `+tag` stripping, as its own layer. Gmail-style tagging is a routing feature,
     // not an identity: `ivan+legacy@x` and `ivan@x` are one mailbox.
