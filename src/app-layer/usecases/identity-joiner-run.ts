@@ -527,9 +527,11 @@ async function safeRecordExecution(
             db.integrationExecution.updateMany({
                 where: { id: record.id, tenantId: ctx.tenantId },
                 data: {
-                    // A plan-level refusal keeps its status and its sentence;
-                    // the execution block is added beside it all the same, so
-                    // the row never hides a create that happened.
+                    // A plan-level refusal keeps its status and its sentence.
+                    // A refused plan no longer reaches the creates at all, so
+                    // this arm is a belt: were one ever to act, the execution
+                    // block is added beside the refusal so the row never
+                    // hides a create that happened.
                     status: plan.refusal ? 'NOT_APPLICABLE' : joinerExecutionStatus(planned, execution),
                     resultJson: {
                         ...record.resultJson,
@@ -715,8 +717,18 @@ export async function runIdentityJoinerPass(input: {
             linkFreshnessMs: JOINER_LINK_FRESHNESS_MS,
         });
 
+        // A REFUSED plan creates nothing, at any rung (owner decision
+        // 2026-11-14). `BATCH_OVER_CAP`, `NO_DEPARTMENT_MAP` and
+        // `NO_DEFAULT_GROUP` all carry their per-starter decisions — PLANNED
+        // ones included, because the identity verdicts are what the rung is
+        // for — and this branch used to execute them anyway: at AUTOMATIC the
+        // cap that exists to stop a bad roster morning was a sentence on the
+        // row and nothing more. Gated on `refusal === null` rather than on a
+        // list of kinds, so a refusal added to the planner later is covered
+        // without anybody remembering this line. The plan's row, already
+        // written above, records the refusal by name as NOT_APPLICABLE.
         const execution =
-            mode === 'DRY_RUN'
+            mode === 'DRY_RUN' || plan.refusal !== null
                 ? NOTHING_EXECUTED
                 : await executePlannedCreates(ctx, input.provider, mode, plan, starters);
         if (execution.attempted > 0 || execution.refused > 0) {
@@ -847,6 +859,11 @@ async function executePlannedCreates(
     plan: JoinerPlan,
     starters: readonly JoinerCandidate[],
 ): Promise<CreateExecution> {
+    // The caller already skips a refused plan; this is the same rule held
+    // where the creates are, so a second caller cannot execute one either.
+    // Returned BEFORE either factory is asked: a refused plan constructs no
+    // provisioner and no writer, and reaches no journal.
+    if (plan.refusal !== null) return NOTHING_EXECUTED;
     const planned = plan.decisions.filter((d) => d.outcome === 'PLANNED');
     if (planned.length === 0) return NOTHING_EXECUTED;
 
