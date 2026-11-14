@@ -251,3 +251,45 @@ describe('freezing a pack', () => {
         expect(serverPack.status).toBe('DRAFT');
     });
 });
+
+// #5313 — the server refuses to freeze an empty pack, and the celebration is
+// for a freeze the server confirmed, not the optimistic FROZEN in front of it.
+describe('freeze on an empty pack, and the celebration', () => {
+    const celebrated = () =>
+        Object.keys(window.sessionStorage).some((k) => k.includes('audit-pack-complete'));
+
+    beforeEach(() => window.sessionStorage.clear());
+
+    it('offers Freeze disabled on an empty draft', async () => {
+        serverPack = { ...freshPack(), items: [], _count: { items: 0, shares: 0 } };
+        await renderPack();
+        expect(document.getElementById('freeze-pack-btn')).toBeDisabled();
+    });
+
+    it('offers it enabled once the pack has an item', async () => {
+        await renderPack();
+        expect(document.getElementById('freeze-pack-btn')).not.toBeDisabled();
+    });
+
+    it('does not celebrate a freeze the server refuses, even while it shows Frozen', async () => {
+        await renderPack();
+        freezeShouldFail = true;
+        holdFreeze = () => {};
+        await clickFreeze();
+        await flush(8);
+        expect(statusText()).toMatch(/frozen/i);
+        expect(celebrated()).toBe(false);
+
+        await act(async () => { holdFreeze?.(); });
+        await flush(8);
+        expect(statusText()).toMatch(/draft/i);
+        expect(celebrated()).toBe(false);
+    });
+
+    it('celebrates the freeze the server confirmed', async () => {
+        await renderPack();
+        await clickFreeze();
+        await waitFor(() => expect(statusText()).toMatch(/frozen/i), { timeout: 3000 });
+        await waitFor(() => expect(celebrated()).toBe(true));
+    });
+});

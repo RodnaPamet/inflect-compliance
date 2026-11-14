@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme-corp' }),
@@ -230,5 +230,40 @@ describe('NIS2 gap delegation panel — permission gate', () => {
         await waitFor(() =>
             expect(requestedUrls.filter((u) => u.includes('/assignments')).length).toBeGreaterThan(0),
         );
+    });
+});
+
+// #5313 — a later successful action clears an earlier action's error, rather
+// than leaving it beside the success notice until reload.
+describe('NIS2 gap actions — errors do not outlive the next action', () => {
+    it('a successful re-run clears the refused re-run before it', async () => {
+        const EN_NIS2 = (require('../../messages/en.json') as { audits: { nis2Gap: Record<string, string> } }).audits.nis2Gap;
+        let reruns = 0;
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            requestedUrls.push(url);
+            if (url.endsWith('/rerun') && init?.method === 'POST') {
+                reruns += 1;
+                if (reruns === 1) {
+                    return { ok: false, status: 409, json: async () => ({ error: { message: 'A run is already open.' } }) };
+                }
+                return { ok: true, json: async () => PAYLOAD };
+            }
+            if (url.endsWith('/audits/nis2-gap')) return { ok: true, json: async () => PAYLOAD };
+            if (url.includes('/assignments')) {
+                return { ok: false, status: 403, json: async () => ({ error: { code: 'FORBIDDEN', message: 'forbidden' } }) };
+            }
+            return { ok: true, json: async () => ({ suggestions: [] }) };
+        });
+        const { container, findByText, queryByText } = mount('OWNER');
+        await waitFor(() => expect(container.querySelector('#nis2-gap-history-table')).toBeTruthy());
+        await waitFor(() => expect(container.querySelector('#nis2-gap-rerun-btn')).toBeTruthy());
+
+        fireEvent.click(container.querySelector('#nis2-gap-rerun-btn') as HTMLElement);
+        expect(await findByText('A run is already open.')).toBeTruthy();
+
+        await waitFor(() => expect((container.querySelector('#nis2-gap-rerun-btn') as HTMLButtonElement).disabled).toBe(false));
+        fireEvent.click(container.querySelector('#nis2-gap-rerun-btn') as HTMLElement);
+        expect(await findByText(EN_NIS2.rerunStarted)).toBeTruthy();
+        expect(queryByText('A run is already open.')).toBeNull();
     });
 });

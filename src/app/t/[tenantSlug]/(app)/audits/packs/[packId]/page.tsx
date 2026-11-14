@@ -541,7 +541,11 @@ export default function PackDetailPage() {
     // hook order stays stable across loading → loaded transitions.
     const { celebrate } = useCelebration(celebrationDedupe);
     const packStatus: string | undefined = pack?.status;
-    const packComplete = packStatus === 'FROZEN' || packStatus === 'EXPORTED';
+    // Not while the freeze is in flight (#5313): its optimistic FROZEN is a
+    // prediction, and a refused freeze rolls it back after the celebration had
+    // already played — and, deduped per pack, it would not play again on the
+    // real freeze later. Celebrate the status the server confirmed.
+    const packComplete = (packStatus === 'FROZEN' || packStatus === 'EXPORTED') && !freezing;
     const packName: string | undefined = pack?.name;
     useEffect(() => {
         if (!packComplete) return;
@@ -667,7 +671,19 @@ export default function PackDetailPage() {
                                 of firing on a single click. The trigger stays icon-only
                                 (locked by icon-only-action-discipline); the confirm surface
                                 below carries the visible label + irreversibility warning. */}
-                            <IconAction variant="primary" onClick={() => setFreezeConfirmOpen(true)} loading={freezing} id="freeze-pack-btn" icon={<AppIcon name="lock" size={16} />} label={tx('packs.freezePack')} />
+                            {/* The server refuses to freeze an empty pack
+                                (PACK_EMPTY), so an empty draft offers the control
+                                disabled (#5313); the empty item list below says
+                                what to add. */}
+                            <IconAction
+                                variant="primary"
+                                onClick={() => setFreezeConfirmOpen(true)}
+                                loading={freezing}
+                                disabled={(pack.items?.length ?? 0) === 0}
+                                id="freeze-pack-btn"
+                                icon={<AppIcon name="lock" size={16} />}
+                                label={tx('packs.freezePack')}
+                            />
                         </>
                     )}
                     {/* Owner and Admin only: an Auditor holds `audits.share`
