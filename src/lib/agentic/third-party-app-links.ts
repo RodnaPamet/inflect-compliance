@@ -42,8 +42,10 @@ const GITHUB_INSTALLATION_RE = new RegExp(`^github:(${GITHUB_ORG}):installation:
 const GITHUB_APP_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,99}$/;
 
 /** An Okta org host on Okta's own domains, lower-case. */
-const OKTA_ORG_HOST = '[a-z0-9](?:[a-z0-9-]{0,62})(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}))*\\.(?:okta|oktapreview)\\.com';
-const OKTA_ORG_HOST_RE = new RegExp(`^${OKTA_ORG_HOST}$`);
+// One anchored literal, never an unanchored string composed into a RegExp
+// elsewhere: a host pattern must not be usable without its anchors (CodeQL
+// js/regex/missing-regexp-anchor).
+const OKTA_ORG_HOST_RE = /^[a-z0-9](?:[a-z0-9-]{0,62})(?:\.[a-z0-9](?:[a-z0-9-]{0,62}))*\.(?:okta|oktapreview)\.com$/;
 /** An Okta app id: letters and digits. */
 const OKTA_OBJECT_ID = '[A-Za-z0-9]{1,64}';
 /** `okta:<org host>:app:<app id>`. */
