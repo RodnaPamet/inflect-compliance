@@ -15,7 +15,7 @@ Since scanent #26 the overlay runs **scanent**, the standalone scanner product
 proxy, run one image pinned by its multi-arch index digest:
 
 ```
-ghcr.io/rodnapamet/scanent@sha256:4c688362967681cec569ca6bff3f0b90de0423443b90be9f9dfa347c29faa171   # 0.15.0
+ghcr.io/rodnapamet/scanent@sha256:7f9005ae540ca51abec195c21903fc593d5a3cf0c63478f4dc5eed6fbdb08493   # 0.16.0
 ```
 
 The image is public, so the VM pulls it with no registry login. Before a
@@ -37,7 +37,7 @@ manifest-list `Accept` header (the SHA-256 of that body).
 
 What the move changed, and what it did not:
 
-| | Inflect's scanner (before) | scanent 0.15.0 |
+| | Inflect's scanner (before) | scanent (0.15.0 and later) |
 | --- | --- | --- |
 | Image | `ghcr.io/rodnapamet/agent-harness-scanner`, private | `ghcr.io/rodnapamet/scanent`, public, signed |
 | Scanner command | `schedule --config …` | the same verbs (`schedule`, `scan --dry-run`, `public-key`), plus the offline `hosts` |
