@@ -27,10 +27,12 @@
  *
  * ## The fine-grained key lives at the ROUTE
  *
- * These usecases assert `assertCanRead` / `assertCanWrite`, exactly as
- * `agent-policy-card.ts` does, and `route-permissions.ts` maps the path to
- * `admin.agent_tool_exposure` — the same key that gates granting the tool,
- * which is what "the same authority" means here.
+ * The read asserts `assertCanRead`; the writes assert
+ * `assertAgentGovernanceWrite(ctx, 'agent_registry')` — the coarse write tier
+ * or the register key. The route takes a literal
+ * `requirePermission('admin.agent_registry')` on every method, and the path
+ * resolves through the `admin/agents(/.*)?` rule in `route-permissions.ts`
+ * (#5317 corrected this note, which named `admin.agent_tool_exposure`).
  */
 import { createHash } from 'node:crypto';
 

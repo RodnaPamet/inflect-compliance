@@ -270,6 +270,15 @@ export interface WantedRequirement {
 }
 
 /** `(family, canonical code)` — the key one obligation is known by across representations. */
+/**
+ * How a target control is NAMED in an artefact's title and body. A control with
+ * no code is named as such, by id, rather than interpolating `null` into the
+ * text an auditor reads (#5317) — the null-not-blank rule above, rendered.
+ */
+function controlLabel(control: Pick<TargetControl, 'id' | 'code'>): string {
+    return control.code ?? `uncoded control ${control.id}`;
+}
+
 function requirementKey(familyUrn: string, code: string): string {
     return `${familyUrn}::${canonicalRequirementCode(familyUrn, code)}`;
 }
@@ -1199,8 +1208,8 @@ function planFor(
         period,
         digest,
         recordCount,
-        title: `${body.title} — ${control.code}`,
-        content: `Control: ${control.code} (${control.requirementCode})\n${body.content}`,
+        title: `${body.title} — ${controlLabel(control)}`,
+        content: `Control: ${controlLabel(control)} (${control.requirementCode})\n${body.content}`,
         evidenceStatus,
     };
 }
@@ -1344,8 +1353,8 @@ export async function emitAgenticEvidence(
                     period,
                     digest: harnessDigest,
                     recordCount: harness.scans.length,
-                    title: `${harnessBody.title} — ${control.code}`,
-                    content: `Control: ${control.code} (${control.requirementCode})\n${harnessBody.content}`,
+                    title: `${harnessBody.title} — ${controlLabel(control)}`,
+                    content: `Control: ${controlLabel(control)} (${control.requirementCode})\n${harnessBody.content}`,
                     evidenceStatus: harnessArtefactEvidenceStatus(harnessBody.completeness),
                 });
             }
@@ -1698,12 +1707,13 @@ export interface WithdrawnArtefact {
  * unmapped reports `CONTROL_REMOVED`: they are different facts and the notice
  * text says which happened.
  *
- * `SOURCE_UNVERIFIABLE` is the third trigger: an artefact that counted receipts
- * which have since been found unverifiable. Re-emission fixes the ORDINARY case
- * (the counts recompute and the artefact keeps going), so withdrawal is reserved
- * for the case where the whole population is gone.
+ * `SOURCE_UNVERIFIABLE` is in the reason vocabulary (and the DB CHECK) but NO
+ * path here withdraws for it (#5317): nothing re-verifies a counted receipt
+ * after emission. An artefact over receipts later found unverifiable is
+ * corrected only by re-emission, which recomputes its counts; it is not
+ * withdrawn. The value is reserved for a check that does not exist yet.
  *
- * `AGENT_RETIRED` (#3700) is the fourth: a per-agent artefact of a period still
+ * `AGENT_RETIRED` (#3700) is the third: a per-agent artefact of a period still
  * open whose agent is RETIRED. Retirement withdraws those in its own
  * transaction (`withdrawRetiredAgentEvidenceInTx`); this asks the same question
  * on every tick, so a retirement that ran on a build that did not know the

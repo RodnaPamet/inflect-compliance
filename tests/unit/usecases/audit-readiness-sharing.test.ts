@@ -580,6 +580,25 @@ describe('listPackShares', () => {
 // Return channel — addShareComment (public, token-authenticated)
 // ──────────────────────────────────────────────────────────────────────
 describe('addShareComment', () => {
+    // The pack the share names is live and frozen unless a case says otherwise.
+    beforeEach(() => {
+        tenantDb.auditPack.findFirst.mockResolvedValue({ status: 'FROZEN' });
+    });
+
+    it.each([
+        ['soft-deleted', null],
+        ['DRAFT', { status: 'DRAFT' }],
+    ])('refuses a write through a link to a %s pack, as the GET does (#5317)', async (_label, pack) => {
+        globalDb.auditPackShare.findFirst.mockResolvedValueOnce({
+            id: 's-1', tenantId: 't-1', auditPackId: 'p-1', expiresAt: null,
+        });
+        tenantDb.auditPack.findFirst.mockResolvedValue(pack);
+        await expect(addShareComment('legit', { kind: 'FINDING', body: 'a gap' }))
+            .rejects.toThrow(/invalid or expired/i);
+        expect(tenantDb.auditPackShareComment.create).not.toHaveBeenCalled();
+        expect(tenantDb.auditPack.findFirst.mock.calls[0][0].where).toEqual({ id: 'p-1', deletedAt: null });
+    });
+
     it('throws notFound when the token matches no live share', async () => {
         globalDb.auditPackShare.findFirst.mockResolvedValueOnce(null);
         await expect(addShareComment('bogus', { kind: 'COMMENT', body: 'hi' }))

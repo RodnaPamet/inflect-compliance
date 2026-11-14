@@ -6,7 +6,8 @@
  */
 
 // ─── Pure cycle guard ───
-import { followChainHasCycle } from '@/app-layer/usecases/automation-rules';
+import { assertNoChainCycle, followChainHasCycle } from '@/app-layer/usecases/automation-rules';
+import { makeRequestContext } from '../helpers/make-context';
 
 describe('followChainHasCycle', () => {
     const chain: Record<string, string | null> = { b: 'c', c: null };
@@ -24,6 +25,33 @@ describe('followChainHasCycle', () => {
     it('detects a pre-existing cycle among other rules', () => {
         const loop: Record<string, string | null> = { b: 'c', c: 'b' };
         expect(followChainHasCycle('a', 'b', (id) => loop[id] ?? null)).toBe(true);
+    });
+});
+
+describe('assertNoChainCycle — a cycle mixing next and else edges (#5317)', () => {
+    const rules: Record<string, { nextRuleId: string | null; elseRuleId: string | null }> = {
+        B: { nextRuleId: null, elseRuleId: 'C' },
+        C: { nextRuleId: 'A', elseRuleId: null },
+    };
+    const db = {
+        automationRule: {
+            findFirst: jest.fn(async ({ where }: any) => (rules[where.id] ? { id: where.id, ...rules[where.id] } : null)),
+        },
+    } as any;
+    const ctx = makeRequestContext('ADMIN');
+
+    it('refuses A.next = B when B -else-> C -next-> A', async () => {
+        await expect(assertNoChainCycle(db, ctx, 'A', { nextRuleId: 'B' })).rejects.toThrow(/cycle/);
+    });
+
+    it('accepts an acyclic chain that shares a node on both edges', async () => {
+        const diamond = {
+            automationRule: {
+                findFirst: jest.fn(async ({ where }: any) =>
+                    ({ B: { id: 'B', nextRuleId: 'D', elseRuleId: 'D' }, D: { id: 'D', nextRuleId: null, elseRuleId: null } } as any)[where.id] ?? null),
+            },
+        } as any;
+        await expect(assertNoChainCycle(diamond, ctx, 'A', { nextRuleId: 'B' })).resolves.toBeUndefined();
     });
 });
 

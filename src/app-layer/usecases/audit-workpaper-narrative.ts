@@ -40,7 +40,6 @@
  * answer, which is the model's text. The after-run wrapper never throws: a
  * narrative is not worth failing a run that has already completed.
  */
-import { Prisma } from '@prisma/client';
 
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -233,9 +232,13 @@ async function capture(db: PrismaTx, ctx: RequestContext, runId: string): Promis
             alreadyNarrated += 1;
             continue;
         }
-        try {
-            await db.auditWorkpaperNarrative.create({
-                data: {
+        // ON CONFLICT DO NOTHING (`skipDuplicates`), never a caught P2002
+        // (#5317): a unique violation aborts the Postgres transaction this runs
+        // in, so catching it and carrying on failed the next statement — or,
+        // as the last write, rolled back narratives reported as RECORDED.
+        const inserted = await db.auditWorkpaperNarrative.createMany({
+            data: [
+                {
                     tenantId: ctx.tenantId,
                     workpaperId: n.workpaperId,
                     runId: run.id,
@@ -244,15 +247,14 @@ async function capture(db: PrismaTx, ctx: RequestContext, runId: string): Promis
                     // bounded and checked by the contract; encrypted at rest.
                     text: sanitizePlainText(n.text),
                 },
-            });
-        } catch (err) {
+            ],
+            skipDuplicates: true,
+        });
+        if (inserted.count === 0) {
             // Another capture narrated this workpaper first. Write-once: the
             // stored narrative stands, and this one is counted, not stored.
-            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-                alreadyNarrated += 1;
-                continue;
-            }
-            throw err;
+            alreadyNarrated += 1;
+            continue;
         }
         recorded += 1;
         // Audit, per workpaper. The codes and the run — never the text, which

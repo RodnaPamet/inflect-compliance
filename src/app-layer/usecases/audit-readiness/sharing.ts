@@ -173,6 +173,15 @@ export async function addShareComment(token: string, input: AddShareCommentInput
         : 'COMMENT';
 
     const created = await withTenantDb(share.tenantId, async (tdb) => {
+        // The same pack check the GET makes (#5317): a link to a soft-deleted
+        // or DRAFT pack is invalid, so it accepts no write either — a message
+        // stored against a deleted pack is one nobody would ever see.
+        const pack = await tdb.auditPack.findFirst({
+            where: { id: share.auditPackId, deletedAt: null },
+            select: { status: true },
+        });
+        if (!pack || pack.status === 'DRAFT') throw notFound('Invalid or expired share link');
+
         // Defensive: if an item is referenced, it must belong to this pack.
         if (input.auditPackItemId) {
             const item = await tdb.auditPackItem.findFirst({
