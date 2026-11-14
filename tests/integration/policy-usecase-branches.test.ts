@@ -432,6 +432,25 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         await expect(rollbackPolicy(ctx, policy.id)).rejects.toThrow(/ARCHIVED/i);
     });
 
+    it('publishPolicy: refuses an ARCHIVED policy even with a bypass reason (#5318)', async () => {
+        const policy = await createPolicy(ctx, { title: `ArchPub ${randomUUID().slice(0, 6)}`, content: '# v1' });
+        const full = await getPolicy(ctx, policy.id);
+        await globalPrisma.policy.update({ where: { id: policy.id }, data: { status: 'ARCHIVED' } });
+        await expect(
+            publishPolicy(ctx, policy.id, full.currentVersion!.id, { bypassApprovalReason: 'emergency' }),
+        ).rejects.toThrow(/archived/i);
+        const after = await globalPrisma.policy.findUniqueOrThrow({ where: { id: policy.id } });
+        expect(after.status).toBe('ARCHIVED');
+    });
+
+    it('a non-member owner is refused with a sentence, the code in details (#5318)', async () => {
+        const err = (await createPolicy(ctx, { title: `Own ${randomUUID().slice(0, 6)}`, ownerUserId: 'no-such-member' })
+            .then(() => null, (e: unknown) => e)) as { message: string; details?: unknown };
+        expect(err).not.toBeNull();
+        expect(err.message).toBe('The selected owner is not an active member of this tenant.');
+        expect(err.details).toEqual({ reason: 'INVALID_OWNER' });
+    });
+
     it('decidePolicyApproval: SoD covers AUTHORSHIP — the version author cannot approve, even when another user requested it', async () => {
         const admin = makeRequestContext('ADMIN', { tenantId: TENANT_ID, tenantSlug: SUITE_TAG, userId: adminUserId });
         const policy = await createPolicy(admin, { title: `AuthorSoD ${randomUUID().slice(0, 6)}` });

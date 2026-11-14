@@ -237,4 +237,11 @@ describe('computeTestReadiness — coverage formulas', () => {
         expect(out.map((r) => r.frameworkKey)).toEqual(['iso']);
         expect(out[0].withTestPlan).toBe(1);
     });
+
+    it('reads mappings of live controls only — a soft-deleted control is in no denominator (#5318)', async () => {
+        setupFw({ controlIds: ['c1'], planControlIds: [], runs: [] });
+        await computeTestReadiness(ctx);
+        const call = tenantDb.controlRequirementLink.findMany.mock.calls[0][0];
+        expect(call.where.control).toEqual({ deletedAt: null });
+    });
 });

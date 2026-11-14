@@ -19,7 +19,14 @@ const mockDb = {
     tenant: {
         findUnique: jest.fn().mockResolvedValue({ currencySymbol: '€' }),
     },
+    task: {
+        delete: jest.fn().mockResolvedValue({}),
+    },
 } as any;
+
+jest.mock('@/lib/cache/list-cache', () => ({
+    bumpEntityCacheVersion: jest.fn(),
+}));
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
@@ -116,7 +123,33 @@ describe('createBreachRemediationTask', () => {
         const result = await createBreachRemediationTask(editorCtx, 'br-1');
 
         expect(result).toEqual({ taskId: 'task-winner', created: false });
-        expect(logEvent).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalledWith(
+            expect.anything(),
+            editorCtx,
+            expect.objectContaining({ action: 'BREACH_REMEDIATION_TASK_CREATED' }),
+        );
+    });
+
+    it('a lost claim race removes the duplicate task the loser created (#5318)', async () => {
+        (mockDb.riskAppetiteBreach.findFirst as jest.Mock)
+            .mockResolvedValueOnce(breach())
+            .mockResolvedValueOnce({ remediationTaskId: 'task-winner' });
+        (mockDb.riskAppetiteBreach.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+
+        await createBreachRemediationTask(editorCtx, 'br-1');
+
+        expect(mockDb.task.delete).toHaveBeenCalledWith({ where: { id: 'task-1' } });
+        expect(logEvent).toHaveBeenCalledWith(
+            expect.anything(),
+            editorCtx,
+            expect.objectContaining({ action: 'TASK_DELETED', entityId: 'task-1' }),
+        );
+    });
+
+    it('a won claim deletes nothing', async () => {
+        (mockDb.riskAppetiteBreach.findFirst as jest.Mock).mockResolvedValue(breach());
+        await createBreachRemediationTask(editorCtx, 'br-1');
+        expect(mockDb.task.delete).not.toHaveBeenCalled();
     });
 
     it('rejects a resolved breach', async () => {

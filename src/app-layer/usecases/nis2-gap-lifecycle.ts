@@ -254,6 +254,16 @@ export async function applyNis2Remediations(
     for (const approval of approvals) {
         const s = byQ.get(approval.questionId);
         if (!s) { skipped++; continue; } // not a current suggestion — ignore
+        // The kind is the engine's, not the request's (#5318): an approval that
+        // names a different kind would create a Risk or Control the engine
+        // never proposed. Likewise a CONTROL_LINK may bind only a control the
+        // suggestion offered.
+        if (approval.kind !== s.kind) { skipped++; continue; }
+        if (
+            approval.kind === 'CONTROL_LINK'
+            && approval.linkControlId !== undefined
+            && !(s.existingControls ?? []).some((c) => c.id === approval.linkControlId)
+        ) { skipped++; continue; }
 
         if (approval.kind === 'RISK') {
             if (risks.has(s.title)) { skipped++; continue; }

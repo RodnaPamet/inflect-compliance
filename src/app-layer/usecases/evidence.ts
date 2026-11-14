@@ -559,7 +559,8 @@ async function assertOwnerIsActiveMember(
         select: { id: true },
     });
     if (!membership) {
-        throw badRequest('INVALID_OWNER', 'The evidence owner must be an active member of this tenant.');
+        // Sentence first, code in details (#5318): the client shows `message`.
+        throw badRequest('The evidence owner must be an active member of this tenant.', { reason: 'INVALID_OWNER' });
     }
 }
 

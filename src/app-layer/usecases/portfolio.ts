@@ -350,21 +350,24 @@ export async function getPortfolioTenantHealth(
 //   3. SELECT set_config('app.tenant_id', $1)    ← binds tenant ctx
 //
 // Inside the callback, every read against tenant-scoped tables runs
-// under FORCE ROW LEVEL SECURITY. The CISO is granted read access
-// only because the Epic O-2 auto-provisioning service created an
-// ADMIN `TenantMembership` for them in each child tenant. Without
-// that membership, the per-tenant query returns ZERO rows — the
-// portfolio drill-down never crosses tenant boundaries via a
-// privilege bypass; it just walks N legitimate per-tenant queries.
+// under FORCE ROW LEVEL SECURITY, which keeps each query to exactly
+// one tenant. RLS binds the TENANT, not the USER: it does not know
+// whether the caller holds a membership there, and returns that
+// tenant's rows either way. What scopes the fan-out to the tenants
+// the CISO may read is `checkAuditorFanOutIntegrity` below — every
+// drill-down (the preview, the CSV export and the paginated list*
+// pages, #5318) iterates only the tenants where the caller holds a
+// `TenantMembership`, which the Epic O-2 auto-provisioning service
+// creates in each child tenant.
 //
 // Reasoning about why this is correct:
 //   - We do NOT call `runInGlobalContext` for per-row business data.
 //   - We do NOT issue a single cross-tenant query against the
 //     business tables — every query targets exactly one tenantId.
 //   - If the CISO is removed as ORG_ADMIN, the deprovision usecase
-//     deletes their ADMIN rows, and the same drill-down loop
-//     starts returning zero rows per tenant (empty results, no
-//     errors) — the security envelope shrinks automatically.
+//     deletes their ADMIN rows, the membership filter drops those
+//     tenants, and the drill-down stops reading them — the security
+//     envelope shrinks automatically.
 //
 // Performance posture:
 //   100 tenants × ~5ms indexed query per tenant ≈ ~500ms total
@@ -911,7 +914,7 @@ export async function listNonPerformingControls(
         : undefined;
 
     const merged = await fanOutPerTenant<NonPerformingControlRow>(
-        tenants,
+        (await checkAuditorFanOutIntegrity(ctx, tenants)).accessibleTenants,
         async (db, tenant) => {
             // ONE READ PER PRIORITY BUCKET, each taking the per-tenant quota
             // (#5209). The merge orders by priority first, but this read used
@@ -1029,7 +1032,7 @@ export async function listCriticalRisksAcrossOrg(
         : undefined;
 
     const merged = await fanOutPerTenant<CriticalRiskRow>(
-        tenants,
+        (await checkAuditorFanOutIntegrity(ctx, tenants)).accessibleTenants,
         async (db, tenant) => {
             // The workspace's own highest band, and only risks still
             // needing treatment (#4846): the rows the portfolio's Critical
@@ -1147,7 +1150,7 @@ export async function listOverdueEvidenceAcrossOrg(
         : undefined;
 
     const merged = await fanOutPerTenant<OverdueEvidenceRowInternal>(
-        tenants,
+        (await checkAuditorFanOutIntegrity(ctx, tenants)).accessibleTenants,
         async (db, tenant) => {
             const rows = await db.evidence.findMany({
                 where: {

@@ -21,6 +21,8 @@
 
 const mockTx = {
     vendorAssessment: { findFirst: jest.fn(), update: jest.fn() },
+    // The sender's display name for the email (#5318).
+    user: { findUnique: jest.fn() },
 };
 
 jest.mock('@/lib/db-context', () => ({
@@ -88,6 +90,8 @@ beforeEach(() => {
     mockTx.vendorAssessment.update.mockResolvedValue({});
     mockEnqueueEmail.mockReset();
     mockEnqueueEmail.mockResolvedValue({ id: 'outbox-1' });
+    mockTx.user.findUnique.mockReset();
+    mockTx.user.findUnique.mockResolvedValue({ name: 'Dana Sender' });
 });
 
 describe('resendAssessmentInvite', () => {
@@ -208,6 +212,8 @@ describe('resendAssessmentInvite', () => {
             `https://app.example.com/vendor-assessment/a1?t=${out.externalAccessToken}`,
         );
         expect(out.notificationQueued).toBe(true);
+        // The sender by name, not by internal user id (#5318).
+        expect(payload.payload.inviterName).toBe('Dana Sender');
     });
 
     it('reports notificationQueued false when the outbox declines', async () => {

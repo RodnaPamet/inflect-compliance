@@ -624,6 +624,23 @@ describe('authentication failure', () => {
         // encryption on the grounds that it is system-generated.
         expect(conn.authFailureReason).not.toContain('SHOULD-NOT-APPEAR');
     });
+
+    it('a later authenticated pull CLEARS the mark, so a rotated token stops reading as rejected (#5318)', async () => {
+        pullSnapshotMock.mockResolvedValueOnce({
+            manifest: null, rows: [], complete: false, overshared: [],
+            reason: { kind: 'authentication-failed', message: 'rejected' },
+        });
+        await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+        expect(
+            (await prisma.integrationConnection.findUniqueOrThrow({ where: { id: connectionId } })).authFailedAt
+        ).not.toBeNull();
+
+        pullSnapshotMock.mockResolvedValueOnce({ manifest: manifest(), rows, complete: true });
+        await runLegacyAccessPull({ tenantId: TENANT, connectionId });
+        const conn = await prisma.integrationConnection.findUniqueOrThrow({ where: { id: connectionId } });
+        expect(conn.authFailedAt).toBeNull();
+        expect(conn.authFailureReason).toBeNull();
+    });
 });
 
 describe('mapping preconditions', () => {

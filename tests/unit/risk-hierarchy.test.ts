@@ -70,3 +70,16 @@ describe('aggregateTree — the risks attached to each node (#4772)', () => {
         expect(eng.riskCount).toBe(2);
     });
 });
+
+describe('aggregateTree — a stored parent cycle (#5318)', () => {
+    it('terminates instead of recursing until RangeError', () => {
+        const childrenByParent = new Map([
+            ['a', [{ id: 'b', name: 'B' }]],
+            ['b', [{ id: 'a', name: 'A' }]],
+        ]);
+        const [a] = aggregateTree([{ id: 'a', name: 'A' }], childrenByParent, new Map([['b', ['r1']]]), new Map([['r1', 10]]));
+        expect(a.children.map((c) => c.nodeId)).toEqual(['b']);
+        expect(a.children[0].children).toEqual([]);
+        expect(a.totalAle).toBe(10);
+    });
+});

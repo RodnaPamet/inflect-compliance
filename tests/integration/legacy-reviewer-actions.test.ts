@@ -374,6 +374,27 @@ describe('each action writes what it claims', () => {
         expect((await alias()).employeeId).toBeNull();
     });
 
+    it('NON_PERSON refuses an owner whose membership is no longer ACTIVE (#5318)', async () => {
+        await prisma.tenantMembership.updateMany({
+            where: { tenantId: T1, userId: 'user-owner' },
+            data: { status: 'DEACTIVATED' },
+        });
+        await expect(
+            decideLegacyAccount(ctx(), {
+                connectionId, accountKey: 'alovelace', executionId,
+                action: {
+                    kind: 'NON_PERSON', ownerUserId: 'user-owner',
+                    justification: 'batch job for the nightly export',
+                },
+            })
+        ).rejects.toThrow(/member of this tenant/);
+        expect(
+            await prisma.legacyIdentityAlias.count({
+                where: { tenantId: T1, connectionId, accountKey: 'alovelace' },
+            })
+        ).toBe(0);
+    });
+
     it('EXTERNAL refuses an expiry in the past', async () => {
         await expect(
             decideLegacyAccount(ctx(), {

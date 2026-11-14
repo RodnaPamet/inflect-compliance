@@ -53,7 +53,14 @@ export async function computeTestReadiness(ctx: RequestContext): Promise<Framewo
 
         // All framework↔control mappings across every framework, one query.
         const links = await db.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId, requirement: { frameworkId: { in: frameworkIds } } },
+            // A control in the trash is not mapped (#5318), as the SoA and
+            // coverage pages count it; it would otherwise sit in every
+            // denominator with no active plan and no recent run.
+            where: {
+                tenantId: ctx.tenantId,
+                requirement: { frameworkId: { in: frameworkIds } },
+                control: { deletedAt: null },
+            },
             select: { controlId: true, requirement: { select: { frameworkId: true } } },
             take: MAX_MAPPING_LINKS,
         });
