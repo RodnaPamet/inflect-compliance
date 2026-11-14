@@ -148,7 +148,9 @@ export class McpServerProvider implements IntegrationProvider {
         + '(app-only — no such ceiling, and the scope must name your server\'s own '
         + 'audience). Anything else takes a static Authorization header value, which works '
         + 'but expires with the token you paste. Testing the connection performs a real '
-        + 'handshake with the tool server and reports how many tools it advertises. Those tools are NOT '
+        + 'handshake with the tool server and reads its catalogue, so a green test means the '
+        + 'server answered both calls. The tools themselves, and how many it advertises, are '
+        + 'shown under Agents, External tools. Those tools are NOT '
         + 'usable yet: an administrator reviews and approves them, and they must then be '
         + 'granted to a registered agent. The server must be reachable on a public address '
         + 'over HTTPS — private and link-local addresses are refused, and redirects are '
@@ -327,11 +329,20 @@ export class McpServerProvider implements IntegrationProvider {
 
             // `ConnectionValidationResult` is `{ valid, error? }` — it carries
             // no success channel, so the tool COUNT cannot be reported here.
-            // That is a real gap for this provider specifically: the number an
-            // administrator most wants after connecting is how many tools were
-            // found. Widening the contract would touch every provider, so it
-            // waits for the catalogue-review surface, which has to render the
-            // tools themselves anyway.
+            // Widening the contract would touch every provider, so this waited
+            // for the catalogue-review surface, which has to render the tools
+            // themselves anyway.
+            //
+            // THAT SURFACE EXISTS: Agents → External tools lists them and, since
+            // #5573, states the advertised count and whether the read was
+            // truncated. So the gap is closed where the information belongs, and
+            // the contract is deliberately left alone (owner decision,
+            // 2026-11-14): a bare count here would be a second, weaker copy of a
+            // number that page shows in full, and it could not say which tools
+            // or whether the list was a prefix.
+            //
+            // The setup guide used to promise the count on THIS button (#5311).
+            // It now points at that page instead.
             return { valid: true };
         } catch (err) {
             // The server's own message is passed through ONLY for a protocol-level

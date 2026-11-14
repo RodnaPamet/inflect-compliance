@@ -78,6 +78,16 @@ export interface ExternalToolCatalogue {
     /** True when `advertised` exceeded the cap and `tools` is a prefix. */
     truncated: boolean;
     /**
+     * `MAX_EXTERNAL_TOOLS`, sent rather than re-declared in the client.
+     *
+     * The catalogue page has to name this number when it reports a truncated
+     * read, and the alternatives were both worse: importing it would pull this
+     * usecase's whole graph into the browser bundle, and a second copy in a
+     * client constants module is a number that goes stale silently the day
+     * this one moves.
+     */
+    cap: number;
+    /**
      * How many advertised tools were left out for an unusable name (#4238):
      * empty, not a string, or longer than `MCP_TOOL_NAME_MAX_LENGTH`. Counted
      * and never quoted, so an operator can see a tool is missing without
@@ -294,6 +304,7 @@ export async function listExternalMcpTools(
         // partial catalogue as complete, because a tool nobody can see cannot
         // be granted.
         truncated: advertised.length > considered.length || catalogueTruncated,
+        cap: MAX_EXTERNAL_TOOLS,
         refusedNames,
     };
 }

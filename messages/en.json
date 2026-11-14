@@ -7139,7 +7139,7 @@
         },
         "mcp-server": {
           "description": "An external Model Context Protocol server an agent can be granted tools on. Connecting one does not grant anything: its tools must be reviewed and pinned, then granted to a specific registered agent, before any run can call them.",
-          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reports how many tools it advertises. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
+          "setupGuide": "Enter the server's HTTPS endpoint, then choose how it authenticates. A server behind Microsoft Entra takes the tenant ID, client ID and client secret, plus EITHER a refresh token (delegated — every token carries a named person's privileges, so an agent can never see more than that person) OR a token scope (app-only — no such ceiling, and the scope must name your server's own audience). Anything else takes a static Authorization header value, which works but expires with the token you paste. Testing the connection performs a real handshake with the tool server and reads its catalogue, so a green test means the server answered both calls. The tools themselves, and how many it advertises, are shown under Agents, External tools. Those tools are NOT usable yet: an administrator reviews and approves them, and they must then be granted to a registered agent. The server must be reachable on a public address over HTTPS — private and link-local addresses are refused, and redirects are not followed.",
           "fields": {
             "url": {
               "label": "Server URL",
@@ -12247,6 +12247,9 @@
       "connectionLabel": "Tool server",
       "refresh": "Refresh catalogue",
       "loading": "Reading the server catalogue…",
+      "advertisedCount": "This server advertises {count} tools.",
+      "advertisedCountOne": "This server advertises one tool.",
+      "catalogueTruncated": "Only part of this server's catalogue could be read: at most {max} tools, and only the pages the server returned within our cursor bound. Any tool beyond that is not listed here and cannot be approved.",
       "refusedNames": "{count, plural, one {# tool the server offers is not listed: its name is empty, is longer than {max} characters, or contains a control, line-break or invisible character.} other {# tools the server offers are not listed: their names are empty, are longer than {max} characters, or contain control, line-break or invisible characters.}}",
       "loadFailed": "Could not read the catalogue from this server.",
       "approve": "Approve",
