@@ -128,21 +128,22 @@ export async function hashPassword(plaintext: string): Promise<string> {
         throw new Error(`hashPassword: plaintext exceeds ${MAX_PASSWORD_LENGTH} chars`);
     }
     const bcrypt = await bcryptModule;
-    // STILL THE RAW PLAINTEXT, and that is deliberate — this is deploy 1 of
-    // two (#5592, owner decision 2026-11-14).
+    // THE PRE-HASHED FORM — deploy 2 of two (#5592). Deploy 1 taught
+    // `verifyPasswordWithScheme` to READ this and deliberately kept writing the
+    // raw plaintext, because writing it in the same deploy would have stranded
+    // every user who set a password while it was live: the previous image
+    // compared the raw plaintext, and no raw comparison can open a pre-hashed
+    // hash.
     //
-    // `verifyPasswordWithScheme` can already READ a pre-hashed hash, but
-    // nothing writes one yet. Writing one here in the same deploy would make a
-    // rollback strand every user who set a password while it was live: the
-    // previous image compares the raw plaintext, and no raw comparison can
-    // open a pre-hashed hash. `password-verify-bcrypt-interop` names that
-    // guarantee — "a hash the new hasher writes is one bcryptjs reads, so a
-    // rollback strands nobody" — and it is what caught this.
+    // Reverting THIS deploy strands nobody, which is the whole reason for the
+    // split. The image underneath is deploy 1, whose probe tries the pre-hashed
+    // compare first and falls back to the legacy one, so it still reads every
+    // hash written here. `password-verify-bcrypt-interop` is the test that
+    // names the guarantee, and it is what caught the single-deploy plan.
     //
-    // Deploy 2 flips this one call to `prehashForBcrypt(plaintext)` and wires
-    // the re-hash in `credentials.ts`. Reverting THAT lands on an image which
-    // can still read what it wrote, because of the probe shipped here.
-    return bcrypt.hash(plaintext, BCRYPT_COST);
+    // Every byte of the password now reaches bcrypt: sha256-then-base64 is 44
+    // bytes whatever the input, so bcrypt's 72-byte read truncates nothing.
+    return bcrypt.hash(prehashForBcrypt(plaintext), BCRYPT_COST);
 }
 
 /**

@@ -382,14 +382,17 @@ export async function authenticateWithPassword(
     // the plaintext we already have in hand and store a fresh hash. The
     // next login won't need this path. Errors here MUST NOT fail the
     // login — the user already proved they know the password.
-    // `legacyScheme` is NOT consulted yet, on purpose (#5592 deploy 1). Every
-    // stored hash is legacy today because `hashPassword` still writes that
-    // form, so acting on it here would rewrite the row on every single login.
-    // It is wired in deploy 2, in the same diff that starts writing the
-    // pre-hashed form — which is what makes the flag mean "behind the current
-    // scheme" rather than "a hash".
-    void legacyScheme;
-    if (needsRehash(user.passwordHash)) {
+    // `legacyScheme` is wired here in deploy 2 (#5592), in the same diff that
+    // starts writing the pre-hashed form — which is what makes the flag mean
+    // "behind the current scheme" rather than just "a hash". Acting on it in
+    // deploy 1 would have rewritten the row on every single login, because
+    // every stored hash was legacy while `hashPassword` still wrote that form.
+    //
+    // So a user whose password predates #5592 is migrated silently on their
+    // next sign-in, using the plaintext already in hand — the only moment it
+    // is available. Nothing else can do it: the stored hash cannot be
+    // converted, and there is no field recording a row's scheme.
+    if (legacyScheme || needsRehash(user.passwordHash)) {
         try {
             const newHash = await hashPassword(password);
             await prisma.user.update({
