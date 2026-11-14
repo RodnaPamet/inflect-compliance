@@ -79,8 +79,22 @@ https://www.googleapis.com/auth/service.management.readonly,\
 https://www.googleapis.com/auth/servicecontrol,\
 https://www.googleapis.com/auth/trace.append"
 
+# The app's readiness is probed through the PUBLISHED origin, from where this
+# script runs — the same origin apply.sh's health_verify reads. Not
+# http://127.0.0.1:3000 on the VM host, which is what this used to curl: the
+# app container only `expose`s 3000 to the compose network, so that probe could
+# never answer (#5308).
+READY_ORIGIN="${READY_ORIGIN:-https://app.inflect.bg}"
+
 MODE="${1:---dry-run}"
 say() { printf '  %s\n' "$*"; }
+
+rollback_hint() {
+    say "roll back with:"
+    say "  gcloud compute instances stop $VM"
+    say "  gcloud compute instances set-service-account $VM --service-account=880736019978-compute@developer.gserviceaccount.com --scopes=default"
+    say "  gcloud compute instances start $VM"
+}
 
 say "project $PROJECT   vm $VM   zone $ZONE"
 say "target SA $SA"
@@ -111,14 +125,21 @@ say "STARTING $VM"
 gcloud compute instances start "$VM" --project "$PROJECT" --zone "$ZONE"
 
 # ── VERIFY. Three things, because "the app came back" is not enough. ───────
-say "waiting for the app to answer"
+say "waiting for the app to answer at ${READY_ORIGIN}/api/readyz"
+READY=0
 for _ in $(seq 1 40); do
     sleep 10
-    if gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" --tunnel-through-iap \
-        --command='curl -sf -m 5 -o /dev/null http://127.0.0.1:3000/api/readyz' 2>/dev/null; then
-        say "  readyz answers"; break
+    if curl -sf -m 5 -o /dev/null "${READY_ORIGIN}/api/readyz"; then
+        say "  readyz answers"; READY=1; break
     fi
 done
+# Running out is a FAILURE, not a step to walk past: everything below assumes
+# the app came back, and "done" at the end must not be printed over a dead app.
+if [ "$READY" != 1 ]; then
+    say "FAILED: ${READY_ORIGIN}/api/readyz did not answer within ~400 s of the start."
+    rollback_hint
+    exit 1
+fi
 
 say "verifying the metadata token carries monitoring.write (the alerts depend on it)"
 gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" --tunnel-through-iap --command='
@@ -140,7 +161,5 @@ gcloud compute ssh "$VM" --project "$PROJECT" --zone "$ZONE" --tunnel-through-ia
   echo \"    delete: HTTP \$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H \"Authorization: Bearer \$T\" \$B)   (403 expected — NOT granted)\""
 
 say ""
-say "done. If anything above failed, roll back with:"
-say "  gcloud compute instances stop $VM"
-say "  gcloud compute instances set-service-account $VM --service-account=880736019978-compute@developer.gserviceaccount.com --scopes=default"
-say "  gcloud compute instances start $VM"
+say "done. If anything above failed,"
+rollback_hint

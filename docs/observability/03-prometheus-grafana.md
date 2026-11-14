@@ -339,9 +339,10 @@ docker compose -f docker-compose.observability.yml --env-file .env up -d
 Then:
 
 1. **Join the app's network.** `APP_NETWORK_NAME` defaults to
-   `inflect_internal`, the network the root `docker-compose.prod.yml` declares.
-   `deploy/docker-compose.prod.yml` declares no networks, so for that file it
-   is the Compose project's default network. Confirm it with
+   `inflect_default`: `deploy/docker-compose.prod.yml`, which production runs,
+   declares no networks, so its containers are on the Compose project's
+   default network. The local root `docker-compose.prod.yml`
+   declares `internal` instead (`<project>_internal`). Confirm it with
    `docker network ls`. See `01-deployment-topology.md`.
 2. **Point the app at the collector.** Set `OTEL_ENABLED=true` and
    `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318` in the app's

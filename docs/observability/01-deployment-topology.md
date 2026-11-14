@@ -80,12 +80,13 @@ Two networks:
   network is published to the host.
 - **`app`** — the application compose project's pre-existing bridge
   network, joined as `external`. The observability compose names it
-  through `APP_NETWORK_NAME` in `.env` (default `inflect_internal`,
-  which matches the network the root `docker-compose.prod.yml`
-  declares). `deploy/docker-compose.prod.yml`, which production runs,
-  declares no networks, so its services are on the compose project's
-  default network: `inflect_default` for the project in
-  `/opt/inflect/`. Confirm the name with `docker network ls`. Only
+  through `APP_NETWORK_NAME` in `.env` (default `inflect_default`).
+  `deploy/docker-compose.prod.yml`, which production runs, declares
+  no networks, so its services are on the compose project's default
+  network: `inflect_default` for the project in `/opt/inflect/`. The
+  local root `docker-compose.prod.yml` declares a network named
+  `internal` instead (`<project>_internal`), so set the variable for
+  that stack. Confirm the name with `docker network ls`. Only
   the **collector** joins this network — it is the single bridge
   between the two compose projects. Prometheus, Tempo, and Grafana
   never touch the app network.
