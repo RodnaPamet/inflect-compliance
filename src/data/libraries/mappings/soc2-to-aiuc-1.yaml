@@ -8,10 +8,15 @@
 # that holds SOC 2 controls (invariant 5 of
 # tests/unit/agentic-framework-mappings.test.ts refuses exactly that).
 #
-# Each node stands for its whole criteria SERIES, which is how the SOC 2
-# catalogue uses it: CC6.1 carries the periodic access review and encryption
-# controls, CC7.1 the incident-response one. The edges are read against the
-# series, and are coarse by construction. What has no SOC 2 route at all:
+# CC6 is represented criterion by criterion (CC6.1–CC6.8, since #3369), so a
+# CC6 edge targets the criterion it is judged against: CC6.1 is the access-
+# security architecture (the authentication and encryption controls link
+# there), CC6.3 the role-based authorisation and periodic access review (the
+# provisioning and access-review controls link there). Every other series is
+# still one node standing for the whole series, which is how the SOC 2
+# catalogue uses it — CC7.1 carries the incident-response control — so those
+# edges are read against the series and are coarse by construction. What has
+# no SOC 2 route at all:
 # AIUC-1's requirements on what the agent outputs (C003–C007, D001), its
 # privacy-specific handling (A001, A002, A006, E011), its quarterly
 # independent testing, and AI disclosure.
@@ -42,7 +47,7 @@ description: >
   Cross-framework traceability between SOC 2 (2017) and AIUC-1 (Q4-2026).
   Curated alignment for gap analysis and inherited coverage — structural
   guidance, not a compliance guarantee.
-version: 1
+version: 2
 source_framework_ref: SOC2-2017
 target_framework_ref: AIUC-1
 
@@ -51,6 +56,10 @@ mapping_entries:
     target_ref: "A003"
     strength: INTERSECT
     rationale: "[curated] Logical access security over protected assets, applied to what an agent may retrieve; scoping by task and session is AIUC-1's addition."
+  - source_ref: "CC6.3"
+    target_ref: "A003"
+    strength: INTERSECT
+    rationale: "[curated] Authorising access by role with least privilege, and granting, reviewing and withdrawing it, applied to an agent identity; bounding its reads by the task, the session and the user it acts for is AIUC-1's addition."
   - source_ref: "CC6.1"
     target_ref: "A005"
     strength: INTERSECT
@@ -63,10 +72,10 @@ mapping_entries:
     target_ref: "B006"
     strength: INTERSECT
     rationale: "[curated] Logical access controls over backend services bound what an agent can act on; monitoring its actions and sandboxing it are AIUC-1's additions."
-  - source_ref: "CC6.1"
+  - source_ref: "CC6.3"
     target_ref: "B007"
     strength: INTERSECT
-    rationale: "[curated] People's access to the AI system's configuration, models and data is logical access security; reviewing it every quarter is AIUC-1's addition."
+    rationale: "[curated] Authorising and modifying access by role and reviewing it periodically, applied to people's access to the AI system's configuration, prompts, models and data; the quarterly cadence and a recorded justification for each change are AIUC-1's additions."
   - source_ref: "CC6.1"
     target_ref: "B008"
     strength: INTERSECT

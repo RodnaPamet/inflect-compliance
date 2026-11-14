@@ -34,7 +34,10 @@ jest.mock('@/app-layer/repositories/AssetRepository', () => ({
 }));
 
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn().mockResolvedValue(undefined) }));
-jest.mock('@/lib/cache/list-cache', () => ({ bumpEntityCacheVersion: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('@/lib/cache/list-cache', () => ({
+    bumpEntityCacheVersion: jest.fn().mockResolvedValue(undefined),
+    bumpTenantCacheVersion: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('@/lib/observability', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
     log: jest.fn(),
@@ -48,6 +51,7 @@ import {
 } from '@/app-layer/usecases/asset';
 import { AssetRepository } from '@/app-layer/repositories/AssetRepository';
 import { logEvent } from '@/app-layer/events/audit';
+import { bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { makeRequestContext } from '../helpers/make-context';
 
 const mockListByIds = AssetRepository.listByIds as jest.Mock;
@@ -212,5 +216,28 @@ describe('bulkAssignAsset — the owner must be an ACTIVE member (#5317)', () =>
         mockListByIds.mockResolvedValue(rows('a1'));
         await expect(bulkAssignAsset(makeRequestContext('EDITOR'), ['a1'], null)).resolves.toEqual({ updated: 1 });
         expect(mockDb.tenantMembership.findFirst).not.toHaveBeenCalled();
+    });
+});
+
+// ─── SSR payload invalidation (#5316) ──────────────────────────────
+//
+// The assets page caches its first-paint list in `cachedSsrPayload`, keyed on
+// the tenant cache version. A bulk write that did not bump it left the
+// pre-write list on screen for up to 30 s with Redis configured.
+
+describe('bulk asset actions — SSR payload invalidation', () => {
+    it.each([
+        ['bulkSetAssetStatus', () => bulkSetAssetStatus(makeRequestContext('ADMIN'), ['a1'], 'RETIRED')],
+        ['bulkAssignAsset', () => bulkAssignAsset(makeRequestContext('ADMIN'), ['a1'], 'u1')],
+        ['bulkDeleteAsset', () => bulkDeleteAsset(makeRequestContext('ADMIN'), ['a1'])],
+    ])('%s bumps the tenant cache version', async (_name, call) => {
+        mockListByIds.mockResolvedValue(rows('a1'));
+        await call();
+        expect(bumpTenantCacheVersion).toHaveBeenCalledWith(makeRequestContext('ADMIN').tenantId);
+    });
+
+    it('a refused bulk write bumps nothing', async () => {
+        await expect(bulkDeleteAsset(makeRequestContext('EDITOR'), ['a1'])).rejects.toThrow();
+        expect(bumpTenantCacheVersion).not.toHaveBeenCalled();
     });
 });

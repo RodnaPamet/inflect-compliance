@@ -76,7 +76,7 @@ describe('scoreSelfAssessment (pure)', () => {
         // overall = mean of the two SCORED dimensions = 2.
         expect(score.overall).toBe(2);
         expect(score.overall100).toBe(50);
-        expect(score.band).toBe('Managed'); // 2 falls in [2,3) → Managed
+        expect(score.band).toBe('managed'); // 2 falls in [2,3) → managed
         expect(score.answered).toBe(10);
     });
 
@@ -90,7 +90,7 @@ describe('scoreSelfAssessment (pure)', () => {
         const score = scoreSelfAssessment(DIGITAL_SOVEREIGNTY_ASSESSMENT, all4);
         expect(score.overall).toBe(4);
         expect(score.overall100).toBe(100);
-        expect(score.band).toBe('Sovereign-ready');
+        expect(score.band).toBe('sovereignReady');
     });
 });
 

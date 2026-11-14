@@ -9,8 +9,11 @@
 # no points of focus appear here; rationales are our own words.
 #
 # DELIBERATELY INCOMPLETE, and the gaps are the honest part. This repo's SOC 2
-# library carries ONE assessable node per common-criteria series (CC1.1, CC1.2,
-# CC2.1, CC3.1, CC4.1, CC5.1 …) rather than the full published TSC. Principles
+# library carries one or two assessable nodes per common-criteria series (CC1.1,
+# CC1.2, CC2.1, CC3.1, CC4.1, CC5.1 …) rather than the full published TSC; only
+# CC6 is complete (CC6.1–CC6.8, since #3369), and no COSO principle maps onto
+# it here: CC6–CC9 are the TSC's additional criteria beyond COSO's five
+# components, and this file targets only CC1–CC5. Principles
 # whose real TSC counterpart is a code this library does not contain — P3, P4 and
 # P5 against CC1.3/CC1.4/CC1.5, for instance — are LEFT OUT rather than mapped to
 # the nearest node that happens to exist. A mapping that resolves but misstates

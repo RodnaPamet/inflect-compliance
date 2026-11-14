@@ -176,7 +176,7 @@ describe('the section axis is structural, not a tier (#2619)', () => {
     // two catalogues that ship violated its own tier assertion.
 
     it.each([
-        ['OWASP-ASVS', 128, 13],
+        ['OWASP-ASVS', 129, 13],
         ['CIS-V8', 56, 15],
     ])('%s, as production applies it, breaks down by chapter', (key, reqCount, sections) => {
         const applied = appliedCatalogFor(key as string);

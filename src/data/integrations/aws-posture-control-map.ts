@@ -9,12 +9,13 @@
  * (`FrameworkRequirement.code`), so the mapping resolves against installed
  * frameworks with no dangling refs.
  *
- * FRAMEWORK NOTE: IC's library has SOC 2 (codes CC1.1/CC1.2/CC2.1/CC3.1/CC4.1/
- * CC5.1/CC6.1/CC7.1/CC8.1/CC9.1) but does NOT yet have NIST CSF 2.0 as a
- * requirement library (it exists only as the maturity-radar domain enum).
- * The foundation therefore maps to SOC 2. When a NIST CSF 2.0 framework is
- * seeded, add a `nistCsf` key to these entries — the connector + runtime
- * resolver are framework-agnostic.
+ * FRAMEWORK NOTE: the map crosswalks to TWO libraries, keyed by
+ * `AWS_POSTURE_FRAMEWORK_KEYS`: SOC 2 (`soc2`, every entry) and the installable
+ * NIST CSF 2.0 library (`nistCsf`, `src/data/libraries/nist-csf-2.0.yaml`,
+ * most entries). `frameworkCodesForControl` emits one `{ frameworkKey, codes }`
+ * per key, and the runtime resolver links evidence only for frameworks the
+ * tenant has installed. A third framework is a new field on the entry type, a
+ * key in `AWS_POSTURE_FRAMEWORK_KEYS` and a line in `frameworkCodesForControl`.
  *
  * Powerpipe control ids below are the stable check names emitted in the
  * benchmark JSON (`control.<name>`); each maps to the SOC 2 Trust Services

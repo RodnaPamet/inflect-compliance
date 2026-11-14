@@ -46,6 +46,7 @@ import {
     type CanvasMode,
 } from '@/lib/processes/switch-canvas-mode';
 import { saveTldrawCanvas } from '@/lib/processes/tldraw-save';
+import { useVersionConflictCopy } from '@/lib/processes/version-conflict-toast';
 import type { ManualSaveResult } from '@/lib/processes/use-tldraw-canvas-autosave';
 import { refusalReason } from '@/lib/api-error';
 import { extractMutationError } from '@/lib/mutations';
@@ -157,6 +158,8 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
     const failDuplicate = t('failDuplicate');
     const failModeSwitch = t('failModeSwitch');
     const failStatusChange = t('failStatusChange');
+    // The 409 toast's words, in the user's locale (#5316).
+    const conflictCopy = useVersionConflictCopy();
 
     // Mirror the active map's name into the editable field when the selection
     // changes or a rename lands from elsewhere.
@@ -323,6 +326,7 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
                 mapId: created.id,
                 canvas: serializeEditorCanvas(editor),
                 toast,
+                conflictCopy,
                 onConflict,
                 onSaved: () => {
                     /* the copy is not the open map; its version is not ours */
@@ -338,7 +342,7 @@ export function useTldrawDocumentBar<P extends DocumentBarProcess>({
             setDuplicating(false);
         }
     }, [
-        activeProcess, editor, tenantSlug, processes, doFetch, toast, onConflict,
+        activeProcess, editor, tenantSlug, processes, doFetch, toast, conflictCopy, onConflict,
         onProcessesChange, onActiveIdChange, fetchImpl, failDuplicate,
     ]);
 
