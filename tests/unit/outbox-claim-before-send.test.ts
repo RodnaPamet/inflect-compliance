@@ -37,7 +37,9 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn() },
 }));
 
-import { processOutbox } from '@/app-layer/notifications/processOutbox';
+import { processOutbox, OUTBOX_CLAIM_LEASE_MS } from '@/app-layer/notifications/processOutbox';
+
+const QUEUED_AT = new Date('2026-01-01T00:00:00.000Z');
 
 const row = (over: Record<string, unknown> = {}) => ({
     id: 'o1',
@@ -48,6 +50,7 @@ const row = (over: Record<string, unknown> = {}) => ({
     bodyHtml: null,
     attempts: 0,
     dedupeKey: 'dk-1',
+    sendAfter: QUEUED_AT,
     ...over,
 });
 
@@ -119,7 +122,10 @@ describe('attempts is incremented once, atomically', () => {
         // passes both wrote 1, burning one unit of a three-attempt budget
         // instead of two, so a hard-failing address got extra real deliveries.
         await processOutbox();
-        expect(claimCalls()[0][0].data).toEqual({ attempts: { increment: 1 } });
+        expect(claimCalls()[0][0].data).toEqual({
+            attempts: { increment: 1 },
+            sendAfter: expect.any(Date),
+        });
     });
 
     it('the failure path does NOT increment a second time', async () => {
@@ -148,6 +154,41 @@ describe('attempts is incremented once, atomically', () => {
         const mark = prisma.notificationOutbox.updateMany.mock.calls.at(-1)![0];
         expect(mark.data.status).toBe('PENDING');
         expect(res.skipped).toBe(1);
+    });
+});
+
+// #5110 — the claim left the row PENDING and due, so a pass that READ after
+// the claim selected it again, claimed it on the new attempts value, and sent
+// a second copy while the first send was in flight.
+describe('the claim takes a lease on sendAfter (#5110)', () => {
+    it('requires the row to be due and moves sendAfter past the lease', async () => {
+        const before = Date.now();
+        await processOutbox();
+        const after = Date.now();
+        const [{ where, data }] = claimCalls()[0];
+
+        const due: Date = where.sendAfter.lte;
+        expect(due.getTime()).toBeGreaterThanOrEqual(before);
+        expect(due.getTime()).toBeLessThanOrEqual(after);
+        expect((data.sendAfter as Date).getTime()).toBe(due.getTime() + OUTBOX_CLAIM_LEASE_MS);
+    });
+
+    it('a failed send puts sendAfter back to the value it read', async () => {
+        sendEmail.mockRejectedValue(new Error('smtp down'));
+        await processOutbox();
+        const mark = prisma.notificationOutbox.updateMany.mock.calls.at(-1)![0];
+        expect(mark.data.sendAfter).toBe(QUEUED_AT);
+        // Only a row still holding OUR claim: a pass that re-claimed it after
+        // the lease expired owns the lease now.
+        expect(mark.where).toMatchObject({ id: 'o1', status: 'PENDING', attempts: 1 });
+    });
+
+    it('a failure before the claim does not touch sendAfter', async () => {
+        getTenantNotificationSettings.mockRejectedValueOnce(new Error('db down'));
+        await processOutbox();
+        expect(claimCalls()).toHaveLength(0);
+        const mark = prisma.notificationOutbox.updateMany.mock.calls.at(-1)![0];
+        expect(mark.data).not.toHaveProperty('sendAfter');
     });
 });
 

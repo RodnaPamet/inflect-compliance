@@ -29,6 +29,25 @@ export interface ProcessOutboxOptions {
     tenantId?: string;
 }
 
+/**
+ * How long a claim keeps a row out of every other pass's reach (#5110).
+ *
+ * The claim moves `sendAfter` this far into the future, so a row whose send
+ * is in flight is not selectable — by the drain's `findMany` or by another
+ * claim — until the lease runs out. It must outlast one slow send, not a
+ * whole batch: each row is leased immediately before its own send. The
+ * production transport is nodemailer with its default timeouts — 2 minutes
+ * to connect, 30 seconds for the greeting, 10 minutes of socket inactivity —
+ * so 15 minutes covers a send that hangs until nodemailer gives up on it.
+ *
+ * Erring long costs only latency on the crash path: a pass that dies
+ * mid-send leaves its row PENDING, and the row is retried once the lease
+ * expires (at-least-once, the contract this processor has always had).
+ * Erring short is the bug this lease exists to fix — a second send of an
+ * email that is still on the wire.
+ */
+export const OUTBOX_CLAIM_LEASE_MS = 15 * 60 * 1000;
+
 export interface ProcessOutboxResult {
     sent: number;
     failed: number;
@@ -42,7 +61,9 @@ export async function processOutbox(
     const maxAttempts = options.maxAttempts ?? 3;
     const now = new Date();
 
-    // Fetch PENDING rows where sendAfter <= now and attempts < maxAttempts
+    // Fetch PENDING rows where sendAfter <= now and attempts < maxAttempts.
+    // The `sendAfter` filter is also what hides a row another pass is
+    // sending: its claim moved `sendAfter` forward by the lease (#5110).
 
     const pending = await prisma.notificationOutbox.findMany({
         where: {
@@ -111,23 +132,44 @@ export async function processOutbox(
             // overlap an admin pressing "Process Outbox", and at real SMTP
             // latency a 200-row batch is tens of seconds wide.
             //
-            // `attempts` doubles as the optimistic-concurrency token: the
-            // claim only matches while the row still holds the value we read,
-            // so exactly one caller wins and the loser sees count 0. That also
-            // fixes a second bug — `attempts: row.attempts + 1` was a stale
-            // read-modify-write, so two failing passes both wrote 1 and burned
-            // one unit of a three-attempt budget instead of two.
+            // `attempts` is the optimistic-concurrency token among passes that
+            // read the row BEFORE any of them claimed it: the claim only matches
+            // while the row still holds the value we read, so of those, one
+            // wins and the rest see count 0. That also fixes a second bug —
+            // `attempts: row.attempts + 1` was a stale read-modify-write, so
+            // two failing passes both wrote 1 and burned one unit of a
+            // three-attempt budget instead of two.
+            //
+            // The token alone does NOT exclude a pass that reads AFTER our
+            // claim (#5110): the row is still PENDING with attempts below the
+            // ceiling, so that pass selects it, claims it on the new attempts
+            // value, and sends it again while our send is in flight. The claim
+            // therefore also takes a LEASE on `sendAfter` — it moves it
+            // `OUTBOX_CLAIM_LEASE_MS` into the future, and requires it to be
+            // due — so a row mid-send is invisible to every other pass's
+            // `findMany` and refused by every other pass's claim. Success
+            // settles it SENT; failure puts `sendAfter` back (below); a crash
+            // leaves the lease to expire, after which the row is retried.
             //
             // Incrementing BEFORE the send is the correct meaning of the
             // field: it counts attempts made, and after this point an attempt
             // HAS been made whether or not we live to record the outcome.
+            const claimAt = new Date();
             const claim = await prisma.notificationOutbox.updateMany({
-                where: { id: row.id, status: 'PENDING', attempts: row.attempts },
-                data: { attempts: { increment: 1 } },
+                where: {
+                    id: row.id,
+                    status: 'PENDING',
+                    attempts: row.attempts,
+                    sendAfter: { lte: claimAt },
+                },
+                data: {
+                    attempts: { increment: 1 },
+                    sendAfter: new Date(claimAt.getTime() + OUTBOX_CLAIM_LEASE_MS),
+                },
             });
             if (claim.count === 0) {
                 // Another pass owns this row. Not an error, and not a failure:
-                // it will be sent (or has been) exactly once, by them.
+                // it will be sent (or has been) by them.
                 skipped++;
                 continue;
             }
@@ -164,11 +206,26 @@ export async function processOutbox(
             // that. A settings-lookup failure throws BEFORE the claim, in which
             // case there is nothing of ours to record and the predicate simply
             // matches the untouched row.
+            //
+            // When we DID claim, the write also releases our lease by putting
+            // `sendAfter` back to the value we read. No backoff is applied
+            // here (none ever was), so the row is due again on the next pass,
+            // and the work-overdue reporter, which ages PENDING rows by
+            // `sendAfter`, keeps measuring from when the row first came due.
+            // It is predicated on the attempts value our claim wrote: if our
+            // lease expired and another pass has re-claimed the row, that
+            // pass's lease is not ours to release.
+            const claimed = attemptsNow !== undefined;
             await prisma.notificationOutbox.updateMany({
-                where: { id: row.id, status: 'PENDING' },
+                where: {
+                    id: row.id,
+                    status: 'PENDING',
+                    ...(claimed ? { attempts: attemptsNow } : {}),
+                },
                 data: {
                     status: newStatus,
                     lastError: errorMessage,
+                    ...(claimed ? { sendAfter: row.sendAfter } : {}),
                 },
             });
 

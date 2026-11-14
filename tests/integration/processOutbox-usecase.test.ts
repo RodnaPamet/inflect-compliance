@@ -134,6 +134,64 @@ describeFn('processOutbox (real DB)', () => {
         expect(after?.attempts).toBe(3);
     });
 
+    // #5110 — the claim used to leave the row PENDING with sendAfter <= now,
+    // so a second pass whose read came AFTER the first pass's claim (the next
+    // tick, or an admin pressing "Process Outbox") saw an ordinary pending row,
+    // claimed it on the new attempts value, and sent it again while the first
+    // pass's SMTP call was still in flight. The claim now takes a lease on
+    // `sendAfter`, so a row mid-send is invisible to every other pass.
+    it('a pass that reads after another pass claimed a row does not send it again (#5110)', async () => {
+        const row = await enqueue(T_OK);
+
+        // Pass A's send blocks until released; any later send completes at once.
+        let release!: () => void;
+        const gate = new Promise<void>((r) => { release = r; });
+        let aInSend!: () => void;
+        const aClaimedAndSending = new Promise<void>((r) => { aInSend = r; });
+        let calls = 0;
+        const sends: EmailMessage[] = [];
+        setEmailProvider({
+            async send(msg: EmailMessage) {
+                calls++;
+                sends.push(msg);
+                if (calls === 1) { aInSend(); await gate; }
+            },
+        });
+
+        const passA = processOutbox({ tenantId: T_OK });
+        await aClaimedAndSending;
+
+        // Pass B starts from scratch: its findMany runs after A's claim and
+        // before A records SENT.
+        const resB = await processOutbox({ tenantId: T_OK });
+
+        release();
+        const resA = await passA;
+
+        expect(sends).toHaveLength(1);
+        expect(resA.sent).toBe(1);
+        expect(resB.sent).toBe(0);
+        const after = await prisma.notificationOutbox.findUnique({ where: { id: row.id } });
+        expect(after?.status).toBe('SENT');
+        expect(after?.attempts).toBe(1);
+    });
+
+    it('a failed send releases the lease: the row keeps its original sendAfter and is retried next pass (#5110)', async () => {
+        provider.shouldThrow = true;
+        const queuedAt = new Date(Date.now() - 60_000);
+        const row = await enqueue(T_OK, { sendAfter: queuedAt });
+        await processOutbox({ tenantId: T_OK, maxAttempts: 3 });
+
+        const after = await prisma.notificationOutbox.findUnique({ where: { id: row.id } });
+        expect(after?.status).toBe('PENDING');
+        expect(after?.sendAfter.getTime()).toBe(queuedAt.getTime());
+
+        provider.shouldThrow = false;
+        const res = await processOutbox({ tenantId: T_OK, maxAttempts: 3 });
+        expect(res.sent).toBe(1);
+        expect(provider.sent).toHaveLength(1);
+    });
+
     it('does not pick up future-dated or attempts-exhausted rows', async () => {
         const future = new Date(Date.now() + 86_400_000);
         await enqueue(T_OK, { sendAfter: future });
