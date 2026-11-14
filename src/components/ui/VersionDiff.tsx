@@ -71,7 +71,11 @@ export interface VersionDiffProps {
 export function htmlToLines(html: string): string {
     return html
         .replace(/<\s*br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
+        // Every block ends a line — a heading, a list item and a quote as
+        // well as a paragraph — or a renamed heading diffs glued to the
+        // paragraph after it (#5309). `<hr>` is a line of its own.
+        .replace(/<\/(p|h[1-6]|li|blockquote|pre)\s*>/gi, '\n')
+        .replace(/<\s*hr\s*\/?>/gi, '\n')
         .replace(/<[^>]+>/g, '')
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')

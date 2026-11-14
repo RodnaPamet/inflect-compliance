@@ -873,7 +873,12 @@ export function WidgetPicker({
                 <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => onOpenChange(false)}
+                    onClick={() => {
+                        // The same path as closing the modal (#5309): an
+                        // abandoned edit must not leak into the next open.
+                        onOpenChange(false);
+                        resetState();
+                    }}
                     data-testid="widget-picker-cancel"
                     disabled={submitting}
                 >

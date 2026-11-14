@@ -114,9 +114,15 @@ export function Calendar({
     ...props
 }: CalendarProps) {
     const t = useTranslations('common.calendar');
-    const [month, setMonth] = useState<Date>(
-        (props as { defaultMonth?: Date }).defaultMonth ?? new Date(),
+    // A caller that passes `month` controls it — the range picker opens on
+    // the committed range that way. It used to be ignored in favour of this
+    // component's own state, so every range picker opened on today's month
+    // (#5309). Without `month`, the calendar keeps its own.
+    const controlledMonth = (props as { month?: Date }).month;
+    const [internalMonth, setMonth] = useState<Date>(
+        controlledMonth ?? (props as { defaultMonth?: Date }).defaultMonth ?? new Date(),
     );
+    const month = controlledMonth ?? internalMonth;
 
     const handleMonthChange = (nextMonth: Date) => {
         setMonth(nextMonth);

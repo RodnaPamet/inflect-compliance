@@ -106,8 +106,8 @@
       "railCollapsed": "{label} (свит)",
       "previousPage": "предишната страница",
       "clearFilters": "Изчисти филтрите",
-      "noEntitiesAvailable": "Няма налични {entity}s",
-      "noEntitiesMatch": "Няма съвпадащи {entity}s",
+      "noEntitiesAvailable": "Няма налични {entity}",
+      "noEntitiesMatch": "Няма съвпадащи {entity}",
       "moreActions": "Още действия",
       "menu": "Меню",
       "popoverContentDesc": "Съдържание на изскачащ прозорец",
@@ -185,7 +185,21 @@
       "switcherWorkspaces": "Работни пространства",
       "switcherNoWorkspaces": "Няма работни пространства в тази сесия.",
       "switcherNoOrganizations": "Няма организации в тази сесия.",
-      "switcherManageWorkspaces": "Управление на работните пространства"
+      "switcherManageWorkspaces": "Управление на работните пространства",
+      "entitiesLoadFailed": "Неуспешно зареждане на {entity}",
+      "entityPlural": {
+        "CONTROL": "контроли",
+        "RISK": "рискове",
+        "ASSET": "активи",
+        "EVIDENCE": "доказателства",
+        "VENDOR": "доставчици",
+        "ISSUE": "задачи",
+        "POLICY": "политики",
+        "AUDIT_PACK": "одитни пакети",
+        "INCIDENT": "инциденти",
+        "FRAMEWORK_REQUIREMENT": "изисквания на рамки"
+      },
+      "noData": "Няма данни"
     },
     "calendar": {
       "prevYear": "Към предходната година",
@@ -193,7 +207,22 @@
       "nextMonth": "Към следващия месец",
       "nextYear": "Към следващата година",
       "selectDate": "Изберете дата",
-      "clear": "Изчисти"
+      "clear": "Изчисти",
+      "clearRange": "Изчисти периода",
+      "selectDateRange": "Изберете период",
+      "presets": {
+        "today": "Днес",
+        "yesterday": "Вчера",
+        "last-7-days": "Последните 7 дни",
+        "last-30-days": "Последните 30 дни",
+        "last-90-days": "Последните 90 дни",
+        "month-to-date": "От началото на месеца",
+        "quarter-to-date": "От началото на тримесечието",
+        "year-to-date": "От началото на годината",
+        "last-month": "Миналия месец",
+        "last-quarter": "Миналото тримесечие",
+        "last-year": "Миналата година"
+      }
     },
     "copy": {
       "copy": "Копирай",
@@ -250,7 +279,14 @@
       "rangeAria": "{label}: {start} → {end}",
       "pointAria": "{label}: {value}",
       "scaleAria": "{label}: от {min} до {max}",
-      "scaleAriaUnlabelled": "Скала: от {min} до {max}"
+      "scaleAriaUnlabelled": "Скала: от {min} до {max}",
+      "cellAleAria": "очаквана годишна загуба {amount}",
+      "cellCollisionAria": "внимание: оценките на загубите в клетката се различават ~{ratio}×",
+      "cellAle": "ALE {amount}",
+      "cellCollision": "Стойностите на ALE в тази клетка се различават ~{ratio}× — матрицата ги събира в една клетка; вижте хистограмата.",
+      "cellMore": "… + още {count}",
+      "cellRisksIdentified": "{count} идентифицирани риска",
+      "movementMore": "+{count} още"
     },
     "sections": {
       "accessReviews": "Прегледи на достъпа",

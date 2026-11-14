@@ -145,6 +145,12 @@ export function DatePicker({
     className,
     clearable = false,
     formatValue = formatDate,
+    // The trigger is the field a `FormField` label names and its error
+    // describes, so the id and the describedby go on it — not on the
+    // popover calendar, which does not exist while the picker is closed
+    // (#5309).
+    id,
+    'aria-describedby': ariaDescribedBy,
     ...props
 }: DatePickerProps) {
     const t = useTranslations('common.calendar');
@@ -242,6 +248,8 @@ export function DatePicker({
                     })
                 ) : (
                     <Trigger
+                        id={id}
+                        aria-describedby={ariaDescribedBy}
                         placeholder={placeholder}
                         disabled={disabled}
                         className={className}
