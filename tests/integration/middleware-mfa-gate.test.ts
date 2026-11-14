@@ -209,13 +209,45 @@ describe('MFA gate — class 3: public paths', () => {
         ['NextAuth session', '/api/auth/session'],
         ['NextAuth sign-out', '/api/auth/signout'],
         ['the login page', '/login'],
-        ['the tenant picker', '/tenants'],
         ['the no-tenant landing', '/no-tenant'],
         ['an invite preview', '/invite/tok123'],
     ])('%s is served without the JWT ever being read (%s)', async (_label, path) => {
         const res = await middleware(req('GET', path), {} as any);
         expect(res.status).toBe(200);
         expect(mockGetToken).not.toHaveBeenCalled();
+    });
+});
+
+// ── Class 3b — the workspace picker is behind the gate ───────────────
+
+describe('MFA gate — class 3b: the workspace picker', () => {
+    // `/tenants` was a public path until the DAST nightly of 2026-11-13. It
+    // lists the session's workspaces, so a session still owing its second
+    // factor is sent to the primary workspace's challenge, not shown them.
+    it('a session mid-challenge opening the picker is sent to the challenge', async () => {
+        const res = await middleware(req('GET', '/tenants'), {} as any);
+        expect(mockGetToken).toHaveBeenCalled();
+        expect(res.status).toBe(307);
+        const loc = new URL(res.headers.get('location')!);
+        expect(loc.pathname).toBe('/t/primary/auth/mfa');
+        expect(loc.searchParams.get('next')).toBe('/tenants');
+    });
+
+    it('a session with the challenge done reaches the picker', async () => {
+        mockGetToken.mockResolvedValue({ ...pendingToken(), mfaPending: false });
+        const res = await middleware(req('GET', '/tenants'), {} as any);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('no session gets the edge login redirect, with no body', async () => {
+        mockGetToken.mockResolvedValue(null);
+        const res = await middleware(req('GET', '/tenants'), {} as any);
+        expect(res.status).toBe(307);
+        const loc = new URL(res.headers.get('location')!);
+        expect(loc.pathname).toBe('/login');
+        expect(loc.searchParams.get('next')).toBe('/tenants');
+        expect(await res.text()).toBe('');
     });
 });
 
