@@ -286,7 +286,7 @@
       "cellCollision": "Стойностите на ALE в тази клетка се различават ~{ratio}× — матрицата ги събира в една клетка; вижте хистограмата.",
       "cellMore": "… + още {count}",
       "cellRisksIdentified": "{count} идентифицирани риска",
-      "movementMore": "+ още {count}"
+      "movementMore": "+{count} още"
     },
     "sections": {
       "accessReviews": "Прегледи на достъпа",
