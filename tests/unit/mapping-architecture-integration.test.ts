@@ -291,7 +291,7 @@ describe('Mapping Architecture Integration', () => {
             expect(stored.urn).toBe('urn:inflect:mappingset:nis2-to-iso27001');
             expect(stored.source_framework_ref).toBe('NIS2-2022');
             expect(stored.target_framework_ref).toBe('ISO27001-2022');
-            expect(stored.version).toBe(1);
+            expect(stored.version).toBe(2);
         });
 
         it('has substantial mapping coverage', () => {
@@ -341,6 +341,24 @@ describe('Mapping Architecture Integration', () => {
             );
             expect(irToPlanning).toBeDefined();
             expect(irToPlanning!.strength).toBe('SUPERSET');
+        });
+
+        // #5316 item 6. Each strength must agree with its own rationale and
+        // with the two requirement texts: SUBSET reads as PARTIAL coverage,
+        // SUPERSET as HIGH, and these two had a SUPERSET rationale under a
+        // SUBSET label. NIS2-AM names privileged access management as one of
+        // its components (A.8.2 is narrower, so SUPERSET); it does not name
+        // the controlled allocation of credentials A.5.17 requires, and A.5.17
+        // does not require MFA, so the two only overlap (INTERSECT).
+        it.each([
+            ['A.5.17', 'INTERSECT'],
+            ['A.8.2', 'SUPERSET'],
+        ])('NIS2-AM → %s is %s', (target, strength) => {
+            const edge = stored.mapping_entries.find(
+                e => e.source_ref === 'NIS2-AM' && e.target_ref === target,
+            );
+            expect(edge).toBeDefined();
+            expect(edge!.strength).toBe(strength);
         });
 
         it('produces stable content hash', () => {

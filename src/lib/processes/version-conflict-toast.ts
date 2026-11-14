@@ -9,7 +9,7 @@
  *   couples the toast vocabulary to the save path. A
  *   `version-conflict` module is the seam:
  *     - the canvas's `handleSave` calls
- *       `surfaceVersionConflict(res, toast, onReload)` and returns
+ *       `surfaceVersionConflict(res, toast, onReload, copy)` and returns
  *       early when the helper returns `true`;
  *     - future write paths (auto-arrange that issues its own save,
  *       a bulk-import server commit) can reuse the same toast
@@ -23,7 +23,46 @@
  *   Reload action is the safety mechanism, and it stands either
  *   way.
  */
+import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
+
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
+
+/**
+ * The toast's words, in the user's locale (#5316). Passed in rather than
+ * written here: the helper is not a component and holds no translator, and an
+ * English default would let a caller that forgot to pass the copy show English
+ * to a Bulgarian user with nothing failing. A hook gets it from
+ * `useVersionConflictCopy()`.
+ *
+ * Strings only, so the copy is equal across renders by value and can sit in a
+ * save callback's dependencies (`use-tldraw-document-bar` does the same with
+ * its failure messages).
+ */
+export interface VersionConflictCopy {
+    /** The toast's message. */
+    title: string;
+    /** Description when the server named its current version; `{version}` is replaced. */
+    lostOnReloadAtVersion: string;
+    /** Description when it did not. */
+    lostOnReload: string;
+    /** The action's label. */
+    reload: string;
+}
+
+/** The toast copy, from `automation.canvas.versionConflict*`. */
+export function useVersionConflictCopy(): VersionConflictCopy {
+    const t = useTranslations('automation.canvas');
+    const title = t('versionConflictTitle');
+    // Raw, not formatted: the version is only known when the 409 arrives.
+    const lostOnReloadAtVersion = String(t.raw('versionConflictLostOnReloadAtVersion'));
+    const lostOnReload = t('versionConflictLostOnReload');
+    const reload = t('versionConflictReload');
+    return useMemo(
+        () => ({ title, lostOnReloadAtVersion, lostOnReload, reload }),
+        [title, lostOnReloadAtVersion, lostOnReload, reload],
+    );
+}
 
 interface VersionConflictBody {
     error?: {
@@ -42,6 +81,7 @@ export async function surfaceVersionConflict(
     res: Response,
     toast: ToastApi,
     onReload: () => void,
+    copy: VersionConflictCopy,
 ): Promise<boolean> {
     if (res.status !== 409) return false;
 
@@ -53,19 +93,16 @@ export async function surfaceVersionConflict(
         // Best-effort body parse; the toast copy stands either way.
     }
 
-    toast.error(
-        'Someone else saved this map. Reload to see the latest version.',
-        {
-            description:
-                currentVersion !== undefined
-                    ? `Server version is now v${currentVersion}; your edits will be lost on reload.`
-                    : 'Your edits will be lost on reload.',
-            action: {
-                label: 'Reload',
-                onClick: onReload,
-            },
+    toast.error(copy.title, {
+        description:
+            currentVersion !== undefined
+                ? copy.lostOnReloadAtVersion.replace('{version}', String(currentVersion))
+                : copy.lostOnReload,
+        action: {
+            label: copy.reload,
+            onClick: onReload,
         },
-    );
+    });
 
     return true;
 }

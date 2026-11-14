@@ -16310,7 +16310,11 @@
       "failTemplateCreate": "Could not create a map from that template",
       "failModeSwitch": "Could not switch canvas mode",
       "failStatusChange": "Could not change this map’s status",
-      "duplicatePartial": "the copy was created but its contents could not be saved — delete the empty copy or try again"
+      "duplicatePartial": "the copy was created but its contents could not be saved — delete the empty copy or try again",
+      "versionConflictTitle": "Someone else saved this map. Reload to see the latest version.",
+      "versionConflictLostOnReloadAtVersion": "Server version is now v{version}; your edits will be lost on reload.",
+      "versionConflictLostOnReload": "Your edits will be lost on reload.",
+      "versionConflictReload": "Reload"
     },
     "canvasPalette": {
       "dialogAria": "Canvas command palette",
@@ -16641,6 +16645,314 @@
         "infraExitReadiness": "Infrastructure Dependency & Exit-Readiness",
         "regulatoryAlignment": "Regulatory Alignment & Certification",
         "sovereignAi": "Sovereign AI"
+      },
+      "bands": {
+        "exposed": "Exposed",
+        "emerging": "Emerging",
+        "managed": "Managed",
+        "sovereignReady": "Sovereign-ready"
+      },
+      "questions": {
+        "ds-1-01": {
+          "text": "Do you know the legal jurisdiction(s) under which each production cloud provider operates?",
+          "options": {
+            "s0": "None",
+            "s1": "Informal",
+            "s2": "Documented per-provider",
+            "s3": "Contractually asserted",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-1-02": {
+          "text": "Are any workloads subject to non-EU extraterritorial law (e.g. US CLOUD Act) via the provider's parent company?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Suspected / unassessed",
+            "s2": "Assessed & accepted",
+            "s3": "Mitigated via EU subsidiary/contract",
+            "s4": "Sovereign-cloud isolated"
+          }
+        },
+        "ds-1-03": {
+          "text": "Have you evaluated a sovereign or EU-only cloud offering (EUCS \"High\", Gaia-X-labelled) for sensitive workloads?",
+          "options": {
+            "s0": "Never",
+            "s1": "Aware",
+            "s2": "Evaluated",
+            "s3": "Piloted",
+            "s4": "In production for sensitive tiers"
+          }
+        },
+        "ds-1-04": {
+          "text": "Is provider concentration risk (single-hyperscaler dependency) tracked as a formal risk?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "On the risk register",
+            "s3": "With a mitigation plan",
+            "s4": "Multi-provider by design"
+          }
+        },
+        "ds-1-05": {
+          "text": "Are encryption keys for cloud-hosted sensitive data held under your sole control (HYOK/BYOK), outside the provider's jurisdiction?",
+          "options": {
+            "s0": "Provider-managed",
+            "s1": "BYOK unassessed",
+            "s2": "BYOK in use",
+            "s3": "HYOK for sensitive tiers",
+            "s4": "HYOK + external KMS under EU control"
+          }
+        },
+        "ds-2-01": {
+          "text": "Do you maintain an inventory of where each category of personal/sensitive data physically resides?",
+          "options": {
+            "s0": "None",
+            "s1": "Partial",
+            "s2": "Complete inventory",
+            "s3": "Mapped to data classification",
+            "s4": "Continuously reconciled"
+          }
+        },
+        "ds-2-02": {
+          "text": "For every cross-border transfer, is a valid GDPR Ch. V mechanism (adequacy, SCCs + TIA) in place?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Some",
+            "s2": "All documented",
+            "s3": "All with transfer-impact assessments",
+            "s4": "Monitored & re-validated"
+          }
+        },
+        "ds-2-03": {
+          "text": "Can you enforce data-residency constraints technically (region-pinning), not just contractually?",
+          "options": {
+            "s0": "No",
+            "s1": "Contract-only",
+            "s2": "Region-pinned config",
+            "s3": "Enforced + drift alerting",
+            "s4": "Policy-as-code enforced"
+          }
+        },
+        "ds-2-04": {
+          "text": "Have you assessed Data Act (EU 2023/2854) obligations around switching/portability and IoT data access?",
+          "options": {
+            "s0": "Unaware",
+            "s1": "Aware",
+            "s2": "Gap-assessed",
+            "s3": "Remediation planned",
+            "s4": "Compliant"
+          }
+        },
+        "ds-2-05": {
+          "text": "Are data-sharing arrangements with third parties governed under a Data Governance Act-aligned framework?",
+          "options": {
+            "s0": "Ad hoc",
+            "s1": "Contracts only",
+            "s2": "Governed intermediary model",
+            "s3": "With audit trail",
+            "s4": "Fully DGA-aligned"
+          }
+        },
+        "ds-3-01": {
+          "text": "Is your primary identity provider (IdP) subject to EU jurisdiction and control?",
+          "options": {
+            "s0": "Non-EU",
+            "s1": "Unassessed",
+            "s2": "Assessed",
+            "s3": "EU-hosted",
+            "s4": "EU-sovereign IdP"
+          }
+        },
+        "ds-3-02": {
+          "text": "Are you tracking eIDAS 2.0 / EU Digital Identity Wallet readiness for customer or workforce identity?",
+          "options": {
+            "s0": "No",
+            "s1": "Monitoring",
+            "s2": "Gap-assessed",
+            "s3": "Pilot",
+            "s4": "Integrated"
+          }
+        },
+        "ds-3-03": {
+          "text": "Do you retain the ability to authenticate if a foreign IdP becomes unavailable (sanctions, outage)?",
+          "options": {
+            "s0": "No fallback",
+            "s1": "Manual",
+            "s2": "Documented failover",
+            "s3": "Tested failover",
+            "s4": "Active-active EU fallback"
+          }
+        },
+        "ds-3-04": {
+          "text": "Are privileged credentials to sovereignty-sensitive systems held outside foreign-controlled vaults?",
+          "options": {
+            "s0": "No",
+            "s1": "Unassessed",
+            "s2": "Segregated",
+            "s3": "EU-controlled vault",
+            "s4": "Hardware-backed EU control"
+          }
+        },
+        "ds-3-05": {
+          "text": "Is federation with external identity systems assessed for jurisdictional / supply-chain risk?",
+          "options": {
+            "s0": "Never",
+            "s1": "Informal",
+            "s2": "Assessed",
+            "s3": "On risk register",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-4-01": {
+          "text": "Do you maintain a documented, tested exit plan for each critical third-party platform?",
+          "options": {
+            "s0": "None",
+            "s1": "Informal",
+            "s2": "Documented",
+            "s3": "Tested",
+            "s4": "Tested + RTO-bounded"
+          }
+        },
+        "ds-4-02": {
+          "text": "Are critical software dependencies assessed for supplier jurisdiction / ownership?",
+          "options": {
+            "s0": "No",
+            "s1": "Partial",
+            "s2": "SBOM-backed",
+            "s3": "With ownership mapping",
+            "s4": "Continuously monitored"
+          }
+        },
+        "ds-4-03": {
+          "text": "Could you re-platform a critical workload off its current provider within your target RTO?",
+          "options": {
+            "s0": "Unknown",
+            "s1": ">Months",
+            "s2": "Weeks",
+            "s3": "Within RTO",
+            "s4": "Portable-by-design"
+          }
+        },
+        "ds-4-04": {
+          "text": "Is open-source / open-standard substitutability a deliberate architecture criterion for new systems?",
+          "options": {
+            "s0": "No",
+            "s1": "Occasional",
+            "s2": "Recommended",
+            "s3": "Mandated for critical",
+            "s4": "Enforced in review"
+          }
+        },
+        "ds-4-05": {
+          "text": "Are ICT third-party concentration and single-points-of-failure tracked (DORA-style register)?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "Register exists",
+            "s3": "Risk-scored",
+            "s4": "Board-reported"
+          }
+        },
+        "ds-5-01": {
+          "text": "Do you know which EU digital regulations (NIS2, DORA, CRA, Data Act, AI Act) apply to you, and your status?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Partial",
+            "s2": "Mapped",
+            "s3": "Gap-assessed",
+            "s4": "Tracked to closure"
+          }
+        },
+        "ds-5-02": {
+          "text": "Are your cloud/service certifications aligned to EU schemes (EUCS, C5, SecNumCloud) where relevant?",
+          "options": {
+            "s0": "None",
+            "s1": "Aware",
+            "s2": "Targeting",
+            "s3": "In audit",
+            "s4": "Certified"
+          }
+        },
+        "ds-5-03": {
+          "text": "For connected products, have you assessed Cyber Resilience Act secure-by-design obligations?",
+          "options": {
+            "s0": "N/A or unassessed",
+            "s1": "Aware",
+            "s2": "Gap-assessed",
+            "s3": "Remediation planned",
+            "s4": "Compliant"
+          }
+        },
+        "ds-5-04": {
+          "text": "Is regulatory-horizon monitoring in place so new EU obligations are caught before enforcement dates?",
+          "options": {
+            "s0": "Reactive",
+            "s1": "Ad hoc",
+            "s2": "Periodic review",
+            "s3": "Owned function",
+            "s4": "Tooled / continuous"
+          }
+        },
+        "ds-5-05": {
+          "text": "Are sovereignty/residency requirements flowed down to your own suppliers contractually?",
+          "options": {
+            "s0": "No",
+            "s1": "Some",
+            "s2": "Standard clauses",
+            "s3": "Audited",
+            "s4": "Monitored"
+          }
+        },
+        "ds-6-01": {
+          "text": "Do you know the jurisdiction where each production AI model is hosted and trained?",
+          "options": {
+            "s0": "Unknown",
+            "s1": "Partial",
+            "s2": "Documented",
+            "s3": "EU-hosted for sensitive",
+            "s4": "Sovereign-hosted"
+          }
+        },
+        "ds-6-02": {
+          "text": "Is sensitive/personal data sent to AI providers assessed for transfer + jurisdictional exposure?",
+          "options": {
+            "s0": "No",
+            "s1": "Informal",
+            "s2": "Assessed",
+            "s3": "Mitigated",
+            "s4": "EU-only inference"
+          }
+        },
+        "ds-6-03": {
+          "text": "Have you evaluated EU / open-weight models as an alternative to non-EU proprietary APIs for sensitive use?",
+          "options": {
+            "s0": "Never",
+            "s1": "Aware",
+            "s2": "Evaluated",
+            "s3": "Piloted",
+            "s4": "In production for sensitive tiers"
+          }
+        },
+        "ds-6-04": {
+          "text": "Are AI systems classified against AI Act risk tiers, with sovereignty implications noted?",
+          "options": {
+            "s0": "No",
+            "s1": "Started",
+            "s2": "Classified",
+            "s3": "With sovereignty notes",
+            "s4": "Integrated in AI risk register"
+          }
+        },
+        "ds-6-05": {
+          "text": "Can you continue critical AI-dependent operations if a non-EU AI provider becomes unavailable?",
+          "options": {
+            "s0": "No fallback",
+            "s1": "Manual",
+            "s2": "Documented",
+            "s3": "Tested fallback",
+            "s4": "EU-sovereign fallback"
+          }
+        }
       }
     },
     "banner": {

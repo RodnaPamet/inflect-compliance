@@ -231,7 +231,7 @@ describe('the tldraw host consumes the hook the way the harness does', () => {
             prop by an effect. `tldraw-canvas-autosave` holds the behaviour.
         */
         expect(autosave).toMatch(
-            /\}, \[editor, mapId, tenantSlug, toast, onConflict, onSaved\]\)/,
+            /\}, \[editor, mapId, tenantSlug, toast, conflictCopy, onConflict, onSaved\]\)/,
         );
         expect(autosave).toMatch(/versionRef\.current = saved\.version/);
         expect(autosave).toMatch(/versionRef\.current = expectedVersion/);
@@ -255,7 +255,7 @@ describe('the tldraw host consumes the hook the way the harness does', () => {
         */
         expect(save).toMatch(/if \(!res\.ok\) throw new Error\(/);
         expect(save).toMatch(
-            /if \(await surfaceVersionConflict\(res,\s*toast,\s*onConflict\)\)\s*throw new VersionConflictError\(\)/,
+            /if \(await surfaceVersionConflict\(res,\s*toast,\s*onConflict,\s*conflictCopy\)\)\s*throw new VersionConflictError\(conflictCopy\.title\)/,
         );
     });
 });

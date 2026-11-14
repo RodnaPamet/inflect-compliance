@@ -92,6 +92,11 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
+jest.mock('@/lib/cache/list-cache', () => ({
+    ...jest.requireActual('@/lib/cache/list-cache'),
+    bumpTenantCacheVersion: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { PolicyRepository } from '@/app-layer/repositories/PolicyRepository';
 import { PolicyVersionRepository } from '@/app-layer/repositories/PolicyVersionRepository';
 import { PolicyApprovalRepository } from '@/app-layer/repositories/PolicyApprovalRepository';
@@ -99,6 +104,8 @@ import { PolicyTemplateRepository } from '@/app-layer/repositories/PolicyTemplat
 import { logEvent } from '@/app-layer/events/audit';
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
 import { restoreEntity, purgeEntity } from '@/app-layer/usecases/soft-delete-operations';
+import { runInTenantContext } from '@/lib/db-context';
+import { bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import {
     listPolicies,
     listPoliciesPaginated,
@@ -545,5 +552,63 @@ describe('listPoliciesWithDeleted', () => {
 
     it('rejects READER', async () => {
         await expect(listPoliciesWithDeleted(readerCtx)).rejects.toBeDefined();
+    });
+});
+
+// ─── SSR payload invalidation (#5316) ──────────────────────────────
+//
+// The policies page caches its first-paint list in `cachedSsrPayload`, keyed
+// on the tenant cache version. A policy write that did not bump it left the
+// pre-write list on screen for up to 30 s with Redis configured.
+
+describe('policy writes invalidate the SSR payload cache', () => {
+    const bump = bumpTenantCacheVersion as jest.Mock;
+    const tx = runInTenantContext as jest.Mock;
+
+    /** The bump came after the write's transaction, not before or instead of it. */
+    function expectBumpAfterCommit() {
+        expect(bump).toHaveBeenCalledTimes(1);
+        expect(bump).toHaveBeenCalledWith(adminCtx.tenantId);
+        const lastTx = Math.max(...tx.mock.invocationCallOrder);
+        expect(bump.mock.invocationCallOrder[0]).toBeGreaterThan(lastTx);
+    }
+
+    it.each([
+        ['createPolicy', async () => {
+            (PolicyRepository.getBySlug as jest.Mock).mockResolvedValue(null);
+            (PolicyRepository.create as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X', slug: 'x' });
+            await createPolicy(adminCtx, { title: 'X' });
+        }],
+        ['updatePolicyMetadata', async () => {
+            (PolicyRepository.getById as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X' });
+            await updatePolicyMetadata(adminCtx, 'p-1', { title: 'Y' });
+        }],
+        ['archivePolicy', async () => {
+            (PolicyRepository.getById as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X', status: 'PUBLISHED' });
+            await archivePolicy(adminCtx, 'p-1');
+        }],
+        ['deletePolicy', async () => {
+            (PolicyRepository.getById as jest.Mock).mockResolvedValue({ id: 'p-1', title: 'X', status: 'DRAFT' });
+            (mockDb.policy.delete as jest.Mock).mockResolvedValue({});
+            await deletePolicy(adminCtx, 'p-1');
+        }],
+    ])('%s bumps the tenant version after it commits', async (_name, run) => {
+        await run();
+        expectBumpAfterCommit();
+    });
+
+    it.each([
+        ['restorePolicy', () => restorePolicy(adminCtx, 'p-1')],
+        ['purgePolicy', () => purgePolicy(adminCtx, 'p-1')],
+    ])('%s bumps the tenant version', async (_name, run) => {
+        await run();
+        expect(bump).toHaveBeenCalledWith(adminCtx.tenantId);
+    });
+
+    it('a refused write bumps nothing', async () => {
+        (PolicyRepository.getById as jest.Mock).mockResolvedValue(null);
+        await expect(updatePolicyMetadata(adminCtx, 'missing', { title: 'X' })).rejects.toThrow();
+        await expect(deletePolicy(editorCtx, 'p-1')).rejects.toBeDefined();
+        expect(bump).not.toHaveBeenCalled();
     });
 });

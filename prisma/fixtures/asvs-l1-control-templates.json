@@ -201,20 +201,12 @@
       "sortOrder": 22
     },
     {
-      "code": "V2.6.1",
-      "title": "One-Time Lookup Secrets",
-      "summary": "Ensure lookup or backup codes can each be used only once.",
-      "category": "L1",
-      "section": "Authentication",
-      "sortOrder": 23
-    },
-    {
       "code": "V2.7.1",
       "title": "No Cleartext Out-of-Band",
       "summary": "Do not use unencrypted out-of-band mechanisms as a primary factor for sensitive accounts.",
       "category": "L1",
       "section": "Authentication",
-      "sortOrder": 24
+      "sortOrder": 23
     },
     {
       "code": "V2.7.2",
@@ -222,7 +214,7 @@
       "summary": "Expire out-of-band verification codes after a short validity window.",
       "category": "L1",
       "section": "Authentication",
-      "sortOrder": 25
+      "sortOrder": 24
     },
     {
       "code": "V2.7.3",
@@ -230,7 +222,7 @@
       "summary": "Ensure an out-of-band code can only be consumed once.",
       "category": "L1",
       "section": "Authentication",
-      "sortOrder": 26
+      "sortOrder": 25
     },
     {
       "code": "V2.7.4",
@@ -238,7 +230,7 @@
       "summary": "Deliver out-of-band codes only over a channel bound to the correct user.",
       "category": "L1",
       "section": "Authentication",
-      "sortOrder": 27
+      "sortOrder": 26
     },
     {
       "code": "V2.8.1",
@@ -246,7 +238,7 @@
       "summary": "Support time-based one-time password authenticators as a recognised second factor.",
       "category": "L1",
       "section": "Authentication",
-      "sortOrder": 28
+      "sortOrder": 27
     },
     {
       "code": "V3.1.1",
@@ -254,7 +246,7 @@
       "summary": "Never place session tokens in URLs where they can leak through logs, history, or referrers.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 29
+      "sortOrder": 28
     },
     {
       "code": "V3.2.1",
@@ -262,7 +254,7 @@
       "summary": "Issue a fresh session token upon authentication to prevent fixation of a pre-login value.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 30
+      "sortOrder": 29
     },
     {
       "code": "V3.2.2",
@@ -270,7 +262,7 @@
       "summary": "Generate session tokens with enough entropy that they cannot be guessed or enumerated.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 31
+      "sortOrder": 30
     },
     {
       "code": "V3.2.3",
@@ -278,7 +270,7 @@
       "summary": "Store session tokens in the client using secure, tamper-resistant cookie mechanisms.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 32
+      "sortOrder": 31
     },
     {
       "code": "V3.3.1",
@@ -286,7 +278,7 @@
       "summary": "Fully invalidate the session server-side on logout so the token cannot be reused.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 33
+      "sortOrder": 32
     },
     {
       "code": "V3.3.2",
@@ -294,7 +286,7 @@
       "summary": "Expire sessions after a period of inactivity and enforce a reasonable absolute lifetime.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 34
+      "sortOrder": 33
     },
     {
       "code": "V3.4.1",
@@ -302,7 +294,7 @@
       "summary": "Set the Secure attribute on session cookies so they are sent only over encrypted connections.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 35
+      "sortOrder": 34
     },
     {
       "code": "V3.4.2",
@@ -310,7 +302,7 @@
       "summary": "Set the HttpOnly attribute so session cookies are not readable from client scripts.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 36
+      "sortOrder": 35
     },
     {
       "code": "V3.4.3",
@@ -318,7 +310,7 @@
       "summary": "Set an appropriate SameSite attribute to reduce cross-site request risk.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 37
+      "sortOrder": 36
     },
     {
       "code": "V3.4.4",
@@ -326,12 +318,20 @@
       "summary": "Use the __Host- cookie prefix where possible to constrain scope and origin.",
       "category": "L1",
       "section": "Session Management",
-      "sortOrder": 38
+      "sortOrder": 37
     },
     {
       "code": "V3.4.5",
       "title": "Path-Scoped Cookies",
       "summary": "Scope session cookies to the narrowest path the application needs.",
+      "category": "L1",
+      "section": "Session Management",
+      "sortOrder": 38
+    },
+    {
+      "code": "V3.7.1",
+      "title": "Reauthentication for Sensitive Actions",
+      "summary": "Require reauthentication or a fresh confirmation before especially sensitive operations.",
       "category": "L1",
       "section": "Session Management",
       "sortOrder": 39
@@ -617,12 +617,28 @@
       "sortOrder": 74
     },
     {
+      "code": "V7.1.1",
+      "title": "No Sensitive Data in Logs",
+      "summary": "Ensure logs do not capture sensitive data such as full credentials or tokens.",
+      "category": "L1",
+      "section": "Error Handling and Logging",
+      "sortOrder": 75
+    },
+    {
+      "code": "V7.1.2",
+      "title": "No Credentials in Logs",
+      "summary": "Exclude passwords, session tokens, and secrets from all log output.",
+      "category": "L1",
+      "section": "Error Handling and Logging",
+      "sortOrder": 76
+    },
+    {
       "code": "V7.4.1",
       "title": "Generic Error Messages",
       "summary": "Return generic error messages to users and keep diagnostic detail server-side.",
       "category": "L1",
       "section": "Error Handling and Logging",
-      "sortOrder": 75
+      "sortOrder": 77
     },
     {
       "code": "V8.2.1",
@@ -630,7 +646,7 @@
       "summary": "Set anti-caching headers on responses containing sensitive data.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 76
+      "sortOrder": 78
     },
     {
       "code": "V8.2.2",
@@ -638,7 +654,7 @@
       "summary": "Avoid storing sensitive data in browser storage that persists beyond the session.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 77
+      "sortOrder": 79
     },
     {
       "code": "V8.2.3",
@@ -646,7 +662,7 @@
       "summary": "Clear client-side sensitive data when the user logs out.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 78
+      "sortOrder": 80
     },
     {
       "code": "V8.3.1",
@@ -654,7 +670,7 @@
       "summary": "Send sensitive data in the request body or headers, not in the query string.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 79
+      "sortOrder": 81
     },
     {
       "code": "V8.3.2",
@@ -662,7 +678,7 @@
       "summary": "Allow users to export and remove their personal data on request.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 80
+      "sortOrder": 82
     },
     {
       "code": "V8.3.3",
@@ -670,7 +686,7 @@
       "summary": "Present clear terms and obtain consent before collecting personal data.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 81
+      "sortOrder": 83
     },
     {
       "code": "V8.3.4",
@@ -678,7 +694,7 @@
       "summary": "Identify and document the sensitive data the application collects and processes.",
       "category": "L1",
       "section": "Data Protection",
-      "sortOrder": 82
+      "sortOrder": 84
     },
     {
       "code": "V9.1.1",
@@ -686,7 +702,7 @@
       "summary": "Require TLS for all client connections and never fall back to unencrypted transport.",
       "category": "L1",
       "section": "Communication",
-      "sortOrder": 83
+      "sortOrder": 85
     },
     {
       "code": "V9.1.2",
@@ -694,7 +710,7 @@
       "summary": "Configure only strong, current cipher suites and disable weak ones.",
       "category": "L1",
       "section": "Communication",
-      "sortOrder": 84
+      "sortOrder": 86
     },
     {
       "code": "V9.1.3",
@@ -702,7 +718,7 @@
       "summary": "Support only current TLS versions and disable obsolete protocols.",
       "category": "L1",
       "section": "Communication",
-      "sortOrder": 85
+      "sortOrder": 87
     },
     {
       "code": "V10.3.1",
@@ -710,7 +726,7 @@
       "summary": "Verify the integrity and authenticity of application updates before applying them.",
       "category": "L1",
       "section": "Malicious Code",
-      "sortOrder": 86
+      "sortOrder": 88
     },
     {
       "code": "V10.3.2",
@@ -718,7 +734,7 @@
       "summary": "Use signing and integrity checks so that tampered code or dependencies are rejected.",
       "category": "L1",
       "section": "Malicious Code",
-      "sortOrder": 87
+      "sortOrder": 89
     },
     {
       "code": "V10.3.3",
@@ -726,7 +742,7 @@
       "summary": "Guard against subdomain takeover and stale references that attackers could claim.",
       "category": "L1",
       "section": "Malicious Code",
-      "sortOrder": 88
+      "sortOrder": 90
     },
     {
       "code": "V11.1.1",
@@ -734,7 +750,7 @@
       "summary": "Enforce that multi-step workflows are completed in order and cannot be skipped.",
       "category": "L1",
       "section": "Business Logic",
-      "sortOrder": 89
+      "sortOrder": 91
     },
     {
       "code": "V11.1.2",
@@ -742,7 +758,7 @@
       "summary": "Reject workflow submissions that arrive faster than a genuine human could produce them.",
       "category": "L1",
       "section": "Business Logic",
-      "sortOrder": 90
+      "sortOrder": 92
     },
     {
       "code": "V11.1.3",
@@ -750,7 +766,7 @@
       "summary": "Apply per-user limits so that a single actor cannot abuse a feature at scale.",
       "category": "L1",
       "section": "Business Logic",
-      "sortOrder": 91
+      "sortOrder": 93
     },
     {
       "code": "V11.1.4",
@@ -758,7 +774,7 @@
       "summary": "Apply anti-automation to actions an attacker could script to harvest data or resources.",
       "category": "L1",
       "section": "Business Logic",
-      "sortOrder": 92
+      "sortOrder": 94
     },
     {
       "code": "V11.1.5",
@@ -766,15 +782,7 @@
       "summary": "Enforce business-rule limits such as maximum values or quantities server-side.",
       "category": "L1",
       "section": "Business Logic",
-      "sortOrder": 93
-    },
-    {
-      "code": "V11.1.6",
-      "title": "Prevent Logic Race Conditions",
-      "summary": "Protect high-value operations from race conditions that could bypass business rules.",
-      "category": "L1",
-      "section": "Business Logic",
-      "sortOrder": 94
+      "sortOrder": 95
     },
     {
       "code": "V12.1.1",
@@ -782,7 +790,7 @@
       "summary": "Reject uploads larger than the application expects to avoid denial of service.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 95
+      "sortOrder": 96
     },
     {
       "code": "V12.3.1",
@@ -790,7 +798,7 @@
       "summary": "Validate and normalise user-submitted filenames to prevent path traversal.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 96
+      "sortOrder": 97
     },
     {
       "code": "V12.3.2",
@@ -798,7 +806,7 @@
       "summary": "Prevent user-controlled file metadata from steering unsafe processing.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 97
+      "sortOrder": 98
     },
     {
       "code": "V12.3.3",
@@ -806,7 +814,7 @@
       "summary": "Block path manipulation so file operations cannot escape their intended directory.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 98
+      "sortOrder": 99
     },
     {
       "code": "V12.3.4",
@@ -814,7 +822,7 @@
       "summary": "Reject or neutralise dangerous, executable file extensions on upload.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 99
+      "sortOrder": 100
     },
     {
       "code": "V12.3.5",
@@ -822,7 +830,7 @@
       "summary": "Do not make trust decisions based on user-supplied file metadata.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 100
+      "sortOrder": 101
     },
     {
       "code": "V12.4.1",
@@ -830,7 +838,7 @@
       "summary": "Store uploaded files outside the web root or on a storage service so they cannot be executed.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 101
+      "sortOrder": 102
     },
     {
       "code": "V12.4.2",
@@ -838,7 +846,7 @@
       "summary": "Scan uploaded files for malware before they are made available.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 102
+      "sortOrder": 103
     },
     {
       "code": "V12.5.1",
@@ -846,7 +854,7 @@
       "summary": "Configure the web tier so that source and configuration files are never served.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 103
+      "sortOrder": 104
     },
     {
       "code": "V12.5.2",
@@ -854,7 +862,7 @@
       "summary": "Serve uploaded files through access-controlled, safe delivery paths.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 104
+      "sortOrder": 105
     },
     {
       "code": "V12.6.1",
@@ -862,7 +870,7 @@
       "summary": "Prevent file features from being used for open redirect or server-side request forgery.",
       "category": "L1",
       "section": "Files and Resources",
-      "sortOrder": 105
+      "sortOrder": 106
     },
     {
       "code": "V13.1.1",
@@ -870,7 +878,7 @@
       "summary": "Apply the same validation and encoding rules to API endpoints as to the user interface.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 106
+      "sortOrder": 107
     },
     {
       "code": "V13.1.3",
@@ -878,7 +886,7 @@
       "summary": "Keep sensitive data out of API URLs where it could be logged or cached.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 107
+      "sortOrder": 108
     },
     {
       "code": "V13.1.5",
@@ -886,7 +894,7 @@
       "summary": "Reject requests whose content type is not one the endpoint expects.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 108
+      "sortOrder": 109
     },
     {
       "code": "V13.2.1",
@@ -894,7 +902,7 @@
       "summary": "Allow only the HTTP methods each API resource is designed to accept.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 109
+      "sortOrder": 110
     },
     {
       "code": "V13.2.2",
@@ -902,7 +910,7 @@
       "summary": "Validate API request bodies against a defined schema and reject malformed input.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 110
+      "sortOrder": 111
     },
     {
       "code": "V13.2.3",
@@ -910,7 +918,7 @@
       "summary": "Protect cookie-authenticated API calls against cross-site request forgery.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 111
+      "sortOrder": 112
     },
     {
       "code": "V13.2.5",
@@ -918,7 +926,7 @@
       "summary": "Verify that request content types match what the API contract specifies.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 112
+      "sortOrder": 113
     },
     {
       "code": "V13.3.1",
@@ -926,7 +934,7 @@
       "summary": "Validate SOAP requests against their schema to prevent malformed or malicious input.",
       "category": "L1",
       "section": "API and Web Service",
-      "sortOrder": 113
+      "sortOrder": 114
     },
     {
       "code": "V14.2.1",
@@ -934,7 +942,7 @@
       "summary": "Keep components and dependencies current with security updates.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 114
+      "sortOrder": 115
     },
     {
       "code": "V14.2.2",
@@ -942,7 +950,7 @@
       "summary": "Remove unused features, sample content, and default files from deployments.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 115
+      "sortOrder": 116
     },
     {
       "code": "V14.2.3",
@@ -950,7 +958,7 @@
       "summary": "Verify the integrity of third-party assets, for example with subresource integrity.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 116
+      "sortOrder": 117
     },
     {
       "code": "V14.3.2",
@@ -958,7 +966,7 @@
       "summary": "Disable debug modes and developer consoles in production.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 117
+      "sortOrder": 118
     },
     {
       "code": "V14.3.3",
@@ -966,7 +974,7 @@
       "summary": "Suppress framework and server version information in responses.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 118
+      "sortOrder": 119
     },
     {
       "code": "V14.4.1",
@@ -974,7 +982,7 @@
       "summary": "Specify a safe character set in the Content-Type header of responses.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 119
+      "sortOrder": 120
     },
     {
       "code": "V14.4.2",
@@ -982,7 +990,7 @@
       "summary": "Set a Content-Disposition header so downloads are handled safely by browsers.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 120
+      "sortOrder": 121
     },
     {
       "code": "V14.4.3",
@@ -990,7 +998,7 @@
       "summary": "Deploy a Content-Security-Policy header to reduce the impact of injection.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 121
+      "sortOrder": 122
     },
     {
       "code": "V14.4.4",
@@ -998,7 +1006,7 @@
       "summary": "Set X-Content-Type-Options to nosniff to stop content-type guessing.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 122
+      "sortOrder": 123
     },
     {
       "code": "V14.4.5",
@@ -1006,7 +1014,7 @@
       "summary": "Send an HTTP Strict-Transport-Security header to enforce HTTPS.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 123
+      "sortOrder": 124
     },
     {
       "code": "V14.4.6",
@@ -1014,7 +1022,7 @@
       "summary": "Set a Referrer-Policy header to limit leakage of URLs to other origins.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 124
+      "sortOrder": 125
     },
     {
       "code": "V14.4.7",
@@ -1022,7 +1030,7 @@
       "summary": "Restrict framing with frame-ancestors or equivalent to prevent clickjacking.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 125
+      "sortOrder": 126
     },
     {
       "code": "V14.5.1",
@@ -1030,7 +1038,7 @@
       "summary": "Reject unsupported HTTP methods at the server so only intended verbs are processed.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 126
+      "sortOrder": 127
     },
     {
       "code": "V14.5.2",
@@ -1038,7 +1046,7 @@
       "summary": "Do not use the Origin header alone to make authentication decisions.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 127
+      "sortOrder": 128
     },
     {
       "code": "V14.5.3",
@@ -1046,7 +1054,7 @@
       "summary": "Configure cross-origin resource sharing with a strict, explicit allowlist of origins.",
       "category": "L1",
       "section": "Configuration",
-      "sortOrder": 128
+      "sortOrder": 129
     }
   ],
   "templates": [
@@ -1083,7 +1091,6 @@
         "V2.5.4",
         "V2.5.5",
         "V2.5.6",
-        "V2.6.1",
         "V2.7.1",
         "V2.7.2",
         "V2.7.3",
@@ -1356,9 +1363,9 @@
       "category": "Security",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Application Security",
-      "objective": "To ensure a session token proves nothing beyond the authenticated session it was issued for, and stops being usable the moment that session ends.",
-      "successCriteria": "Every token on the session register is issued fresh at authentication at the generator's full width, and the pre-authentication value is discarded.\nEach session cookie carries the Secure, HttpOnly, SameSite, host-prefix and path attributes recorded for it on the register.\nA token replayed after logout is refused server-side, and sessions end at both the inactivity and the absolute lifetime configured.\nNo access or referrer log for the period holds a session token inside a URL.",
-      "testingMethodology": "Evidence:\nObtain the session token register naming each token, its issuing flow, client storage location and lifetime.\nCollect the token values captured across one login, before and after authentication.\nGather the Set-Cookie headers captured from a live login for every session cookie.\nObtain the replay test record for a logged-out token, with the configured inactivity and absolute lifetime values.\nCollect the period's access and referrer log scan output for URLs carrying a token.\n\nAnalysis:\nCompare the pre- and post-authentication token values to confirm the earlier value was discarded rather than carried forward.\nMeasure the token length and random source against the entropy the generator is capable of producing.\nCheck each captured Set-Cookie header attribute by attribute against the register row for that cookie.\nConfirm the replayed token was refused by the server rather than merely cleared from the browser, and that each lifetime ended a session in test.\nTrace every token found in a URL back to the route that emitted it and confirm the recorded remediation closed that route.\n\nOutput:\nA session token register annotated with the attributes and lifetime observed for each token.\nCaptured header and token evidence for one full login, logout and replay cycle.\nA log scan summary listing the URLs that carried tokens and the routes remediated.\nA lifecycle walkthrough recording the server response at each step of the session.",
+      "objective": "To ensure a session token proves nothing beyond the authenticated session it was issued for, and stops being usable the moment that session ends, and that holding a session is not on its own enough to commit a sensitive change.",
+      "successCriteria": "Every token on the session register is issued fresh at authentication at the generator's full width, and the pre-authentication value is discarded.\nEach session cookie carries the Secure, HttpOnly, SameSite, host-prefix and path attributes recorded for it on the register.\nA token replayed after logout is refused server-side, and sessions end at both the inactivity and the absolute lifetime configured.\nNo access or referrer log for the period holds a session token inside a URL.\nEach sensitive transaction and account change asks for a fresh authentication or confirmation before it proceeds.",
+      "testingMethodology": "Evidence:\nObtain the session token register naming each token, its issuing flow, client storage location and lifetime.\nCollect the token values captured across one login, before and after authentication.\nGather the Set-Cookie headers captured from a live login for every session cookie.\nObtain the replay test record for a logged-out token, with the configured inactivity and absolute lifetime values.\nCollect the period's access and referrer log scan output for URLs carrying a token.\nObtain the list of sensitive operations and the transcript of one attempted on a session that had not re-authenticated.\n\nAnalysis:\nCompare the pre- and post-authentication token values to confirm the earlier value was discarded rather than carried forward.\nMeasure the token length and random source against the entropy the generator is capable of producing.\nCheck each captured Set-Cookie header attribute by attribute against the register row for that cookie.\nConfirm the replayed token was refused by the server rather than merely cleared from the browser, and that each lifetime ended a session in test.\nTrace every token found in a URL back to the route that emitted it and confirm the recorded remediation closed that route.\nConfirm the re-authentication check is decided on the server from when the session last authenticated, not in the page.\n\nOutput:\nA session token register annotated with the attributes and lifetime observed for each token.\nCaptured header and token evidence for one full login, logout and replay cycle.\nA log scan summary listing the URLs that carried tokens and the routes remediated.\nA lifecycle walkthrough recording the server response at each step of the session.\nA list of the sensitive operations with the re-authentication response observed for each.",
       "requirementCodes": [
         "V3.1.1",
         "V3.2.1",
@@ -1370,7 +1377,8 @@
         "V3.4.2",
         "V3.4.3",
         "V3.4.4",
-        "V3.4.5"
+        "V3.4.5",
+        "V3.7.1"
       ],
       "tasks": [
         {
@@ -1488,15 +1496,15 @@
         },
         {
           "title": {
-            "en": "Revoke the session server-side at logout and enforce the inactivity and absolute lifetimes"
+            "en": "Revoke the session server-side at logout, enforce its lifetimes and require fresh authentication for sensitive changes"
           },
           "description": {
-            "en": "Make logout delete the server-held session record rather than only clearing the client cookie, so a token captured earlier stops working the moment the user signs out. Configure an inactivity timeout that ends a session left untouched and an absolute lifetime that ends it regardless of activity, and apply both to the server-side record rather than to the cookie expiry, which the client controls. Attach the test record showing a logged-out token refused on replay together with the two configured values."
+            "en": "Make logout delete the server-held session record rather than only clearing the client cookie, so a token captured earlier stops working the moment the user signs out. Configure an inactivity timeout that ends a session left untouched and an absolute lifetime that ends it regardless of activity, and apply both to the server-side record rather than to the cookie expiry, which the client controls. Then list the operations that change the account itself or commit an especially sensitive transaction, such as a change of password, email address or second factor, a payment, or an export of personal data, and make each one ask for the password or a second factor again, or for a fresh confirmation, before it proceeds, because a session that was left open or taken over is otherwise enough to make the change. Decide that check on the server from when the session last authenticated rather than in the page. Attach the test record showing a logged-out token refused on replay with the two configured values, and a transcript showing one sensitive operation refused on a session that had not re-authenticated."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "Test record showing a logged-out token refused when replayed, alongside the configured inactivity and absolute lifetime values"
+            "en": "Test record showing a logged-out token refused on replay with the configured inactivity and absolute lifetime values, and a transcript showing a sensitive operation refused on a session that had not re-authenticated"
           },
           "suggestedRole": "Engineering lead",
           "steps": [
@@ -1518,6 +1526,26 @@
             {
               "text": {
                 "en": "Replay a logged-out token and record the response it received."
+              }
+            },
+            {
+              "text": {
+                "en": "List the operations that change the account or commit a sensitive transaction."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the password, a second factor or a fresh confirmation before each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide the check on the server from when the session last authenticated."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt one operation on a session that has not re-authenticated and record the refusal."
               }
             }
           ]
@@ -2278,10 +2306,12 @@
       "category": "Security",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Security Operations",
-      "objective": "To ensure a failing request tells the user only that it failed, while the detail needed to diagnose it is kept where only an operator can read it.",
-      "successCriteria": "Every error class the application can return appears on the catalogue with its status and its user-visible body.\nNo user-visible body carries a stack trace, query text, host name or other internal detail.\nEach user-visible error carries a correlation identifier that resolves to a server-side record holding the retained detail.\nThe deployed environment returns the catalogued body rather than the framework's own default page.",
-      "testingMethodology": "Evidence:\nObtain the error response catalogue giving each error class, its status, the user-visible body and the internal detail that body once disclosed.\nCollect the handler configuration with the before-and-after response body for each disclosing error class.\nGather the server-side error log extract for the period keyed by correlation identifier.\nObtain the probe record from triggering each catalogued error class against the deployed environment.\n\nAnalysis:\nIdentify error classes the application can produce that never reached the catalogue, such as those raised by the platform beneath the handler.\nCompare each probed response with its catalogued body to find environments still returning framework detail.\nResolve a sample of correlation identifiers from user-visible responses through to the server-side record and confirm the stack and request context were retained.\nIsolate identifiers issued to users for which no server-side record exists, leaving that failure undiagnosable.\n\nOutput:\nAn error response catalogue annotated with the body the deployed environment actually returned.\nA sample of correlation identifiers traced from the user-visible response to the retained record.\nA list of error classes still disclosing internal detail, naming the handler responsible for each.",
+      "objective": "To ensure a failing request tells the user only that it failed, while the detail needed to diagnose it is kept where only an operator can read it, and that no log keeps a credential or other sensitive value.",
+      "successCriteria": "Every error class the application can return appears on the catalogue with its status and its user-visible body.\nNo user-visible body carries a stack trace, query text, host name or other internal detail.\nEach user-visible error carries a correlation identifier that resolves to a server-side record holding the retained detail.\nThe deployed environment returns the catalogued body rather than the framework's own default page.\nNo log written in the period holds a password, session token, API key or other value the security or privacy policy treats as sensitive.",
+      "testingMethodology": "Evidence:\nObtain the error response catalogue giving each error class, its status, the user-visible body and the internal detail that body once disclosed.\nCollect the handler configuration with the before-and-after response body for each disclosing error class.\nGather the server-side error log extract for the period keyed by correlation identifier.\nObtain the probe record from triggering each catalogued error class against the deployed environment.\nCollect the logger masking configuration and the period's log search output for credentials, tokens and other sensitive values.\n\nAnalysis:\nIdentify error classes the application can produce that never reached the catalogue, such as those raised by the platform beneath the handler.\nCompare each probed response with its catalogued body to find environments still returning framework detail.\nResolve a sample of correlation identifiers from user-visible responses through to the server-side record and confirm the stack and request context were retained.\nIsolate identifiers issued to users for which no server-side record exists, leaving that failure undiagnosable.\nTrace each sensitive value the log search found to the logger that wrote it, and confirm the masking now applies to fields added later.\n\nOutput:\nAn error response catalogue annotated with the body the deployed environment actually returned.\nA sample of correlation identifiers traced from the user-visible response to the retained record.\nA list of error classes still disclosing internal detail, naming the handler responsible for each.\nA log search summary listing each sensitive value found and the logger remediated.",
       "requirementCodes": [
+        "V7.1.1",
+        "V7.1.2",
         "V7.4.1"
       ],
       "tasks": [
@@ -2430,6 +2460,47 @@
             {
               "text": {
                 "en": "Raise a ticket for every response still carrying internal detail."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure every logger to keep credentials, tokens and other sensitive data out of the logs"
+          },
+          "description": {
+            "en": "Go through the request, error and audit loggers and the calls that feed them, and stop them recording passwords, session tokens, API keys and other secrets, or any other data the security or privacy policy treats as sensitive. Mask at the logger rather than at each call, so a field added later is masked by default rather than by somebody remembering to. Then search the period's stored logs for the values the masking was meant to remove, because a value written before the change is still sitting in the log. Attach the masking configuration together with the search output."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Logger masking configuration naming the fields masked, with the output of a search of the period's stored logs for credentials, tokens and other sensitive values"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the loggers that record requests, errors and audit events."
+              }
+            },
+            {
+              "text": {
+                "en": "Mask passwords, session tokens, API keys and other secrets at the logger."
+              }
+            },
+            {
+              "text": {
+                "en": "Mask the other data the security or privacy policy treats as sensitive."
+              }
+            },
+            {
+              "text": {
+                "en": "Search the period's stored logs for the values the masking should remove."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for every hit and record the logger that wrote it."
               }
             }
           ]
@@ -3094,8 +3165,7 @@
         "V11.1.2",
         "V11.1.3",
         "V11.1.4",
-        "V11.1.5",
-        "V11.1.6"
+        "V11.1.5"
       ],
       "tasks": [
         {

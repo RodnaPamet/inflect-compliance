@@ -418,7 +418,7 @@ describe('catalogue requirements carry prose', () => {
         // FINOS AIGF ships every requirement WITH a summary, generated from the
         // library's descriptions, which are Inflect's own.
         'finos-aigf-control-templates.json': '0 of 25',
-        'asvs-l1-control-templates.json': '0 of 128',
+        'asvs-l1-control-templates.json': '0 of 129',
         'cis-v8-ig1-control-templates.json': '0 of 56',
         // COSO ships every requirement WITH a summary. It is the first
         // framework here authored principle-first: the 17 principles carry

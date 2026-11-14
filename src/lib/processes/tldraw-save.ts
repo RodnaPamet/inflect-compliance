@@ -45,6 +45,7 @@
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import { surfaceVersionConflict } from '@/lib/processes/version-conflict-toast';
+import type { VersionConflictCopy } from '@/lib/processes/version-conflict-toast';
 import { refusalReason } from '@/lib/api-error';
 
 /** What the server returns from a successful save. */
@@ -83,6 +84,8 @@ export interface SaveTldrawCanvasInput {
      */
     name?: string;
     toast: ToastApi;
+    /** The 409 toast's words in the user's locale — `versionConflictCopy(t)`. */
+    conflictCopy: VersionConflictCopy;
     /** Bump a reload counter; the 409 toast's action calls this. */
     onConflict: () => void;
     /** Fresh version + updatedAt, for the summary list and the loaded map. */
@@ -91,10 +94,16 @@ export interface SaveTldrawCanvasInput {
     fetchImpl?: typeof fetch;
 }
 
-/** A save the server refused because somebody else saved first (HTTP 409). */
+/**
+ * A save the server refused because somebody else saved first (HTTP 409).
+ *
+ * Its message is the toast's title in the user's locale (#5316): autosave keeps
+ * it as the error the document bar's chip shows, so a fixed English sentence
+ * here reached a Bulgarian user after the toast had been translated.
+ */
 export class VersionConflictError extends Error {
-    constructor() {
-        super('Someone else saved this map. Reload to see the latest version.');
+    constructor(message: string) {
+        super(message);
         this.name = 'VersionConflictError';
     }
 }
@@ -106,6 +115,7 @@ export async function saveTldrawCanvas({
     canvas,
     name,
     toast,
+    conflictCopy,
     onConflict,
     onSaved,
     fetchImpl = fetch,
@@ -145,7 +155,7 @@ export async function saveTldrawCanvas({
     // "Saved" and the unsaved-changes guard switched off over edits the server
     // had just refused. The thrown error leaves autosave in `error`, which also
     // stops it retrying a write that can only be refused again.
-    if (await surfaceVersionConflict(res, toast, onConflict)) throw new VersionConflictError();
+    if (await surfaceVersionConflict(res, toast, onConflict, conflictCopy)) throw new VersionConflictError(conflictCopy.title);
 
     // The server's sentence, or an empty message for the caller's own —
     // never the status code (#4987).
