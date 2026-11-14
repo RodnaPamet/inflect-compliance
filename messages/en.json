@@ -9494,6 +9494,7 @@
     },
     "detail": {
       "activationNeedsReview": "This vendor can't be made Active until an assessment has been sent and its review completed with a risk rating.",
+      "activationReassessmentInProgress": "This vendor can't be made Active while a reassessment is in progress. Complete the review of its latest assessment, with a risk rating, then make it Active.",
       "saveFailed": "Couldn't save the vendor. Please try again.",
       "crumbVendors": "Vendors",
       "crumbFallback": "Vendor",

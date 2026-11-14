@@ -98,6 +98,46 @@ describeFn('vendor activation gate + reverse linkage (integration)', () => {
         expect((await prisma.vendor.findUnique({ where: { id: blockedVendor } }))?.status).toBe('ONBOARDING');
     });
 
+    // #5318 item 31, owner decision 2026-11-14: the gate stays strict on the
+    // LATEST assessment, so a reassessment in flight still blocks a vendor
+    // whose earlier review completed, and the refusal names the reassessment.
+    it('a reassessment in progress blocks activation, with its own reason, on both paths', async () => {
+        const single = await makeVendor('reassess-single');
+        const bulk = await makeVendor('reassess-bulk');
+        const fresh = await makeVendor('first-open');
+        for (const vendorId of [single, bulk]) {
+            await prisma.vendorAssessment.create({
+                data: {
+                    tenantId,
+                    vendorId,
+                    status: 'REVIEWED',
+                    riskRating: 'LOW',
+                    requestedByUserId: userId,
+                    createdAt: new Date(Date.now() - 60_000),
+                },
+            });
+            await prisma.vendorAssessment.create({
+                data: { tenantId, vendorId, status: 'SENT', requestedByUserId: userId },
+            });
+        }
+        await prisma.vendorAssessment.create({
+            data: { tenantId, vendorId: fresh, status: 'SENT', requestedByUserId: userId },
+        });
+
+        await expect(updateVendor(ctx, single, { status: 'ACTIVE' })).rejects.toMatchObject({
+            status: 400,
+            details: { reason: 'VENDOR_REASSESSMENT_IN_PROGRESS' },
+        });
+        expect((await prisma.vendor.findUnique({ where: { id: single } }))?.status).toBe('ONBOARDING');
+
+        const res = await bulkSetVendorStatus(ctx, [bulk, fresh], 'ACTIVE');
+        expect(res.updated).toBe(0);
+        expect(Object.fromEntries(res.blocked.map((b) => [b.id, b.reason]))).toEqual({
+            [bulk]: 'VENDOR_REASSESSMENT_IN_PROGRESS',
+            [fresh]: 'VENDOR_ACTIVATION_NEEDS_REVIEW',
+        });
+    });
+
     it('reverse where-used: listVendorsLinkedToEntity returns vendors linked to a risk', async () => {
         const vendorId = await makeVendor('linked');
         const risk = await prisma.risk.create({
