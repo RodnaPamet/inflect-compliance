@@ -11,6 +11,10 @@
  *      permission names; a member the product does not expose reads "not
  *      exposed", one the read did not establish "not known" — never "none";
  *      open findings beside the application.
+ *   4. LINKS OUT, NEVER A WRITE. Each row links to the publisher's page and to
+ *      the application in the vendor's own console, in a new tab, marked as
+ *      external; a row with no URL renders no link; a note above the table says
+ *      deactivation happens in the vendor's console.
  *
  * Every absence is asserted beside something present from the same render.
  */
@@ -83,6 +87,10 @@ const EN = (
     }
 ).agents.reports.integrations;
 
+const ENTRA_MANAGE =
+    'https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Properties'
+    + '/objectId/a0000006-0000-4000-8000-000000000001/appId/e0000006-0000-4000-8000-000000000001';
+
 const row = (over: Partial<ThirdPartyAppRow> = {}): ThirdPartyAppRow => ({
     appId: 'app_entra',
     applicationId: 'entra:0d1e2c3b-0000-4000-8000-000000003686:sp:a0000006-0000-4000-8000-000000000001',
@@ -103,6 +111,8 @@ const row = (over: Partial<ThirdPartyAppRow> = {}): ThirdPartyAppRow => ({
         { code: 'INTEGRATION_HIGH_PRIVILEGE_GRANT', findingId: 'f1', severity: 'HIGH' },
         { code: 'INTEGRATION_NO_OWNER', findingId: 'f2', severity: 'MEDIUM' },
     ],
+    manageUrl: ENTRA_MANAGE,
+    aboutUrl: null,
     ...over,
 });
 
@@ -139,6 +149,8 @@ const section = (over: Partial<ThirdPartyScanSection> = {}): ThirdPartyScanSecti
             signIn: 'NOT_EXPOSED',
             daysSinceSignIn: null,
             openFindings: [],
+            manageUrl: 'https://acme-admin.okta.com/admin/apps/active',
+            aboutUrl: null,
         }),
     ],
     rowsTruncated: false,
@@ -293,5 +305,73 @@ describe('3. the rows say what was established', () => {
         expect(screen.getByTestId('integrations-rows-truncated-scan_1')).toBeInTheDocument();
         expect(screen.getByTestId('integrations-rows-unread-scan_2')).toBeInTheDocument();
         expect(document.getElementById('integrations-apps-table-scan_2')).toBeNull();
+    });
+});
+
+describe('4. links out, never a write', () => {
+    const github = row({
+        appId: 'app_github',
+        applicationId: 'github:acme:installation:41',
+        sourceKind: 'github-integrations',
+        product: 'GitHub',
+        name: 'acme-deploy-bot',
+        openFindings: [],
+        manageUrl: 'https://github.com/organizations/acme/settings/installations/41',
+        aboutUrl: 'https://github.com/apps/acme-deploy-bot',
+    });
+    const unlinked = row({
+        appId: 'app_unlinked',
+        applicationId: 'entra:0d1e2c3b-0000-4000-8000-000000003686:sp:a0000006-0000-4000-8000-000000000003',
+        openFindings: [],
+        manageUrl: null,
+        aboutUrl: null,
+    });
+
+    it('each row links to the vendor in a new tab, and a row without a URL renders no link', () => {
+        renderTab(view({ sections: [section({ rows: [...section().rows, github, unlinked] })] }));
+
+        const about = screen.getByTestId('integrations-about-app_github');
+        expect(about).toHaveAttribute('href', 'https://github.com/apps/acme-deploy-bot');
+        const manage = screen.getByTestId('integrations-manage-app_github');
+        expect(manage).toHaveAttribute('href', 'https://github.com/organizations/acme/settings/installations/41');
+        for (const a of [about, manage]) {
+            expect(a).toHaveAttribute('target', '_blank');
+            expect(a).toHaveAttribute('rel', 'noopener noreferrer');
+            // The external indicator, for sight (an icon) and for a screen reader (text).
+            expect(a.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+            expect(a).toHaveTextContent(EN.opensInNewTab);
+        }
+        expect(about).toHaveTextContent(EN.aboutLink);
+        expect(manage).toHaveTextContent(EN.manageLink);
+
+        // Entra and Okta: a manage link only.
+        expect(screen.getByTestId('integrations-manage-app_entra')).toHaveAttribute('href', ENTRA_MANAGE);
+        expect(screen.queryByTestId('integrations-about-app_entra')).toBeNull();
+        expect(screen.getByTestId('integrations-manage-app_okta')).toHaveAttribute(
+            'href',
+            'https://acme-admin.okta.com/admin/apps/active',
+        );
+        expect(screen.queryByTestId('integrations-about-app_okta')).toBeNull();
+
+        // No URL: no link at all, beside a row that has them.
+        expect(screen.queryByTestId('integrations-links-app_unlinked')).toBeNull();
+        expect(screen.queryByTestId('integrations-manage-app_unlinked')).toBeNull();
+        expect(screen.queryByTestId('integrations-about-app_unlinked')).toBeNull();
+        expect(screen.getByTestId('integrations-links-app_github')).toBeInTheDocument();
+    });
+
+    it('a note above the table says deactivation happens in the vendor\'s console', () => {
+        renderTab(view());
+        const note = screen.getByTestId('integrations-vendor-note-scan_1');
+        expect(note).toHaveTextContent(EN.vendorConsoleNote);
+        const table = document.getElementById('integrations-apps-table-scan_1') as Node;
+        expect(note.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('no rows, no note', () => {
+        const s = section();
+        renderTab(view({ sections: [section({ scan: { ...s.scan, completeness: 'EMPTY', applicationCount: 0 }, rows: [] })] }));
+        expect(screen.getByTestId('integrations-empty-scan_1')).toBeInTheDocument();
+        expect(screen.queryByTestId('integrations-vendor-note-scan_1')).toBeNull();
     });
 });

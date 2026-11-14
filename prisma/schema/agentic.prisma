@@ -2843,20 +2843,29 @@ model ThirdPartyAppScan {
 /// `github:<org>:installation:<id>`). Lives across scans; each scan adds a
 /// ThirdPartyAppScanItem.
 model DiscoveredThirdPartyApp {
-  id              String   @id @default(cuid())
-  tenantId        String
-  applicationId   String
+  id               String   @id @default(cuid())
+  tenantId         String
+  applicationId    String
   /// `entra-integrations` | `okta-integrations` | `github-integrations`.
-  sourceKind      String
+  sourceKind       String
   /// The directory's name for it as the latest scan read it; null when it had none.
-  displayName     String?
+  displayName      String?
+  /// The publisher's id for the application, as the latest scan read it: Entra's
+  /// application (client) id GUID, a GitHub App's numeric id as a string, an Okta
+  /// app id. Not a secret. Null when the report carried none. Read only to build
+  /// the Integrations tab's links to the vendor's own console
+  /// (`src/lib/agentic/third-party-app-links.ts`).
+  publisherAppId   String?
+  /// A GitHub App's slug, as the latest scan read it; null for every other product
+  /// and when the report carried none.
+  publisherAppSlug String?
   /// Plain ids, not foreign keys, as `DiscoveredAgent.lastScanId` is.
-  firstSeenScanId String
-  lastSeenScanId  String
-  firstSeenAt     DateTime
-  lastSeenAt      DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  firstSeenScanId  String
+  lastSeenScanId   String
+  firstSeenAt      DateTime
+  lastSeenAt       DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   items  ThirdPartyAppScanItem[]

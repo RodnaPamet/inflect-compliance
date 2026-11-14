@@ -2037,6 +2037,14 @@ are easy to undo:
 - **Not known is not none.** Okta and GitHub expose no owner, publisher or
   sign-in; those are stored NULL and read "not exposed" (`NOT_EXPOSED_BY_PRODUCT`),
   never "no owner".
+- **Links, not writes.** Each row links out ("What is this?", "Manage /
+  deactivate") to the vendor's own console, built on the server by the pure
+  `thirdPartyAppLinks` (`src/lib/agentic/third-party-app-links.ts`) from the
+  application id and the publisher ids the ingest stores
+  (`publisherAppId`, `publisherAppSlug`); every part is validated first, any
+  mismatch is no link, and the only hosts produced are `github.com`,
+  `entra.microsoft.com` and an Okta org's `-admin` host. Deactivation happens
+  there and the next scan shows it: do not add a write path or a permission.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing

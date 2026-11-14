@@ -46,6 +46,7 @@ import {
     entraApp,
     ENTRA_COMPLETE,
     githubInstallation,
+    guid,
     integrationsBody,
     oktaApp,
     quietEntraApp,
@@ -317,6 +318,35 @@ describe('2. the plan becomes the rows', () => {
         expect(store.tables.apps[0]).toMatchObject({ displayName: 'Renamed' });
         expect(store.tables.items).toHaveLength(2);
     });
+
+    it('stores each product\'s publisher ids from the report: Entra and Okta appId, GitHub appId as a string and slug', async () => {
+        await ingest(threeProductBody(SCANNER, 's1'));
+        const byId = new Map(store.tables.apps.map((a) => [a.applicationId as string, a]));
+        expect(byId.get(entraApp(1).id)).toMatchObject({
+            publisherAppId: entraApp(1).appId,
+            publisherAppSlug: null,
+        });
+        expect(byId.get(oktaApp().id)).toMatchObject({ publisherAppId: oktaApp().appId, publisherAppSlug: null });
+        expect(byId.get(githubInstallation().id)).toMatchObject({
+            publisherAppId: '9001',
+            publisherAppSlug: 'acme-deploy-bot',
+        });
+    });
+
+    it('the latest scan wins for the publisher ids, a null included', async () => {
+        const threeProducts = (scanId: string, gh: Parameters<typeof githubInstallation>[0]) => {
+            const body = threeProductBody(SCANNER, scanId);
+            body.applications = [entraApp(1), githubInstallation(gh), oktaApp()];
+            return body;
+        };
+        await ingest(threeProducts('s1', {}));
+        await ingest(threeProducts('s2', { appId: 9002, appSlug: 'acme-deploy-bot-v2' }));
+        const gh = () => store.tables.apps.find((a) => a.applicationId === githubInstallation().id);
+        expect(gh()).toMatchObject({ publisherAppId: '9002', publisherAppSlug: 'acme-deploy-bot-v2' });
+        await ingest(threeProducts('s3', { appId: null, appSlug: null }));
+        expect(gh()).toMatchObject({ publisherAppId: null, publisherAppSlug: null });
+        expect(store.tables.apps).toHaveLength(3);
+    });
 });
 
 describe('3. reconcile', () => {
@@ -468,6 +498,19 @@ describe('4. the inventory read', () => {
             signIn: 'NOT_EXPOSED',
         });
         expect(view.scannersWithoutScan.rows).toEqual([]);
+
+        // Links out to the vendor's console, built on the server from the stored ids.
+        expect(entra).toMatchObject({
+            manageUrl:
+                'https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Properties'
+                + `/objectId/${guid(1)}/appId/${entraApp(1).appId}`,
+            aboutUrl: null,
+        });
+        expect(okta).toMatchObject({ manageUrl: 'https://acme-admin.okta.com/admin/apps/active', aboutUrl: null });
+        expect(section.rows.find((r) => r.applicationId === githubInstallation().id)).toMatchObject({
+            manageUrl: 'https://github.com/organizations/acme/settings/installations/41',
+            aboutUrl: 'https://github.com/apps/acme-deploy-bot',
+        });
     });
 
     it('an empty complete scan is EMPTY, never complete', async () => {
