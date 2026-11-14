@@ -70,9 +70,32 @@ export interface ApproveResult {
 export async function approveTrustCenterAccessRequest(ctx: RequestContext, requestId: string, now: Date = new Date()): Promise<ApproveResult> {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {
-        const req = await db.trustCenterAccessRequest.findFirst({ where: { id: requestId, tenantId: ctx.tenantId }, select: { id: true, status: true } });
+        const req = await db.trustCenterAccessRequest.findFirst({
+            where: { id: requestId, tenantId: ctx.tenantId },
+            // ndaSignedAt and the center's ndaRequired are selected so the NDA
+            // can be asserted here too (#5613). Selecting only id + status is
+            // what made the NDA a browser-only rule: the request path recorded
+            // whatever the visitor's body said, and this path could not see it.
+            select: {
+                id: true,
+                status: true,
+                ndaSignedAt: true,
+                document: { select: { trustCenter: { select: { ndaRequired: true } } } },
+            },
+        });
         if (!req) throw notFound('Access request not found.');
         if (req.status === 'DENIED') throw badRequest('This request was denied. The visitor can ask again from the public page.');
+        // The backstop half of #5613. After the fix in requestTrustCenterAccess
+        // no new row can reach here unsigned, so this fires on two cases: a row
+        // filed before that fix, and a center that turned ndaRequired ON after
+        // the request was made. Both genuinely lack the acceptance the document's
+        // terms require, so issuing a token for them is the thing to refuse.
+        if (req.document.trustCenter.ndaRequired && !req.ndaSignedAt) {
+            throw badRequest(
+                'This trust center requires its non-disclosure terms to be accepted, and this request did not accept them. '
+                + 'Ask the visitor to request the document again from the public page.',
+            );
+        }
         const reissue = req.status === 'APPROVED';
         const downloadToken = `ictc_${crypto.randomBytes(24).toString('hex')}`;
         const claimed = await db.trustCenterAccessRequest.updateMany({

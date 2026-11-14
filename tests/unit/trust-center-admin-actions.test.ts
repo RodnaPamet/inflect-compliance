@@ -66,9 +66,23 @@ describe('deny', () => {
     });
 });
 
+/**
+ * The shape approveTrustCenterAccessRequest now SELECTS (#5613): its own
+ * status, plus ndaSignedAt and the center's ndaRequired, so the NDA can be
+ * asserted server-side. Defaults to a center that requires none, which is the
+ * pre-#5613 behaviour for every test that does not care.
+ */
+const request = (over: Record<string, unknown> = {}) => ({
+    id: 'r-1',
+    status: 'REQUESTED',
+    ndaSignedAt: null,
+    document: { trustCenter: { ndaRequired: false } },
+    ...over,
+});
+
 describe('approve and issue a new link', () => {
     it('approves a waiting request, claiming it from that status', async () => {
-        db.trustCenterAccessRequest.findFirst.mockResolvedValue({ id: 'r-1', status: 'REQUESTED' });
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request());
         const { downloadToken } = await approveTrustCenterAccessRequest(ctx, 'r-1', NOW);
         expect(downloadToken).toMatch(/^ictc_[0-9a-f]{48}$/);
         expect(db.trustCenterAccessRequest.updateMany.mock.calls[0][0].where).toEqual({ id: 'r-1', tenantId: 'tenant-1', status: 'REQUESTED' });
@@ -76,7 +90,7 @@ describe('approve and issue a new link', () => {
     });
 
     it('gives an approved request a new link that replaces the old one', async () => {
-        db.trustCenterAccessRequest.findFirst.mockResolvedValue({ id: 'r-1', status: 'APPROVED' });
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request({ status: 'APPROVED' }));
         await approveTrustCenterAccessRequest(ctx, 'r-1', NOW);
         const { where, data } = db.trustCenterAccessRequest.updateMany.mock.calls[0][0];
         expect(where.status).toBe('APPROVED');
@@ -88,16 +102,49 @@ describe('approve and issue a new link', () => {
     });
 
     it('never approves a denied request', async () => {
-        db.trustCenterAccessRequest.findFirst.mockResolvedValue({ id: 'r-1', status: 'DENIED' });
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request({ status: 'DENIED' }));
         await expect(approveTrustCenterAccessRequest(ctx, 'r-1', NOW)).rejects.toThrow(/was denied/);
         expect(db.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
     });
 
     it('issues nothing when the request was denied in between', async () => {
-        db.trustCenterAccessRequest.findFirst.mockResolvedValue({ id: 'r-1', status: 'REQUESTED' });
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request());
         db.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 0 });
         await expect(approveTrustCenterAccessRequest(ctx, 'r-1', NOW)).rejects.toThrow(/changed while you were looking/);
         expect(logEvent).not.toHaveBeenCalled();
+    });
+    // ── #5613: the NDA backstop ─────────────────────────────────────────
+    it('refuses to issue a link for a request that never accepted a required NDA', async () => {
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(
+            request({ ndaSignedAt: null, document: { trustCenter: { ndaRequired: true } } }),
+        );
+        await expect(approveTrustCenterAccessRequest(ctx, 'r-1', NOW)).rejects.toThrow(/non-disclosure terms/);
+        // No token minted, nothing written, nothing audited.
+        expect(db.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('approves the same request once the NDA was accepted', async () => {
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(
+            request({ ndaSignedAt: new Date('2026-10-30'), document: { trustCenter: { ndaRequired: true } } }),
+        );
+        const { downloadToken } = await approveTrustCenterAccessRequest(ctx, 'r-1', NOW);
+        expect(downloadToken).toMatch(/^ictc_[0-9a-f]{48}$/);
+    });
+
+    it('does not ask for an NDA the center does not require', async () => {
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request({ ndaSignedAt: null }));
+        await expect(approveTrustCenterAccessRequest(ctx, 'r-1', NOW)).resolves.toMatchObject({ requestId: 'r-1' });
+    });
+
+    it('reads the columns the NDA assertion needs', async () => {
+        db.trustCenterAccessRequest.findFirst.mockResolvedValue(request());
+        await approveTrustCenterAccessRequest(ctx, 'r-1', NOW);
+        // Selecting only id + status is what made the NDA browser-only: this
+        // path could not see either half of the rule.
+        const select = db.trustCenterAccessRequest.findFirst.mock.calls[0][0].select;
+        expect(select).toMatchObject({ ndaSignedAt: true });
+        expect(select.document.select.trustCenter).toEqual({ select: { ndaRequired: true } });
     });
 });
 
