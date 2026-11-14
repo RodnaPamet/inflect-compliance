@@ -25,11 +25,13 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { emitAutomationEvent } from '../automation';
 import { isNotificationsEnabled } from '../notifications/settings';
+import { buildDedupeKey } from '../notifications/enqueue';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { createTask, addTaskLink } from '../usecases/task';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
 import { buildTenantSystemJobContext } from '../context-system';
+import { drainPages, DRAIN_PAGE_SIZE } from './drain-pages';
 
 export interface OverduePolicy {
     id: string;
@@ -161,20 +163,28 @@ export async function processOverdueReminders(
     };
     if (tenantId) where.tenantId = tenantId;
 
-    const policies = await db.policy.findMany({
-        where,
-        select: {
-            id: true,
-            tenantId: true,
-            title: true,
-            slug: true,
-            nextReviewAt: true,
-            ownerUserId: true,
-            owner: { select: { email: true } },
-            tenant: { select: { reminderDaysBefore: true } },
-        },
-        take: 1000,
-    });
+    // EVERY due policy, read in pages (#5307). This was one unordered
+    // `take: 1000` across the whole platform: past 1000 due policies an
+    // arbitrary — usually stable — subset was processed and the rest got no
+    // task, email, audit row or event, day after day, under a green run.
+    const policies = await drainPages((cursor) =>
+        db.policy.findMany({
+            where,
+            select: {
+                id: true,
+                tenantId: true,
+                title: true,
+                slug: true,
+                nextReviewAt: true,
+                ownerUserId: true,
+                owner: { select: { email: true } },
+                tenant: { select: { reminderDaysBefore: true } },
+            },
+            orderBy: { id: 'asc' },
+            take: DRAIN_PAGE_SIZE,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    );
 
     const out: Array<{ id: string; tenantId: string; title: string; daysOverdue: number }> = [];
     // Per-tenant notification-eligibility cache — avoids re-querying
@@ -190,7 +200,7 @@ export async function processOverdueReminders(
     const policyIds = policies.map((p) => p.id);
     const policiesWithOpenTask = new Set<string>();
     if (policyIds.length) {
-        const openLinks = await db.taskLink.findMany({ // guardrail-allow: unbounded -- bounded by the scanned policyIds in: list (take:1000)
+        const openLinks = await db.taskLink.findMany({ // guardrail-allow: unbounded -- bounded by the scanned policyIds in: list (the due-policy set)
             where: {
                 entityType: 'POLICY',
                 entityId: { in: policyIds },
@@ -209,13 +219,21 @@ export async function processOverdueReminders(
     // about the tenant's content nor made the assignee of its review task:
     // `createTask` refuses a non-member assignee, and that refusal used to
     // abort the run for every policy after it, across all tenants.
-    const ownerPairs = policies.filter((p) => p.ownerUserId);
+    // One OR term per distinct (tenant, owner), not per policy: an owner of
+    // many due policies is asked about once.
+    const ownerPairs = [
+        ...new Map(
+            policies
+                .filter((p) => p.ownerUserId)
+                .map((p) => [`${p.tenantId}:${p.ownerUserId}`, { tenantId: p.tenantId, userId: p.ownerUserId! }]),
+        ).values(),
+    ];
     const activeOwners = new Set<string>();
     if (ownerPairs.length) {
-        const memberships = await db.tenantMembership.findMany({ // guardrail-allow: unbounded -- bounded by the scanned policies (take:1000)
+        const memberships = await db.tenantMembership.findMany({ // guardrail-allow: unbounded -- bounded by the distinct (tenant, owner) pairs of the due-policy set
             where: {
                 status: 'ACTIVE',
-                OR: ownerPairs.map((p) => ({ tenantId: p.tenantId, userId: p.ownerUserId! })),
+                OR: ownerPairs,
             },
             select: { tenantId: true, userId: true },
         });
@@ -287,7 +305,10 @@ export async function processOverdueReminders(
                     subject: `${overdue ? '⚠️ ' : ''}Policy ${overdue ? 'overdue for' : 'due for'} review: ${policy.title}`,
                     bodyText: `Policy "${policy.title}" is ${overdue ? `${dOver} day(s) overdue for review` : `due for review on ${dueStr}`}. Open it in Inflect, review the content, and mark it reviewed to reset the review cycle.`,
                     bodyHtml: null,
-                    dedupeKey: `${policy.tenantId}:POLICY_REVIEW_DUE:${ownerEmail}:${policy.id}:${now.toISOString().slice(0, 10)}`,
+                    // Built with the shared helper, which hashes the address
+                    // (#5307): `processOutbox` logs the key on every failed
+                    // send, and the raw email must not reach the log pipeline.
+                    dedupeKey: buildDedupeKey(policy.tenantId, 'POLICY_REVIEW_DUE', ownerEmail, policy.id, now),
                 },
             }).catch(() => {});
         }

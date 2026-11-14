@@ -50,6 +50,11 @@ export async function runVendorMonitoringJob(options?: {
         const monitors = await prisma.vendorMonitor.findMany({
             where: {
                 enabled: true,
+                // A removed (soft-deleted) workspace is not swept (#5307): no
+                // outbound breach/TLS checks against its vendors, no findings
+                // or events written into it, and no place taken in the
+                // fleet-wide `take` window live tenants depend on.
+                tenant: { deletedAt: null },
                 ...(options?.tenantId ? { tenantId: options.tenantId } : {}),
                 ...(options?.vendorId ? { vendorId: options.vendorId } : {}),
             },

@@ -9,13 +9,19 @@
  * ═══════════════════════════════════════════════════════════════════
  *
  * A plan is considered due when ALL of:
- *   1. automationType IN (SCRIPT, INTEGRATION)  — MANUAL plans never
- *      get auto-scheduled; they appear in the scheduler scan only as
- *      noise we filter out at the DB layer.
- *   2. status = 'ACTIVE'                        — PAUSED plans skip.
- *   3. schedule IS NOT NULL                     — no cron, no auto-run.
- *   4. nextRunAt <= now OR nextRunAt IS NULL    — null = bootstrap path
+ *   1. status = 'ACTIVE'                        — PAUSED plans skip.
+ *   2. schedule IS NOT NULL                     — no cron, no auto-run.
+ *   3. nextRunAt <= now OR nextRunAt IS NULL    — null = bootstrap path
  *      (compute first nextRunAt, do not enqueue this tick).
+ *   4. the plan's tenant has not been removed   — a soft-deleted
+ *      workspace's plans stop running (#5307).
+ *
+ * `automationType` is NOT a criterion. A MANUAL plan with a cron
+ * schedule IS scheduled: each due tick instantiates a PLANNED
+ * "awaiting manual completion" run through the runner's manual path
+ * (which also takes SCRIPT/INTEGRATION plans no handler executes).
+ * The `automationType IN (SCRIPT, INTEGRATION)` filter this header
+ * once described was removed for exactly that reason.
  *
  * The composite (tenantId, automationType, status) and (tenantId,
  * nextRunAt) indexes added by Epic G-2 prompt 1 keep the scan O(matches)
@@ -67,12 +73,11 @@
  * SCOPE BOUNDARY
  * ═══════════════════════════════════════════════════════════════════
  *
- * This file does not execute the test plan. The `control-test-runner`
- * payload is wired into the type system (so this module's enqueue
- * call typechecks) but the runner executor is a forward declaration
- * for the next G-2 prompt. Until that lands, runner jobs will fail
- * with "no executor registered" — visible in metrics, expected and
- * inert.
+ * This file does not execute the test plan; it only claims and
+ * enqueues. `control-test-runner` (registered in the executor
+ * registry) executes each enqueued plan — see that module's header
+ * for the run, evidence and finding it writes and the context it
+ * runs with.
  *
  * @module jobs/control-test-scheduler
  */
@@ -155,6 +160,11 @@ export async function findDueTestPlans(
             status: 'ACTIVE',
             schedule: { not: null },
             OR: [{ nextRunAt: { lte: now } }, { nextRunAt: null }],
+            // A removed (soft-deleted) workspace's plans stop producing runs,
+            // evidence and findings (#5307). A tenant soft-delete does not
+            // cascade, so without this they ran every cadence until the purge
+            // 90 days later, and held places in the fleet-wide `take` window.
+            tenant: { deletedAt: null },
             ...(tenantId ? { tenantId } : {}),
         },
         select: {

@@ -184,6 +184,21 @@ describe('toSnapshotDate', () => {
 // ─── Snapshot Job ───
 
 describe('Snapshot Job', () => {
+    it('the system-wide run lists LIVE tenants only (#5307)', async () => {
+        setupDashboardMocks();
+        mockUpsert.mockResolvedValue({});
+        const { prisma } = jest.requireMock('@/lib/prisma') as {
+            prisma: { tenant: { findMany: jest.Mock } };
+        };
+        prisma.tenant.findMany.mockClear();
+
+        await runSnapshotJob();
+
+        // A removed (soft-deleted) workspace gets no further daily snapshot.
+        expect(prisma.tenant.findMany).toHaveBeenCalledTimes(1);
+        expect(prisma.tenant.findMany.mock.calls[0][0].where).toEqual({ deletedAt: null });
+    });
+
     it('calls upsert for each tenant', async () => {
         setupDashboardMocks();
         mockUpsert.mockResolvedValue({});

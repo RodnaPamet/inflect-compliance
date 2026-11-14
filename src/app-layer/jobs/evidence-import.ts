@@ -359,6 +359,33 @@ async function buildJobContext(payload: EvidenceImportPayload): Promise<RequestC
     return ctx;
 }
 
+/**
+ * Delete the staged ZIP and its FileRecord. Best-effort: a failure is logged
+ * and never masks the outcome the caller is reporting.
+ */
+async function cleanupStaging(
+    storage: ReturnType<typeof getStorageProvider>,
+    payload: EvidenceImportPayload,
+): Promise<void> {
+    try {
+        await storage.delete(payload.stagingPathKey);
+    } catch (err) {
+        logger.warn('evidence-import.staging_cleanup_failed', {
+            component: 'evidence-import',
+            tenantId: payload.tenantId,
+            stagingPathKey: payload.stagingPathKey,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    try {
+        await prisma.fileRecord.delete({
+            where: { id: payload.stagingFileRecordId },
+        });
+    } catch {
+        // Already cleaned up — no-op.
+    }
+}
+
 // ─── Public job entry point ─────────────────────────────────────────
 
 export async function runEvidenceImport(
@@ -385,7 +412,29 @@ export async function runEvidenceImport(
         const stream = storage.readStream(payload.stagingPathKey);
         const archiveBuffer = await streamToBuffer(stream);
 
-        const zip = await JSZip.loadAsync(archiveBuffer);
+        /**
+         * Refuse the ARCHIVE, and drop its staged copy (#5307).
+         *
+         * For a refusal about the archive's own bytes — unreadable, too many
+         * entries, a declared or actual ZIP bomb — no re-enqueue can ever
+         * succeed, and this job is `attempts: 1`, so nothing else would ever
+         * delete the staged ZIP or its FileRecord: every refused upload stayed
+         * in the tenant's temp/ storage for good. A TRANSIENT failure (storage
+         * read, permission re-check, a DB fault) still leaves the staging in
+         * place for an operator to re-enqueue, as `types.ts` documents; only
+         * these deterministic refusals clean up.
+         */
+        const refuseArchive = async (err: unknown): Promise<never> => {
+            await cleanupStaging(storage, payload);
+            throw err;
+        };
+
+        let zip: JSZip;
+        try {
+            zip = await JSZip.loadAsync(archiveBuffer);
+        } catch (err) {
+            return refuseArchive(err);
+        }
 
         // Build a flat list of file entries (skip directories /
         // metadata) with declared sizes from the central directory.
@@ -422,19 +471,19 @@ export async function runEvidenceImport(
 
         // ── Top-level archive checks ────────────────────────────────
         if (entries.length > MAX_ENTRIES) {
-            throw new Error(
+            return refuseArchive(new Error(
                 `evidence-import: archive has ${entries.length} entries; max is ${MAX_ENTRIES}. Split into multiple uploads.`,
-            );
+            ));
         }
         const totalDeclared = entries.reduce(
             (sum, e) => sum + (e.uncompressedSize || 0),
             0,
         );
         if (totalDeclared > MAX_UNCOMPRESSED_BYTES) {
-            throw new Error(
+            return refuseArchive(new Error(
                 `evidence-import: archive declares ${totalDeclared} uncompressed bytes; cap is ${MAX_UNCOMPRESSED_BYTES}. ` +
                     'Possible ZIP-bomb — refusing to extract.',
-            );
+            ));
         }
 
         const skipReasons: EvidenceImportSkip[] = [];
@@ -513,7 +562,7 @@ export async function runEvidenceImport(
                 evidenceIds.push(evidence.id);
                 extracted += 1;
             } catch (err) {
-                if (err instanceof ArchiveSizeClaimError) throw err;
+                if (err instanceof ArchiveSizeClaimError) return refuseArchive(err);
                 errored += 1;
                 const message =
                     err instanceof Error ? err.message : String(err);
@@ -554,23 +603,7 @@ export async function runEvidenceImport(
         // ── Cleanup the staged ZIP. Best-effort — the worker has
         // already created the evidence rows and the staging slot is
         // tenant-scoped, so a leak here is bounded + recoverable.
-        try {
-            await storage.delete(payload.stagingPathKey);
-        } catch (err) {
-            logger.warn('evidence-import.staging_cleanup_failed', {
-                component: 'evidence-import',
-                tenantId: payload.tenantId,
-                stagingPathKey: payload.stagingPathKey,
-                error: err instanceof Error ? err.message : String(err),
-            });
-        }
-        try {
-            await prisma.fileRecord.delete({
-                where: { id: payload.stagingFileRecordId },
-            });
-        } catch {
-            // Already cleaned up — no-op.
-        }
+        await cleanupStaging(storage, payload);
 
         const result: EvidenceImportResult = {
             tenantId: payload.tenantId,
