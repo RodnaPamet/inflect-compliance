@@ -446,9 +446,90 @@ describe('the entitlement configuration, which decisions 5 and 10 make a refusal
         expect(outcomeFor(plan, 'emp-1')?.intendedAddress).toBe('jane.smith@acme.com');
     });
 
-    it('refuses NO_DEFAULT_GROUP when a map exists but the fallback has no name', () => {
-        const plan = planJoinerPass(input({ defaultGroupId: null }));
-        expect(plan.refusal).toBe('NO_DEFAULT_GROUP');
+    // NO_DEFAULT_GROUP is asked only when a PLANNED starter needs the
+    // fallback (owner decision 2026-11-14, #5317 item 41). It used to refuse
+    // whenever the fallback was unset, so clearing it refused every pass even
+    // with every department mapped.
+    describe('NO_DEFAULT_GROUP — only when a planned starter needs the fallback', () => {
+        const unmapped = (over: Partial<JoinerCandidate> = {}) =>
+            candidate({
+                employeeId: 'emp-2',
+                fullName: 'Sam Doe',
+                workEmail: 'sam.doe@acme.com',
+                externalId: 'WD-1002',
+                department: 'Growth Marketing',
+                ...over,
+            });
+
+        it('plans normally with no fallback when every planned starter is mapped', () => {
+            const plan = planJoinerPass(input({ defaultGroupId: null, defaultGroupName: null }));
+
+            expect(plan.refusal).toBeNull();
+            expect(plan.wouldCreate).toBe(1);
+            const d = outcomeFor(plan, 'emp-1');
+            expect(d?.outcome).toBe('PLANNED');
+            expect(d?.groupId).toBe('grp-eng');
+            expect(d?.groupIsDefaultFallback).toBe(false);
+        });
+
+        it('refuses the WHOLE pass when one planned starter is unmapped and there is no fallback', () => {
+            const plan = planJoinerPass(
+                input({ defaultGroupId: null, defaultGroupName: null, starters: [candidate(), unmapped()] }),
+            );
+
+            expect(plan.refusal).toBe('NO_DEFAULT_GROUP');
+            // One refusal for the pass, not a per-starter skip: the mapped
+            // starter is not created either.
+            expect(plan.wouldCreate).toBe(0);
+            expect(plan.detail).toMatch(/1 planned starter\(s\) are in a department no rule maps/);
+            // The verdicts are still carried, as on every entitlement refusal.
+            expect(plan.decisions).toHaveLength(2);
+        });
+
+        it('treats a starter with NO department as unmapped, as the decision does', () => {
+            const plan = planJoinerPass(
+                input({ defaultGroupId: null, defaultGroupName: null, starters: [unmapped({ department: null })] }),
+            );
+            expect(plan.refusal).toBe('NO_DEFAULT_GROUP');
+        });
+
+        it('plans when the only unmapped person starts on ANOTHER day', () => {
+            const plan = planJoinerPass(
+                input({
+                    defaultGroupId: null,
+                    defaultGroupName: null,
+                    starters: [candidate(), unmapped({ startDate: new Date('2026-09-26T00:00:00.000Z') })],
+                }),
+            );
+
+            expect(outcomeFor(plan, 'emp-2')?.outcome).toBe('NOT_IN_WINDOW');
+            expect(plan.refusal).toBeNull();
+            expect(plan.wouldCreate).toBe(1);
+        });
+
+        it('plans when the only unmapped person is already provisioned', () => {
+            const plan = planJoinerPass(
+                input({
+                    defaultGroupId: null,
+                    defaultGroupName: null,
+                    starters: [candidate(), unmapped({ hasFreshLink: true })],
+                }),
+            );
+
+            expect(outcomeFor(plan, 'emp-2')?.outcome).toBe('ALREADY_PROVISIONED');
+            expect(plan.refusal).toBeNull();
+            expect(plan.wouldCreate).toBe(1);
+        });
+
+        it('a configured fallback still serves the unmapped starter, named', () => {
+            const plan = planJoinerPass(input({ starters: [candidate(), unmapped()] }));
+
+            expect(plan.refusal).toBeNull();
+            const d = outcomeFor(plan, 'emp-2');
+            expect(d?.groupId).toBe('grp-everyone');
+            expect(d?.groupIsDefaultFallback).toBe(true);
+            expect(d?.defaultGroupName).toBe('Contractors');
+        });
     });
 
     it('records BOTH names when it falls back — the mitigation decision 5 is conditional on', () => {
@@ -572,7 +653,8 @@ describe('what the dry run says it could not know', () => {
             { mode: 'DISABLED' },
             { starters: [] },
             { departmentGroups: null },
-            { defaultGroupId: null },
+            // A fallback is only asked for when a planned starter needs it.
+            { defaultGroupId: null, starters: [candidate({ department: 'Growth Marketing' })] },
         ];
         for (const over of refusals) {
             const plan = planJoinerPass(input({ ...over, timeZone: null }));

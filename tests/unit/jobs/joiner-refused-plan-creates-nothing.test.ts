@@ -144,6 +144,21 @@ describe('positive control — the same fixture CREATES when nothing is refused'
         expect(mockCreateAccount).toHaveBeenCalledTimes(1);
         expect(r.created).toBe(1);
     });
+
+    it('needs no fallback when every planned starter is mapped (#5317 item 41)', async () => {
+        // Clearing the fallback used to refuse every pass NO_DEFAULT_GROUP,
+        // mapped or not. A planned starter in a mapped department needs no
+        // fallback, so the pass plans and creates as before.
+        fixture.defaultGroupId = null;
+
+        const r = await run();
+
+        expect(r.refusal).toBeNull();
+        expect(mockCreateAccount).toHaveBeenCalledTimes(1);
+        const req = mockCreateAccount.mock.calls[0][1] as { groupId: string };
+        expect(req.groupId).toBe(ENG_GROUP);
+        expect(r.created).toBe(1);
+    });
 });
 
 describe.each([

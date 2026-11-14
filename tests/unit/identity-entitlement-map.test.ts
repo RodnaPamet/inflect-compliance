@@ -175,6 +175,9 @@ describe('the fallback takes BOTH id and name — owner decision 5', () => {
             identityDefaultGroupName: null,
         });
         expect(logged[0].details as string).toMatch(/NO_DEFAULT_GROUP/);
+        // Only a pass with a starter in an unmapped department refuses
+        // (#5317 item 41); the sentence must not claim every pass does.
+        expect(logged[0].details as string).toMatch(/a starter in an unmapped department/);
     });
 });
 
