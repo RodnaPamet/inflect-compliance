@@ -229,7 +229,7 @@
       "movementLegendHint": "thicker line + ×N where multiple risks share the path",
       "noData": "No data",
       "noDataAvailable": "No data available",
-      "noDataForRange": "No data available for this range.",
+      "noDataForRange": "No data for this range",
       "chartLoading": "Chart loading",
       "heatmapLoading": "Heatmap loading",
       "riskScore": "Risk score",

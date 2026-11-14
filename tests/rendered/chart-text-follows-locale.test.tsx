@@ -4,7 +4,7 @@
  * Two pieces of chart chrome were English on every page: the gradient
  * legend's accessible name ("Activity: 0 to 5"), with the calendar heatmap
  * passing an English "Activity" label, and the time-series chart's default
- * empty state ("No data available for this range."). These render with
+ * empty state ("No data for this range"). These render with
  * next-intl backed by the BULGARIAN catalogue, so an English string anywhere in
  * them is a failure rather than something the English-backed global mock hides.
  */
@@ -79,6 +79,6 @@ describe('chart chrome follows the locale', () => {
     it("the time-series chart's default empty state is in Bulgarian", () => {
         render(<TimeSeriesChart data={[]} series={[]} />);
         expect(screen.getByRole('status').textContent).toBe(bg.common.chart.noDataForRange);
-        expect(screen.queryByText('No data available for this range.')).toBeNull();
+        expect(screen.queryByText('No data for this range')).toBeNull();
     });
 });
