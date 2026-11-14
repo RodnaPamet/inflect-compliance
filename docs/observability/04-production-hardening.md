@@ -51,7 +51,8 @@ The compose project defines two docker networks
 - **`observability`** (`obs-internal`) — an internal bridge. The
   four stack services talk to each other here. No host publishing.
 - **`app`** — the application compose project's pre-existing bridge
-  (`inflect_internal`, joined as `external` via `APP_NETWORK_NAME`).
+  (`inflect_default` on the production VM, joined as `external` via
+  `APP_NETWORK_NAME`).
 
 **Only the collector joins both networks.** It is the single,
 deliberate bridge between the two compose projects. The app must

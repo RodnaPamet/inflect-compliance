@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Self-hosted Postgres → S3 nightly dump (Epic OI-3 fallback path).
+# Self-hosted Postgres → S3 nightly dump.
 #
-# When the primary deployment model is managed RDS (Epic OI-1 / OI-2),
-# automated PITR is the canonical backup mechanism — operator-side
-# verification via Terraform's backup_retention_days, and restore
-# validation via infra/scripts/restore-test.sh.
+# NOT DEPLOYED. The production database is the Postgres container in
+# deploy/docker-compose.prod.yml, and its backup today is a daily disk
+# snapshot. This script is rung 2 of the DR ladder in
+# docs/disaster-recovery.md ("a scheduled dump off the VM"), kept in the
+# repo for whoever turns it on. No restore-validation script exists for
+# these dumps; docs/disaster-recovery.md holds the DR posture and the
+# runbook for restoring from a disk snapshot.
 #
-# This script handles the FALLBACK case: deployments still using the
-# self-hosted docker-compose path at deploy/docker-compose.prod.yml.
-# Those run vanilla Postgres in a container; PITR isn't available
-# without a separate backup tool. pg_dump → S3 is the pragmatic
-# substitute.
+# THE OUTPUT IS pg_dump CUSTOM FORMAT, named `.dump` (`.dump.gpg` when
+# encrypted). It is NOT gzipped SQL: `gunzip | psql` does not restore it.
+# Restore with pg_restore (decrypt first if it ends in .gpg):
+#
+#   pg_restore --no-owner --no-privileges -d <database> <file>.dump
 #
 # Schedule via cron on the deploy host (1am local, daily):
 #
-#   0 1 * * * /opt/inflect/infra/scripts/pg-dump-to-s3.sh \
+#   0 1 * * * /path/to/pg-dump-to-s3.sh \
 #               > /var/log/inflect-pg-dump.log 2>&1
 #
 # Required env (set in cron environment or sourced from /etc/inflect/backup.env):
@@ -23,9 +26,9 @@
 #   PG_USER                 — superuser-or-equivalent
 #   PG_PASSWORD             — exposed via PGPASSWORD env var below
 #   PG_DATABASE             — default inflect_compliance
-#   S3_BUCKET               — destination bucket (must have SSE-S3 default
-#                             encryption; the chart's storage module
-#                             enforces this)
+#   S3_BUCKET               — destination bucket (give it SSE-S3 default
+#                             encryption; this script only reports the
+#                             encryption the uploaded object carries)
 #   S3_PREFIX               — default: pg-backups
 #   AWS_REGION              — default: us-east-1
 #   GPG_RECIPIENT           — optional. If set, the dump is GPG-encrypted
@@ -35,10 +38,8 @@
 # Required tooling: pg_dump (matching server major version), aws cli,
 # gpg (only if GPG_RECIPIENT is set).
 #
-# Retention: enforced server-side via S3 lifecycle. Set the bucket's
-# lifecycle config (chart's storage module values: storage_force_destroy
-# is the destroy-allow flag, NOT retention. Lifecycle is set
-# separately) to expire `pg-backups/*` after 30 days.
+# Retention: enforced server-side via S3 lifecycle, not by this script. Set
+# the bucket's lifecycle configuration to expire `pg-backups/*` after 30 days.
 
 set -euo pipefail
 
@@ -73,8 +74,10 @@ HOSTNAME="$(hostname -s 2>/dev/null || echo unknown)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-DUMP_FILE="$TMPDIR/${PG_DATABASE}_${TIMESTAMP}.sql.gz"
-S3_KEY="${S3_PREFIX}/${PG_DATABASE}/${TIMESTAMP}_${HOSTNAME}.sql.gz"
+# `.dump`, not `.sql.gz`: --format=custom below writes pg_dump's own archive
+# format (compressed internally), which pg_restore reads and psql does not.
+DUMP_FILE="$TMPDIR/${PG_DATABASE}_${TIMESTAMP}.dump"
+S3_KEY="${S3_PREFIX}/${PG_DATABASE}/${TIMESTAMP}_${HOSTNAME}.dump"
 
 if [ -n "${GPG_RECIPIENT:-}" ]; then
     DUMP_FILE="${DUMP_FILE}.gpg"
@@ -92,7 +95,7 @@ echo "════════════════════════�
 export PGPASSWORD="$PG_PASSWORD"
 
 echo ""
-echo "── 1. pg_dump (custom format → gzip) ──"
+echo "── 1. pg_dump (custom format, compressed internally) ──"
 if [ -n "${GPG_RECIPIENT:-}" ]; then
     pg_dump \
         -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DATABASE" \

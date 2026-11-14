@@ -59,7 +59,12 @@ if [ "$count" -gt 1 ]; then
     # Ambiguity is reported, never resolved by picking the first. Binding the
     # wrong interface produces a stub that is reachable but from the wrong
     # places, which is harder to notice than one that does not start.
-    echo "more than one candidate and none is host-only; pass --host explicitly:" >&2
+    # The remedy names the inputs that exist. There is no --host flag: this
+    # script runs again whenever HOST is unset, so the address has to reach
+    # run-stub.sh through HOST and make-dev-cert.sh as its first argument.
+    echo "more than one candidate and none is host-only; choose one and pass it as" >&2
+    echo "  HOST=<address> ./run-stub.sh   and   ./make-dev-cert.sh <address>" >&2
+    echo "candidates:" >&2
     echo "$private" | sed 's/^/  /' >&2
     exit 1
 fi

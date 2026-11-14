@@ -45,13 +45,19 @@ to operators via Caddy (see below) — never bind it to `0.0.0.0`.
 ### 1. Find the app's docker network name
 
 This stack attaches to the app compose's pre-existing bridge network so the
-app's `app` container can resolve `otel-collector`. The app compose declares a
-network literally named `internal`; docker prefixes it with the compose
-project name, so the real network is usually `inflect_internal`:
+app's `app` container can resolve `otel-collector`. Which network that is
+depends on which app compose file runs:
+
+- **Production VM** — `deploy/docker-compose.prod.yml` in `/opt/inflect`
+  declares no networks, so every container is on the Compose project's
+  default network, `inflect_default`. That is the default `APP_NETWORK_NAME`.
+- **Local root `docker-compose.prod.yml`** — it declares a network literally
+  named `internal`, which docker prefixes with the compose project name:
+  `<project>_internal`.
 
 ```bash
 docker network ls
-# look for a *_internal bridge, e.g.  inflect_internal
+# production: inflect_default    local root stack: <project>_internal
 ```
 
 ### 2. Configure environment
