@@ -43,25 +43,33 @@ export function InheritedMappingsPanel({
     /** Fully-qualified tenant API path, e.g. apiUrl('/assets/123/mappings'). */
     endpoint: string;
     tenantHref: (path: string) => string;
-    /** 'asset' | 'risk' — used only in the explanatory copy. */
+    /** 'asset' | 'risk' | 'policy' — used only in the explanatory copy. */
     entityLabel: string;
 }) {
     const [rows, setRows] = useState<InheritedMappingRow[]>([]);
     const [loading, setLoading] = useState(true);
+    // A failed or refused load is not "nothing inherited": a reviewer would
+    // read the empty state as a coverage gap (#5309).
+    const [failed, setFailed] = useState(false);
     const t = useTranslations('panels');
-    const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel;
+    const entityWord = entityLabel === 'risk' ? t('inherited.entityRisk') : entityLabel === 'asset' ? t('inherited.entityAsset') : entityLabel === 'policy' ? t('inherited.entityPolicy') : entityLabel;
 
     useEffect(() => {
         let cancelled = false;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
+        setFailed(false);
         void (async () => {
             try {
                 const res = await fetch(endpoint);
-                const data = res.ok ? await res.json() : [];
+                if (!res.ok) throw new Error(String(res.status));
+                const data = await res.json();
                 if (!cancelled) setRows(Array.isArray(data) ? data : []);
             } catch {
-                if (!cancelled) setRows([]);
+                if (!cancelled) {
+                    setRows([]);
+                    setFailed(true);
+                }
             } finally {
                 if (!cancelled) setLoading(false);
             }
@@ -125,20 +133,24 @@ export function InheritedMappingsPanel({
             <InlineNotice variant="info">
                 {t('inherited.mappingsNotice', { entity: entityWord })}
             </InlineNotice>
-            <DataTable<InheritedMappingRow>
-                data={rows}
-                columns={columns}
-                loading={loading}
-                getRowId={(r) => `${r.requirementId}:${r.control?.id ?? 'none'}`}
-                emptyState={
-                    <EmptyState
-                        size="sm"
-                        variant="no-records"
-                        title={t('inherited.mappingsEmpty')}
-                        description={t('inherited.mappingsEmptyDesc', { entity: entityWord })}
-                    />
-                }
-            />
+            {failed ? (
+                <InlineNotice variant="error">{t('inherited.mappingsLoadError')}</InlineNotice>
+            ) : (
+                <DataTable<InheritedMappingRow>
+                    data={rows}
+                    columns={columns}
+                    loading={loading}
+                    getRowId={(r) => `${r.requirementId}:${r.control?.id ?? 'none'}`}
+                    emptyState={
+                        <EmptyState
+                            size="sm"
+                            variant="no-records"
+                            title={t('inherited.mappingsEmpty')}
+                            description={t('inherited.mappingsEmptyDesc', { entity: entityWord })}
+                        />
+                    }
+                />
+            )}
         </div>
     );
 }

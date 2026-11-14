@@ -40,6 +40,17 @@ const RELATION_VARIANT: Record<string, StatusBadgeVariant> = {
     RELATED: 'neutral',
 };
 
+// Relations with a label in `vendors.linkRelation`; another value is shown
+// title-cased from the enum rather than as a missing message.
+const TRANSLATED_RELATIONS = new Set([
+    'RELATED',
+    'USES',
+    'MITIGATES',
+    'STORES_DATA_FOR',
+    'PROVIDES_SERVICE_TO',
+    'ASSESSMENT_SOURCED',
+]);
+
 function relationLabel(relation: string): string {
     return relation
         .toLowerCase()
@@ -122,7 +133,9 @@ export function LinkedVendorsPanel({
                                 variant={RELATION_VARIANT[row.relation] ?? 'neutral'}
                                 size="sm"
                             >
-                                {relationLabel(row.relation)}
+                                {TRANSLATED_RELATIONS.has(row.relation)
+                                    ? t(`linkRelation.${row.relation}`)
+                                    : relationLabel(row.relation)}
                             </StatusBadge>
                         </li>
                     ))}
