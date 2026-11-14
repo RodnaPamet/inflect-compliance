@@ -1458,14 +1458,40 @@ are invisible on both surfaces at once. "Did a pass run?" is answered by
 journal. Reading the second for the first is how an empty page gets mistaken for
 a quiet night.
 
-The journal has a read surface as of #2490: `admin/identity-write-journal`, an
-index plus a per-row detail route that resolves the `journal reference <id>`
-that the DISABLED notification quotes. Both are gated `admin.tenant_lifecycle` —
+The journal has a surface of FOUR routes under `admin/identity-write-journal`:
+the index, the per-row detail route that resolves the `journal reference <id>`
+the DISABLED notification quotes, `unsettled/` for the operator sweep, and
+`restorable/[accountId]`, which answers what a disable replaced on one account
+(GET) **and puts it back (POST)**. Every one is gated `admin.tenant_lifecycle` —
 OWNER-only; ADMIN deliberately does not hold it, because a row names a change
-made to one of a customer's people's accounts. Both are read-only, and that is a
-decision rather than an unfinished half: `DirectoryWriter` declares no `enable()`
-verb, so re-applying a captured prior state is an act somebody performs in the
-customer's own directory, holding the state this surface hands them.
+made to one of a customer's people's accounts.
+
+**The `admin/identity-write-journal` surface is not read-only, and this
+paragraph said it was until #5570.** It
+read: *"Both are read-only … `DirectoryWriter` declares no `enable()` verb, so
+re-applying a captured prior state is an act somebody performs in the customer's
+own directory."* The verb claim is still literally true — there is no
+`enable()` — but the conclusion drawn from it is not: `DirectoryWriter` declares
+an optional `restore?()`, both live writers implement it, and
+`usecases/identity-restore-account.ts` is reached by that POST. The product
+re-applies the captured state itself.
+
+**A RESTORE IS NOT AN ENABLE, and that distinction is the whole design.** An
+enable can be pointed at any account; a restore can only undo something this
+product did and can still prove it did. It writes one specific captured value
+and refuses unless the account is still exactly as the product left it — a
+compare-and-swap on Active Directory, a checked read on Entra, where Graph
+offers no equivalent and the writer says so. Entra's arm also refuses an account
+that is now directory-synced, or whose on-prem state the fresh read did not
+observe (#5569), because a restore through Graph would otherwise be reverted at
+the next Azure AD Connect cycle with the journal recording RESTORED.
+
+The write shares the reads' OWNER-only key BY DECISION rather than getting a
+weaker one of its own: reading what was replaced and putting it back are the
+same authority over the same fact. That is also what makes the notification's
+instruction honourable — *"quote that reference to your platform administrator,
+who can read the captured state and re-apply it"* — where before the restorable
+route only the first half was true.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
