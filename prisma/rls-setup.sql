@@ -36,6 +36,47 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;
 
+-- ─── 2b) Re-take what the migrations took away (#5314) ───
+--
+-- The blanket GRANT above re-grants UPDATE and DELETE on EVERY table, including
+-- the write-once and never-deleted tables whose migrations REVOKE them from
+-- app_user. Replaying this "safe to re-run" script would otherwise reopen them —
+-- and for a table whose only protection is the REVOKE (no trigger), an app_user
+-- session could then delete rows meant to survive (an ownership transfer, a
+-- service-principal confirmation). So every REVOKE a migration left in force is
+-- re-issued here, right after the GRANT that undoes it. A migration that adds a
+-- REVOKE adds its line here too:
+-- tests/guards/rls-replay-scripts-do-not-weaken-migrations.test.ts fails until it does.
+
+REVOKE DELETE ON "AccessReviewAgentNarrowing" FROM app_user;
+REVOKE UPDATE, DELETE ON "AccessReviewAgentPack" FROM app_user;
+REVOKE DELETE ON "AccessReviewDecisionSampleAudit" FROM app_user;
+REVOKE DELETE ON "AgentHarnessAcceptance" FROM app_user;
+REVOKE DELETE ON "AgentOwnershipTransfer" FROM app_user;
+REVOKE DELETE ON "AgentProfile" FROM app_user;
+REVOKE DELETE ON "AgentProfileVersion" FROM app_user;
+REVOKE UPDATE, DELETE ON "AgentProposalApproval" FROM app_user;
+REVOKE DELETE ON "AgentServicePrincipalConfirmation" FROM app_user;
+REVOKE DELETE ON "AgentSpendingAuthority" FROM app_user;
+REVOKE UPDATE, DELETE ON "AuditLog" FROM app_user;
+REVOKE DELETE ON "AuditWorkpaper" FROM app_user;
+REVOKE UPDATE, DELETE ON "AuditWorkpaperFinding" FROM app_user;
+REVOKE UPDATE, DELETE ON "AuditWorkpaperNarrative" FROM app_user;
+REVOKE DELETE ON "AuditWorkpaperSampleReview" FROM app_user;
+REVOKE DELETE ON "DiscoveredAgentAttribution" FROM app_user;
+REVOKE UPDATE, DELETE ON "ExternalToolParameterSetApproval" FROM app_user;
+REVOKE UPDATE, DELETE ON "OrgAuditLog" FROM app_user;
+REVOKE DELETE ON "PeerAgent" FROM app_user;
+REVOKE DELETE ON "PeerAgentInboundCredential" FROM app_user;
+REVOKE DELETE ON "PeerAgentKillSwitch" FROM app_user;
+REVOKE UPDATE, DELETE ON "PeerAgentMessage" FROM app_user;
+REVOKE UPDATE, DELETE ON "PeerAgentReplyDelivery" FROM app_user;
+REVOKE DELETE ON "PeerInvitation" FROM app_user;
+REVOKE DELETE ON "TenantA2aSigningKey" FROM app_user;
+REVOKE UPDATE, DELETE ON "TenantSkill" FROM app_user;
+REVOKE DELETE ON "TenantSkillVersion" FROM app_user;
+REVOKE DELETE ON "WorkflowRunDeferral" FROM app_user;
+
 -- ─── 3) Grant the app_user role to the postgres superuser ───
 
 GRANT app_user TO postgres;

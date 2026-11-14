@@ -6,6 +6,7 @@
  * which is every environment except a fresh one. These pin the four outcomes,
  * and especially the one that must never become a delete.
  */
+import { Prisma } from '@prisma/client';
 import { reconcileTemplateTasks } from '../../prisma/catalog-applier';
 import { taskContentHash } from '../../prisma/catalog-loader';
 
@@ -89,6 +90,17 @@ describe('reconcileTemplateTasks', () => {
         // instead would have made this a delete plus a create and broken them.
         expect(p.updated[0].id).toBe('x');
         expect(p.updated[0].data.title).toBe('Rotate the signing key on a fixed interval');
+    });
+
+    it('clears the stored steps when a task is re-authored without them', async () => {
+        const p = fakePrisma([
+            { id: 'x', contentHash: 'hash-of-a-version-with-steps', sortOrder: 0, deprecatedAt: null },
+        ]);
+        const r = await reconcileTemplateTasks(p.client as never, 'tpl-1', [task()]);
+        expect(r.updated).toBe(1);
+        // `undefined` would leave the old steps in the column, and install and
+        // the checklist backfill would keep handing them out (#5314).
+        expect(p.updated[0].data.stepsJson).toBe(Prisma.DbNull);
     });
 
     it('DEPRECATES a task the file no longer carries — never deletes it', async () => {

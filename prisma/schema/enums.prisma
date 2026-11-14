@@ -40,8 +40,10 @@ enum Role {
   /// this role holds less tenant authority than every role above it — so it
   /// must never sort ahead of ADMIN, or EDITOR. Appended by plain `ADD VALUE`.
   ///
-  /// Deploy 1 of 2: readers handle the value, and nothing writes it until
-  /// deploy 2 lets an OWNER assign it on the members page.
+  /// Added in two deploys. Its writers are exactly two: an OWNER on the members
+  /// page (`MEMBER_ROLE_CHANGE_ROLES`) and an Entra group mapping an OWNER made;
+  /// `ASSIGNABLE_TENANT_ROLES` still excludes it, so invites, the direct add and
+  /// an access review's MODIFY never write it (`ai-admin-role-writers.test.ts`).
   AI_ADMIN
 }
 
@@ -50,21 +52,29 @@ enum Role {
 /// Distinct from `Role` (which scopes per-tenant permissions). Org
 /// roles scope portfolio-level access:
 ///
+///   - ORG_OWNER — an ORG_ADMIN who also holds the owner-only powers
+///     (promoting, demoting and removing owners; managing tenants). Every
+///     organization keeps at least one (`org_membership_last_owner_guard`).
+///     Provisioned into child tenants exactly as an ORG_ADMIN is.
+///
 ///   - ORG_ADMIN — manage the organization (create tenants, add/remove
 ///     org members, view portfolio dashboard, drill into individual
-///     tenants). Triggers AUDITOR auto-provisioning into every child
-///     tenant via the Epic O-2 service. CISO-class identity.
+///     tenants). Triggers ADMIN auto-provisioning into every child
+///     tenant via the Epic O-2 service (`org-provisioning.ts`) — full
+///     tenant administration, not read-only. CISO-class identity.
 ///
 ///   - ORG_READER — portfolio-only. Sees org summary cards but is NOT
 ///     auto-provisioned into child tenants. Can be elevated to
-///     ORG_ADMIN later, at which point provisioning fans out
-///     idempotently.
+///     ORG_ADMIN or ORG_OWNER later, at which point provisioning fans
+///     out idempotently.
 enum OrgRole {
   ORG_ADMIN
   ORG_READER
-  /// The organization's owner (#4576). Deploy 1 adds the value and teaches
-  /// every reader; nothing writes it until deploy 2. Declared LAST so a sort on
-  /// the column never moves the existing values. Compare roles through
+  /// The organization's owner (#4576), added in two deploys. Written when an
+  /// organization is created (its creator owns it) and by the role change
+  /// (`changeOrgMemberRole`), where only an owner may promote to it; the
+  /// direct add and the invite refuse it. Declared LAST so a sort on the
+  /// column never moves the existing values. Compare roles through
   /// `src/lib/org-roles.ts`, never with a literal 'ORG_ADMIN'.
   ORG_OWNER
 }
@@ -1831,12 +1841,14 @@ enum AiSystemStatus {
 /// FLUE   — an external agent runtime decides what to try; `runReadTool` still
 ///          decides what is permitted, so every register control stays in front
 ///          of it.
-/// TOOL_RUNNER — the in-process Tool Runner engine (Step 2b). READ_ONLY in this
-///          build: every reader understands it and no writer accepts it until
-///          Step 2c, which ships its writers once production reads it.
+/// TOOL_RUNNER — the in-process Tool Runner engine (Step 2b). Written since
+///          Step 2c (#4150): `AGENT_DRIVER_MODES` holds it, so an owner can
+///          choose it on Admin → AI features.
 ///
 /// This column is ONE OF TWO switches and cannot enable anything on its own:
-/// the operator's `AGENT_DRIVER_FLUE` must also be on. `STATIC` is the default
+/// the engine's deployment switch must also be on — `AGENT_DRIVER_FLUE` for
+/// FLUE, `AGENT_DRIVER_TOOL_RUNNER` (or, while that is unset, the
+/// organization's choice) for TOOL_RUNNER. `STATIC` is the default
 /// and the fail-closed answer for an absent row, a NULL, or a value this build
 /// does not recognise. See `src/lib/agentic/agent-driver.ts`.
 enum AgentDriverMode {
@@ -2273,10 +2285,12 @@ enum ExternalWriteOutcome {
   /// compares enum values as a SET and cannot see the disagreement, and
   /// `enum-member-order-matches-migrations` is what holds the two in step.
   ///
-  /// NOTHING PROMOTES IT YET. A row settled here stays here; resolving it to
-  /// APPLIED or FAILED on evidence needs a reconcile pass that does not exist.
-  /// That is deliberate and tracked — an honest terminal state beats a false
-  /// one — but it means this value is not yet a transient.
+  /// The delivery reconcile (`usecases/external-write-reconcile.ts`, #3334)
+  /// promotes it to APPLIED, and only on positive evidence: the tool's paired
+  /// read, through its delivery verifier, shows the change landed. It never
+  /// writes FAILED on a timer, so a row that never delivers stays ACCEPTED and
+  /// is looked at again; an A2A send whose peer reports the task failed, in a
+  /// signed answer, becomes INDETERMINATE.
   ACCEPTED
 }
 

@@ -159,7 +159,85 @@ function splitPairOffences(sql: string, where: string, table: string): string[] 
     return out;
 }
 
+// ─── Privileges: a blanket GRANT must not undo a migration's REVOKE (#5314) ───
+
+type WritePrivilege = 'UPDATE' | 'DELETE';
+const WRITE_PRIVILEGES: readonly WritePrivilege[] = ['UPDATE', 'DELETE'];
+
+/** `GRANT|REVOKE <privs> ON "<Table>" TO|FROM app_user`, comments stripped. */
+const TABLE_PRIVILEGE_RE =
+    /\b(GRANT|REVOKE)\s+([A-Z, ]+?)\s+ON\s+(?:TABLE\s+)?"([A-Za-z0-9_]+)"\s+(?:TO|FROM)\s+app_user\b/gi;
+
+const stripSqlComments = (sql: string): string => sql.replace(/--[^\n]*/g, '');
+
+/**
+ * Walks statements in order and returns, per table, the write privileges that
+ * stand REVOKED from app_user at the end. Order matters: a migration may grant
+ * DELETE and a later one revoke it (AgentHarnessAcceptance), or the reverse.
+ */
+function revokedWritePrivileges(sqls: string[]): Map<string, Set<WritePrivilege>> {
+    const out = new Map<string, Set<WritePrivilege>>();
+    for (const sql of sqls) {
+        for (const m of stripSqlComments(sql).matchAll(TABLE_PRIVILEGE_RE)) {
+            const [, verb, privList, table] = m;
+            const privs = new Set(privList.split(',').map((p) => p.trim().toUpperCase()));
+            const all = privs.has('ALL') || privs.has('ALL PRIVILEGES');
+            const set = out.get(table) ?? new Set<WritePrivilege>();
+            for (const p of WRITE_PRIVILEGES) {
+                if (!all && !privs.has(p)) continue;
+                if (verb.toUpperCase() === 'REVOKE') set.add(p);
+                else set.delete(p);
+            }
+            out.set(table, set);
+        }
+    }
+    return out;
+}
+
+/** What the migrations leave revoked, as `"Table".PRIV` keys. */
+const MIGRATION_REVOKED = [...revokedWritePrivileges(MIGRATIONS.map((m) => m.sql))]
+    .flatMap(([t, privs]) => [...privs].map((p) => `"${t}".${p}`))
+    .sort();
+
+/** A grant of UPDATE or DELETE on every table at once. */
+const BLANKET_WRITE_GRANT_RE =
+    /\bGRANT\s+[A-Z, ]*\b(?:UPDATE|DELETE|ALL)\b[A-Z, ]*\s+ON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\s+TO\s+app_user\b/i;
+
+/** The migration revokes a replay script would undo: each one it does not re-take after its blanket GRANT. */
+function revokesUndoneByReplay(script: string): string[] {
+    const sql = stripSqlComments(script);
+    const grant = BLANKET_WRITE_GRANT_RE.exec(sql);
+    if (!grant) return [];
+    const after = revokedWritePrivileges([sql.slice(grant.index + grant[0].length)]);
+    return MIGRATION_REVOKED.filter((key) => {
+        const [, table, priv] = /^"(.+)"\.(UPDATE|DELETE)$/.exec(key) as RegExpExecArray;
+        return !after.get(table)?.has(priv as WritePrivilege);
+    });
+}
+
 describe('RLS replay scripts do not weaken what a migration established', () => {
+    it('the migrations\' REVOKEs are a real population, with the tables the finding named', () => {
+        expect(MIGRATION_REVOKED.length).toBeGreaterThan(20);
+        expect(MIGRATION_REVOKED).toEqual(expect.arrayContaining([
+            '"AgentOwnershipTransfer".DELETE',
+            '"AgentServicePrincipalConfirmation".DELETE',
+            '"AuditLog".UPDATE',
+        ]));
+    });
+
+    it.each(REPLAY_SCRIPTS)('%s re-takes, after any blanket GRANT, every REVOKE a migration left in force', (script) => {
+        expect(revokesUndoneByReplay(readScript(script))).toEqual([]);
+    });
+
+    it('detector proof — a blanket GRANT with no REVOKE after it undoes every one', () => {
+        const planted = 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;';
+        expect(revokesUndoneByReplay(planted)).toEqual(MIGRATION_REVOKED);
+        // A REVOKE placed BEFORE the grant re-takes nothing.
+        expect(revokesUndoneByReplay(`REVOKE DELETE ON "AgentOwnershipTransfer" FROM app_user;\n${planted}`))
+            .toContain('"AgentOwnershipTransfer".DELETE');
+    });
+
+
     it('reads a real population — scripts, migrations and schema all found', () => {
         // Every assertion below is satisfied by an empty scan. This is what stops
         // a renamed file or a broken regex passing as "nothing wrong".

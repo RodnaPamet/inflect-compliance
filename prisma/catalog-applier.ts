@@ -20,7 +20,7 @@
  *
  * @module prisma/catalog-applier
  */
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
     type CatalogFile,
     assertCatalogConsistency,
@@ -131,7 +131,11 @@ export async function reconcileTemplateTasks(
             description: task.description.en,
             phase: task.phase,
             sortOrder: task.sortOrder,
-            stepsJson: task.steps ? (task.steps as unknown as object) : undefined,
+            // DbNull, not `undefined`: this object also drives the in-place
+            // update below, where `undefined` leaves the column alone — so a
+            // task re-authored WITHOUT steps kept its old ones, and install and
+            // the checklist backfill went on handing them out (#5314).
+            stepsJson: task.steps ? (task.steps as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
             evidenceHint: task.evidenceHint?.en ?? null,
             suggestedRole: task.suggestedRole ?? null,
             contentHash: hash,
