@@ -202,6 +202,18 @@ describe('enforceRateLimit', () => {
         expect(body).not.toContain('ip:');
     });
 
+    it('neither log line carries the client IP (#5306)', () => {
+        const { logger } = jest.requireMock('@/lib/observability/logger');
+        const req = fakeReq({ forwardedFor: '6.6.6.6' });
+        const config = { maxAttempts: 1, windowMs: 60_000 };
+        enforceRateLimit(req, { scope: 'pii', config });
+        enforceRateLimit(req, { scope: 'pii', config });
+        expect(logger.debug).toHaveBeenCalledWith('rate-limit.allowed', expect.any(Object));
+        expect(logger.warn).toHaveBeenCalledWith('rate-limit.blocked', expect.any(Object));
+        const logged = JSON.stringify([...logger.debug.mock.calls, ...logger.warn.mock.calls]);
+        expect(logged).not.toContain('6.6.6.6');
+    });
+
     it('retryAfterSeconds is never less than 1 (never silently 0)', async () => {
         const req = fakeReq({ forwardedFor: '5.5.5.5' });
         const config = { maxAttempts: 1, windowMs: 10 }; // sub-second

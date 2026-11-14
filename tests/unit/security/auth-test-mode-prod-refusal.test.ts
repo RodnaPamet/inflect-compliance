@@ -6,7 +6,7 @@
  * of which announces itself:
  *
  *   src/lib/auth/credentials.ts:209             credentials sign-in gate
- *   src/lib/auth/credential-rate-limit.ts:103   login brute-force throttle
+ *   src/lib/auth/credential-rate-limit.ts:98    login brute-force throttle
  *                                               becomes a NO-OP (Epic A.3)
  *   src/lib/rate-limit/authRateLimit.ts:143     auth tier bypassed
  *   src/lib/rate-limit/apiReadRateLimit.ts:190  read tier bypassed

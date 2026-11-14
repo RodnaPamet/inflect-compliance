@@ -79,7 +79,12 @@ export interface DeviceReportAuth {
 export async function authorizeDeviceReport(bearerToken: string, tenantSlug: string, clientIp?: string | null, now: Date = new Date()): Promise<DeviceReportAuth> {
     const verified = await verifyDeviceToken(bearerToken, clientIp, now);
     if (!verified.valid || !verified.tenantId) return { ok: false, status: 401 };
-    const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug }, select: { id: true } });
+    const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug }, select: { id: true, deletedAt: true } });
     if (!tenant || tenant.id !== verified.tenantId) return { ok: false, status: 403 };
+    // A soft-deleted (offboarded) tenant is "inaccessible immediately,
+    // everywhere": its agents' tokens are not revoked by the deletion, so the
+    // credential is refused here, as `tenant_deleted` refuses an API key and a
+    // SCIM token (#5306). 401, as those do — the credential no longer counts.
+    if (tenant.deletedAt) return { ok: false, status: 401 };
     return { ok: true, tenantId: verified.tenantId };
 }
