@@ -261,6 +261,8 @@ export const CACHE_KEYS = {
     processes: {
         // VR-10 — cross-map governance meta-graph.
         governanceGraph: () => '/processes/governance-graph' as const,
+        // #5477 — the INVOKE_SUBFLOW target picker's group list.
+        subflowGroups: () => '/processes/subflow-groups' as const,
     },
 
     // ─── Audit lifecycle ────────────────────────────────────────

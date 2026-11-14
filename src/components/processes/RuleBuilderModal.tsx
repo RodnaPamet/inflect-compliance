@@ -42,6 +42,7 @@ import {
     UPDATE_STATUS_ENTITY_TYPES,
 } from '@/lib/automation/status-allowlist';
 import type { AutomationRuleRow } from '@/app/t/[tenantSlug]/(app)/processes/RulesTab';
+import type { SubflowGroupItem } from '@/lib/processes/subflow-groups';
 
 type ActionType =
     | 'NOTIFY_USER'
@@ -613,6 +614,33 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
     }));
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [form, setForm] = useState<BuilderState>(EMPTY);
+    // #5477 — the INVOKE_SUBFLOW target picker: the tenant's groups on live
+    // automation canvases, labelled by map and group. The stored value stays
+    // the group's `nodeKey`, which is what the sub-flow dispatcher matches
+    // against a rule's `subFlowGroupId`. A stored key no group carries any more
+    // (its group or map was deleted) stays selectable, labelled as missing, so
+    // opening an old rule for edit never silently drops its target.
+    const { data: subflowGroupList } = useTenantSWR<{ groups: SubflowGroupItem[] }>(
+        CACHE_KEYS.processes.subflowGroups(),
+    );
+    const storedTargetGroupId = form.subflow.targetGroupId;
+    const subflowGroupOptions: ComboboxOption[] = useMemo(() => {
+        const groups = subflowGroupList?.groups ?? [];
+        const options: ComboboxOption[] = groups.map((g) => ({
+            value: g.nodeKey,
+            label: t('subflowTargetOption', {
+                map: g.mapName,
+                group: g.label.trim() || t('subflowTargetUnnamed'),
+            }),
+        }));
+        if (storedTargetGroupId && subflowGroupList && !groups.some((g) => g.nodeKey === storedTargetGroupId)) {
+            options.push({
+                value: storedTargetGroupId,
+                label: t('subflowTargetMissing', { key: storedTargetGroupId }),
+            });
+        }
+        return options;
+    }, [subflowGroupList, storedTargetGroupId, t]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -1359,12 +1387,23 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                             )}
                             {form.actionType === 'INVOKE_SUBFLOW' && (
                                 <FormField label={t('subflowTargetLabel')} description={t('subflowTargetHint')} required>
-                                    <Input
-                                        value={form.subflow.targetGroupId}
-                                        onChange={(e) =>
-                                            patch({ subflow: { ...form.subflow, targetGroupId: e.target.value } })
+                                    <Combobox
+                                        options={subflowGroupOptions}
+                                        selected={
+                                            subflowGroupOptions.find(
+                                                (o) => o.value === form.subflow.targetGroupId,
+                                            ) ?? null
                                         }
-                                        placeholder={t('subflowTargetPlaceholder')}
+                                        setSelected={(o) =>
+                                            patch({ subflow: { ...form.subflow, targetGroupId: o?.value ?? '' } })
+                                        }
+                                        placeholder={
+                                            subflowGroupOptions.length === 0
+                                                ? t('subflowTargetEmpty')
+                                                : t('subflowTargetPlaceholder')
+                                        }
+                                        forceDropdown
+                                        matchTriggerWidth
                                     />
                                 </FormField>
                             )}
@@ -1505,10 +1544,7 @@ export function RuleBuilderModal({ tenantSlug, open, setOpen, editRule }: RuleBu
                                 already forks a `condition-fail` edge to an
                                 elseRuleId; the tabular builder now offers the
                                 same "when conditions fail, run this instead"
-                                target. (INVOKE_SUBFLOW stays canvas-authored:
-                                sub-flow groups are canvas topology — a group
-                                node wrapping rules — with no meaningful tabular
-                                target, so we don't offer a raw-id picker here.) */}
+                                target. */}
                             <FormField
                                 label={t('elseLabel')}
                                 description={t('elseDescription')}

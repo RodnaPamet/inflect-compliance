@@ -23,6 +23,12 @@ jest.mock('@/app-layer/usecases/automation-rules', () => ({
 jest.mock('@/app-layer/events/audit', () => ({
     logEvent: (...a: unknown[]) => logEventMock(...a),
 }));
+// Sub-flow membership (#5477) has its own suite and integration test; here
+// only that the sync hands it the rules it linked.
+jest.mock('@/app-layer/services/canvas-subflow-membership', () => ({
+    reconcileSubFlowMembership: (...a: unknown[]) => reconcileMembership(...a),
+}));
+const reconcileMembership = jest.fn().mockResolvedValue([]);
 const assertManage = jest.fn();
 const assertCycle = jest.fn();
 const logEventMock = jest.fn().mockResolvedValue(undefined);
@@ -55,6 +61,7 @@ beforeEach(() => {
     assertManage.mockReset();
     assertCycle.mockReset();
     logEventMock.mockReset().mockResolvedValue(undefined);
+    reconcileMembership.mockReset().mockResolvedValue([]);
     // Default: every claimed ruleId verifies as a real in-tenant rule.
     (AutomationRuleRepository as any).getById.mockImplementation(
         async (_db: unknown, _ctx: unknown, id: string) => ({ id, nextRuleId: null, elseRuleId: null }),
@@ -177,6 +184,21 @@ describe('syncCanvasToRules — a deleted edge unlinks (#5116)', () => {
     });
 });
 
+describe('syncCanvasToRules — sub-flow membership (#5477)', () => {
+    it('hands the membership pass every linked rule and the prior group keys, and audits what it changed', async () => {
+        const db = makeDb([{ nodeKey: 'a1', nodeType: 'action', label: 'A', dataJson: { ruleId: 'r1' } }], []);
+        reconcileMembership.mockResolvedValue(['r1', 'r-gone']);
+
+        const res = await syncCanvasToRules(db, ctx, 'map-1', { priorGroupKeys: ['g-old'] });
+
+        expect(reconcileMembership).toHaveBeenCalledWith(db, ctx, 'map-1', new Map([['a1', 'r1']]), ['g-old']);
+        expect(res.subFlowMembershipChanged).toBe(2);
+        const audit = logEventMock.mock.calls[0][2];
+        expect(audit.detailsJson).toMatchObject({ subFlowMembershipChanged: 2 });
+        expect(audit.detailsJson.ruleIds).toEqual(['r1', 'r-gone']);
+    });
+});
+
 describe('hydrateCanvasFromRules', () => {
     it('merges live rule status/executionCount/subtitle into action nodes', async () => {
         const db = makeDb([], []);
@@ -235,6 +257,7 @@ describe('syncCanvasToRules — authorization', () => {
         await expect(syncCanvasToRules(db, editorCtx, 'map-1')).resolves.toEqual({
             rulesCreated: 0,
             chainsLinked: 0,
+            subFlowMembershipChanged: 0,
             ruleIdByNodeKey: {},
         });
         expect(assertManage).not.toHaveBeenCalled();

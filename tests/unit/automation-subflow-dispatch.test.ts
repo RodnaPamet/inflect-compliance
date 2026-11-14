@@ -41,6 +41,12 @@ describe('runSubflowDispatch', () => {
         // entry-rule lookup is scoped to the target group + tenant + ENABLED
         const where = mockPrisma.automationRule.findFirst.mock.calls[0][0].where;
         expect(where).toMatchObject({ tenantId: 't1', subFlowGroupId: 'group-1', status: 'ENABLED' });
+        // Entry = highest priority, ties to the oldest then the id (#5477).
+        expect(mockPrisma.automationRule.findFirst.mock.calls[0][0].orderBy).toEqual([
+            { priority: 'desc' },
+            { createdAt: 'asc' },
+            { id: 'asc' },
+        ]);
         // child execution carries the parent lineage + subflow trigger source
         const created = mockPrisma.automationExecution.create.mock.calls[0][0].data;
         expect(created.parentExecutionId).toBe('exec-parent');

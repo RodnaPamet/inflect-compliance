@@ -2,10 +2,13 @@
  * Sub-flow dispatch job (Visual Rule Editor VR-7).
  *
  * When a rule's action is INVOKE_SUBFLOW, this resolves the target sub-flow
- * group's entry rule (the first ENABLED rule carrying `subFlowGroupId ===
- * targetGroupId`) and runs it as a child execution linked to the invoking
- * execution via `parentExecutionId` — so a sub-flow's runs roll up to their
- * caller in the execution history + governance graph.
+ * group's entry rule (the highest-priority ENABLED rule carrying
+ * `subFlowGroupId === targetGroupId`) and runs it as a child execution linked
+ * to the invoking execution via `parentExecutionId` — so a sub-flow's runs roll
+ * up to their caller in the execution history + governance graph.
+ *
+ * Membership is written by the canvas save (#5477): a rule is in a group when
+ * its canvas step is nested in that group node (canvas-subflow-membership.ts).
  *
  * The entry rule's action executes for real via `executeAction`, consistent
  * with automation-event-dispatch + rule-chain-dispatch.
@@ -75,8 +78,9 @@ export async function runSubflowDispatch(
             return { result: capped, executionId: null };
         }
 
-        // Entry rule = the first ENABLED rule in the target group. A group's
-        // trigger node owns this rule (priority breaks ties deterministically).
+        // Entry rule = the ENABLED rule in the target group with the HIGHEST
+        // priority (owner decision, #5477). Ties fall to the oldest rule, then
+        // to the id, so the same group always starts the same rule.
         const entry = await readRulesWithTenantDek(tenantId, () =>
             prisma.automationRule.findFirst({
                 where: {
@@ -85,7 +89,7 @@ export async function runSubflowDispatch(
                     status: 'ENABLED',
                     deletedAt: null,
                 },
-                orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+                orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }],
             }),
         );
 
