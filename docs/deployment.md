@@ -64,7 +64,7 @@ curl http://localhost:3000/api/health | jq .
 | `ANTHROPIC_WORKSPACE_ID` | Optional | Only for an **organisation-level** `ANTHROPIC_API_KEY` — a key created inside a workspace needs nothing here. Anthropic refuses an organisation-level key's requests with HTTP 400 unless each names its workspace, so when this is set (a `wrkspc_…` identifier, not a secret) every request to the Anthropic API — the posture summary, AI risk suggestions and the Flue runtime's external provider — carries `anthropic-workspace-id: <id>`; unset, none does. It reaches the `app` and `worker` containers the way `ANTHROPIC_API_KEY` does: through the service's `env_file:` (`/opt/inflect/.env.prod` on the production VM). No Compose file lists either key under `environment:`, and none should — a service-level `environment:` entry overrides the env file, so an empty interpolation there would blank the value the container was given. |
 | `AGENT_FLUE_MODEL` | Optional (default `claude-sonnet-5-5`) | The model the Flue agent runtime's external provider names, and the default model `npm run skills:evaluate` records skill evaluations against. Its own variable on purpose: the compliance-posture summary and the AI risk suggestions keep `ANTHROPIC_MODEL` (default `claude-haiku-4-5`), and setting one never moves the other. The credential and workspace are still the shared `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID`. A `LOCAL_ONLY` tenant's run never reads it; its model is `AI_LOCAL_MODEL`. It reaches the `app` and `worker` containers through the service's `env_file:`, like `ANTHROPIC_API_KEY`. |
 | `AGENT_FLUE_WORKER_MODEL` | Optional (unset) | The WORKER role's model (D-L3-1): the model a Flue run's subagents run on, on the same external provider, key and workspace as `AGENT_FLUE_MODEL`. Registered beside it at boot, never instead of it. Unset, blank or equal to `AGENT_FLUE_MODEL`, subagents run on the run's own model, which is the behaviour before the variable existed; each run's opening audit entry records both models and whether the worker's was configured or a fallback. A `LOCAL_ONLY` tenant's run never reads it; both its roles use `AI_LOCAL_MODEL` or are refused. |
-| `AUTOMATION_WEB_EVENTS_ENABLED` | Optional (unset = off) | Whether automation events emitted in the **web** process (a task, risk or control created through the UI or the API) reach the job queue and fire automation rules. Off by default; see "Automation rules from web events" below before turning it on. `1` or `true` turns it on; any other value is off. |
+| `AUTOMATION_WEB_EVENTS_ENABLED` | Optional (unset = off) | Whether automation events emitted in the **web** process (a task, risk or control created through the UI or the API) reach the job queue and fire automation rules. Off by default; see "Automation rules from web events" below before turning it on. `1` or `true` turns it on; any other value is off. **On in production** since 2026-11-14 (owner decision): `deploy/docker-compose.prod.yml` sets it to `"1"` in the `app` service's `environment:`, which overrides any value in `.env.prod`. |
 | `EVALS_CARD_HIDDEN_ORG_SLUGS` | Optional (unset) | The opt-out list for the read-only **Evaluations** card on `/org/<slug>/settings`. Every organization's admins (owner or admin) see the card by default, a newly created organization included; comma-separated organization slugs listed here do not. Unset or empty hides it nowhere. The card describes the garak and Inspect CI nightlies (`garak.yml`, `agent-evals.yml`) and where their repository variables `GARAK_ENABLED` / `AGENT_EVALS_ENABLED` are set; it is static content, reads no live state and calls nothing, so this opt-out list is all there is to configure. Not a sub-processor. |
 
 ## Docker Compose (Self-hosted / VPS)
@@ -193,7 +193,8 @@ discarded the event. No rule ever fired from a web event, in production
 included.
 
 #5541 fixed the bus and put the fix behind `AUTOMATION_WEB_EVENTS_ENABLED`, off
-by default (owner decision, 2026-11-13):
+by default (owner decision, 2026-11-13). **It is on in production** (owner
+decision, 2026-11-14), set in the repo-canonical compose file, as below.
 
 - **Off** (unset, or any value but `1` / `true`): web events are not
   dispatched, as before. The app logs `automation-bus.web_events_held` once per
@@ -205,21 +206,30 @@ by default (owner decision, 2026-11-13):
   with the switch on are dispatched.
 - **The worker never reads it.** Worker-emitted events fire whatever it says.
 
-It is off because turning it on changes what every tenant's enabled rules do,
-and nobody has seen those rules act on web events before. To turn it on in
-production:
+It was off because turning it on changes what every tenant's enabled rules do,
+and nobody had seen those rules act on web events before. In production it is
+set in `deploy/docker-compose.prod.yml`, on the `app` service's `environment:`
+(`AUTOMATION_WEB_EVENTS_ENABLED: "1"`), not in `/opt/inflect/.env.prod`: it is
+a non-secret switch, so it belongs in the repo-canonical file, and an
+`environment:` entry overrides whatever `env_file:` carries, so a line in
+`.env.prod` no longer decides it. It is set on `app` only; the worker never
+reads it. It was turned on after these steps, which are also the steps for any
+other deployment:
 
 1. Run the `VM check` workflow with the `automation-rules` check. It counts the
    ENABLED rules, per trigger event and per action type, and the tenants that
-   hold one.
+   hold one. On 2026-11-14 (run 43596452819) it found 0 enabled rules across 0
+   tenants, so turning the switch on woke nothing; rules tenants create from
+   then on fire from web events.
 2. Decide, from those counts, whether the rules that would wake should.
-3. Add `AUTOMATION_WEB_EVENTS_ENABLED=1` to `/opt/inflect/.env.prod`. It
-   reaches the `app` container through `env_file:`.
-4. Apply (`VM apply`, action `apply`), which recreates the app with the new
-   environment. Look for `automation-bus.dispatcher_installed` with
-   `webEventsEnabled: true` in the app's log.
+3. Set the switch in the `app` service's `environment:` in the compose file,
+   through a pull request (for production, `deploy/docker-compose.prod.yml`).
+4. Apply (`VM apply`, action `preflight`, then `apply`), which recreates the
+   app with the new environment. Look for `automation-bus.dispatcher_installed`
+   with `webEventsEnabled: true` in the app's log.
 
-To turn it off again, remove the line and apply. The switch takes effect at the
+To turn it off again, remove the line from the compose file in a pull request,
+merge, and apply (`preflight`, then `apply`); the next web event is held again. The switch takes effect at the
 next event; executions that have already been queued run to completion.
 
 ---
@@ -336,9 +346,11 @@ standing warning nobody can action.
 
 ### The capacity recorder
 
-Capacity budget step C1b needs `app`'s and `worker`'s memory peaks across the
-02:00–05:30 UTC nightly chain and the 00:15–01:45 UTC parser window. A `VM
-capacity` snapshot cannot give them: Watchtower recreates both containers on
+Capacity budget step C1b sized `app` and `worker` from their memory peaks
+across the 02:00–05:30 UTC nightly chain and the 00:15–01:45 UTC parser window
+(`VM capacity` history run 43566712099, 2026-11-14), and tightening the worker
+further waits for history that holds a Sunday and a month start. A `VM
+capacity` snapshot cannot give those peaks: Watchtower recreates both containers on
 every merge to main, which resets their cgroup `memory.peak`, and a snapshot
 runs only when the owner approves it, which is never at night. So a timer on
 the VM records them (owner decision 2026-11-13).
@@ -498,12 +510,13 @@ or under 14.5 GB (host memory minus 1.5 GB), and the batch-shaped services
 weight, so the request path keeps a core. `tests/guards/deploy-compose-canonical.test.ts`
 holds all of it. The figures, their basis and the risk of an out-of-memory kill
 are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
-the `app` and `worker` limits are provisional until a re-measurement that spans
-the nightly jobs. The `VM capacity` workflow (below) prints each container's
+the `app`, `worker` and scanner limits were re-sized from 24 hours of the
+capacity recorder's history, the nightly jobs included, in
+[`implementation-notes/2026-11-14-capacity-c1b.md`](implementation-notes/2026-11-14-capacity-c1b.md). The `VM capacity` workflow (below) prints each container's
 configured limit, its peak memory and its out-of-memory kills.
 
 `app` and `worker` also state their V8 heap ceiling
-(`NODE_OPTIONS: "--max-old-space-size=1024"`), because a memory limit moves
+(`NODE_OPTIONS: "--max-old-space-size=768"` under a 1024m limit), because a memory limit moves
 Node's default heap ceiling to about half the limit. A heap overrun is then a
 restart with exit code 134 and `Reached heap limit` in the log, which no
 out-of-memory counter records. The guard holds the heap between half and three
