@@ -79,7 +79,7 @@ npm run e2e:local -- --headed
 | Setting | Value |
 |---------|-------|
 | Image | `postgres:16-alpine` |
-| Port | `5434` (avoids collision with dev DB on 5433) |
+| Port | `5434` — the same host port the dev stack's direct Postgres publishes (`docker-compose.yml`), so stop the dev stack's `postgres` first |
 | User | `test` |
 | Password | `test` |
 | Database | `inflect_test` |
@@ -91,9 +91,15 @@ The DB uses `tmpfs` so data is stored in RAM — fast and always clean on restar
 
 ### Port 5434 already in use
 
+The dev stack (`docker compose up -d`) publishes its direct Postgres on
+5434 as well, and is the usual holder of the port.
+
 ```bash
 # Stop any existing test container
 npm run db:test:down
+
+# Or stop the dev stack's direct Postgres
+docker compose stop postgres
 
 # Or kill the process on port 5434
 # Windows: netstat -ano | findstr :5434

@@ -997,13 +997,28 @@ describe('the agentic path is swept, and the sweep is real', () => {
     it.each(AGENTIC_PATH_GLOBS_ANTICIPATORY as string[])(
         'the anticipatory glob %s points at a directory that exists',
         (glob) => {
-            // These deliberately match NOTHING today — they exist so the first
-            // `src/app-layer/jobs/agent-*.ts` is in scope on its first commit
-            // rather than whenever somebody notices. What can still go wrong is
-            // a typo'd directory, which would sit here forever matching nothing
-            // for a reason nobody intended. So the directory is what is pinned.
+            // These match nothing yet — they exist so the first file of their
+            // shape is in scope on its first commit rather than whenever
+            // somebody notices. What can still go wrong is a typo'd directory,
+            // which would sit here forever matching nothing for a reason nobody
+            // intended. So the directory is what is pinned.
             const dir = glob.slice(0, glob.lastIndexOf('/', glob.indexOf('*')) + 1);
             expect(repoRelativeFiles().some((rel) => rel.startsWith(dir))).toBe(true);
+        },
+    );
+
+    it.each(AGENTIC_PATH_GLOBS_ANTICIPATORY as string[])(
+        'the anticipatory glob %s still matches nothing — once it does, it is LIVE',
+        (glob) => {
+            // An anticipatory glob is pinned only by its directory, so a glob
+            // that HAS real files but sits on this list is unguarded: a typo in
+            // its prefix would match nothing and nothing would notice. That is
+            // how `src/app-layer/jobs/agent-*.ts` sat here with ten real job
+            // files under it (#5308). The first file of a glob's shape moves
+            // the glob to AGENTIC_PATH_GLOBS_LIVE, where "matches a real file"
+            // is asserted.
+            const re = globToRegExp(glob);
+            expect(repoRelativeFiles().filter((rel) => re.test(rel))).toEqual([]);
         },
     );
 
