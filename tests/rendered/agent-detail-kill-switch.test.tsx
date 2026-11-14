@@ -579,3 +579,30 @@ describe('the trigger is not the register SUSPEND', () => {
         }
     });
 });
+
+// #5313 — a failed in-force read is not "no kill in force". The banner says
+// the state is unknown, and neither Stop nor Resume is offered on a guess.
+describe('a kill-state read that fails', () => {
+    function renderFailedRead() {
+        const failed = { data: undefined, error: new Error('503'), isLoading: false, mutate };
+        mockSWR.mockImplementation(() => failed);
+        return render(
+            <TenantProvider value={TENANT_CTX}>
+                <AgentKillSwitchBanner agentId={AGENT_ID} canKill />
+                <AgentKillSwitchAction agentId={AGENT_ID} canKill tenantSlug="acme" registrationEnforced />
+            </TenantProvider>,
+        );
+    }
+
+    it('says the state could not be read', () => {
+        renderFailedRead();
+        expect(screen.getByTestId('agent-kill-state-unknown')).toHaveTextContent(KILL.stateUnknownTitle);
+    });
+
+    it('offers neither Stop nor Resume', () => {
+        renderFailedRead();
+        expect(screen.getByTestId('agent-kill-state-unknown')).toBeInTheDocument();
+        expect(byId('agent-kill-engage-btn')).toBeNull();
+        expect(byId('agent-kill-lift-btn')).toBeNull();
+    });
+});

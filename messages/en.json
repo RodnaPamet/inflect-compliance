@@ -5754,6 +5754,8 @@
         "bannerAgentTitle": "This agent is stopped",
         "bannerTenantTitle": "Every agent in this workspace is stopped",
         "bannerDetail": "Stopped {when}. Reason: {reason}",
+        "stateUnknownTitle": "Whether this agent is stopped could not be read",
+        "stateUnknown": "The list of stops in force did not load, so this page cannot say whether a stop holds this agent or the whole workspace. Reload the page before stopping or resuming it.",
         "engageTitle": "Stop this agent",
         "engagePrompt": "Every further tool call is refused, including inside a run already in progress, and so is reading the framework catalogue. The agent stays ACTIVE in the register. Suspending it refuses tool calls too, but not inside a run already under way, it leaves the framework catalogue readable, and it has no workspace-wide or platform-wide form.",
         "engageConfirm": "Stop agent",
@@ -5857,6 +5859,7 @@
         "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: an Owner or AI admin proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
+        "vendorUnavailable": "The supplier list could not be read, so the supplier cannot be changed here.",
         "save": "Save {count} change(s)",
         "failed": "Could not amend this agent."
       },
@@ -5939,6 +5942,7 @@
         "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
         "retireTypeToConfirm": "Type {name} to confirm",
         "retireError": "Could not retire this agent.",
+        "retireUnconfirmed": "The request did not complete, so it is not known whether this agent was retired. Check its status before trying again.",
         "driverLabel": "Run engine",
         "driverValue": {
           "static": "Static",
@@ -6197,14 +6201,16 @@
             "UNPINNED": "Not yet pinned",
             "DESCRIPTION_CHANGED": "Description changed",
             "SCHEMA_CHANGED": "Schema changed",
-            "DEFINITION_CHANGED": "Definition changed"
+            "DEFINITION_CHANGED": "Definition changed",
+            "ANNOTATIONS_CHANGED": "Annotations changed"
           },
           "explain": {
             "APPROVED": "The definition in this build is byte-identical to the one approved here.",
             "UNPINNED": "Nothing is on file. The boundary met this definition first and let it through; approving it puts a named person behind it.",
             "DESCRIPTION_CHANGED": "The instruction text the model reads has been rewritten since it was approved. The name and the parameters are untouched, so this change is visible nowhere except here.",
             "SCHEMA_CHANGED": "The parameters changed. The instruction text the model reads is unchanged.",
-            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved."
+            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved.",
+            "ANNOTATIONS_CHANGED": "The hints the tool declares about itself (for example whether it only reads or may destroy data) have changed since it was approved. The parameters and the instruction text are unchanged."
           },
           "approveAction": "Approve definition",
           "approveSuccess": "Approved {toolName} at revision {revision}",
@@ -6665,7 +6671,7 @@
       "receiptProvenanceValue": {
         "BUILTIN": "An Inflect tool, as built in",
         "UNATTESTED": "Not attested: the description in force is not known",
-        "PIN_MOVED": "The approved description has changed since this action (revision {revision})",
+        "PIN_MOVED": "The approved description has changed since this action, so which description was in force is not recorded",
         "NONE": "Not recorded"
       }
     },
@@ -12824,7 +12830,8 @@
           "propose_not_commit": "Writes proposed, not committed",
           "prior_state_reads": "Prior state read before a write",
           "skills_declared": "Skills declared",
-          "delegation_narrows": "Delegation only narrows"
+          "delegation_narrows": "Delegation only narrows",
+          "egress_enforced": "Outbound network access enforced"
         },
         "H4": {
           "ledger_baseline": "Run ledger with a baseline",
@@ -13427,7 +13434,8 @@
         "QUARANTINED": "The request to disable its service principal was refused by the output guard",
         "QUEUED": "Disabling its service principal is queued",
         "REFUSED": "The request to disable its service principal was refused",
-        "FAILED": "The request to disable its service principal failed"
+        "FAILED": "The request to disable its service principal failed",
+        "WOULD_REQUEST_DISABLE": "Its service principal would be disabled; nothing was requested in this dry run"
       },
       "blocked": {
         "ABOVE_CLAMP": "{next} is above the highest mode this check acts at, {clamp}.",

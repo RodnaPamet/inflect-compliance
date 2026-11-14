@@ -964,3 +964,21 @@ describe('the retire dialog previews the cascade, and a retired agent is not off
         expect(screen.getByRole('button', { name: EN.activateAction })).toBeEnabled();
     });
 });
+
+// #5313 — a retirement whose request never answered says so: it is not known
+// whether the irreversible act happened, and the rejection is handled.
+describe('a retirement whose request fails to answer', () => {
+    it('says it is not known whether the agent was retired', async () => {
+        const agent = makeAgent({ name: 'Ops agent' });
+        renderTab(agent);
+        fireEvent.click(screen.getByRole('button', { name: EN.retireAction }));
+        const modal = screen.getByTestId('agent-retire-modal');
+        fireEvent.change(within(modal).getByTestId('agent-retire-confirm-input'), {
+            target: { value: 'Ops agent' },
+        });
+        fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+        fireEvent.click(screen.getByTestId('agent-retire-commit'));
+        expect(await within(modal).findByText(EN.retireUnconfirmed)).toBeInTheDocument();
+        expect(screen.getByTestId('agent-retire-commit')).toBeEnabled();
+    });
+});

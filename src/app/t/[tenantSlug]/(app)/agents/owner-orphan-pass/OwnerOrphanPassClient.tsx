@@ -110,6 +110,9 @@ const KNOWN_SP_STATUS = new Set([
     'QUEUED',
     'REFUSED',
     'FAILED',
+    // A DRY_RUN decision: the principal WOULD be disabled at a live rung
+    // (`agent-owner-orphan-pass.ts`). It showed as the raw code (#5313).
+    'WOULD_REQUEST_DISABLE',
 ]);
 
 function PassBlock({ pass, agentNames }: { pass: PassRow; agentNames: Readonly<Record<string, string>> }) {

@@ -91,7 +91,7 @@ function findInForce(rows: KillSwitchRow[] | undefined, agentId: string): KillSw
  * refused writes a denial row on every mount.
  */
 function useKillState(agentId: string, canKill: boolean, refreshToken?: number) {
-    const { data, mutate } = useTenantSWR<KillSwitchListResponse>(
+    const { data, error, mutate } = useTenantSWR<KillSwitchListResponse>(
         canKill ? '/admin/agents/kill-switch?inForceOnly=true' : null,
     );
 
@@ -100,7 +100,12 @@ function useKillState(agentId: string, canKill: boolean, refreshToken?: number) 
     }, [refreshToken, canKill, mutate]);
 
     const inForce = useMemo(() => findInForce(data?.inForce, agentId), [data, agentId]);
-    return { inForce, mutate };
+    // A failed read is NOT "no kill in force" (#5313). With no data to go on
+    // the page must say it does not know, and offer neither Stop nor Resume:
+    // offering Stop would tell the operator the agent is running when a kill
+    // may be holding it, and leave them no way to lift it from here.
+    const unknown = Boolean(error) && !data;
+    return { inForce, unknown, mutate };
 }
 
 export function AgentKillSwitchAction({
@@ -126,7 +131,7 @@ export function AgentKillSwitchAction({
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
-    const { inForce, mutate } = useKillState(agentId, canKill, refreshToken);
+    const { inForce, unknown, mutate } = useKillState(agentId, canKill, refreshToken);
 
     const [engaging, setEngaging] = useState(false);
     const [lifting, setLifting] = useState(false);
@@ -244,6 +249,9 @@ export function AgentKillSwitchAction({
     }, [apiUrl, inForce, trimmed, mutate, toast, t]);
 
     if (!canKill) return null;
+    // The banner says the state could not be read; no control is offered on a
+    // guess about which of the two applies.
+    if (unknown) return null;
 
     const tenantWide = inForce?.agentId === null;
 
@@ -502,8 +510,19 @@ export function AgentKillSwitchBanner({
     refreshToken?: number;
 }) {
     const t = useTranslations('admin');
-    const { inForce } = useKillState(agentId, canKill, refreshToken);
+    const { inForce, unknown } = useKillState(agentId, canKill, refreshToken);
 
+    if (unknown) {
+        return (
+            <InlineNotice
+                variant="warning"
+                title={t('agentDetail.kill.stateUnknownTitle')}
+                data-testid="agent-kill-state-unknown"
+            >
+                {t('agentDetail.kill.stateUnknown')}
+            </InlineNotice>
+        );
+    }
     if (!inForce) return null;
 
     return (

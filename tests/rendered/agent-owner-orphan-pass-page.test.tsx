@@ -261,3 +261,38 @@ describe('the recorded passes', () => {
     });
 
 });
+
+// #5313 — the dry run's own service-principal decision, as the pass writes it
+// (`WOULD_REQUEST_DISABLE`), is a sentence, not the stored code.
+describe('a dry-run service-principal decision', () => {
+    it('says the principal would be disabled', () => {
+        setPayload('DRY_RUN', {
+            passes: [
+                {
+                    id: 'pass_dry',
+                    status: 'NOT_APPLICABLE',
+                    executedAt: '2026-10-20T05:15:00.000Z',
+                    resultJson: {
+                        mode: 'DRY_RUN',
+                        refusal: null,
+                        counts: { orphans: 1, contained: 0, failed: 0, wouldContain: 1 },
+                        decisions: [
+                            {
+                                agentId: 'agt_orphan',
+                                signals: [{ kind: 'HR_TERMINATED' }],
+                                outcome: 'WOULD_SUSPEND_AND_KILL',
+                                servicePrincipal: { status: 'WOULD_REQUEST_DISABLE', discoveredAgentId: 'da_1' },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+        render(<OwnerOrphanPassClient />);
+        const decision = screen.getByTestId('orphan-decision-pass_dry-agt_orphan');
+        expect(decision).toHaveTextContent(
+            'Its service principal would be disabled; nothing was requested in this dry run',
+        );
+        expect(decision).not.toHaveTextContent('WOULD_REQUEST_DISABLE');
+    });
+});
