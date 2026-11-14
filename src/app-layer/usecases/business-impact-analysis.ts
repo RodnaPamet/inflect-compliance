@@ -739,10 +739,31 @@ export async function linkBiaToControl(ctx: RequestContext, biaId: string, contr
         ]);
         if (!bia) throw notFound('BIA not found');
         if (!control) throw badRequest('INVALID_CONTROL', 'Control not found in this tenant');
+        const key = { controlId_kind_biaId: { controlId, kind: 'BIA' as const, biaId } };
+        // Re-linking is idempotent and writes no second audit row; a NEW
+        // link changes how the control reads for Art.21(2)(c) coverage, so
+        // it is audited (#5317).
+        const existing = await db.controlEvidenceLink.findUnique({ where: key });
+        if (existing) return existing;
         const link = await db.controlEvidenceLink.upsert({
-            where: { controlId_kind_biaId: { controlId, kind: 'BIA', biaId } },
+            where: key,
             create: { tenantId: ctx.tenantId, controlId, kind: 'BIA', biaId, note: `BIA: ${bia.name}`, createdByUserId: ctx.userId },
             update: {},
+        });
+        await logEvent(db, ctx, {
+            action: 'BIA_CONTROL_LINKED',
+            entityType: 'BusinessImpactAnalysis',
+            entityId: biaId,
+            details: `Linked BIA to control as continuity evidence: ${bia.name}`,
+            detailsJson: {
+                category: 'relationship',
+                operation: 'linked',
+                sourceEntity: 'BusinessImpactAnalysis',
+                sourceId: biaId,
+                targetEntity: 'Control',
+                targetId: controlId,
+                relation: 'BIA_EVIDENCE',
+            },
         });
         return link;
     });

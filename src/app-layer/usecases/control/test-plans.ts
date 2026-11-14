@@ -777,6 +777,16 @@ export async function retestFromRun(ctx: RequestContext, runId: string) {
 
         const plan = run.testPlan;
         if (!plan) throw notFound('Test plan not found');
+        // The same guards createTestRun holds (#5317): no open run on a plan
+        // that is not ACTIVE, and at most one open run per plan — a retest
+        // while one is PLANNED/RUNNING reuses it rather than forking the
+        // plan's execution history.
+        if (plan.status !== 'ACTIVE') throw badRequest('Cannot create a run for a paused test plan');
+        const open = await db.controlTestRun.findFirst({
+            where: { testPlanId: plan.id, tenantId: ctx.tenantId, status: { in: ['PLANNED', 'RUNNING'] } },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (open) return open;
 
         const newRun = await db.controlTestRun.create({
             data: {

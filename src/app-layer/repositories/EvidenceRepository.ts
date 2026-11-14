@@ -466,6 +466,27 @@ export class EvidenceRepository {
         });
     }
 
+    /**
+     * Move an evidence row's status CONDITIONALLY on the status the caller
+     * read (#5317). Two reviews racing under READ COMMITTED both pass the
+     * state-machine check on the same read; the second UPDATE waits on the
+     * first's row lock, re-evaluates `status = from` against the committed
+     * row and matches nothing. Returns whether this caller made the move.
+     */
+    static async transitionStatus(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        from: string,
+        to: 'SUBMITTED' | 'APPROVED' | 'REJECTED',
+    ): Promise<boolean> {
+        const res = await db.evidence.updateMany({
+            where: { id, tenantId: ctx.tenantId, status: from as Prisma.EvidenceWhereInput['status'] },
+            data: { status: to },
+        });
+        return res.count > 0;
+    }
+
     static async addReview(db: PrismaTx, ctx: RequestContext, evidenceId: string, action: 'SUBMITTED' | 'APPROVED' | 'REJECTED', comment?: string | null) {
         return db.evidenceReview.create({
             data: {

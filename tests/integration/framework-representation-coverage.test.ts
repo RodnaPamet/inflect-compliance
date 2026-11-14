@@ -425,15 +425,13 @@ describeFn('coverage across the two representations of one framework', () => {
 
         expect(findNode(tree.nodes, 'A.5.15')?.complianceStatus).toBe('compliant');
         expect(findNode(tree.nodes, '7')?.complianceStatus).toBe('compliant');
-        // Clause 8 reads `compliant` here and NOT APPLICABLE on the SoA above,
-        // and that divergence is NOT this fix's: the tree decorator reads
-        // `Control.applicability` (its global column) and has never read the
-        // per-framework `ControlRequirementLink.applicability` override that
-        // the SoA and the readiness rollup both resolve. It predates the
-        // collapse and is reachable without two representations — any tenant
-        // scoping a control out of one framework sees it. Pinned here as the
-        // measured behaviour rather than silently widened into this PR.
-        expect(findNode(tree.nodes, '8')?.complianceStatus).toBe('compliant');
+        // Clause 8 reads NOT APPLICABLE, as on the SoA above: the tree now
+        // resolves the per-framework `ControlRequirementLink.applicability`
+        // override the SoA and the readiness rollup resolve (#5317). It read
+        // `compliant` while the decorator took only `Control.applicability`,
+        // the global column — and the collapse keeps the own-framework link's
+        // override, which is what this tenant scoped out.
+        expect(findNode(tree.nodes, '8')?.complianceStatus).toBe('na');
     });
 
     it('a tenant that holds no controls still reads as zero', async () => {

@@ -1691,6 +1691,9 @@ executorRegistry.register('identity-joiner-pass', async (payload) => {
             refusal: r.refusal,
             detail: redactDirectoryIdentifiers(r.detail, null),
             decisions: r.decisions,
+            // What the pass CREATED, beside what it planned (#5317): at
+            // AUTOMATIC the two differ, and the job result named only the plan.
+            created: r.created,
         },
         {
             status: r.status,

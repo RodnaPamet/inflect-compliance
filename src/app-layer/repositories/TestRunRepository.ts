@@ -2,6 +2,7 @@
  * Test Run repository — CRUD operations for ControlTestRun.
  */
 import { PrismaTx } from '@/lib/db-context';
+import { badRequest } from '@/lib/errors/types';
 import { RequestContext } from '../types';
 
 export const TestRunRepository = {
@@ -79,8 +80,14 @@ export const TestRunRepository = {
         notes?: string | null;
         findingSummary?: string | null;
     }) {
-        return db.controlTestRun.update({
-            where: { id: runId },
+        // A completed verdict is immutable. The transition is CONDITIONAL on
+        // the run not already being COMPLETED (#5317): two completions racing
+        // under READ COMMITTED both pass the caller's status read, but the
+        // second UPDATE waits on the first's row lock, re-evaluates this
+        // predicate against the committed row, matches nothing and is refused
+        // here — so a FAIL can never be silently overwritten by a PASS.
+        const res = await db.controlTestRun.updateMany({
+            where: { id: runId, tenantId: ctx.tenantId, status: { not: 'COMPLETED' } },
             data: {
                 status: 'COMPLETED',
                 result: data.result,
@@ -90,5 +97,7 @@ export const TestRunRepository = {
                 findingSummary: data.findingSummary ?? null,
             },
         });
+        if (res.count === 0) throw badRequest('Test run is already completed');
+        return db.controlTestRun.findFirstOrThrow({ where: { id: runId, tenantId: ctx.tenantId } });
     },
 };

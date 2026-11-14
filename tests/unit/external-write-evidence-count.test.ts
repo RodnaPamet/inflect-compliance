@@ -102,7 +102,9 @@ describe('the predicate each rung is counted with', () => {
             // RECORDED_ONLY excluded, and as a positive list rather than a
             // negation: an outcome added later must be left OUT (gate stays
             // shut) rather than counted in (authority widens).
-            outcome: { in: ['PENDING', 'APPLIED', 'FAILED', 'INDETERMINATE'] },
+            // ACCEPTED (an async write the far end queued) is a dispatched
+            // outcome of an approved write, as FAILED is (#5317).
+            outcome: { in: ['PENDING', 'APPLIED', 'FAILED', 'INDETERMINATE', 'ACCEPTED'] },
         });
     });
 

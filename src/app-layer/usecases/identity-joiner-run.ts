@@ -394,9 +394,10 @@ async function writeJoinerExecutionRow(
     status: 'PASSED' | 'NOT_APPLICABLE' | 'ERROR',
     // An OBJECT, so the request block is added here rather than by each caller.
     resultJson: Prisma.InputJsonObject,
-): Promise<void> {
+): Promise<{ id: string; resultJson: Prisma.InputJsonObject }> {
     const request = passRequestRecord(trigger);
-    await runInTenantContext(ctx, (db) =>
+    const stored = request ? { ...resultJson, request } : resultJson;
+    const row = await runInTenantContext(ctx, (db) =>
         db.integrationExecution.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -413,10 +414,12 @@ async function writeJoinerExecutionRow(
                 // A manual pass says who asked, whose authority it carried,
                 // and why it was not theirs when it was refused. A scheduled
                 // pass's row carries no such block and is otherwise unchanged.
-                resultJson: request ? { ...resultJson, request } : resultJson,
+                resultJson: stored,
             },
+            select: { id: true },
         }),
     );
+    return { id: row.id, resultJson: stored };
 }
 
 /**
@@ -434,9 +437,9 @@ async function safeRecordPlan(
     provider: string,
     plan: JoinerPlan,
     extra: Record<string, unknown>,
-): Promise<void> {
+): Promise<{ id: string; resultJson: Prisma.InputJsonObject } | null> {
     try {
-        await writeJoinerExecutionRow(ctx, trigger, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
+        return await writeJoinerExecutionRow(ctx, trigger, provider, plan.refusal ? 'NOT_APPLICABLE' : 'PASSED', {
             mode: plan.mode,
             clamp: plan.clamp,
             refusal: plan.refusal,
@@ -460,6 +463,100 @@ async function safeRecordPlan(
             component: 'identity-joiner-pass',
             tenantId: ctx.tenantId,
             provider,
+            error: redactDirectoryIdentifiers(err instanceof Error ? err.message : String(err), null),
+        });
+        return null;
+    }
+}
+
+/**
+ * The row's status once the creates have run (#5317). The plan's own status
+ * (PASSED, or NOT_APPLICABLE for a plan-level refusal) stands only when there
+ * was nothing to create or everything planned was created.
+ *
+ *   - every planned create refused BEFORE any was attempted (no live
+ *     provisioner, no undo writer) → NOT_APPLICABLE, the refusal named in the
+ *     execution block — this page's word for "ran and refused";
+ *   - anything else short of every planned account created → PARTIAL.
+ */
+export function joinerExecutionStatus(
+    planned: number,
+    execution: CreateExecution,
+): 'PASSED' | 'PARTIAL' | 'NOT_APPLICABLE' {
+    if (planned === 0 || execution.created === planned) return 'PASSED';
+    if (execution.attempted === 0 && execution.refused > 0) return 'NOT_APPLICABLE';
+    return 'PARTIAL';
+}
+
+/** One sentence for the row: what the creates DID, in counts. */
+function executionDetail(mode: IdentityWriteMode, planned: number, execution: CreateExecution): string {
+    const parts = [`${execution.created} of ${planned} planned account(s) created in the directory at ${mode}`];
+    if (execution.partial > 0) parts.push(`${execution.partial} created without every entitlement`);
+    if (execution.collided > 0) parts.push(`${execution.collided} skipped: the identifier is already taken`);
+    if (execution.unverifiable > 0) parts.push(`${execution.unverifiable} skipped: the identifier could not be checked`);
+    if (execution.refused > 0) parts.push(`${execution.refused} refused`);
+    const sentence = `${parts.join('; ')}.`;
+    return execution.refusalDetail ? `${sentence} ${execution.refusalDetail}` : sentence;
+}
+
+/**
+ * Write what the creates DID onto the pass's row (#5317).
+ *
+ * The plan row is written first — capture-before-write — and said only what
+ * the pass decided. At AUTOMATIC that left the only durable record reading
+ * PASSED with "would be provisioned" and nothing about which accounts were
+ * really created, collided or refused, so a pass that decided could not be told
+ * from one that acted. Counts only: the row is read on an OWNER-gated page,
+ * and the refusal sentence is scrubbed as the errored pass's is. Never fails
+ * the pass, for the reason `safeRecordPlan` gives.
+ */
+async function safeRecordExecution(
+    ctx: RequestContext,
+    provider: string,
+    record: { id: string; resultJson: Prisma.InputJsonObject } | null,
+    mode: IdentityWriteMode,
+    plan: JoinerPlan,
+    execution: CreateExecution,
+): Promise<void> {
+    if (!record) return;
+    const planned = plan.decisions.filter((d) => d.outcome === 'PLANNED').length;
+    const refusalDetail = execution.refusalDetail ? redactDirectoryIdentifiers(execution.refusalDetail, null) : null;
+    const scrubbed: CreateExecution = { ...execution, refusalDetail };
+    try {
+        await runInTenantContext(ctx, (db) =>
+            db.integrationExecution.updateMany({
+                where: { id: record.id, tenantId: ctx.tenantId },
+                data: {
+                    // A plan-level refusal keeps its status and its sentence;
+                    // the execution block is added beside it all the same, so
+                    // the row never hides a create that happened.
+                    status: plan.refusal ? 'NOT_APPLICABLE' : joinerExecutionStatus(planned, execution),
+                    resultJson: {
+                        ...record.resultJson,
+                        created: execution.created,
+                        detail: plan.refusal
+                            ? `${plan.detail} ${executionDetail(mode, planned, scrubbed)}`
+                            : executionDetail(mode, planned, scrubbed),
+                        execution: {
+                            planned,
+                            attempted: execution.attempted,
+                            created: execution.created,
+                            partial: execution.partial,
+                            refused: execution.refused,
+                            collided: execution.collided,
+                            unverifiable: execution.unverifiable,
+                            refusalDetail,
+                        },
+                    },
+                },
+            }),
+        );
+    } catch (err) {
+        logger.error('joiner pass acted but what it did could not be recorded', {
+            component: 'identity-joiner-pass',
+            tenantId: ctx.tenantId,
+            provider,
+            created: execution.created,
             error: redactDirectoryIdentifiers(err instanceof Error ? err.message : String(err), null),
         });
     }
@@ -612,7 +709,7 @@ export async function runIdentityJoinerPass(input: {
         // called with a mode that means "decide only". Above it, the pass is
         // reachable only when `JOINER_MAX_MODE` permits — which is the clamp
         // doing its job, and now the ONLY thing between a plan and a create.
-        await safeRecordPlan(ctx, trigger, input.provider, plan, {
+        const record = await safeRecordPlan(ctx, trigger, input.provider, plan, {
             observedAddresses: observed.addresses.length,
             observedTruncated: observed.truncated,
             linkFreshnessMs: JOINER_LINK_FRESHNESS_MS,
@@ -622,6 +719,9 @@ export async function runIdentityJoinerPass(input: {
             mode === 'DRY_RUN'
                 ? NOTHING_EXECUTED
                 : await executePlannedCreates(ctx, input.provider, mode, plan, starters);
+        if (execution.attempted > 0 || execution.refused > 0) {
+            await safeRecordExecution(ctx, input.provider, record, mode, plan, execution);
+        }
 
         if (execution.attempted > 0 || execution.refused > 0) {
             logger.info('joiner pass acted', {
