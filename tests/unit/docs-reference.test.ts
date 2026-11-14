@@ -322,6 +322,25 @@ describe('page actions — a name resolves from the scopes its use site can see'
         ).toEqual([null, ['api', 'other']]);
     });
 
+    it('does not resolve a const an enclosing scope declares BELOW the use site', () => {
+        // Deliberate, and inherited from refusals.ts so there stays ONE
+        // definition: a closure called after line 3 would see it, but the scan
+        // reads source order, and an unresolved call is listed with its reason
+        // while a guess is not retractable. Pinned because the scope walk alone
+        // does not refuse this, so nothing else would notice the guard going.
+        expect(
+            segmentsOf(
+                [
+                    'export function P() {',
+                    '    const load = () => fetch(url);',
+                    "    const url = '/api/later';",
+                    '    return load;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
     // A prop is the one name a use site cannot resolve on its own: its value is
     // written at the render site. This codebase hands `apiBase` to sibling
     // components in the same file, so the render site is where to read it.
