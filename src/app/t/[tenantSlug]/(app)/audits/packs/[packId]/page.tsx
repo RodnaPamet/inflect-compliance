@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { AppIcon, type AppIconName } from '@/components/icons/AppIcon';
-import { RequirePermission } from '@/components/require-permission';
+import { useTenantContext } from '@/lib/tenant-context-provider';
 import { IconAction } from '@/components/ui/icon-action';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { endOfUtcDay } from '@/components/ui/date-picker/date-utils';
 import { useCelebration, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
@@ -132,6 +133,8 @@ export default function PackDetailPage() {
     // #4129 — every control below is gated on what the SERVER allows this role
     // (`lib/audit-readiness/access.ts`), not on `audits.manage` / `audits.share`.
     const access = useAuditReadinessAccess();
+    const { permissions: tier, appPermissions } = useTenantContext();
+    const mayExportToSharePoint = !!tier?.canAdmin && !!appPermissions?.admin?.manage;
 
     // #10 — localize a raw enum value through the audits catalog, falling back
     // to a humanized form for any value not (yet) in the catalog (mirrors the
@@ -687,10 +690,12 @@ export default function PackDetailPage() {
                             label={tx('packs.cloneForRetest')}
                         />
                     )}
-                    {isFrozen && (
-                        <RequirePermission resource="audits" action="manage">
-                            <SharePointExportButton packId={packId} />
-                        </RequirePermission>
+                    {/* The export route takes `admin.manage` and its usecase the
+                        coarse admin tier (`assertCanAdmin`), so the button asks the
+                        same two — `audits.manage` offered it to Editors, whose
+                        every export was refused. */}
+                    {isFrozen && mayExportToSharePoint && (
+                        <SharePointExportButton packId={packId} />
                     )}
                 </>
             }
@@ -989,7 +994,11 @@ export default function PackDetailPage() {
                                 clearable
                                 align="start"
                                 value={shareExpiry}
-                                onChange={(next) => setShareExpiry(next)}
+                                // The picker answers with the picked DAY at 00:00 UTC.
+                                // A link chosen to expire "on" a day expires at the END
+                                // of it: at its start, picking today made a link that
+                                // was already expired.
+                                onChange={(next) => setShareExpiry(next ? endOfUtcDay(next) : null)}
                                 disabledDays={{ before: new Date() }}
                                 aria-label={tx('packs.shareModal.expiryLabel')}
                             />

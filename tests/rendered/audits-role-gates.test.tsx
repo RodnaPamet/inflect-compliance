@@ -138,10 +138,10 @@ function ctxFor(role: Role) {
     };
 }
 
-async function mount(ui: React.ReactElement, role: Role) {
+async function mount(ui: React.ReactElement, role: Role, ctx: ReturnType<typeof ctxFor> = ctxFor(role)) {
     const view = render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
-            <TenantProvider value={ctxFor(role)}>{ui}</TenantProvider>
+            <TenantProvider value={ctx}>{ui}</TenantProvider>
         </SWRConfig>,
     );
     await act(async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); });
@@ -460,6 +460,70 @@ describe('Audit pack detail', () => {
         expect(document.querySelector('[data-testid="materialize-comment-cm-1"]')).toBeTruthy();
         await waitFor(() => expect(byId('pack-shares-error')).toBeTruthy());
         expect(screen.queryByText('No share links yet.')).toBeNull();
+    });
+
+    // #5313 — the export route takes `admin.manage` (and its usecase the
+    // admin tier). The page asked `audits.manage`, which a custom role can
+    // hold without either: an Editor-based role granted audits.manage.
+    const auditsManagerWithoutAdmin = () => {
+        const ctx = ctxFor('EDITOR');
+        return {
+            ...ctx,
+            permissions: { ...ctx.permissions, canAdmin: false },
+            appPermissions: { ...ctx.appPermissions, audits: { ...ctx.appPermissions.audits, manage: true } },
+        };
+    };
+    it.each([
+        ['an audits.manage custom role without admin.manage', 'EDITOR', false],
+        ['an Owner', 'OWNER', true],
+    ] as const)('%s is offered Export to SharePoint only where the route takes it', async (_label, role, offered) => {
+        routes = packRoutes(frozen(), [get(/\/integrations\/sharepoint\/connections$/, { body: [{ id: 'conn-1' }] })]);
+        await mount(<PackDetailPage />, role, offered ? ctxFor(role) : auditsManagerWithoutAdmin());
+        await screen.findByText('Missing MFA evidence');
+        if (offered) {
+            await waitFor(() => expect(byId('sp-export-pack-btn')).toBeTruthy());
+        } else {
+            // Not mounted at all: the button would probe the connections on mount.
+            expect(requested(/\/integrations\/sharepoint\/connections$/)).toHaveLength(0);
+            expect(byId('sp-export-pack-btn')).toBeNull();
+        }
+    });
+
+    // #5313 — the date picker answers with the picked day at 00:00 UTC, so a
+    // link picked to expire today was already expired when it was made.
+    it('a picked expiry day expires at the end of that day, not its start', async () => {
+        const created: unknown[] = [];
+        routes = packRoutes(frozen(), [
+            (u, i) => {
+                if (i?.method === 'POST' && /action=share$/.test(u)) {
+                    created.push(JSON.parse(String(i.body)));
+                    return { body: { token: 'tok-1', expiresAt: null } };
+                }
+                return undefined;
+            },
+        ]);
+        await mount(<PackDetailPage />, 'OWNER');
+        await screen.findByText('Missing MFA evidence');
+        await act(async () => { fireEvent.click(byId('share-pack-btn')!); });
+        // Clear the 30-day default so the calendar opens on this month.
+        await act(async () => { fireEvent.click(byId('share-preset-none')!); });
+        const trigger = await waitFor(() => {
+            const el = document.querySelector('[data-date-picker-trigger]');
+            expect(el).toBeTruthy();
+            return el as HTMLElement;
+        });
+        await act(async () => { fireEvent.click(trigger); });
+        const now = new Date();
+        const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const today = await waitFor(() => {
+            const el = document.querySelector(`[data-day="${ymd}"] button`);
+            expect(el).toBeTruthy();
+            return el as HTMLElement;
+        });
+        await act(async () => { fireEvent.click(today); });
+        await act(async () => { fireEvent.click(byId('share-modal-submit')!); });
+        await waitFor(() => expect(created).toHaveLength(1));
+        expect(created[0]).toEqual({ expiresAt: `${ymd}T23:59:59.999Z` });
     });
 
     it('names the attached Statement of Applicability in words', async () => {

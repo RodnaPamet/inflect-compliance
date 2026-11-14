@@ -227,3 +227,22 @@ describe('calendar — the Timeline view (#4628)', () => {
         expect(panel).not.toContain('Click a day to see events on that date.');
     });
 });
+
+describe('calendar — the month view asks for every day its grid shows (#5313)', () => {
+    it('covers fourteen trailing days, not seven', async () => {
+        // February 2021 starts on a Monday (the grid's first weekday) and has
+        // 28 days, so the six-row grid ends on 14 March.
+        currentSearch = 'month=2021-02';
+        mount();
+        await waitFor(() =>
+            expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/calendar?'))).toBe(true),
+        );
+        const monthCall = fetchMock.mock.calls
+            .map(([u]) => String(u))
+            .find((u) => u.includes('/calendar?') && toParam(u) < Date.UTC(2021, 5, 1));
+        expect(monthCall).toBeDefined();
+        const params = new URL(monthCall as string, 'http://x').searchParams;
+        expect(new Date(params.get('from') as string).toISOString()).toBe('2021-02-01T00:00:00.000Z');
+        expect(new Date(params.get('to') as string).getTime()).toBeGreaterThanOrEqual(Date.UTC(2021, 2, 14, 23, 59));
+    });
+});
