@@ -164,6 +164,25 @@ ENV_FILES=(".env" ".env.prod")
 ENV_ARGS=""
 for f in "${ENV_FILES[@]}"; do ENV_ARGS="${ENV_ARGS} --env-file '${f}'"; done
 
+# The pipelock overlay's own environment file (#5308, owner decision
+# 2026-11-14). The overlay loads `.env.pipelock` through `env_file:` and never
+# `.env.prod`, so the master encryption key cannot reach that third-party
+# container. It is NOT an interpolation file, so it is not in ENV_FILES: the
+# overlay interpolates nothing, and putting it there would add its key to every
+# other service's interpolation scope for no reason.
+#
+# WHEN THE OVERLAY IS IN PLAY. Only when this script is pointed at the overlay
+# itself — COMPOSE_BASENAME=docker-compose.pipelock.yml, behind the escape hatch
+# below. The canonical set never includes it, and no other mode reads it. Then
+# the file must exist on the VM before anything is staged, validated or started
+# (pipelock_env_preflight): compose answers a missing `env_file:` with an error
+# about a path, and the quickest way to make that error go away is to point the
+# overlay back at `.env.prod`, which is the decision undone.
+PIPELOCK_OVERLAY="docker-compose.pipelock.yml"
+PIPELOCK_ENV_FILE=".env.pipelock"
+PIPELOCK_IN_SET=0
+if [ "$COMPOSE_BASENAME" = "$PIPELOCK_OVERLAY" ]; then PIPELOCK_IN_SET=1; fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOCAL_COMPOSE="${SCRIPT_DIR}/${COMPOSE_BASENAME}"
@@ -389,6 +408,40 @@ health_verify() {
             HEALTH_FAILED=1
         fi
     done
+}
+
+# ── The pipelock overlay's env file: present, or refuse ──────────────────
+#
+# A no-op unless the overlay is in play (PIPELOCK_IN_SET, set above). Reads
+# PRESENCE only — `test -f` as root — and never the file, so nothing of it can
+# reach a public log. Returns 2 (refused) when the file is absent and 1 when the
+# answer could not be read, which is UNKNOWN, never "present".
+pipelock_env_preflight() {
+    [ "$PIPELOCK_IN_SET" = "1" ] || return 0
+    log "the pipelock overlay is in the applied set: checking ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} exists (presence only)"
+    local answer
+    answer="$(ssh_vm "if sudo test -f '${REMOTE_DIR}/${PIPELOCK_ENV_FILE}'; then echo 'PIPELOCK_ENV PRESENT'; else echo 'PIPELOCK_ENV ABSENT'; fi" \
+        | tr -d '\r' | awk '$1 == "PIPELOCK_ENV" && ($2 == "PRESENT" || $2 == "ABSENT") { v = $2 } END { print v }')" || answer=""
+    case "$answer" in
+        PRESENT)
+            log "  OK   ${PIPELOCK_ENV_FILE} is present"
+            return 0
+            ;;
+        ABSENT)
+            err "refusing: ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} does not exist on ${VM_NAME}."
+            err "  The pipelock overlay reads its environment from that file and from no other."
+            err "  Create it root-owned, mode 0600, from deploy/.env.pipelock.example (read its"
+            err "  notes first: some variable names there must be confirmed against the pinned"
+            err "  release). Never point the overlay back at .env.prod to get past this: that"
+            err "  hands the master encryption key to a third-party container (#5308)."
+            return 2
+            ;;
+        *)
+            err "could not tell whether ${REMOTE_DIR}/${PIPELOCK_ENV_FILE} exists on ${VM_NAME}."
+            err "  Treat that as UNKNOWN, not present. Check gcloud auth / VM state."
+            return 1
+            ;;
+    esac
 }
 
 # ── Host config set: preflight and apply ─────────────────────────────────
@@ -896,6 +949,7 @@ if [ "${ROLLBACK:-0}" = "1" ]; then
         log "    skipped ${SAME} newer backup(s) identical to the live file (an apply that"
         log "    did not change the compose file still backs it up)"
     fi
+    pipelock_env_preflight || exit $?
     log "validating the backup on the VM: docker compose config"
     if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$BACKUP")' config -q 2>&1" 2>&1 | show compose; then
         err "the backup does not validate against today's env files. Nothing was changed."
@@ -950,6 +1004,8 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
     cp "$LOCAL_COMPOSE" "${TMP_PROJECT}/${COMPOSE_BASENAME}"
     # Placeholder for the `env_file:` directive only. Never read for values.
     : > "${TMP_PROJECT}/.env.prod"
+    # The same for the pipelock overlay, whose `env_file:` is its own file.
+    if [ "$PIPELOCK_IN_SET" = "1" ]; then : > "${TMP_PROJECT}/${PIPELOCK_ENV_FILE}"; fi
 
     if [ -n "${DRY_RUN_ENV_FILE:-}" ]; then
         if [ ! -f "$DRY_RUN_ENV_FILE" ]; then
@@ -992,6 +1048,11 @@ for entry in "${CANONICAL_SET[@]}"; do
     local_path="${entry%%:*}"
     [ -f "$local_path" ] || { err "canonical file missing from the repo: $local_path"; exit 1; }
 done
+
+# 0. The pipelock overlay's own env file, when the overlay is what is applied.
+#    Before anything else reads the VM's env files, so its refusal is the one
+#    the operator sees.
+pipelock_env_preflight || exit $?
 
 # 1. The host env files must exist, and must CARRY the three interpolation
 #    variables. We check for the KEY, never the value, and print neither.

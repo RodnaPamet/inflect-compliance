@@ -17,6 +17,9 @@ out/
 .env
 .env.local
 .env.prod
+# The pipelock overlay's own env file (#5308); its template is
+# deploy/.env.pipelock.example, which this pattern does not match.
+.env.pipelock
 .env.production
 .env.staging
 .env.test
