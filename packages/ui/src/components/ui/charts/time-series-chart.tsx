@@ -4,6 +4,7 @@
 import { Group } from "@visx/group";
 import { ParentSize } from "@visx/responsive";
 import { Bar, Circle, Line } from "@visx/shape";
+import { useTranslations } from "next-intl";
 import { PropsWithChildren, ReactNode, useMemo, useState } from "react";
 
 import { ChartContext, ChartTooltipContext } from "./chart-context";
@@ -66,15 +67,19 @@ interface TimeSeriesChartExtraProps {
 type TimeSeriesChartProps<T extends Datum> = PropsWithChildren<ChartProps<T>> &
     TimeSeriesChartExtraProps;
 
-const DEFAULT_EMPTY_STATE = (
-    <div
-        data-chart-empty
-        role="status"
-        className="flex h-full w-full items-center justify-center px-6 py-8 text-center text-sm text-content-muted"
-    >
-        No data available for this range.
-    </div>
-);
+/** The default empty state, in the viewer's language (#5312): it was English on every page. */
+function DefaultEmptyState() {
+    const t = useTranslations("common.chart");
+    return (
+        <div
+            data-chart-empty
+            role="status"
+            className="flex h-full w-full items-center justify-center px-6 py-8 text-center text-sm text-content-muted"
+        >
+            {t("noDataForRange")}
+        </div>
+    );
+}
 
 export function TimeSeriesChart<T extends Datum>(
     props: TimeSeriesChartProps<T>,
@@ -91,7 +96,7 @@ export function TimeSeriesChart<T extends Datum>(
                             style={{ width, height }}
                             className="flex items-center justify-center"
                         >
-                            {props.emptyState ?? DEFAULT_EMPTY_STATE}
+                            {props.emptyState ?? <DefaultEmptyState />}
                         </div>
                     );
                 }

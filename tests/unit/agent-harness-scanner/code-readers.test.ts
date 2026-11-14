@@ -342,3 +342,56 @@ const agent = build({ tools: null });
         expect(built.k === 'dict' ? built.entries : null).toEqual([['tools', { k: 'opaque', line: 7, absent: true }]]);
     });
 });
+
+describe('Python: a star import is attributed only when its family is clear (#5312)', () => {
+    const detect = (src: string) => recognizeAgents(readPython(src), { label: 'acme', path: 'x' });
+
+    it('one family of star modules still resolves, as before', () => {
+        const found = detect(`from langgraph.prebuilt import *
+real = create_react_agent("openai:gpt-4o", [])
+`);
+        expect(found.agents.map((a) => a.name)).toEqual(['real']);
+        expect(found.unresolved).toEqual([]);
+    });
+
+    it("a framework star import beside a module of the file's own is unresolved, never pinned to the first", () => {
+        // `helpers` first used to win: `helpers.initialize_agent` is nothing
+        // the recogniser knows, so the agent was missed and the source still
+        // reported itself COMPLETE.
+        const found = detect(`from helpers import *
+from langchain.agents import *
+agent = initialize_agent(tools, llm)
+`);
+        expect(found.agents).toEqual([]);
+        expect(found.unresolved.map((u) => u.line)).toEqual([3]);
+    });
+
+    it('two framework families are unresolved too: LangChain first no longer hides an Agent SDK query', () => {
+        const found = detect(`from langchain_openai import *
+from claude_agent_sdk import *
+async def main():
+    async for message in query(prompt="hi"):
+        pass
+`);
+        expect(found.agents).toEqual([]);
+        expect(found.unresolved.map((u) => u.line)).toEqual([4]);
+    });
+
+    it("a function the file defines itself is not the star import's, so it is no agent", () => {
+        const found = detect(`from langgraph.prebuilt import *
+def create_react_agent(model, tools):
+    return None
+real = create_react_agent("openai:gpt-4o", [])
+`);
+        expect(found.agents).toEqual([]);
+        expect(found.unresolved).toEqual([]);
+    });
+
+    it("a builtin is never a star import's, however mixed the imports", () => {
+        const found = detect(`from helpers import *
+from langchain.agents import *
+print(len("x"))
+`);
+        expect(found.unresolved).toEqual([]);
+    });
+});
