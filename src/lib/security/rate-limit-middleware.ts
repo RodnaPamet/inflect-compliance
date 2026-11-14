@@ -194,11 +194,13 @@ export function enforceRateLimit(
     const key = buildRateLimitKey(scope.scope, ip, scope.userId ?? null);
     const result = checkRateLimit(key, scope.config);
 
+    // The client IP is PII and stays out of both lines, as the read and auth
+    // tiers keep it out of theirs (#5306); the request id ties a line back to
+    // the caller.
     if (!result.allowed) {
         logger.warn('rate-limit.blocked', {
             component: 'rate-limit-middleware',
             scope: scope.scope,
-            ip,
             hasUserId: !!scope.userId,
             retryAfterMs: result.retryAfterMs,
         });
@@ -212,7 +214,6 @@ export function enforceRateLimit(
     logger.debug('rate-limit.allowed', {
         component: 'rate-limit-middleware',
         scope: scope.scope,
-        ip,
         hasUserId: !!scope.userId,
         remaining: result.remaining,
     });

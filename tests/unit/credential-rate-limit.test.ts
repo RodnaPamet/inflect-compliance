@@ -94,68 +94,75 @@ describe('checkCredentialsAttempt — memory fallback', () => {
     });
 });
 
-describe('resetCredentialsBackoff — Upstash DEL', () => {
-    // Build a chainable Redis mock that captures what the module
-    // calls without needing an actual Upstash instance. The
-    // `Ratelimit.limit` wrapper just needs to resolve to a "success"
-    // shape; reset just needs the `del` channel.
-    const mockDel = jest.fn().mockResolvedValue(1);
-    const mockLimit = jest
-        .fn()
-        .mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
+describe('resetCredentialsBackoff — Upstash', () => {
+    // The REAL `@upstash/ratelimit` over a fake Redis that runs the two
+    // scripts it sends: the sliding-window limit (counts per window key) and
+    // the reset (deletes every key matching a `…:*` pattern). The fake keeps
+    // a `del` too, so a reset that DELs a key the limiter never wrote is
+    // observed as what it is — a no-op on the stored counts (#5306).
+    const store = new Map<string, number>();
+    const fakeRedis = {
+        evalsha: jest.fn(async (_hash: string, keys: string[], args: unknown[]) => {
+            if (keys.length === 1 && keys[0].endsWith(':*')) {
+                const prefix = keys[0].slice(0, -1);
+                for (const k of [...store.keys()]) if (k.startsWith(prefix)) store.delete(k);
+                return null;
+            }
+            const tokens = Number(args[0]);
+            const used = (store.get(keys[0]) ?? 0) + 1;
+            store.set(keys[0], used);
+            return [tokens - used, tokens];
+        }),
+        eval: jest.fn(),
+        del: jest.fn(async (k: string) => (store.delete(k) ? 1 : 0)),
+    };
 
     beforeEach(() => {
-        mockDel.mockClear();
-        mockLimit.mockClear();
+        store.clear();
+        fakeRedis.evalsha.mockClear();
+        fakeRedis.del.mockClear();
         jest.resetModules();
         jest.doMock('@upstash/redis', () => ({
-            Redis: { fromEnv: () => ({ del: mockDel }) },
-        }));
-        jest.doMock('@upstash/ratelimit', () => ({
-            Ratelimit: Object.assign(
-                function () {
-                    return { limit: mockLimit };
-                },
-                { slidingWindow: () => ({}) },
-            ),
+            Redis: { fromEnv: () => fakeRedis },
         }));
         mockEnv.RATE_LIMIT_MODE = 'upstash';
     });
 
     afterEach(() => {
         jest.dontMock('@upstash/redis');
-        jest.dontMock('@upstash/ratelimit');
         mockEnv.RATE_LIMIT_MODE = 'memory';
     });
 
-    it('fires `redis.del(key)` against Upstash on reset', async () => {
+    it('a successful sign-in clears the bucket the limiter actually wrote', async () => {
         const fresh = await import('@/lib/auth/credential-rate-limit');
         fresh.__resetCredentialsRateLimitForTests();
 
-        // One attempt to bootstrap initLimiter() — that's when the
-        // mocked Redis singleton lands inside the module.
-        await fresh.checkCredentialsAttempt('alice@example.com');
-        expect(mockLimit).toHaveBeenCalledTimes(1);
-
-        await fresh.resetCredentialsBackoff('alice@example.com');
-        expect(mockDel).toHaveBeenCalledTimes(1);
-        // The key shape is the documented `rl:cred:id:<sha256(email)>`.
-        expect(mockDel.mock.calls[0][0]).toMatch(/^rl:cred:id:[0-9a-f]{64}$/);
+        // Five successful sign-ins in the window, each resetting after.
+        for (let i = 0; i < CREDENTIALS_RATE_LIMIT.maxAttempts; i++) {
+            expect(await fresh.checkCredentialsAttempt('alice@example.com')).toEqual({ ok: true });
+            await fresh.resetCredentialsBackoff('alice@example.com');
+        }
+        // The sixth correct password is not refused.
+        expect(await fresh.checkCredentialsAttempt('alice@example.com')).toEqual({ ok: true });
+        // The limiter's keys are prefixed and per-window, never the bare key.
+        const keys = [...store.keys()];
+        expect(keys.length).toBeGreaterThan(0);
+        const LIMITER_KEY = /^@upstash\/ratelimit:rl:cred:id:[0-9a-f]{64}:\d+$/;
+        expect(keys.filter((k) => !LIMITER_KEY.test(k))).toEqual([]);
     });
 
     it('reset fails open if Redis throws — memory bucket still cleared', async () => {
-        mockDel.mockRejectedValueOnce(new Error('upstash blip'));
         const fresh = await import('@/lib/auth/credential-rate-limit');
         fresh.__resetCredentialsRateLimitForTests();
         await fresh.checkCredentialsAttempt('bob@example.com');
 
-        // The Redis call inside reset should reject, but the function
-        // resolves cleanly — better to let a successful login through
-        // than to 500 on a Redis blip.
+        fakeRedis.evalsha.mockRejectedValueOnce(new Error('upstash blip'));
+        // The Redis call inside reset rejects, but the function resolves
+        // cleanly — better to let a successful login through than to 500 on
+        // a Redis blip.
         await expect(
             fresh.resetCredentialsBackoff('bob@example.com'),
         ).resolves.toBeUndefined();
-        expect(mockDel).toHaveBeenCalledTimes(1);
     });
 });
 

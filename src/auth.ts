@@ -42,6 +42,7 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
+import { hashEmailForLog } from '@/lib/auth/security-events';
 import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
@@ -754,7 +755,10 @@ export const authOptions: NextAuthOptions = {
                 edgeLogger.warn('signIn rejected: provider reported email_verified=false', {
                     component: 'auth',
                     provider: account.provider,
-                    email: user.email ?? undefined,
+                    // Never the raw address: the operational log carries no
+                    // tenant scope or retention policy. The hash is the same
+                    // per-identifier key the other auth events log.
+                    identifierHash: user.email ? hashEmailForLog(user.email) : undefined,
                 });
                 return false;
             }
@@ -1119,10 +1123,16 @@ export const authOptions: NextAuthOptions = {
                         token.mfaPending = false;
                     }
                 } catch {
+                    // The challenge is KNOWN to be pending here, so failing to
+                    // read whether it was passed is not evidence that it was:
+                    // the session stays pending whatever `mfaFailClosed` says,
+                    // and the next read asks again. The fail-open switch
+                    // governs only the sign-in policy read above, where a
+                    // failure leaves it unknown whether a code is wanted at
+                    // all (#5306). It used to clear `mfaPending` here, so one
+                    // transient read failure turned "pending" into "passed".
                     if (token.mfaFailClosed) {
                         token.error = 'MfaDependencyFailure';
-                    } else {
-                        token.mfaPending = false;
                     }
                 }
             }

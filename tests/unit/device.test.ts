@@ -18,7 +18,7 @@ jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 
 import { runDeviceCheck, type CheckDevice } from '@/app-layer/integrations/providers/device/checks';
 import { DeviceProvider } from '@/app-layer/integrations/providers/device';
-import { generateDeviceToken, hashDeviceToken, verifyDeviceToken } from '@/lib/auth/device-token-auth';
+import { authorizeDeviceReport, generateDeviceToken, hashDeviceToken, verifyDeviceToken } from '@/lib/auth/device-token-auth';
 import { reportDevice, issueDeviceToken, revokeDeviceToken, listDevices } from '@/app-layer/usecases/device';
 import { prisma } from '@/lib/prisma';
 import { makeRequestContext } from '../helpers/make-context';
@@ -86,6 +86,18 @@ describe('device-token auth', () => {
         const r = await verifyDeviceToken('icdt_x', '1.2.3.4', NOW);
         expect(r).toMatchObject({ valid: true, tenantId: 'T1', tokenId: 'tok-1' });
         expect(mPrisma.tenantDeviceToken.update).toHaveBeenCalled();
+    });
+
+    it('authorizeDeviceReport admits a live token into its own live tenant', async () => {
+        mPrisma.tenantDeviceToken.findUnique.mockResolvedValueOnce({ id: 'tok-1', tenantId: 'T1', expiresAt: null, revokedAt: null, lastUsedAt: NOW });
+        mPrisma.tenant.findUnique.mockResolvedValueOnce({ id: 'T1', deletedAt: null });
+        expect(await authorizeDeviceReport('icdt_x', 'acme', null, NOW)).toEqual({ ok: true, tenantId: 'T1' });
+    });
+
+    it('authorizeDeviceReport refuses a live token into a soft-deleted tenant (#5306)', async () => {
+        mPrisma.tenantDeviceToken.findUnique.mockResolvedValueOnce({ id: 'tok-1', tenantId: 'T1', expiresAt: null, revokedAt: null, lastUsedAt: NOW });
+        mPrisma.tenant.findUnique.mockResolvedValueOnce({ id: 'T1', deletedAt: new Date('2026-05-01') });
+        expect(await authorizeDeviceReport('icdt_x', 'acme', null, NOW)).toEqual({ ok: false, status: 401 });
     });
 });
 

@@ -105,12 +105,19 @@ model TenantSecuritySettings {
 ### Behavior
 | mfaFailClosed | MFA Dependency Failure | Token Error |
 |---|---|---|
-| `false` (default) | Fail open — allow through | none |
+| `false` (default) | Sign-in policy read: fail open — allow through | none |
 | `true` | Fail closed — deny access | `MfaDependencyFailure` |
 
-Both MFA check points in `src/auth.ts` JWT callback respect this setting:
-1. **Sign-in MFA check** — sets `mfaPending=true` + `error='MfaDependencyFailure'`
-2. **Challenge completion check** — keeps `mfaPending=true` (access denied)
+The two MFA check points in `src/auth.ts` JWT callback:
+1. **Sign-in MFA check** — the setting decides. Fail closed sets
+   `mfaPending=true` + `error='MfaDependencyFailure'`; fail open leaves the
+   session unheld, because a failed read leaves it unknown whether a code is
+   wanted at all.
+2. **Challenge completion check** — a session already known to be pending
+   STAYS pending on a read failure whatever the setting says: failing to read
+   whether the challenge was passed is not evidence that it was. Fail closed
+   also sets `error='MfaDependencyFailure'`. (Before #5306 fail open cleared
+   `mfaPending` here, so one transient read failure turned pending into passed.)
 
 The `mfaFailClosed` flag is cached in the JWT token so subsequent requests don't need to re-read settings.
 

@@ -145,7 +145,10 @@ describe('Fail-closed MFA policy', () => {
      * These tests verify the fail-closed MFA logic that was implemented in
      * src/auth.ts JWT callback. They test the decision logic directly:
      * - When mfaFailClosed=true, MFA dependency failures should deny access
-     * - When mfaFailClosed=false (default), MFA dependency failures should allow through
+     * - When mfaFailClosed=false (default), a failure of the SIGN-IN policy read
+     *   allows through; a failure while checking a known pending challenge
+     *   never clears it (#5306). The real callback is driven in
+     *   tests/unit/mfa-per-workspace.test.ts.
      */
 
     interface TokenState {
@@ -178,11 +181,9 @@ describe('Fail-closed MFA policy', () => {
                 error: 'MfaDependencyFailure',
             };
         }
-        // Default: fail open — clear mfaPending
-        return {
-            ...token,
-            mfaPending: false,
-        };
+        // Default: the challenge is known to be pending, so a failed read
+        // is not a pass — mfaPending stays as it was (#5306).
+        return { ...token };
     }
 
     describe('sign-in MFA dependency failure', () => {
@@ -215,12 +216,12 @@ describe('Fail-closed MFA policy', () => {
             expect(result.error).toBe('MfaDependencyFailure');
         });
 
-        test('fail-open: clears mfaPending when challenge check fails', () => {
+        test('fail-open: still keeps mfaPending=true when challenge check fails (#5306)', () => {
             const result = simulateChallengeCheckCatch({
                 mfaPending: true, // was pending before
                 mfaFailClosed: false,
             });
-            expect(result.mfaPending).toBe(false);
+            expect(result.mfaPending).toBe(true);
             expect(result.error).toBeUndefined();
         });
     });
