@@ -74,6 +74,15 @@ jest.mock('@/env', () => {
     };
 });
 
+// The generic start route's own authentication is not the subject of the case
+// that drives it below: its context is handed in, as the profile-trigger suite
+// does. Every other case calls the usecases with a context it built itself.
+const tenantCtx = jest.fn();
+jest.mock('@/app-layer/context', () => ({
+    ...jest.requireActual('@/app-layer/context'),
+    getTenantCtx: (...a: unknown[]) => tenantCtx(...a),
+}));
+
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 jest.setTimeout(60_000);
@@ -296,5 +305,34 @@ describeFn('a question asked and read back (integration)', () => {
         };
         const result = await readAdHocQuestionResult(admin, started.runId);
         expect(result.runId).toBe(started.runId);
+    });
+
+    /**
+     * #5304, owner decision 2026-11-14: the generic start route REFUSES the
+     * ad-hoc question. That route sanitises nothing and rate-limits nobody, so
+     * a question started there skipped both; the questions route above is the
+     * one door. Refused before the run row exists, for the OWNER who may start
+     * every other workflow there.
+     */
+    it('the generic POST /agent-runs refuses it AD_HOC_QUESTION_USE_QUESTIONS_ROUTE, and writes no run', async () => {
+        const { NextRequest } = await import('next/server');
+        const { POST: START_RUN } = await import('@/app/api/t/[tenantSlug]/agent-runs/route');
+        tenantCtx.mockResolvedValue({
+            ...readerCtx(),
+            role: 'OWNER',
+            permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
+            appPermissions: getPermissionsForRole('OWNER'),
+        });
+        const before = await prisma.workflowRun.count({ where: { tenantId: TENANT_ID } });
+
+        const req = new NextRequest(`http://localhost/api/t/${TAG}/agent-runs`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ workflowKey: 'ad-hoc-question', input: { question: 'Which controls are overdue?' } }),
+        });
+        const res = await START_RUN(req, { params: Promise.resolve({ tenantSlug: TAG }) });
+        expect(res.status).toBe(400);
+        expect(JSON.stringify(await res.json())).toContain('AD_HOC_QUESTION_USE_QUESTIONS_ROUTE');
+        expect(await prisma.workflowRun.count({ where: { tenantId: TENANT_ID } })).toBe(before);
     });
 });

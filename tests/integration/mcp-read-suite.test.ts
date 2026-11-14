@@ -223,6 +223,41 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         expect(risks.length).toBe(1);
     });
 
+    /**
+     * #5304, owner decision 2026-11-14: the score filter reaches 100, the
+     * largest score a 10x10 matrix gives. It stopped at 25, so an agent on such
+     * a matrix asking for its critical risks (`scoreMin: 50`) got "Invalid
+     * arguments", and `scoreMax: 25` silently left out every risk above it.
+     */
+    it('list_risks filters to the top of a 10x10 matrix (score up to 100)', async () => {
+        const high = await prisma.risk.create({
+            data: {
+                tenantId: TENANT_A, title: `${TENANT_A}-risk-critical`, description: 'x', category: 'Cybersecurity',
+                impact: 10, likelihood: 9, score: 90, inherentScore: 90, status: 'OPEN',
+                createdByUserId: `u-${TENANT_A}`,
+            },
+        });
+        try {
+            const top = await rpc(keyRisksA, {
+                jsonrpc: '2.0', id: 51, method: 'tools/call',
+                params: { name: 'list_risks', arguments: { scoreMin: 50, scoreMax: 100 } },
+            });
+            const risks = toolResult(top.json) as Array<{ id: string }>;
+            expect(risks.map((r) => r.id)).toEqual([high.id]);
+
+            // The bound still binds, one past the largest possible score.
+            const over = await rpc(keyRisksA, {
+                jsonrpc: '2.0', id: 52, method: 'tools/call',
+                params: { name: 'list_risks', arguments: { scoreMin: 101 } },
+            });
+            const r = over.json as { error?: { message: string }; result?: unknown };
+            expect(r.result).toBeUndefined();
+            expect(r.error?.message).toMatch(/invalid arguments/i);
+        } finally {
+            await prisma.risk.delete({ where: { id: high.id } });
+        }
+    });
+
     it('resources/list exposes the framework catalogue + per-framework requirements', async () => {
         const { json } = await rpc(keyFrameworksA, { jsonrpc: '2.0', id: 6, method: 'resources/list' });
         const uris = (json as { result: { resources: Array<{ uri: string }> } }).result.resources.map((r) => r.uri);

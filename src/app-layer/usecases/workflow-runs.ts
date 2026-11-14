@@ -299,9 +299,12 @@ export async function startWorkflowRun(
          * allows (`resolveRunDefinition`): `'TEST_RUN'` from the Test-run
          * usecase (which alone also admits a Test-run key and a SUBMITTED
          * version), `'ASK'` from `startInteractiveRun`, `'AUTOMATION'` from the
-         * `agent-invoke` dispatcher. Ignored for a registered workflow key.
+         * `agent-invoke` dispatcher. Ignored for a registered workflow key
+         * but one: the ad-hoc question is refused a start that names no
+         * trigger and is no A2A delivery (#5304).
          * The generic start route passes none, so it starts no profile
-         * (`PROFILE_TRIGGER_REQUIRED`) and no Test-run key.
+         * (`PROFILE_TRIGGER_REQUIRED`), no Test-run key and no ad-hoc question
+         * (`AD_HOC_QUESTION_USE_QUESTIONS_ROUTE`).
          */
         profileTrigger?: ProfileTrigger;
     } = {},

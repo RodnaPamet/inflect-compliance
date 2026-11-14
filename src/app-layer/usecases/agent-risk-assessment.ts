@@ -62,6 +62,7 @@ import {
 } from '@/lib/agentic/agent-risk-scoring';
 import {
     evaluateAssessmentStaleness,
+    type AgentCurrentState,
     type AssessmentBasis,
     type StalenessVerdict,
 } from '@/lib/agentic/agent-assessment-staleness';
@@ -90,8 +91,13 @@ async function loadAgentScoringState(db: PrismaTx, ctx: RequestContext, agentId:
 
 type AgentScoringState = Awaited<ReturnType<typeof loadAgentScoringState>>;
 
-/** The live agent expressed as a basis, so `evaluate…` compares like with like. */
-function currentBasis(agent: AgentScoringState): AssessmentBasis {
+/**
+ * What a completion freezes onto the run: the axes, the model and the granted
+ * tool COUNT. The count is still recorded, for the evidence descriptor and the
+ * audit row, but it no longer decides staleness: grant TIME does (#5304), read
+ * from the grant rows against the run's `completedAt`.
+ */
+function recordedBasis(agent: AgentScoringState) {
     return {
         autonomyLevel: agent.autonomyLevel,
         dataAccessScope: agent.dataAccessScope,
@@ -99,6 +105,18 @@ function currentBasis(agent: AgentScoringState): AssessmentBasis {
         provenance: agent.provenance,
         toolCount: agent._count.tools,
         modelRef: agent.modelRef,
+    };
+}
+
+/** The live agent as the staleness comparison reads it. */
+function currentState(agent: AgentScoringState): AgentCurrentState {
+    return {
+        autonomyLevel: agent.autonomyLevel,
+        dataAccessScope: agent.dataAccessScope,
+        reversibility: agent.reversibility,
+        provenance: agent.provenance,
+        modelRef: agent.modelRef,
+        grants: agent.tools.map((t) => ({ toolName: t.toolName, grantedAt: t.createdAt })),
     };
 }
 
@@ -276,7 +294,7 @@ export async function completeAgentRiskAssessment(ctx: RequestContext, agentId: 
             new Map(answers.map((a) => [a.questionId, a.answer])),
         );
 
-        const basis = currentBasis(agent);
+        const basis = recordedBasis(agent);
         const scoredAt = new Date();
 
         const recorded = await AgentRiskAssessmentRepository.recordScore(db, ctx, assessment.id, {
@@ -395,6 +413,11 @@ type StoredBasis = {
     basisProvenance: AgentScoringState['provenance'] | null;
     basisToolCount: number | null;
     basisModelRef: string | null;
+    /**
+     * The scoring time. `recordScore` is the only writer of COMPLETED and
+     * stamps it in the same update, so a scored run always carries one.
+     */
+    completedAt: Date | null;
 };
 
 /**
@@ -408,7 +431,8 @@ function storedBasis(assessment: StoredBasis): AssessmentBasis | null {
         assessment.basisDataAccessScope === null ||
         assessment.basisReversibility === null ||
         assessment.basisProvenance === null ||
-        assessment.basisToolCount === null
+        assessment.basisToolCount === null ||
+        assessment.completedAt === null
     ) {
         return null;
     }
@@ -417,7 +441,7 @@ function storedBasis(assessment: StoredBasis): AssessmentBasis | null {
         dataAccessScope: assessment.basisDataAccessScope,
         reversibility: assessment.basisReversibility,
         provenance: assessment.basisProvenance,
-        toolCount: assessment.basisToolCount,
+        scoredAt: assessment.completedAt,
         modelRef: assessment.basisModelRef,
     };
 }
@@ -428,7 +452,7 @@ function stalenessFor(
 ): StalenessVerdict | null {
     const basis = storedBasis(assessment);
     if (!basis) return null;
-    return evaluateAssessmentStaleness(basis, currentBasis(agent));
+    return evaluateAssessmentStaleness(basis, currentState(agent));
 }
 
 /**
