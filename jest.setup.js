@@ -32,7 +32,11 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL =
     readEnvFileUrl('.env') || readEnvFileUrl('.env.test') || '';
 }
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password@localhost:5432/testdb';
+const {
+  resolveTestDatabaseUrl,
+  PLACEHOLDER_DATABASE_URL,
+} = require('./tests/helpers/resolve-test-database-url');
+process.env.DATABASE_URL = process.env.DATABASE_URL || PLACEHOLDER_DATABASE_URL;
 
 // Per-worker DB isolation (flake fix): when globalSetup created one DB
 // per Jest worker, repoint THIS worker's DATABASE_URL at its own clone
@@ -58,24 +62,31 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://user:password
 // per-worker ones. A missing helper must fail the run, not degrade it.
 const { currentRunMarker } = require('./tests/helpers/test-db-checkout');
 const runMarker = currentRunMarker();
+// The DECISION lives in `tests/helpers/resolve-test-database-url.js` so it can
+// be driven by a test; this file only reads the marker and applies the answer.
+// A SERIAL run used to be left on the placeholder here, because the repoint was
+// written for per-worker clones only — see that module's header for what that
+// cost locally (#5567).
+let markerContents = null;
 try {
   const fs = require('fs');
-  const marker = runMarker ? JSON.parse(fs.readFileSync(runMarker, 'utf8')) : { perWorker: false };
-  if (marker.perWorker) {
-    const u = new URL(marker.baseUrl);
-    const wid = process.env.JEST_WORKER_ID || '1';
-    // Take the name globalSetup RECORDED creating. This file is plain JS and
-    // cannot import the TS helper that owns the naming scheme, so the only
-    // alternative is re-deriving it here — which is how this site drifted in
-    // the first place: it spelled `baseName + '_w' + wid` while the helper
-    // moved on, and the worker then connected to a database nobody created.
-    // Reading the record cannot drift.
-    const recorded = Array.isArray(marker.workerDbs) ? marker.workerDbs[Number(wid) - 1] : null;
-    u.pathname = '/' + (recorded || marker.baseName + '_w' + wid);
-    process.env.DATABASE_URL = u.toString();
-    process.env.DIRECT_DATABASE_URL = u.toString();
-  }
-} catch { /* no marker → shared-DB mode, leave DATABASE_URL as resolved */ }
+  markerContents = runMarker ? JSON.parse(fs.readFileSync(runMarker, 'utf8')) : null;
+} catch {
+  // A named-but-unreadable marker. Left null, and the resolver decides: with a
+  // marker named and the placeholder still in hand it REFUSES, rather than
+  // degrading to a database nobody provisioned.
+  markerContents = null;
+}
+const resolved = resolveTestDatabaseUrl({
+  current: process.env.DATABASE_URL,
+  marker: markerContents,
+  workerId: process.env.JEST_WORKER_ID || '1',
+  markerNamed: Boolean(runMarker),
+});
+if (resolved.url) {
+  process.env.DATABASE_URL = resolved.url;
+  process.env.DIRECT_DATABASE_URL = resolved.url;
+}
 process.env.AUTH_SECRET = 'supersecretstringthatis16charplus'; // pragma: allowlist secret -- test fixture
 process.env.JWT_SECRET = 'supersecretstringthatis16charplus'; // pragma: allowlist secret -- test fixture
 process.env.GOOGLE_CLIENT_ID = 'test-google-id';
