@@ -976,13 +976,41 @@ export const authOptions: NextAuthOptions = {
                 token.mfaPending = false;
                 const activeTenantId = token.tenantId ?? null;
                 if (activeTenantId) {
+                    // ── THE FLAG FIRST, AND IN ITS OWN READ (#5588) ──
+                    //
+                    // `mfaFailClosed` governs what the policy read's catch does,
+                    // and it used to be assigned INSIDE that read's try. So when
+                    // the read threw it had never been assigned on this pass: on
+                    // a fresh sign-in the token carried no previous value, the
+                    // catch saw `undefined`, and the tenant's opt-in was ignored
+                    // at precisely the moment it was chosen for. It worked on
+                    // later requests only because the token still held a value a
+                    // previous SUCCESSFUL read had written — reliable only while
+                    // it was not needed.
+                    //
+                    // One column, so this fails independently of the policy read
+                    // rather than with it. What it cannot fix is a total outage,
+                    // where both reads fail and there is nothing to read the
+                    // flag from; it then keeps whatever a previous pass
+                    // established, which is better than `undefined` and is the
+                    // most an extra query can buy. Making an unreadable row mean
+                    // fail-closed would change behaviour for tenants that never
+                    // opted in, which is a different decision.
+                    try {
+                        const flagRow = await prisma.tenantSecuritySettings.findUnique({
+                            where: { tenantId: activeTenantId },
+                            select: { mfaFailClosed: true },
+                        });
+                        token.mfaFailClosed = flagRow?.mfaFailClosed ?? false;
+                    } catch {
+                        token.mfaFailClosed = token.mfaFailClosed ?? false;
+                    }
+
                     try {
                         const secSettings = await prisma.tenantSecuritySettings.findUnique({
                             where: { tenantId: activeTenantId },
                         });
                         const policy = secSettings?.mfaPolicy ?? 'DISABLED';
-                        const failClosed = secSettings?.mfaFailClosed ?? false;
-                        token.mfaFailClosed = failClosed;
 
                         if (policy === 'REQUIRED' || policy === 'OPTIONAL') {
                             const enrollment = await prisma.userMfaEnrollment.findUnique({
@@ -1119,11 +1147,28 @@ export const authOptions: NextAuthOptions = {
                         token.mfaPending = false;
                     }
                 } catch {
-                    if (token.mfaFailClosed) {
-                        token.error = 'MfaDependencyFailure';
-                    } else {
-                        token.mfaPending = false;
-                    }
+                    // STAYS PENDING, for every tenant (#5587, owner decision
+                    // 2026-11-14). This arm used to clear `mfaPending` unless
+                    // the tenant had set `mfaFailClosed` — which defaults to
+                    // false — so one transient failure on the read above turned
+                    // a KNOWN pending challenge into a passed one, and the
+                    // session held full access on a password alone. The `jwt`
+                    // callback runs on every server read, so it was reachable
+                    // by retrying `GET /api/auth/session` until the read failed.
+                    //
+                    // "Could not confirm the challenge was passed" is not
+                    // evidence that it was. The block below has always read it
+                    // that way for the session's OTHER workspaces — "A read
+                    // failure leaves them pending; the person can still pass
+                    // the challenge" — and this is the same question.
+                    //
+                    // `mfaFailClosed` is deliberately NOT consulted here. It
+                    // answers a different question, at sign-in: if we cannot
+                    // read WHETHER a workspace requires MFA, do we admit the
+                    // session? That has a real availability trade-off and a
+                    // tenant switch. Whether THIS session passed a challenge we
+                    // already know it owes has neither.
+                    token.error = 'MfaDependencyFailure';
                 }
             }
 
