@@ -36,6 +36,16 @@ scanner signed it, so each estate has a scanner of its own.
    (1 to 720), and each source kind with its owner. Every owner must be an
    active member of the tenant (owner decision, 2026-10-19), and an estate
    declares at least one source.
+5. **For the third-party application report, issue a second key.** A scanner
+   that also reads which applications a directory has granted access to (Entra,
+   Okta, GitHub) signs a second report, `scanent-integrations/1`, with the SAME
+   signing key, and posts it to
+   `POST /api/t/{slug}/admin/agents/integration-scans`. That route takes
+   `admin.integrations_ingest`, which an API key gets from the
+   `admin:integrations_ingest` scope and from no other named scope: a key
+   minted with `admin:harness_ingest` alone cannot post it, and the other way
+   round (owner decision). Bind it to the scanner agent too. Its results are the
+   Integrations tab on `/agents/reports`.
 
 ## 2. In the estate
 

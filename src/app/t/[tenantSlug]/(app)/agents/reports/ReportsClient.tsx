@@ -15,6 +15,7 @@ import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { HarnessMatrixView, HarnessScannerKeysView } from '@/lib/agentic/harness-read-model';
 import type { HarnessEstateHealthView } from '@/lib/agentic/harness-estate-health';
+import type { ThirdPartyAppInventoryView } from '@/lib/agentic/third-party-app-read-model';
 import type { BehaviourReportView } from './behaviour/BehaviourTab';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
@@ -29,6 +30,11 @@ import { Metric, type DefinitionView, type MeasureView } from './Metric';
  * loosened the catch-all for every tenant page to make room for one tab.
  */
 const HarnessTab = dynamic(() => import('./harness/HarnessTab').then((m) => m.HarnessTab), {
+    loading: () => <SkeletonCard lines={4} />,
+});
+
+/** Loaded on demand for the same reason: the integrations view is not the default tab either. */
+const IntegrationsTab = dynamic(() => import('./integrations/IntegrationsTab').then((m) => m.IntegrationsTab), {
     loading: () => <SkeletonCard lines={4} />,
 });
 
@@ -177,14 +183,18 @@ export type HarnessTabProps = ReportsCommonProps & {
     estateHealth: HarnessEstateHealthView;
 };
 
+/** The third-party application inventory, read server-side by `getThirdPartyAppInventory`. */
+export type IntegrationsTabProps = ReportsCommonProps & { tab: 'integrations'; integrations: ThirdPartyAppInventoryView };
+
 /** The behaviour-fingerprint anomalies (Morpheus 1.3), read by `listAgentBehaviourAnomalies` under the register key. */
 export type BehaviourTabProps = ReportsCommonProps & { tab: 'behaviour'; behaviour: BehaviourReportView };
 
-export function ReportsClient(props: PackTabProps | HarnessTabProps | BehaviourTabProps) {
+export function ReportsClient(props: PackTabProps | HarnessTabProps | IntegrationsTabProps | BehaviourTabProps) {
     const { tenantSlug, canReviewProposals, canCompose, canInvestigate, canExport, canSetOrphanPass = false } = props;
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
-    const tab = props.tab === 'harness' ? 'harness' : props.tab === 'behaviour' ? 'behaviour' : 'pack';
+    const tab =
+        props.tab === 'harness' || props.tab === 'integrations' || props.tab === 'behaviour' ? props.tab : 'pack';
 
     return (
         <DashboardLayout
@@ -218,7 +228,7 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | BehaviourT
                 ),
             }}
         >
-            {/* Two fixed artefacts behind one gate. Link mode: the SERVER
+            {/* Fixed artefacts behind one gate. Link mode: the SERVER
                 chooses which one to read, so a tab is a navigation and neither
                 tab's data is fetched for the other. */}
             <div data-testid="reports-tabs">
@@ -239,6 +249,12 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | BehaviourT
                             href: tenantHref('/agents/reports?tab=harness'),
                             id: 'reports-tab-harness',
                         },
+                        {
+                            value: 'integrations',
+                            label: t('reports.tabIntegrations'),
+                            href: tenantHref('/agents/reports?tab=integrations'),
+                            id: 'reports-tab-integrations',
+                        },
                         // The register key's view (the fingerprint route's
                         // key): not offered to a view-key reader, whom the
                         // page would answer with the pack.
@@ -257,6 +273,8 @@ export function ReportsClient(props: PackTabProps | HarnessTabProps | BehaviourT
             </div>
             {props.tab === 'behaviour' ? (
                 <BehaviourTab view={props.behaviour} />
+            ) : props.tab === 'integrations' ? (
+                <IntegrationsTab view={props.integrations} />
             ) : props.tab === 'harness' ? (
                 <HarnessTab
                     view={props.harness}

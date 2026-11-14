@@ -42,6 +42,7 @@ let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _harnessScan: Counter | null = null;
+let _thirdPartyAppScan: Counter | null = null;
 let _deviceReport: Counter | null = null;
 let _aiGeneration: Counter | null = null;
 let _aiTokens: Histogram | null = null;
@@ -388,6 +389,32 @@ export function recordHarnessScanOutcome(attrs:
         });
     }
     _harnessScan.add(1, attrs.outcome === 'ingested'
+        ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
+        : { outcome: attrs.outcome, reason: attrs.reason });
+}
+
+/**
+ * One third-party application scan submission (`scanent-integrations/1`), by
+ * how it ended: the harness scan's twin, for the scanner's second report.
+ *
+ * Emitted on every terminal path, refusals included, with `empty` beside
+ * `complete` for the reason the harness metric carries both: a scanner that
+ * stopped posting and one posting reports that list no application look alike
+ * from its side. A refusal carries its stable reason code (`BAD_SIGNATURE`,
+ * `UNTRUSTED_SIGNER`, `REPLAY`, …) — never anything from the report.
+ *
+ * No tenant label: a handful of outcomes and reasons.
+ */
+export function recordThirdPartyAppScanOutcome(attrs:
+    | { outcome: 'ingested'; complete: boolean; empty: boolean }
+    | { outcome: 'refused'; reason: string }): void {
+    if (!_thirdPartyAppScan) {
+        _thirdPartyAppScan = getMeter().createCounter('third_party_app.scan.outcome', {
+            description: 'Third-party application scan submissions by outcome',
+            unit: '1',
+        });
+    }
+    _thirdPartyAppScan.add(1, attrs.outcome === 'ingested'
         ? { outcome: attrs.outcome, complete: String(attrs.complete), empty: String(attrs.empty) }
         : { outcome: attrs.outcome, reason: attrs.reason });
 }

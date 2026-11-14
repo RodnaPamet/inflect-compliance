@@ -24,7 +24,7 @@
  * #3720. Its census is `tests/unit/owner-custom-role.test.ts`.
  *
  * Which custom roles only an ADMIN membership may carry is a third rule
- * (owner decisions, 2026-10-30): one granting one of ten admin keys
+ * (owner decisions, 2026-10-30): one granting one of eleven admin keys
  * (`ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS`), and one built on ADMIN
  * (`customRoleCarriageRefusal`). Its census is
  * `tests/unit/custom-role-carriage-writers.test.ts`.
@@ -337,7 +337,7 @@ export const ADMIN_API_ONLY_KEYS = [
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**
- * Part two: four keys refused BY DECISION (owner decision, 2026-10-30). Unlike
+ * Part two: five keys refused BY DECISION (owner decision, 2026-10-30). Unlike
  * the six above they are NOT dead outside the admin API. A custom role on an
  * EDITOR, READER or AUDITOR membership reached each of them by a path that goes
  * around the edge's role gate, and that side door is the reason they are
@@ -355,15 +355,23 @@ export const ADMIN_API_ONLY_KEYS = [
  *     `…/admin/agents/harness-scans` through a key with `admin:harness_ingest`,
  *     `admin:*` or `*`; and reading the register through the
  *     `get_harness_register` tool at `/api/mcp`.
+ *   - `integrations_ingest` — posting a third-party application scan at
+ *     `…/admin/agents/integration-scans` through a key with
+ *     `admin:integrations_ingest`, `admin:*` or `*`. Its own key beside
+ *     `agent_harness_ingest` by owner decision, and refused here for the same
+ *     reason: the key is the scanner's, and a custom role should not buy a
+ *     non-ADMIN membership a credential that posts past the edge.
  *   - `agent_external_tools` — every external tool call made for the
  *     membership: a run it starts at `/agent-runs`, which checks the starter's
  *     permissions, a key at `/api/mcp` with `admin:external_tools`, `admin:*` or
  *     `*`, and an agent's A2A send.
  *
- * So for these four the rule DOES take something away. Going forward, a
+ * So for these five the rule DOES take something away. Going forward, a
  * membership that is not ADMIN cannot be given a custom role granting one, and
  * migration `20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles`
- * switched them off in every stored role that only such memberships carried.
+ * switched them off in every stored role that only such memberships carried
+ * (`integrations_ingest`, which came later, by
+ * `20261114120100_integrations_ingest_off_for_non_admin_custom_roles`).
  * The paths above then refuse it as they refuse any member without the key:
  * the key's request answers 403, the run's or the tool call's is refused. The
  * nine other admin keys are consumed outside the admin API too, and keep
@@ -374,11 +382,12 @@ export const SIDE_DOOR_ADMIN_KEYS = [
     'compliance_dsar_manage',
     'agent_harness_ingest',
     'agent_external_tools',
+    'integrations_ingest',
 ] as const satisfies readonly (keyof PermissionSet['admin'])[];
 
 /**
  * Every `admin.*` key a custom role may grant only on an ADMIN membership: the
- * six only the admin API reads, and the four refused by decision. Writers, the
+ * six only the admin API reads, and the five refused by decision. Writers, the
  * migration and the pages read this list; only the guardrail reads the parts.
  */
 export const ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS = [
@@ -472,12 +481,12 @@ export type CustomRoleCarriageRefusal =
  * moving the member between EDITOR, READER and AUDITOR (the rule treats the
  * three alike) — always passes, and no writer refuses a row for what it
  * already carried. (What a stored role carried was settled once, by the
- * migration that switched the ten keys off where only non-ADMIN memberships
- * carried the role; a role with an ADMIN carrier kept them.) `before` is
+ * migrations that switched the eleven keys off where only non-ADMIN
+ * memberships carried the role; a role with an ADMIN carrier kept them.) `before` is
  * `null` for a membership that does not exist yet.
  *
  * The base refusal is returned first when both apply: a custom role built on
- * ADMIN grants nine of the ten keys by default, so fixing the base is the
+ * ADMIN grants ten of the eleven keys by default, so fixing the base is the
  * change that decides what the keys are.
  */
 export function customRoleCarriageRefusal(

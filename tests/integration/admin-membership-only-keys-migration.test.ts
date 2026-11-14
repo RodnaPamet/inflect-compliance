@@ -1,7 +1,9 @@
 /**
- * The migration that switches the ten admin-membership-only keys off in custom
+ * The migrations that switch the eleven admin-membership-only keys off in custom
  * roles carried ONLY by memberships that are not ADMIN, run from the migration
- * file itself against a real database.
+ * files themselves against a real database: the first ten keys'
+ * (`20261030170000`) and `integrations_ingest`'s (`20261114120100`), which a
+ * deploy runs in that order and which this suite runs as one sequence.
  *
  * Owner decisions, 2026-10-30: a custom role granting one of
  * `ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS` may be carried only by an ADMIN
@@ -10,13 +12,13 @@
  * re-typed. Pinned here:
  *
  *   - a role carried only by READER, EDITOR or AUDITOR memberships, of any
- *     status, in either tenant, ends with all ten keys stated `false`, and every
+ *     status, in either tenant, ends with all eleven keys stated `false`, and every
  *     other key of its blob — the rest of `admin` included — is what it was; its
  *     base is unchanged;
  *   - an ADMIN-based role carried that way is switched off too, including one
  *     whose blob has no `admin` domain (it would read ADMIN's defaults);
  *   - a role with ANY ADMIN carrier (a deactivated one included), a role nobody
- *     carries, and a role that already grants none of the ten as a request
+ *     carries, and a role that already grants none of the eleven as a request
  *     reads it are not touched at all (blob AND `updatedAt`);
  *   - a second run changes nothing anywhere in the table;
  *   - a legacy OWNER- or AI_ADMIN-based row under a NOT VALID #3734 CHECK does
@@ -39,6 +41,11 @@ const MIGRATION = path.resolve(
     __dirname,
     '../../prisma/migrations/20261030170000_admin_membership_only_keys_off_for_non_admin_custom_roles/migration.sql',
 );
+/** `integrations_ingest`'s, which sorts after it and so runs second on deploy. */
+const INTEGRATIONS_INGEST_MIGRATION = path.resolve(
+    __dirname,
+    '../../prisma/migrations/20261114120100_integrations_ingest_off_for_non_admin_custom_roles/migration.sql',
+);
 const BASE_ROLE_CHECK = 'TenantCustomRole_base_role_not_built_in_scope';
 /** #4595's migration, which sorts before this one and so runs first on deploy. */
 const ADMIN_BASE_MIGRATION = path.resolve(
@@ -47,14 +54,23 @@ const ADMIN_BASE_MIGRATION = path.resolve(
 );
 
 /**
- * The migration's one statement, comments stripped. Asserted to BE one
- * statement, so an edit that adds a second cannot have this suite run only the
- * first.
+ * Each migration's one statement, comments stripped, in deploy order. Each file
+ * is asserted to BE one statement, so an edit that adds a second cannot have
+ * this suite run only the first.
  */
-function migrationStatement(): string {
-    const statements = statementsOf(MIGRATION);
-    expect(statements).toHaveLength(1);
-    return statements[0];
+function migrationStatements(): string[] {
+    return [MIGRATION, INTEGRATIONS_INGEST_MIGRATION].map((file) => {
+        const statements = statementsOf(file);
+        expect(statements).toHaveLength(1);
+        return statements[0];
+    });
+}
+
+/** Run the statements in order; the rows each changed, summed. */
+async function runAll(db: { $executeRawUnsafe: PrismaClient['$executeRawUnsafe'] }, statements: string[]): Promise<number> {
+    let changed = 0;
+    for (const statement of statements) changed += await db.$executeRawUnsafe(statement);
+    return changed;
 }
 
 function statementsOf(file: string): string[] {
@@ -68,7 +84,7 @@ function statementsOf(file: string): string[] {
 type Blob = Record<string, unknown>;
 type Admin = Record<string, unknown>;
 
-const TEN_OFF = Object.fromEntries(ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.map((k) => [k, false]));
+const ELEVEN_OFF = Object.fromEntries(ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.map((k) => [k, false]));
 
 /** A whole stored blob: `base`'s defaults with `admin` keys set as given. */
 function presetBlob(base: 'ADMIN' | 'EDITOR' | 'AUDITOR' | 'READER', admin: Admin = {}): Blob {
@@ -76,15 +92,15 @@ function presetBlob(base: 'ADMIN' | 'EDITOR' | 'AUDITOR' | 'READER', admin: Admi
     return { ...d, admin: { ...d.admin, ...admin } };
 }
 
-/** The same blob with only the ten keys stated `false`, the `admin` domain created if absent. */
-function withTenOff(blob: Blob): Blob {
+/** The same blob with only the eleven keys stated `false`, the `admin` domain created if absent. */
+function withElevenOff(blob: Blob): Blob {
     const admin = typeof blob.admin === 'object' && blob.admin !== null ? (blob.admin as Admin) : {};
-    return { ...blob, admin: { ...admin, ...TEN_OFF } };
+    return { ...blob, admin: { ...admin, ...ELEVEN_OFF } };
 }
 
 const SEEDED_UPDATED_AT = new Date('2026-01-01T00:00:00.000Z');
 
-describeFn('the ten admin-membership-only keys off for roles only non-Admins carry (migration, real DB)', () => {
+describeFn('the eleven admin-membership-only keys off for roles only non-Admins carry (migration, real DB)', () => {
     let prisma: PrismaClient;
     const tag = `amomig-${randomUUID().slice(0, 8)}`;
     const tenantA = `${tag}-a`;
@@ -184,7 +200,7 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
     const derived = presetBlob('READER', { agent_skill_review: true });
     delete (derived.admin as Admin).agent_skill_author;
     seed('reader-derived-author', { tenantId: tenantA, baseRole: 'READER', isActive: true, blob: derived, carriers: [READER] });
-    // ADMIN base, carried by a READER: nine of the ten by default. The base stays.
+    // ADMIN base, carried by a READER: ten of the eleven by default. The base stays.
     seed('admin-base', { tenantId: tenantA, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN'), carriers: [READER] });
     // ADMIN base with no `admin` domain: it reads ADMIN's defaults, so it grants.
     const noAdminDomain = presetBlob('ADMIN');
@@ -195,19 +211,19 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
         tenantId: tenantB,
         baseRole: 'ADMIN',
         isActive: true,
-        blob: { ...presetBlob('ADMIN', TEN_OFF), admin: { ...presetBlob('ADMIN', TEN_OFF).admin as Admin, sso: 'false' } },
+        blob: { ...presetBlob('ADMIN', ELEVEN_OFF), admin: { ...presetBlob('ADMIN', ELEVEN_OFF).admin as Admin, sso: 'false' } },
         carriers: [READER],
     });
     seed('reader-tenant-b', { tenantId: tenantB, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { agent_tool_exposure: true }), carriers: [READER] });
     seed('reader-inactive', { tenantId: tenantB, baseRole: 'READER', isActive: false, blob: presetBlob('READER', { agent_policy_card: true }), carriers: [{ role: 'READER', status: 'REMOVED' }] });
-    // Each of the ten on its own, on every base the migration judges, so no key
+    // Each of the eleven on its own, on every base the migration judges, so no key
     // can drop out of either of its two lists unnoticed.
     const NON_ADMIN_BASES = ['READER', 'EDITOR', 'AUDITOR'] as const;
     const ONE_KEY: string[] = [];
     for (const [i, k] of ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.entries()) {
         const base = NON_ADMIN_BASES[i % NON_ADMIN_BASES.length];
-        seed(`only-${k}`, { tenantId: tenantB, baseRole: base, isActive: true, blob: presetBlob(base, { ...TEN_OFF, [k]: true }), carriers: [READER] });
-        seed(`admin-only-${k}`, { tenantId: tenantB, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN', { ...TEN_OFF, [k]: true }), carriers: [READER] });
+        seed(`only-${k}`, { tenantId: tenantB, baseRole: base, isActive: true, blob: presetBlob(base, { ...ELEVEN_OFF, [k]: true }), carriers: [READER] });
+        seed(`admin-only-${k}`, { tenantId: tenantB, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN', { ...ELEVEN_OFF, [k]: true }), carriers: [READER] });
         ONE_KEY.push(`only-${k}`, `admin-only-${k}`);
     }
     const SWITCHED_OFF = [
@@ -235,14 +251,14 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
     seed('admin-carried', { tenantId: tenantA, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN'), carriers: [{ role: 'ADMIN' }] });
     // Nobody carries it.
     seed('no-carriers', { tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { agent_ownership: true }), carriers: [] });
-    // Grants none of the ten as a request reads it.
-    seed('reader-already-off', { tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', TEN_OFF), carriers: [READER] });
+    // Grants none of the eleven as a request reads it.
+    seed('reader-already-off', { tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', ELEVEN_OFF), carriers: [READER] });
     seed('reader-string-true', { tenantId: tenantB, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { sso: 'true' }), carriers: [READER] });
     const missingKeys = presetBlob('READER');
     delete (missingKeys.admin as Admin).scim;
     delete (missingKeys.admin as Admin).agent_skill_author;
     seed('reader-missing-keys', { tenantId: tenantB, baseRole: 'READER', isActive: true, blob: missingKeys, carriers: [READER] });
-    seed('admin-base-all-off', { tenantId: tenantB, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN', TEN_OFF), carriers: [READER] });
+    seed('admin-base-all-off', { tenantId: tenantB, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN', ELEVEN_OFF), carriers: [READER] });
     const UNTOUCHED = [
         'mixed-with-admin',
         'admin-carried',
@@ -275,7 +291,7 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
 
     it('the population is what the cases say it is', () => {
         expect([...SWITCHED_OFF, ...UNTOUCHED].sort()).toEqual(Object.keys(seeds).sort());
-        // Every switched-off seed grants at least one of the ten as a request reads it…
+        // Every switched-off seed grants at least one of the eleven as a request reads it…
         for (const key of SWITCHED_OFF) {
             const parsed = parsePermissionsJson(seeds[key].blob, seeds[key].baseRole as Role).admin as Admin;
             expect({ key, grants: ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS.some((k) => parsed[k] === true) }).toEqual({ key, grants: true });
@@ -287,15 +303,15 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
         }
     });
 
-    it('switches the ten off where only non-Admins carry the role, touches nothing else, and a second run changes nothing', async () => {
-        const statement = migrationStatement();
+    it('switches the eleven off where only non-Admins carry the role, touches nothing else, and a second run changes nothing', async () => {
+        const statements = migrationStatements();
         const before = Object.fromEntries(
             await Promise.all(Object.keys(seeds).map(async (k) => [k, await readRole(prisma, seeds[k].id)] as const)),
         );
 
         // Global by design: other suites' leftovers may match too, so the first
         // count is a floor rather than an exact figure.
-        const firstRun = await prisma.$executeRawUnsafe(statement);
+        const firstRun = await runAll(prisma, statements);
         expect(firstRun).toBeGreaterThanOrEqual(SWITCHED_OFF.length);
 
         const after = Object.fromEntries(
@@ -304,8 +320,8 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
 
         for (const key of SWITCHED_OFF) {
             // The whole blob, so a change to any other key — the rest of the
-            // `admin` domain included — fails here, not only a wrong one of the ten.
-            expect({ key, blob: after[key].blob }).toEqual({ key, blob: withTenOff(seeds[key].blob as Blob) });
+            // `admin` domain included — fails here, not only a wrong one of the eleven.
+            expect({ key, blob: after[key].blob }).toEqual({ key, blob: withElevenOff(seeds[key].blob as Blob) });
             expect({ key, base: after[key].baseRole }).toEqual({ key, base: seeds[key].baseRole });
             expect(after[key].updatedAt.getTime()).toBeGreaterThan(SEEDED_UPDATED_AT.getTime());
             // What a member carrying the role is now allowed, through the same
@@ -330,14 +346,14 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
 
         // Idempotent: nothing in the whole table matches any more, and our rows
         // read back byte-for-byte as the first run left them.
-        expect(await prisma.$executeRawUnsafe(statement)).toBe(0);
+        expect(await runAll(prisma, statements)).toBe(0);
         for (const key of Object.keys(seeds)) {
             expect({ key, row: await readRole(prisma, seeds[key].id) }).toEqual({ key, row: after[key] });
         }
     });
 
     it('a legacy OWNER- or AI_ADMIN-based row under a NOT VALID #3734 CHECK neither fails the migration nor is touched', async () => {
-        const statement = migrationStatement();
+        const statements = migrationStatements();
         const ROLLBACK = new Error('rollback: this test leaves no schema change behind');
         const seen: Record<string, unknown> = {};
         const legacy: Seed[] = [
@@ -361,7 +377,7 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
                     );
 
                     try {
-                        await tx.$executeRawUnsafe(statement);
+                        await runAll(tx, statements);
                         seen.migration = 'ok';
                     } catch (e) {
                         seen.migration = e instanceof Error ? e.message : String(e);
@@ -389,7 +405,7 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
     /**
      * #4595's migration switches four other admin keys off on READER, EDITOR and
      * AUDITOR bases, judging the BASE, and runs first on deploy. Its keys and
-     * these ten are disjoint, so the two compose in either order; this one
+     * these eleven are disjoint, so the two compose in either order; this one
      * judges the CARRIERS, so an ADMIN-based role carried only by Readers is
      * left whole by #4595's and switched off here. Run in a transaction that
      * rolls back, since #4595's statements are global too.
@@ -398,13 +414,13 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
         const ROLLBACK = new Error('rollback');
         const theirs = statementsOf(ADMIN_BASE_MIGRATION);
         expect(theirs.length).toBeGreaterThan(0);
-        const mine = migrationStatement();
+        const mine = migrationStatements();
         const cases: Seed[] = [
             // Both rules apply: #4595's takes admin.manage, this one takes sso.
             { id: `${tag}-c-both`, tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { manage: true, sso: true }), carriers: [READER] },
-            // Only this one: an ADMIN base may hold manage and members; its carriers may not hold the ten.
+            // Only this one: an ADMIN base may hold manage and members; its carriers may not hold the eleven.
             { id: `${tag}-c-admin-base`, tenantId: tenantA, baseRole: 'ADMIN', isActive: true, blob: presetBlob('ADMIN'), carriers: [READER] },
-            // Only #4595's: an ADMIN carrier keeps the ten, a READER base still loses manage.
+            // Only #4595's: an ADMIN carrier keeps the eleven, a READER base still loses manage.
             { id: `${tag}-c-admin-carrier`, tenantId: tenantA, baseRole: 'READER', isActive: true, blob: presetBlob('READER', { manage: true, sso: true }), carriers: [{ role: 'ADMIN' }] },
         ];
         const run = async (order: 'theirs-first' | 'mine-first') => {
@@ -416,7 +432,7 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
                             await insertRole(tx, { ...c, id: `${c.id}-${order}` });
                             await insertCarriers(tx, { ...c, id: `${c.id}-${order}` });
                         }
-                        const sequence = order === 'theirs-first' ? [...theirs, mine] : [mine, ...theirs];
+                        const sequence = order === 'theirs-first' ? [...theirs, ...mine] : [...mine, ...theirs];
                         for (const statement of sequence) await tx.$executeRawUnsafe(statement);
                         for (const c of cases) seen[c.id] = (await readRole(tx, `${c.id}-${order}`)).blob;
                         throw ROLLBACK;
@@ -433,8 +449,8 @@ describeFn('the ten admin-membership-only keys off for roles only non-Admins car
         expect(await run('mine-first')).toEqual(theirsFirst);
 
         const off = (blob: unknown, admin: Admin) => ({ ...(blob as Blob), admin: { ...((blob as Blob).admin as Admin), ...admin } });
-        expect(theirsFirst[`${tag}-c-both`]).toEqual(off(cases[0].blob, { ...TEN_OFF, manage: false }));
-        expect(theirsFirst[`${tag}-c-admin-base`]).toEqual(withTenOff(cases[1].blob as Blob));
+        expect(theirsFirst[`${tag}-c-both`]).toEqual(off(cases[0].blob, { ...ELEVEN_OFF, manage: false }));
+        expect(theirsFirst[`${tag}-c-admin-base`]).toEqual(withElevenOff(cases[1].blob as Blob));
         expect(parsePermissionsJson(theirsFirst[`${tag}-c-admin-base`], 'ADMIN').admin).toMatchObject({ manage: true, members: true });
         expect(theirsFirst[`${tag}-c-admin-carrier`]).toEqual(off(cases[2].blob, { manage: false }));
         expect((theirsFirst[`${tag}-c-admin-carrier`] as { admin: Admin }).admin.sso).toBe(true);

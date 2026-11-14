@@ -878,6 +878,9 @@ model RegisteredAgent {
   harnessScannerKeys AgentHarnessScannerKey[]
   harnessScans       AgentHarnessScan[]
   discoveredAs       DiscoveredAgent[]
+  /// The third-party application scans this agent signed, when it is a
+  /// scanner (`scanent-integrations/1`), with the same key as its harness scans.
+  thirdPartyAppScans ThirdPartyAppScan[]
   /// The client estate this agent scans, when it is a scanner (#3678). At most
   /// one: `@@unique([tenantId, scannerAgentId])` on the estate.
   harnessEstates     AgentHarnessEstate[]
@@ -2621,6 +2624,9 @@ model AgentHarnessScannerKey {
   tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent  RegisteredAgent    @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: NoAction)
   scans  AgentHarnessScan[]
+  /// The third-party application scans this key verified. The same key signs
+  /// both of a scanner's reports; each verifier refuses the other's contract.
+  thirdPartyAppScans ThirdPartyAppScan[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, keyFingerprint])
@@ -2772,6 +2778,125 @@ model AgentHarnessAcceptance {
   @@unique([id, tenantId])
   @@index([tenantId, discoveredAgentId])
   @@index([tenantId, expiresAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Third-party application scans (`scanent-integrations/1`)
+// ═══════════════════════════════════════════════════════════════════
+//
+// The scanner's SECOND signed report: the third-party applications a
+// directory (Entra, Okta, GitHub) has granted access to. Verified by the
+// contract package (`verifyAndParseIntegrationsReport`) against the same
+// trusted scanner keys as a harness report, planned by its planner
+// (`planIntegrationsScan`), and written here. `usecases/third-party-app-scans.ts`
+// is the ONLY writer of the three tables — pinned by
+// `tests/guards/agent-harness-single-write-seam.test.ts`.
+//
+// Named `ThirdPartyApp*`, not `Integration*`: `IntegrationConnection` and
+// `IntegrationExecution` are Inflect's own connectors.
+//
+// IDENTIFIERS ONLY. No URL (the report carries a webhook's host, never a
+// URL, and this ingest keeps neither), no consenting person (the report
+// carries counts), no credential. The one free text is an application's
+// display name, as the directory records it.
+
+/// One verified, ingested `scanent-integrations/1` report.
+model ThirdPartyAppScan {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  /// `scan.id` from the report, unique per tenant: a replay is refused.
+  scanRef             String
+  scannerAgentId      String
+  scannerKeyId        String
+  scannerVersion      String
+  scannerManifestHash String
+  /// The moment the report describes.
+  asOf                DateTime
+  /// sha256 over the canonical JSON of the report without its signature.
+  reportDigest        String
+  signature           String
+  /// DERIVED (`isIntegrationsScanComplete`): every source read in full. A
+  /// report cannot declare it.
+  complete            Boolean
+  /// `[{ kind, status, reason?, rows, signInActivity }]`, one per source, as reported.
+  sourcesJson         Json
+  applicationCount    Int
+  /// The window "unused" was measured over: the reader's setting, not the scanner's.
+  unusedDays          Int
+  createdAt           DateTime @default(now())
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scanner    RegisteredAgent         @relation(fields: [scannerAgentId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  scannerKey AgentHarnessScannerKey  @relation(fields: [scannerKeyId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items      ThirdPartyAppScanItem[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, scanRef])
+  @@index([tenantId, asOf])
+  @@index([tenantId, scannerAgentId])
+  @@index([tenantId, scannerKeyId])
+}
+
+/// A third-party application some scan found, keyed by the id the report gave
+/// it (`entra:<directory>:sp:<object>`, `okta:<org>:app:<id>`,
+/// `github:<org>:installation:<id>`). Lives across scans; each scan adds a
+/// ThirdPartyAppScanItem.
+model DiscoveredThirdPartyApp {
+  id              String   @id @default(cuid())
+  tenantId        String
+  applicationId   String
+  /// `entra-integrations` | `okta-integrations` | `github-integrations`.
+  sourceKind      String
+  /// The directory's name for it as the latest scan read it; null when it had none.
+  displayName     String?
+  /// Plain ids, not foreign keys, as `DiscoveredAgent.lastScanId` is.
+  firstSeenScanId String
+  lastSeenScanId  String
+  firstSeenAt     DateTime
+  lastSeenAt      DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  ThirdPartyAppScanItem[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, applicationId])
+  @@index([tenantId, lastSeenAt])
+}
+
+/// One application in one scan, as the planner concluded it. Every column is
+/// the planner's or the report's, never a verdict the scanner stated.
+model ThirdPartyAppScanItem {
+  id                String   @id @default(cuid())
+  tenantId          String
+  scanId            String
+  appId             String
+  /// `HIGH` | `NOT_HIGH` | `NOT_CONCLUDED` (`PlannedApplication.privilege`).
+  privilege         String
+  /// `USED` | `UNUSED` | `NOT_CONCLUDED` (`PlannedApplication.usage`).
+  usage             String
+  /// Whole days from the last sign-in to the scan; null when none or not read.
+  daysSinceSignIn   Int?
+  /// The permission classes the application's grants fall in.
+  classes           String[]
+  /// `{ high: [...], unknown: [...] }`, each `{ via, resourceAppId,
+  /// name, classes }`: names and classes only.
+  grantsJson        Json
+  /// NULL is NOT KNOWN: not read, or not exposed by the product.
+  publisherVerified Boolean?
+  /// NULL is NOT KNOWN: owners not read, or not exposed by the product.
+  ownerCount        Int?
+  /// Whether any grant was seen.
+  anyGrant          Boolean
+  createdAt         DateTime @default(now())
+
+  tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scan   ThirdPartyAppScan       @relation(fields: [scanId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  app    DiscoveredThirdPartyApp @relation(fields: [appId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@unique([tenantId, scanId, appId])
+  @@index([tenantId, appId])
 }
 
 /// One client ESTATE a harness scanner covers (#3678, step 4a): a named

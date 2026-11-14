@@ -6,6 +6,7 @@ import { getAgentGovernanceStatus } from '@/app-layer/usecases/agent-registry';
 import { canRunRegistrationIntake } from '@/app-layer/usecases/agent-registration-intake';
 import { getHarnessMatrix, getHarnessScannerKeysView } from '@/app-layer/usecases/agent-harness-matrix';
 import { getHarnessEstateHealth } from '@/app-layer/usecases/agent-harness-estates';
+import { getThirdPartyAppInventory } from '@/app-layer/usecases/third-party-app-scans';
 import { listAgentBehaviourAnomalies } from '@/app-layer/usecases/agent-behaviour-fingerprint-read';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
@@ -46,6 +47,14 @@ import { ReportsClient } from './ReportsClient';
  * always could (`mayReadAgentInventory`). The pack names people — who approved
  * what, who owns which agent — and the view key is held by OWNER, ADMIN,
  * AI_ADMIN and AUDITOR, the last because this is what an assessor asks for.
+ *
+ * ── THE INTEGRATIONS TAB ────────────────────────────────────────────
+ *
+ * `?tab=integrations`: the third-party applications a directory has granted
+ * access to, from each trusted scanner's latest `scanent-integrations/1`
+ * report (`getThirdPartyAppInventory`). Behind the same inventory gate as the
+ * harness tab, read only when asked for, read-only, and with no scan stated as
+ * a condition rather than an empty state, for the harness tab's reasons below.
  *
  * ── THE HARNESS TAB (#3687) ─────────────────────────────────────────
  *
@@ -153,6 +162,27 @@ export default async function AgentReportsPage({
                 // The intake's own rule, so the shadow list's Register action
                 // is shown exactly where the usecase would take it (#3712).
                 canRegisterShadow={canRunRegistrationIntake(ctx)}
+                canReviewProposals={canReviewProposals}
+                canCompose={canCompose}
+                canInvestigate={canInvestigate}
+                canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+                canExport={canExport}
+            />
+        );
+    }
+
+    // The third-party applications the scanner's second report found
+    // (`scanent-integrations/1`). The SAME inventory gate as the harness tab,
+    // and like it, read only when asked for.
+    if (requestedTab === 'integrations') {
+        const integrations = await getThirdPartyAppInventory(ctx);
+        return (
+            <ReportsClient
+                tab="integrations"
+                tenantSlug={resolved.tenantSlug}
+                // JSON-safe by construction (ISO strings, plain data): the
+                // contract's modules stay on the server.
+                integrations={JSON.parse(JSON.stringify(integrations))}
                 canReviewProposals={canReviewProposals}
                 canCompose={canCompose}
                 canInvestigate={canInvestigate}

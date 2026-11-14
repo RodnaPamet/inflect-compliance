@@ -652,6 +652,7 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
     'harness-scanner-keys',
     'harness-scans',
     'intake',
+    'integration-scans',
     'kill-switch',
     'owner-orphan-pass',
     'parameter-sets',
@@ -676,6 +677,9 @@ export const AGENT_ADMIN_API_STATIC_SEGMENTS: readonly string[] = [
  *   - `/api/t/[slug]/admin/agents/harness-estates` the client estates and their
  *     schedule health, built from the scans (owner decision, 2026-10-19). The
  *     exact list template only: one estate's path is PATCH and DELETE
+ *   - `/api/t/[slug]/admin/agents/integration-scans` the third-party
+ *     application scan list, the harness list's twin; its POST is the
+ *     scanner's ingest key, which AUDITOR does not hold
  *   - `/api/t/[slug]/admin/agents/reports`        the governance pack
  *   - `/api/t/[slug]/admin/mcp/quarantine`        the quarantine triage read
  *     (#4898). Its route takes the view key and its usecase refuses an AUDITOR
@@ -692,6 +696,7 @@ export const AUDITOR_ADMIN_READ_PATHS: readonly string[] = [
     '/api/t/[slug]/admin/agents/[agentId]',
     '/api/t/[slug]/admin/agents/harness-scans',
     '/api/t/[slug]/admin/agents/harness-estates',
+    '/api/t/[slug]/admin/agents/integration-scans',
     '/api/t/[slug]/admin/agents/reports',
     // The quarantine triage read (#4898). Admitted at the edge so the usecase
     // can apply the Owner's switch: an AUDITOR reads it only while an owner has

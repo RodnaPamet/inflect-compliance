@@ -453,6 +453,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'agent-harness-scans.listHarnessScans filters by tenantId and orders by asOf desc, bounded take ≤200',
     },
+    // ── Third-party application scans (`scanent-integrations/1`) ─────
+    {
+        model: 'ThirdPartyAppScan',
+        fields: ['tenantId', 'asOf'],
+        justification:
+            'third-party-app-scans.listThirdPartyAppScans and getThirdPartyAppInventory filter by tenantId and order by asOf desc, then createdAt and id; bounded take ≤200 (the list) and ≤51 (the inventory window)',
+    },
     {
         model: 'AgentHarnessAcceptance',
         fields: ['tenantId', 'discoveredAgentId'],
@@ -777,6 +784,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'every read is one agent\'s rows by (tenantId, agentId[, status]) ordered by rail — the leading columns of @@unique([tenantId, agentId, rail]); bounded take ≤ the three rails.',
     DiscoveredAgent:
         'the scan ingest reads discovered agents by (tenantId, discoveredId IN …) — exactly the @@unique([tenantId, discoveredId]), bounded by the report\'s agent count; the harness matrix\'s shadow list filters by tenantId and registeredAgentId IS NULL (or a deleted register row) and orders by lastSeenAt desc — covered by @@index([tenantId, registeredAgentId]) + @@index([tenantId, lastSeenAt]); the runs page\'s discovered-agent picker (#4472) filters by tenantId alone and orders by lastSeenAt desc, id — the same @@index([tenantId, lastSeenAt]); bounded take ≤201.',
+    // Third-party application scans — read by (tenantId, applicationId IN …) and (tenantId, scanId IN …).
+    DiscoveredThirdPartyApp:
+        'the third-party application ingest reads the applications a report names by (tenantId, applicationId IN …) — exactly the @@unique([tenantId, applicationId]); no order; bounded take by the report\'s application count (≤5000).',
+    ThirdPartyAppScanItem:
+        'the Integrations tab reads the latest scans\' items by (tenantId, scanId IN …) ordered by scanId, appId — the leading columns of @@unique([tenantId, scanId, appId]); bounded take ≤15001 (three scans of at most 5000 applications, one past the cap).',
     // The auditor agent's narrative of a workpaper (#3749) — at most one per workpaper.
     AuditWorkpaperNarrative:
         'the period read\'s narrated flag and the capture read narratives by (tenantId, workpaperId IN …) — exactly the @@unique([tenantId, workpaperId]); no order; bounded take by the ids asked about (≤50 shown workpapers, ≤6 narratives an answer carries), one row per workpaper.',
