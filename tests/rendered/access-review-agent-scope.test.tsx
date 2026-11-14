@@ -217,6 +217,43 @@ describe('the detail page reads an AGENT campaign', () => {
         await waitFor(() => expect(screen.getByTestId('agent-decision-select-1')).toBeInTheDocument());
     });
 
+    it('says which of a pack’s sections were capped, so a partial list is not read as whole (#5317)', async () => {
+        const capped = pack('1');
+        capped.sectionsJson = {
+            ...capped.sectionsJson,
+            grantsTruncated: true,
+            timeBoundedTruncated: true,
+            killsTruncated: true,
+        } as typeof capped.sectionsJson;
+        const partly = pack('2');
+        partly.sectionsJson = { ...partly.sectionsJson, grantsTruncated: false, timeBoundedTruncated: true } as typeof partly.sectionsJson;
+        packsPayload = { packs: [capped, partly], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+
+        await waitFor(() => expect(screen.getByTestId('agent-pack-truncated-1')).toBeInTheDocument());
+        const all = screen.getByTestId('agent-pack-truncated-1');
+        expect(all).toHaveTextContent('Grant list capped — the pack does not hold every grant');
+        expect(all).toHaveTextContent('Time-bounded grant list capped — the pack does not hold every one');
+        expect(all).toHaveTextContent('Kill list capped — the pack does not hold every kill');
+
+        const one = screen.getByTestId('agent-pack-truncated-2');
+        expect(one).toHaveTextContent('Time-bounded grant list capped');
+        expect(one).not.toHaveTextContent('Grant list capped');
+        expect(one).not.toHaveTextContent('Kill list capped');
+    });
+
+    it('notes nothing for a pack whose sections were read whole, or that predates the flags', async () => {
+        const whole = pack('1');
+        whole.sectionsJson = {
+            ...whole.sectionsJson, grantsTruncated: false, timeBoundedTruncated: false, killsTruncated: false,
+        } as typeof whole.sectionsJson;
+        packsPayload = { packs: [whole, pack('2')], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-pack-1')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-pack-truncated-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agent-pack-truncated-2')).not.toBeInTheDocument();
+    });
+
     it('names a person as the preparer of the preparing agent’s own pack, when no agent prepared it', async () => {
         const own = { ...pack('1'), preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' };
         packsPayload = { packs: [own, pack('2')], narrowings: [], samples: [], evidence: null };

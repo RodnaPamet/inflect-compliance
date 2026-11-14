@@ -240,6 +240,13 @@ interface PackSummary {
     guardFlags: number;
     breakerTripped: boolean;
     kills: number;
+    /**
+     * The sections whose read hit its cap (#5317), in the order shown. A
+     * capped section is not every row, and the reviewer must not read it as
+     * if it were. A pack filed before a flag existed carries no key, which
+     * reads as not capped: that read could not tell.
+     */
+    truncated: Array<'grants' | 'timeBounded' | 'kills'>;
 }
 
 /**
@@ -262,8 +269,20 @@ function readPackSummary(value: unknown): PackSummary {
         guardFlags: flags.reduce<number>((n, x) => n + (typeof x === 'number' ? x : 0), 0),
         breakerTripped: breaker?.trippedInWindow === true,
         kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
+        truncated: [
+            ...(v.grantsTruncated === true ? (['grants'] as const) : []),
+            ...(v.timeBoundedTruncated === true ? (['timeBounded'] as const) : []),
+            ...(v.killsTruncated === true ? (['kills'] as const) : []),
+        ],
     };
 }
+
+/** The note for each capped section, by message key. */
+const TRUNCATED_SECTION_MESSAGE = {
+    grants: 'agentPackGrantsTruncated',
+    timeBounded: 'agentPackTimeBoundedTruncated',
+    kills: 'agentPackKillsTruncated',
+} as const;
 
 /**
  * A request the server refused, worded for the person (#4699): the named
@@ -930,6 +949,15 @@ export function AccessReviewDetailClient({
                                 {sum.breakerTripped ? ` · ${t('agentPackBreakerTripped')}` : ''}
                                 {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
                             </div>
+                            {/* #5317 — a capped section is not the whole
+                                list; say so beside the figures it bounds. */}
+                            {sum.truncated.length > 0 ? (
+                                <div className="text-content-warning" data-testid={`agent-pack-truncated-${row.original.id}`}>
+                                    {sum.truncated.map((section) => (
+                                        <div key={section}>{t(TRUNCATED_SECTION_MESSAGE[section])}</div>
+                                    ))}
+                                </div>
+                            ) : null}
                             <div className="text-content-muted" data-testid={`agent-pack-prepared-by-${row.original.id}`}>
                                 {pack.preparedByAgentId
                                     ? t('agentPackPreparedBy', { agent: agentNameByAgentId.get(pack.preparedByAgentId) ?? pack.preparedByAgentId })

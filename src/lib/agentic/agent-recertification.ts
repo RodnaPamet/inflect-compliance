@@ -47,8 +47,31 @@ import { canonicalJson } from '@/lib/canonical-json';
 /** How far back observed use is read: the 90 days before the campaign froze. */
 export const USE_WINDOW_DAYS = 90;
 
-/** Agents per pack-preparation run. One run's context must fit `MAX_CONTEXT_BYTES`. */
-export const PACK_PAGE_SIZE = 20;
+/**
+ * Agents per pack-preparation run. One run's sealed context holds its page of
+ * evidence and the plan built from it, and may not weigh more than
+ * `MAX_CONTEXT_BYTES` (262,144 bytes): over it the run fails, and with it the
+ * campaign's whole preparation.
+ *
+ * The worst agent, every section at its cap (the caps are in
+ * `agent-recertification-evidence.ts`) and every row at its largest, is about
+ * 239,400 bytes of sealed context (#5317, measured by
+ * `tests/unit/agent-recertification-pack-budget.test.ts`):
+ *
+ *   grants             199 × ~511 B   ≈ 101.7 KB   (200 grants is truncated and plans nothing)
+ *   their narrowings   199 × ~383 B   ≈  76.2 KB   (in the plan, beside the evidence)
+ *   time-bounded       100 × ~429 B   ≈  42.9 KB   (TIME_BOUNDED_PER_AGENT, 100 since 2026-11-14)
+ *   card versions       50 × ~243 B   ≈  12.2 KB
+ *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
+ *   everything else                   ≈   1.8 KB
+ *
+ * One such agent seals at about 239,900 bytes, under the cap; two at about
+ * 479,300, over it. So a page is ONE agent. It was 20, which fit only while
+ * no agent came near its grant cap: 20 agents at their caps were over a
+ * megabyte before #5317 raised the time-bounded cap, and the grant section
+ * alone, not that raise, is what keeps the page from being two.
+ */
+export const PACK_PAGE_SIZE = 1;
 
 /** The most agents one campaign freezes; read one past to know it was cut off. */
 export const MAX_AGENT_SUBJECTS = 500;
@@ -168,6 +191,17 @@ export const SubjectEvidenceSchema = z.object({
         engagedByUserId: z.string(),
         liftedByUserId: z.string().nullable(),
     })),
+    /**
+     * True when this agent's kill-engagement read hit its cap (#5317): the
+     * list holds the kill in force, if any, then the most recently lifted, and
+     * not all of them.
+     *
+     * OPTIONAL with no default, for the reason `timeBoundedTruncated` gives: a
+     * pack filed before this field, or a run whose READ was recorded before it,
+     * must re-parse to the sections it was hashed over. Absent means "not
+     * stated": that read shared one 500-row cap across its page.
+     */
+    killsTruncated: z.boolean().optional(),
     harness: z.object({
         level: z.string().nullable(),
         previousLevel: z.string().nullable(),

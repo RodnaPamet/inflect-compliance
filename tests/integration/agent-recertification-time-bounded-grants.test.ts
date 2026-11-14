@@ -28,7 +28,7 @@ import {
     TIME_BOUNDED_PER_AGENT,
     readAgentRecertificationEvidence,
 } from '@/app-layer/usecases/agent-recertification-evidence';
-import { AGENT_RECERTIFICATION_EVIDENCE_TOOL } from '@/lib/agentic/agent-recertification';
+import { AGENT_RECERTIFICATION_EVIDENCE_TOOL, type SubjectEvidence } from '@/lib/agentic/agent-recertification';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -181,10 +181,16 @@ afterAll(async () => {
     await prisma.$disconnect();
 });
 
-async function subjects() {
-    const page = await readAgentRecertificationEvidence(ownerCtx, campaignId, 0);
-    expect(page.subjects).toHaveLength(4);
-    return new Map(page.subjects.map((s) => [s.agentId, s]));
+/** Every subject of the campaign, whatever the page size. */
+async function subjects(): Promise<Map<string, SubjectEvidence>> {
+    const out: SubjectEvidence[] = [];
+    for (let page = 0; ; page++) {
+        const read = await readAgentRecertificationEvidence(ownerCtx, campaignId, page);
+        out.push(...read.subjects);
+        if ((page + 1) * read.pageSize >= read.total) break;
+    }
+    expect(out).toHaveLength(4);
+    return new Map(out.map((s) => [s.agentId, s]));
 }
 
 describe('the time-bounded-grant section of a reviewer pack (#5317)', () => {

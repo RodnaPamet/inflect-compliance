@@ -20,7 +20,7 @@
  *                                            per agent, capped and flagged (#5317)
  *   guard flags                              AgentProposal.guardVerdict
  *   breaker trips                            AgentCircuitBreaker
- *   kill engagements                         AgentKillSwitch
+ *   kill engagements                         AgentKillSwitch, per agent, capped and flagged (#5317)
  *   harness level and drift                  DiscoveredAgent + AgentHarnessScanItem
  *
  * The window is the 90 days before the campaign was CREATED — not before the
@@ -60,20 +60,33 @@ import { GRANT_EXPIRY_ARGS } from './external-write-reconcile';
 import { assertCanRead } from '../policies/common';
 import type { RequestContext } from '../types';
 
+// The per-agent caps below and `PACK_PAGE_SIZE` are ONE budget: a page of
+// evidence is held in its pack run's sealed context, which may not weigh more
+// than `MAX_CONTEXT_BYTES`. `tests/unit/agent-recertification-pack-budget.test.ts`
+// builds the worst page — every section at its cap, every row at its largest —
+// and fails when it does not fit, so raising a cap or the page size fails a
+// test rather than a campaign's preparation. The arithmetic is at
+// `PACK_PAGE_SIZE`.
+
 /** Grants read per agent before the read is called truncated (the catalogue is a handful). */
-const GRANTS_PER_AGENT = 200;
+export const GRANTS_PER_AGENT = 200;
 /** Card versions read per agent since its last campaign. */
-const CARD_VERSIONS_PER_AGENT = 50;
+export const CARD_VERSIONS_PER_AGENT = 50;
 /**
  * Time-bounded grants read per AGENT before its section is called truncated
  * (#5317). Per agent, so one agent issuing daily JIT grants cannot take the
- * rows of every other agent on its page; and 25, so a page of
- * `PACK_PAGE_SIZE` agents reads at most the 500 rows the old per-page read
- * did, and the run's context budget is unchanged.
+ * rows of every other agent on its page. 100 by the owner's decision of
+ * 2026-11-14; it was 25, the old 500-row page read spread over 20 agents.
  */
-export const TIME_BOUNDED_PER_AGENT = 25;
-/** Kill engagements read per page of agents. */
-const KILLS_PER_PAGE = 500;
+export const TIME_BOUNDED_PER_AGENT = 100;
+/**
+ * Kill engagements read per AGENT before its section is called truncated
+ * (#5317). It was one 500-row read shared by the page and unflagged, so an
+ * agent killed and lifted often could leave the others' lists empty with
+ * nothing to say so. 25 is chosen as #5646 first chose the time-bounded cap:
+ * the old 500-row page read spread over the old page of 20 agents.
+ */
+export const KILLS_PER_AGENT = 25;
 /** Harness items read per discovered agent (only the latest two are used). */
 const HARNESS_ITEMS_PER_AGENT = 10;
 
@@ -330,17 +343,36 @@ export async function readAgentRecertificationEvidence(
         });
         const breakerByAgent = new Map(breakers.map((b) => [b.agentId, b]));
 
-        const kills = await db.agentKillSwitch.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                agentId: { in: agentIds },
-                engagedAt: { lt: window.end },
-                OR: [{ liftedAt: null }, { liftedAt: { gte: window.start } }],
-            },
-            select: { agentId: true, engagedAt: true, liftedAt: true, engagedByUserId: true, liftedByUserId: true },
-            orderBy: [{ engagedAt: 'asc' }],
-            take: KILLS_PER_PAGE,
-        });
+        // Kills: one read PER AGENT, capped and read one past the cap so
+        // truncation is a fact the pack states (`killsTruncated`), as the
+        // time-bounded read above. It was one 500-row read shared by the page
+        // with no flag (#5317). The cap spends itself on a kill still in force
+        // first, then the most recently lifted; the section is shown oldest
+        // first, as it always was.
+        const killsByAgent = new Map<string, {
+            rows: Array<{ id: string; engagedAt: Date; liftedAt: Date | null; engagedByUserId: string; liftedByUserId: string | null }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read let one agent starve the rest (#5317)
+            const read = await db.agentKillSwitch.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId,
+                    engagedAt: { lt: window.end },
+                    OR: [{ liftedAt: null }, { liftedAt: { gte: window.start } }],
+                },
+                select: { id: true, engagedAt: true, liftedAt: true, engagedByUserId: true, liftedByUserId: true },
+                orderBy: [
+                    { liftedAt: { sort: 'desc', nulls: 'first' } },
+                    { engagedAt: 'desc' },
+                    { id: 'asc' },
+                ],
+                take: KILLS_PER_AGENT + 1,
+            });
+            const kept = read.slice(0, KILLS_PER_AGENT).sort((x, y) =>
+                x.engagedAt.getTime() - y.engagedAt.getTime() || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+            killsByAgent.set(agentId, { rows: kept, truncated: read.length > KILLS_PER_AGENT });
+        }
 
         // ── Harness level and drift ──────────────────────────────────────
         const discovered = await db.discoveredAgent.findMany({
@@ -458,14 +490,16 @@ export async function readAgentRecertificationEvidence(
                         closedAt: iso(breaker.closedAt),
                     }
                     : null,
-                killEngagements: kills
-                    .filter((k) => k.agentId === agentId)
+                killEngagements: (killsByAgent.get(agentId)?.rows ?? [])
                     .map((k) => ({
                         engagedAt: k.engagedAt.toISOString(),
                         liftedAt: iso(k.liftedAt),
                         engagedByUserId: k.engagedByUserId,
                         liftedByUserId: k.liftedByUserId,
                     })),
+                // This agent's own kill read hit its cap: the list above is the
+                // kill in force, if any, then the most recently lifted.
+                killsTruncated: killsByAgent.get(agentId)?.truncated ?? false,
                 harness: { level, previousLevel, drift, lastSeenAt: iso(mine[0]?.lastSeenAt) },
             };
         });

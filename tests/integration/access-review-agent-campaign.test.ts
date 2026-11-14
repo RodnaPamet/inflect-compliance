@@ -567,7 +567,9 @@ describe('a registered agent prepares each pack, and never its own', () => {
     it('the requester’s own permissions never widen what the run can read', async () => {
         // The OWNER can read every pack's evidence directly…
         const r = await create();
-        expect((await readAgentRecertificationEvidence(as(T1, 'owner'), r.accessReviewId)).subjects).toHaveLength(2);
+        const direct = await readAgentRecertificationEvidence(as(T1, 'owner'), r.accessReviewId);
+        expect(direct.total).toBe(2);
+        expect(direct.subjects).toHaveLength(Math.min(2, direct.pageSize));
         // …but the same OWNER starting the pack run for an agent NOT granted the
         // read tool gets nothing: the call is the agent's, and its grants are
         // deny-by-default.

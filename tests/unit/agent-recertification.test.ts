@@ -198,6 +198,39 @@ describe('the time-bounded truncation flag (#5317) moves no pack filed before it
     });
 });
 
+describe('the kill-engagement truncation flag (#5317) moves no pack filed before it', () => {
+    // A subject as the read returned it before the kill section was read per
+    // agent: no `killsTruncated` key. This is its pack's hash, pinned from the
+    // code before the field existed.
+    const OLD_KILL_PACK_HASH = 'sha256:6a3429a4fa5829db4c2bd6f808bbc02b12392a044e7c9b4f815bbd32200efd84';
+    const old = subject({
+        killEngagements: [{
+            engagedAt: '2026-08-01T00:00:00.000Z', liftedAt: '2026-08-02T00:00:00.000Z',
+            engagedByUserId: 'u-admin', liftedByUserId: 'u-owner',
+        }],
+    });
+
+    it('evidence recorded without the key parses to sections without it, hashing as it did', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence([old]))));
+        const sections = sectionsOf(reparsed.subjects[0]);
+        expect(sections).not.toHaveProperty('killsTruncated');
+        expect(sha256Of(sections)).toBe(OLD_KILL_PACK_HASH);
+    });
+
+    it('a run whose READ was recorded before the key still has its plan accepted', () => {
+        const recorded = JSON.parse(JSON.stringify(planAgentReviewPacks(evidence([old]))));
+        expect(checkedPlan(RecertificationEvidenceSchema.parse(evidence([old])), recorded)).toEqual(recorded);
+        expect(planAgentReviewPacks(evidence([{ ...old, killsTruncated: true }])))
+            .toEqual(planAgentReviewPacks(evidence([old])));
+    });
+
+    it('a new read keeps the flag through the parse, so the filed pack states it', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(evidence([{ ...old, killsTruncated: true }]));
+        expect(sectionsOf(reparsed.subjects[0]).killsTruncated).toBe(true);
+        expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_KILL_PACK_HASH);
+    });
+});
+
 describe('a recorded plan is used only when it follows from its recorded evidence', () => {
     const e = evidence([subject()]);
     const parsed = () => JSON.parse(JSON.stringify(planAgentReviewPacks(e)));
