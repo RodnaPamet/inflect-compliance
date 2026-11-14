@@ -1,6 +1,12 @@
 /**
  * AI-governance self-assessment usecases — mirrors the NIS2 self-assessment.
  *
+ * Authorization mirrors NIS2 (owner decision, 2026-11-14, #5317): answering
+ * and completing the assessment are onboarding-admin acts
+ * (`assertCanManageOnboarding`), so an EDITOR cannot mark the tenant's
+ * AI-governance assessment COMPLETED; reading takes `canRead` and raising
+ * findings from the gaps takes `canWrite`, as NIS2's materialise does.
+ *
  * One 30-question assessment (global reference content) + a tenant-scoped run.
  * Answers project onto AISVS / ISO 42001 / EU AI Act via each question's
  * mappings (see ai-gov-coverage). Conditional questions (RAG / AGENTIC) auto-
@@ -13,6 +19,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
+import { assertCanManageOnboarding } from '../policies/onboarding.policies';
 import { createFinding } from './finding';
 import {
     computeAiGovCoverage,
@@ -115,7 +122,7 @@ export async function saveAiGovAnswer(
     ctx: RequestContext,
     input: { questionId: string; answer: AiGovAnswerValue; note?: string | null },
 ) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    assertCanManageOnboarding(ctx);
     if (!ANSWER_VALUES.includes(input.answer)) {
         throw badRequest(`Invalid answer '${input.answer}'.`);
     }
@@ -161,7 +168,7 @@ export async function saveAiGovAnswer(
 
 /** Mark the active assessment COMPLETED + audit. */
 export async function completeAiGovAssessment(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    assertCanManageOnboarding(ctx);
     const assessment = await activeAssessment(ctx);
     return runInTenantContext(ctx, async (db) => {
         const done = await db.aiGovSelfAssessment.update({

@@ -648,7 +648,7 @@ const HIGH_MULTIPLICITY = 5;
 // which the claim-before-act change (#5103) took to nine positions in each;
 // they now ask for the execution row's `triggeredBy: …, parentExecutionId,`
 // pair, the one place lineage is written. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1128;
+const AMBIGUOUS_NEEDLE_BASELINE = 1127;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -784,7 +784,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1128;
 // 156 -> 155 (2026-11-13): the Epic 7 chain guard's `/parentExecutionId/` over
 // rule-chain-dispatch.ts (five positions on main, nine after #5103), narrowed
 // to the execution row's lineage write — see the ambiguous baseline. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 155;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 154;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

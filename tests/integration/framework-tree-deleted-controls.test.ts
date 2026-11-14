@@ -41,10 +41,15 @@ describeFn('framework tree and soft-deleted controls (real DB)', () => {
         const done = { status: 'IMPLEMENTED' as const, applicability: 'APPLICABLE' as const };
         const a = await prisma.control.create({ data: { tenantId: TENANT, name: 'Live', code: 'L-1', ...done } });
         const b = await prisma.control.create({ data: { tenantId: TENANT, name: 'Trashed', code: 'D-1', ...done, deletedAt: new Date() } });
+        // #5317 — applicable and not started globally, but marked
+        // NOT_APPLICABLE for this framework on the link itself.
+        const scoped = await prisma.frameworkRequirement.create({ data: { frameworkId: fw.id, code: 'T.3', title: 'Out of scope for this framework only', section: 'T', sortOrder: 2 } });
+        const c = await prisma.control.create({ data: { tenantId: TENANT, name: 'Scoped out', code: 'S-1', status: 'NOT_STARTED', applicability: 'APPLICABLE' } });
         await prisma.controlRequirementLink.createMany({
             data: [
                 { tenantId: TENANT, controlId: a.id, requirementId: live.id },
                 { tenantId: TENANT, controlId: b.id, requirementId: trashed.id },
+                { tenantId: TENANT, controlId: c.id, requirementId: scoped.id, applicability: 'NOT_APPLICABLE' },
             ],
         });
     });
@@ -65,5 +70,11 @@ describeFn('framework tree and soft-deleted controls (real DB)', () => {
         const byCode = new Map(requirementNodes(tree.nodes).map((n) => [n.code, n]));
         expect(byCode.get('T.1')?.complianceStatus).toBe('compliant');
         expect(byCode.get('T.2')?.complianceStatus).not.toBe('compliant');
+    });
+
+    it('honours the per-framework applicability override on the link, as the SoA and readiness do (#5317)', async () => {
+        const tree = await getFrameworkTree(ctx, FW_KEY);
+        const byCode = new Map(requirementNodes(tree.nodes).map((n) => [n.code, n]));
+        expect(byCode.get('T.3')?.complianceStatus).toBe('na');
     });
 });

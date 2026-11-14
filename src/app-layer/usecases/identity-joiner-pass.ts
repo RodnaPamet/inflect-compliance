@@ -862,9 +862,16 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
         mode: input.mode,
         clamp: JOINER_MAX_MODE,
         refusal: null,
+        // The sentence depends on the mode (#5317). Above DRY_RUN the pass
+        // goes on to create, so "nothing was written" would be false on the
+        // very row that records the creates; the row's `execution` block says
+        // what was actually done once the creates have run.
         detail:
-            `${planned.length} of ${starters} starter(s) would be provisioned. Nothing was written ` +
-            'to any directory, to the HRIS, or to this database: DRY_RUN plans and stops.',
+            input.mode === 'DRY_RUN'
+                ? `${planned.length} of ${starters} starter(s) would be provisioned. Nothing was written ` +
+                  'to any directory, to the HRIS, or to this database: DRY_RUN plans and stops.'
+                : `${planned.length} of ${starters} starter(s) planned for provisioning at ${input.mode}. ` +
+                  'What was created is recorded with the pass once the creates have run.',
         starters,
         wouldCreate: planned.length,
         decisions,

@@ -23,6 +23,7 @@ jest.mock('@/app-layer/usecases/finding', () => ({ createFinding: (...a: unknown
 import {
     getAiGovAssessmentState,
     saveAiGovAnswer,
+    completeAiGovAssessment,
     raiseFindingsFromAiGovGaps,
 } from '@/app-layer/usecases/ai-gov-self-assessment';
 
@@ -124,5 +125,33 @@ describe('raiseFindingsFromAiGovGaps', () => {
         const r = await raiseFindingsFromAiGovGaps(ctx, { architecture: 'NONE' });
         expect(createFinding).not.toHaveBeenCalled();
         expect(r.created).toEqual([]);
+    });
+});
+
+describe('answering and completing are onboarding-admin acts, as NIS2 (owner decision 2026-11-14, #5317)', () => {
+    it('an EDITOR saving an answer is refused 403 ONBOARDING_ADMIN_ONLY and nothing is written', async () => {
+        await expect(
+            saveAiGovAnswer(makeRequestContext('EDITOR'), { questionId: 'aig-4-01', answer: 'YES' }),
+        ).rejects.toMatchObject({ status: 403, details: { reason: 'ONBOARDING_ADMIN_ONLY' } });
+        expect(mockTx.aiGovSelfAssessmentAnswer.upsert).not.toHaveBeenCalled();
+    });
+
+    it('an EDITOR completing the assessment is refused 403 and it is not marked COMPLETED', async () => {
+        await expect(completeAiGovAssessment(makeRequestContext('EDITOR'))).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'ONBOARDING_ADMIN_ONLY' },
+        });
+        expect(mockTx.aiGovSelfAssessment.update).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN may complete the assessment', async () => {
+        mockTx.aiGovSelfAssessment.update.mockResolvedValue({ id: 'as1', status: 'COMPLETED' });
+        await expect(completeAiGovAssessment(ctx)).resolves.toMatchObject({ status: 'COMPLETED' });
+    });
+
+    it('an EDITOR may still raise findings from the gaps (canWrite, as NIS2 materialise)', async () => {
+        mockTx.aiGovSelfAssessmentAnswer.findMany.mockResolvedValue([]);
+        mockTx.finding.findMany.mockResolvedValue([]);
+        await expect(raiseFindingsFromAiGovGaps(makeRequestContext('EDITOR'))).resolves.toEqual({ created: [] });
     });
 });

@@ -184,6 +184,7 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
     EvidenceRepository: {
         getById: (...a: unknown[]) => mockEvidenceGetById(...a),
         update: (...a: unknown[]) => mockEvidenceUpdate(...a),
+        transitionStatus: jest.fn(async () => true),
         addReview: (...a: unknown[]) => mockEvidenceAddReview(...a),
         getLatestSubmitters: (...a: unknown[]) => mockEvidenceGetLatestSubmitters(...a),
     },

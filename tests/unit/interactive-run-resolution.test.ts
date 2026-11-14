@@ -55,6 +55,8 @@ const reads: string[] = [];
 let designation: string | null = null;
 /** Agents that exist, as `${tenantId}:${agentId}` — so a cross-tenant id simply is not here. */
 let agentRows: string[] = [];
+/** Agents among `agentRows` whose status is RETIRED, by the same key. */
+let retiredRows: string[] = [];
 let killVerdict: { scope: string } | null = null;
 let breakerLatch: { state: string } | null = null;
 
@@ -82,8 +84,9 @@ jest.mock('@/lib/db-context', () => ({
                     // isolation assertion pass while proving nothing. (RLS is
                     // the real second layer in production; this stands in for
                     // the application filter the predicate still carries.)
-                    return agentRows.includes(`${args.where.tenantId}:${args.where.id}`)
-                        ? { id: args.where.id }
+                    const key = `${args.where.tenantId}:${args.where.id}`;
+                    return agentRows.includes(key)
+                        ? { id: args.where.id, status: retiredRows.includes(key) ? 'RETIRED' : 'ACTIVE' }
                         : null;
                 },
             },
@@ -115,6 +118,7 @@ beforeEach(() => {
     mockEnv.AGENT_INTERACTIVE_RUNS = '1';
     designation = AGENT;
     agentRows = [`${TENANT}:${AGENT}`];
+    retiredRows = [];
     killVerdict = null;
     breakerLatch = null;
 });
@@ -206,6 +210,19 @@ describe('the designation is resolved inside the tenant', () => {
         if (!out.ok) expect(out.refusal).toBe('AGENT_NOT_FOUND');
         // And it stopped: neither the kill switch nor the breaker was consulted
         // for an agent this tenant does not hold.
+        expect(reads.filter((r) => r.startsWith('kill:') || r.startsWith('breaker:'))).toEqual([]);
+    });
+
+    it('AGENT_NOT_FOUND when the designated agent has been RETIRED, as its sentence says (#5317)', async () => {
+        // Retirement keeps the designation and sets a terminal status, not
+        // deletedAt — so a resolver reading existence alone offered Ask for it.
+        retiredRows = [`${TENANT}:${AGENT}`];
+        const out = await resolveInteractiveAgent(makeRequestContext('OWNER', { tenantId: TENANT }));
+        expect(out.ok).toBe(false);
+        if (!out.ok) {
+            expect(out.refusal).toBe('AGENT_NOT_FOUND');
+            expect(out.detail).toMatch(/retired/);
+        }
         expect(reads.filter((r) => r.startsWith('kill:') || r.startsWith('breaker:'))).toEqual([]);
     });
 

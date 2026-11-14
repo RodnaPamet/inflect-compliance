@@ -65,7 +65,10 @@ describe('a truncated roster splits on whether it can resume', () => {
     it('keeps the non-resumable branch loud and non-retryable', () => {
         // Unchanged behaviour for providers that genuinely cannot resume —
         // re-reading truncates at the same place, so three retries buy nothing.
-        expect(src).toMatch(/noRetry:\s*true/);
+        // Bound to the truncation arm's own return (#5317): an unreadable
+        // connection secret is non-retryable too, so a bare `noRetry: true`
+        // no longer names this branch.
+        expect(src).toMatch(/status: 'ERROR', upserted, managersLinked, managersCleared, roleChanges, recertification, errorMessage: msg, noRetry:\s*true/);
     });
 
     it('reports zero departures on a partial pass', () => {
