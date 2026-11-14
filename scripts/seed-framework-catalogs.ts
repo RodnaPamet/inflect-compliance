@@ -144,6 +144,11 @@ async function main(): Promise<void> {
                 // tasks on every production start and reported none of them,
                 // so "no number" has meant both "none" and "not looked at".
                 `, tasks ${r.tasks.created}c/${r.tasks.updated}u/${r.tasks.unchanged}=/${r.tasks.deprecated}d` +
+                // The applier's only delete, so it is never silent.
+                (file.outOfScopeRequirements.length > 0
+                    ? `, out of scope: ${r.outOfScope.recategorised} re-categorised, ` +
+                      `${r.outOfScope.linksRemoved} template link(s) removed`
+                    : '') +
                 r.packs.map((p) => `, pack ${p.key} (${p.templatesLinked} linked)`).join(''),
         );
     }

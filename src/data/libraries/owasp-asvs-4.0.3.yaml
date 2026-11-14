@@ -31,8 +31,8 @@ copyright: >
   only the factual identifiers, titles, and L1/L2/L3 structure; all descriptive text is original because the CC
   BY-SA share-alike term is incompatible with embedding the text in a proprietary product. The full standard is
   at https://owasp.org/www-project-application-security-verification-standard/
-version: 2
-text_hash: a447a558f6bc28173619147ebfa4f0fb076f8639487a00a04903c676ae1109a6
+version: 3
+text_hash: 41a56abb0fcc7b56799e791bd8aeb6fb889366ebf39b5f139665fcd771c61167
 publication_date: "2021-10-01"
 provider: OWASP Foundation
 packager: inflect
@@ -1739,9 +1739,9 @@ objects:
         category: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.1.1
         ref_id: "V7.1.1"
-        name: "No Sensitive Data in Logs"
+        name: "No Credentials or Payment Details in Logs"
         description: >
-          Ensure logs do not capture sensitive data such as full credentials or tokens.
+          Keep credentials and payment details out of all log output, and record session tokens only in an irreversible, hashed form.
         parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V7
         depth: 2
         assessable: true
@@ -1749,9 +1749,9 @@ objects:
         section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.1.2
         ref_id: "V7.1.2"
-        name: "No Credentials in Logs"
+        name: "No Other Sensitive Data in Logs"
         description: >
-          Exclude passwords, session tokens, and secrets from all log output.
+          Ensure logs do not capture other sensitive data, such as personal data protected by privacy law or classified as sensitive by security policy.
         parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V7
         depth: 2
         assessable: true
