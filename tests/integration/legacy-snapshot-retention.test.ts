@@ -300,6 +300,44 @@ describe('what the run reports and records', () => {
         expect(JSON.parse(acct?.details ?? '{}').purged).toBe(2);
     });
 
+    it('each arm attests its OWN window and cutoff, with its own counts (#5307)', async () => {
+        // Two unconsumed snapshots (30-day clock) and one consumed one (90-day
+        // clock). One attestation per model for both used to state the 90-day
+        // cutoff for every snapshot and the 30-day cutoff for every account.
+        await seedSnapshot({ tag: 'u1', pulledAt: daysAgo(40), accounts: 1 });
+        await seedSnapshot({ tag: 'u2', pulledAt: daysAgo(45), accounts: 2 });
+        await seedSnapshot({ tag: 'c1', pulledAt: daysAgo(200), consumedAt: [daysAgo(120)], accounts: 4 });
+        await purge();
+
+        const rows = await prisma.auditLog.findMany({
+            where: { tenantId: T, action: 'DATA_PURGED' },
+            select: { entity: true, details: true },
+        });
+        const parsed = rows.map((r) => ({ entity: r.entity, ...JSON.parse(r.details ?? '{}') }));
+        const find = (entity: string, basis: string) =>
+            parsed.find((p) => p.entity === entity && p.basis === basis);
+
+        expect(parsed).toHaveLength(4);
+        expect(find('LegacyAccessSnapshot', 'UNCONSUMED')).toMatchObject({
+            purged: 2,
+            retentionDays: DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS,
+            cutoff: daysAgo(DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS).toISOString(),
+        });
+        expect(find('LegacyAccount', 'UNCONSUMED')).toMatchObject({
+            purged: 3,
+            retentionDays: DEFAULT_LEGACY_SNAPSHOT_UNCONSUMED_RETENTION_DAYS,
+        });
+        expect(find('LegacyAccessSnapshot', 'CONSUMED')).toMatchObject({
+            purged: 1,
+            retentionDays: DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS,
+            cutoff: daysAgo(DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS).toISOString(),
+        });
+        expect(find('LegacyAccount', 'CONSUMED')).toMatchObject({
+            purged: 4,
+            retentionDays: DEFAULT_LEGACY_SNAPSHOT_RETENTION_DAYS,
+        });
+    });
+
     it('a run that finds nothing writes no attestation', async () => {
         // An attestation for a destruction that did not happen is worse than
         // none: it makes the audit trail claim data was purged that still exists.

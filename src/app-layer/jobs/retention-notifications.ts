@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { isNotificationsEnabled } from '../notifications/settings';
+import { buildDedupeKey } from '../notifications/enqueue';
 import { emitAutomationEvent } from '../automation';
 import { createTask, addTaskLink } from '../usecases/task';
 import type { RequestContext } from '../types';
@@ -257,7 +258,10 @@ export async function runEvidenceRetentionNotifications(
                                 subject: `${daysLeft <= 7 ? '⚠️ ' : ''}Evidence expiring in ${daysLeft} day(s): ${ev.title}`,
                                 bodyText: `Evidence "${ev.title}" expires in ${daysLeft} days. Please upload refreshed evidence or extend the retention date.`,
                                 bodyHtml: null,
-                                dedupeKey: `${ev.tenantId}:EVIDENCE_EXPIRING:${m.user.email}:${ev.id}:${new Date().toISOString().slice(0, 10)}`,
+                                // The shared helper hashes the address (#5307):
+                                // `processOutbox` logs the key on every failed
+                                // send, and a raw email must not reach the logs.
+                                dedupeKey: buildDedupeKey(ev.tenantId, 'EVIDENCE_EXPIRING', m.user.email, ev.id),
                             },
                         }).catch(() => {
                             // Silently skip duplicates (P2002)

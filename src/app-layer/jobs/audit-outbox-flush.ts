@@ -89,12 +89,80 @@ function withReplayMarkers(detailsJson: unknown, occurredAt: Date): unknown {
     return { originalDetails: detailsJson ?? null, ...markers };
 }
 
+/**
+ * How long a claim holds a row before another pass may take it over.
+ *
+ * The claim pushes `nextAttemptAt` this far ahead, the way `processOutbox`
+ * leases a row (#5307). Two things depend on it: a concurrent pass cannot
+ * re-claim (and re-append) a row whose append is still in flight, and the
+ * stranded-row park below can tell a row whose outcome was never recorded
+ * (lease expired) from one that is merely being worked on (lease live). Far
+ * longer than any append, which is bounded by its transaction timeout.
+ */
+export const AUDIT_OUTBOX_CLAIM_LEASE_MS = 10 * 60_000;
+
+/**
+ * Park rows that were claimed for their LAST attempt and never settled (#5307).
+ *
+ * A claim increments `attempts` before the append. If the append fails and
+ * the catch-path status update then fails too (the same DB pressure that
+ * queued the entry), or the process dies mid-append, the row keeps its
+ * incremented count and stays PENDING. On the final attempt that leaves
+ * `attempts >= maxAttempts`: the selection below never picks it again, and
+ * nothing ever marks it FAILED or logs it — the silent loss this outbox
+ * exists to prevent. So each pass first moves such rows to FAILED, loudly,
+ * once their claim lease has expired (a live lease is a pass still working).
+ */
+async function parkStrandedRows(
+    maxAttempts: number,
+    now: Date,
+    limit: number,
+    tenantId: string | undefined,
+): Promise<number> {
+    const stranded = await prisma.auditOutbox.findMany({
+        where: {
+            status: 'PENDING',
+            attempts: { gte: maxAttempts },
+            nextAttemptAt: { lte: now },
+            ...(tenantId ? { tenantId } : {}),
+        },
+        select: { id: true, tenantId: true, action: true, occurredAt: true, attempts: true, lastError: true },
+        orderBy: { occurredAt: 'asc' },
+        take: limit,
+    });
+    if (stranded.length === 0) return 0;
+
+    const parked = await prisma.auditOutbox.updateMany({
+        where: {
+            id: { in: stranded.map((r) => r.id) },
+            status: 'PENDING',
+            attempts: { gte: maxAttempts },
+            nextAttemptAt: { lte: now },
+        },
+        data: { status: 'FAILED' },
+    });
+    for (const row of stranded) {
+        logger.error('audit outbox: entry permanently failed', {
+            outboxId: row.id,
+            tenantId: row.tenantId,
+            action: row.action,
+            occurredAt: row.occurredAt.toISOString(),
+            attempts: row.attempts,
+            error: row.lastError ?? 'attempt outcome was never recorded',
+            stranded: true,
+        });
+    }
+    return parked.count;
+}
+
 export async function flushAuditOutbox(
     options: FlushAuditOutboxOptions = {},
 ): Promise<FlushAuditOutboxResult> {
     const limit = options.limit ?? 100;
     const maxAttempts = options.maxAttempts ?? 5;
     const now = new Date();
+
+    const strandedParked = await parkStrandedRows(maxAttempts, now, limit, options.tenantId);
 
     const rows = await prisma.auditOutbox.findMany({
         where: {
@@ -110,7 +178,7 @@ export async function flushAuditOutbox(
     });
 
     let applied = 0;
-    let failed = 0;
+    let failed = strandedParked;
     let skipped = 0;
 
     for (const row of rows) {
@@ -122,9 +190,15 @@ export async function flushAuditOutbox(
             // loser sees count 0. Incrementing BEFORE the append is the
             // correct meaning — an attempt HAS been made whether or not we
             // live to record its outcome.
+            const claimAt = new Date();
             const claim = await prisma.auditOutbox.updateMany({
                 where: { id: row.id, status: 'PENDING', attempts: row.attempts },
-                data: { attempts: { increment: 1 } },
+                data: {
+                    attempts: { increment: 1 },
+                    // The lease (see AUDIT_OUTBOX_CLAIM_LEASE_MS). Overwritten
+                    // by the catch path's backoff when the outcome is recorded.
+                    nextAttemptAt: new Date(claimAt.getTime() + AUDIT_OUTBOX_CLAIM_LEASE_MS),
+                },
             });
             if (claim.count === 0) {
                 skipped++;

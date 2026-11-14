@@ -28,6 +28,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { ForbiddenError } from '@/lib/errors/types';
 import { resolveKillState } from '@/lib/agentic/kill-switch';
 import { readBreakerLatch } from '@/lib/agentic/circuit-breaker-store';
 import type { RequestContext } from '@/app-layer/types';
@@ -68,6 +69,7 @@ export type { AgentInvokeDispatchPayload } from './types';
 export type AgentInvokeRefusal =
     | 'depth_exceeded'
     | 'rule_has_no_owner'
+    | 'rule_owner_not_member'
     | 'agent_not_found'
     | 'agent_not_active'
     | 'agent_unscored'
@@ -173,7 +175,19 @@ export async function runAgentInvokeDispatch(
         // types.ts docblock is explicit that satisfying `userId` with a person
         // while writing `USER` rows made the trail "claim a person did something
         // no person did".
-        const tenant = await resolveTenantContext({ tenantId }, payload.ownerUserId);
+        //
+        // An author who has since been deactivated or removed is a rule that
+        // outlived its owner — a misconfiguration, so it REFUSES rather than
+        // throws (#5307). `resolveTenantContext` signals exactly that case with
+        // a ForbiddenError; anything else (a database fault, a removed tenant)
+        // still throws, because those are what the queue's retry is for.
+        let tenant: Awaited<ReturnType<typeof resolveTenantContext>>;
+        try {
+            tenant = await resolveTenantContext({ tenantId }, payload.ownerUserId);
+        } catch (err) {
+            if (err instanceof ForbiddenError) return refuse('rule_owner_not_member');
+            throw err;
+        }
         const ctx: RequestContext = {
             requestId: `agent-invoke-${agentId}`,
             userId: payload.ownerUserId,

@@ -117,6 +117,22 @@ describe('_renderDigestEmail (pure)', () => {
         expect(html).toContain('1 critical risk<'); // no trailing "s"
         expect(html).toContain('1 overdue task<');
     });
+
+    it('escapes a tenant name carrying markup, so no attacker link reaches the body (#5307)', () => {
+        const hostile = '<a href="https://evil.example">Re-authenticate</a>';
+        const { html } = _renderDigestEmail(baseData({ tenantName: hostile }), 7);
+        expect(html).not.toContain('<a href="https://evil.example">');
+        expect(html).toContain('&lt;a href=&quot;https://evil.example&quot;&gt;Re-authenticate&lt;/a&gt;');
+    });
+
+    it('strips CR/LF from the tenant name in the subject header (#5307)', () => {
+        const { subject } = _renderDigestEmail(
+            baseData({ tenantName: 'Acme\r\nBcc: victim@example.com' }),
+            7,
+        );
+        expect(subject).not.toMatch(/[\r\n]/);
+        expect(subject).toContain('Acme Bcc: victim@example.com');
+    });
 });
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;

@@ -80,6 +80,20 @@ describe('runScheduleTriggerSweep', () => {
         expect(first[1].event.stableKey).toBe('sched-rule-1-ev-1-2026-06-15');
     });
 
+    it('reads only APPROVED, non-deleted ControlExceptions (#5307)', async () => {
+        // ControlException is outside the soft-delete extension, so a deleted,
+        // REJECTED or EXPIRED exception used to fire "N days before expiry".
+        mockPrisma.automationRule.findMany.mockResolvedValue([
+            { id: 'rule-ex', tenantId: 't1', scheduleConfigJson: { kind: 'DATE_RELATIVE', target: 'ControlException', offsetDays: 7 } },
+        ]);
+        mockPrisma.controlException.findMany.mockResolvedValue([]);
+
+        await runScheduleTriggerSweep(new Date('2026-06-08T00:00:00Z'));
+
+        const where = mockPrisma.controlException.findMany.mock.calls[0][0].where;
+        expect(where).toMatchObject({ tenantId: 't1', deletedAt: null, status: 'APPROVED' });
+    });
+
     it('skips a rule with an invalid schedule config (no query, no enqueue)', async () => {
         mockPrisma.automationRule.findMany.mockResolvedValue([
             { id: 'rule-bad', tenantId: 't1', scheduleConfigJson: { kind: 'CRON' } },

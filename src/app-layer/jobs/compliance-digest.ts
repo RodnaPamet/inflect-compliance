@@ -297,8 +297,27 @@ function deltaColor(val: number | null, invertBetter: boolean = false): string {
     return isBetter ? '#22c55e' : '#ef4444';
 }
 
+/**
+ * The tenant name is chosen by whoever created the workspace, so it is
+ * untrusted text in a mail sent from the deployment's own address (#5307).
+ * Escaped in the HTML body, and stripped of CR/LF (and every other control
+ * character) in the subject, the only header it reaches.
+ */
+function escapeHtml(str: string): string {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function headerSafe(str: string): string {
+    return str.replace(/[\u0000-\u001f\u007f]+/g, ' ');
+}
+
 function renderDigestEmail(data: DigestData, trendDays: number): { subject: string; text: string; html: string } {
-    const subject = `[${data.tenantName}] Weekly Compliance Digest — ${data.snapshotDate}`;
+    const subject = `[${headerSafe(data.tenantName)}] Weekly Compliance Digest — ${data.snapshotDate}`;
 
     // Plain text version
     const text = [
@@ -341,7 +360,7 @@ function renderDigestEmail(data: DigestData, trendDays: number): { subject: stri
 <body style="margin:0;padding:0;background:#0f172a;color:#f1f5f9;font-family:Inter,system-ui,sans-serif;">
 <div style="max-width:600px;margin:0 auto;padding:32px 24px;">
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;">Weekly Compliance Digest</h1>
-  <p style="font-size:13px;color:#94a3b8;margin:0 0 24px;">${data.tenantName} — ${data.snapshotDate}</p>
+  <p style="font-size:13px;color:#94a3b8;margin:0 0 24px;">${escapeHtml(data.tenantName)} — ${data.snapshotDate}</p>
 
   <!-- Coverage -->
   <div style="background:rgba(30,41,59,0.8);border:1px solid rgba(51,65,85,0.5);border-radius:12px;padding:16px;margin-bottom:12px;">

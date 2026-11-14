@@ -188,6 +188,13 @@ describe('runControlTestScheduler — scan filter', () => {
         ]);
     });
 
+    test('excludes plans of a removed (soft-deleted) tenant (#5307)', async () => {
+        mockFindMany.mockResolvedValueOnce([]);
+        await runControlTestScheduler({ now: NOW });
+        const where = mockFindMany.mock.calls[0][0].where;
+        expect(where.tenant).toEqual({ deletedAt: null });
+    });
+
     test('scopes by tenantId when provided', async () => {
         mockFindMany.mockResolvedValueOnce([]);
         await runControlTestScheduler({ now: NOW, tenantId: 'tenant-X' });

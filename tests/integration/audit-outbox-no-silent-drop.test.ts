@@ -272,5 +272,41 @@ describeFn('#2657 — a failed audit write is never silent', () => {
             expect(row.status).toBe('FAILED');
             expect(row.lastError).toBeTruthy();
         });
+
+        it('parks a row stranded PENDING at maxAttempts as FAILED (#5307)', async () => {
+            // The shape a failed catch-path update (or a crash mid-append) on
+            // the LAST attempt leaves behind: the claim incremented `attempts`
+            // to the budget and nothing ever recorded the outcome. The
+            // selection skips it (`attempts < maxAttempts`), so without the
+            // park it is never retried and never FAILED — silently lost.
+            await appendAuditEntryOrQueue(denial(), brokenClient());
+            await prisma.auditOutbox.updateMany({
+                where: { tenantId },
+                data: { attempts: 5, nextAttemptAt: new Date(Date.now() - 60_000) },
+            });
+
+            const result = await flushAuditOutbox({ tenantId, maxAttempts: 5 });
+            expect(result.failed).toBe(1);
+            expect(result.applied).toBe(0);
+
+            const row = await prisma.auditOutbox.findFirstOrThrow({ where: { tenantId } });
+            expect(row.status).toBe('FAILED');
+        });
+
+        it('does NOT park a final-attempt row whose claim lease is still live (#5307)', async () => {
+            // A live lease is a pass still appending it: parking it would mark
+            // FAILED an entry that is about to reach the chain.
+            await appendAuditEntryOrQueue(denial(), brokenClient());
+            await prisma.auditOutbox.updateMany({
+                where: { tenantId },
+                data: { attempts: 5, nextAttemptAt: new Date(Date.now() + 60_000) },
+            });
+
+            const result = await flushAuditOutbox({ tenantId, maxAttempts: 5 });
+            expect(result.failed).toBe(0);
+
+            const row = await prisma.auditOutbox.findFirstOrThrow({ where: { tenantId } });
+            expect(row.status).toBe('PENDING');
+        });
     });
 });

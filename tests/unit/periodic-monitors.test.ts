@@ -382,6 +382,28 @@ describe('Deadline Monitor', () => {
         expect(byEntity.CONTROL).toBe(2);
         expect(byEntity.POLICY).toBe(1);
     });
+
+    test('classifies urgency with the CALLER\'s windows, not the defaults (#5307)', async () => {
+        // 5 days out: URGENT under the default [30, 7, 1] (threshold 7), but
+        // UPCOMING under [14, 3, 1] (threshold 3) — which is what the
+        // calendar-deadlines monitor in the same digest says for it.
+        mockPrisma.control.findMany.mockResolvedValue([
+            {
+                id: 'ctrl-5d',
+                tenantId: 'tenant-1',
+                name: 'Five days out',
+                nextDueAt: new Date('2026-04-22T08:00:00Z'),
+                ownerUserId: 'user-1',
+            },
+        ]);
+
+        const { runDeadlineMonitor } = await import('../../src/app-layer/jobs/deadline-monitor');
+        const { items } = await runDeadlineMonitor({ now, windows: [14, 3, 1] });
+
+        expect(items).toHaveLength(1);
+        expect(items[0].daysRemaining).toBe(5);
+        expect(items[0].urgency).toBe('UPCOMING');
+    });
 });
 
 // ═════════════════════════════════════════════════════════════════════
