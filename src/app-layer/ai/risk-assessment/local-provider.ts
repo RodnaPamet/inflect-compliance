@@ -22,6 +22,13 @@ import { StubRiskSuggestionProvider } from './stub-provider';
 import { logger } from '@/lib/observability/logger';
 
 const DEFAULT_LOCAL_MODEL = 'local-model';
+/**
+ * Bound on one gateway call, headers AND body (#5305). Longer than the hosted
+ * providers' 30 s because a local model is slower, but bounded: without it a
+ * gateway that accepted the connection and stalled held the request until
+ * undici's 300 s default, so the fallback never fired in time.
+ */
+export const LOCAL_RISK_TIMEOUT_MS = 60_000;
 
 export class LocalRiskSuggestionProvider implements RiskSuggestionProvider {
     readonly providerName = 'local';
@@ -77,6 +84,7 @@ export class LocalRiskSuggestionProvider implements RiskSuggestionProvider {
                 max_tokens: 4096,
                 response_format: { type: 'json_object' },
             }),
+            signal: AbortSignal.timeout(LOCAL_RISK_TIMEOUT_MS),
         });
 
         if (!response.ok) {

@@ -58,8 +58,13 @@ function projectInput(payload: AgentInvokeDispatchPayload): Record<string, unkno
  *
  * An agent run can emit events; an event can fire a rule; a rule can invoke an
  * agent. That is a cycle with a model in it, which is more expensive per lap
- * than a sub-flow cycle and no less likely — so it is capped on the same
- * counter discipline rather than trusted not to close.
+ * than a sub-flow cycle and no less likely.
+ *
+ * THE CAP BOUNDS ONLY THE DEPTH A PAYLOAD CARRIES (#5305). `invokeAgent` reads
+ * `__agentInvokeDepth` off the triggering event, but nothing writes it: a run
+ * does not record its depth and the events its effects cause carry none, so
+ * every invoke arrives at depth 1 and this refusal cannot trip through a real
+ * cycle. See the RECURSION note on `invokeAgent` in `action-executor.ts`.
  */
 export const MAX_AGENT_INVOKE_DEPTH = 5;
 

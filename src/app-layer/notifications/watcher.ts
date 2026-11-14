@@ -26,6 +26,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { insertedNotificationIds } from './inserted-ids';
 
 /**
  * `updated` covers MATERIAL field edits (due-date reschedule, reviewer
@@ -88,18 +89,23 @@ export async function createWatcherNotifications(
     const result = await db.notification.createMany({ data: rows, skipDuplicates: true });
 
     // Push to the SSE bus so subscribed bell clients see it without waiting
-    // for the next poll. The client keys on `id` (the dedupeKey), so a
-    // re-push of an already-seen row is a no-op in the UI.
+    // for the next poll. The client keys on `id`, so a re-push of an
+    // already-seen row is a no-op in the UI. The id is the ROW's (#5305),
+    // read back by the unique dedupe key: the dedupe key itself, which the
+    // event used to carry, named no notification to mark read.
     if (result.count > 0) {
+        const inserted = await insertedNotificationIds(db, a.tenantId, rows.map((r) => r.dedupeKey));
         for (const row of rows) {
+            const written = inserted.get(row.dedupeKey);
+            if (!written) continue;
             publishNotificationEvent(a.tenantId, row.userId, {
-                id: row.dedupeKey,
+                id: written.id,
                 type: row.type,
                 title: row.title,
                 message: row.message,
                 read: false,
                 linkUrl: row.linkUrl,
-                createdAt: now.toISOString(),
+                createdAt: written.createdAt.toISOString(),
             });
         }
     }

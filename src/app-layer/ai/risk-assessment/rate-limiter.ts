@@ -106,6 +106,13 @@ async function incr(key: string, windowSeconds: number): Promise<void> {
         if (count === 1) {
             // First increment starts the rolling window.
             await redis.expire(key, windowSeconds);
+        } else if ((await redis.pttl(key)) < 0) {
+            // A key with no TTL never resets (#5305). If the EXPIRE after the
+            // first INCR failed (a transient Redis error between the two), the
+            // counter kept climbing past the limit and refused that user or
+            // tenant every AI call for ever. Re-apply the window whenever a
+            // later increment finds none, so the lock-out heals itself.
+            await redis.expire(key, windowSeconds);
         }
     } catch (err) {
         logger.error('AI rate-limit incr failed, skipping record', {

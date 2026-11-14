@@ -228,11 +228,15 @@ export function getStablyAddedCodes(
  * Determine which changes have been consistent across N consecutive versions.
  *
  * A code is "stably changed" if it has appeared in `changedCodes` in the
- * version it was changed and has maintained the same content (not changed again)
- * for at least `threshold - 1` following versions.
+ * version it was LAST changed and has not changed again in at least
+ * `threshold` following versions — `threshold` versions AFTER the change,
+ * not counting the change itself. With the default 3, a text change first
+ * reaches tenants once three later library versions have left it alone.
  *
- * Simplified approach: check if the code appeared in changedCodes in some
- * entry and has been present (unchanged) in all subsequent entries.
+ * This said `threshold - 1` until #5305; the code and its tests
+ * (`version-history.test.ts`: a change followed by only two quiet versions is
+ * NOT stable) have always required `threshold`, and the docblock was corrected
+ * to them rather than the release timing changed.
  */
 export function getStablyChangedCodes(
     history: FrameworkVersionHistory,

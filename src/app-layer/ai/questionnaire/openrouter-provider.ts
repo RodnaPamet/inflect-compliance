@@ -11,6 +11,12 @@ import type { QuestionnaireDraftInput, QuestionnaireDraftOutput, QuestionnairePr
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
+/**
+ * Bound on one draft call, headers AND body (#5305). Without it a gateway that
+ * accepted the connection and stalled held the autofill — a loop over every
+ * item — until undici's 300 s default instead of falling back to the stub.
+ */
+export const QUESTIONNAIRE_DRAFT_TIMEOUT_MS = 30_000;
 
 export class OpenRouterQuestionnaireProvider implements QuestionnaireProvider {
     readonly providerName = 'openrouter';
@@ -27,6 +33,7 @@ export class OpenRouterQuestionnaireProvider implements QuestionnaireProvider {
             // H4 — cap output tokens so a malicious/looping prompt can't drive an
             // unbounded (costly) completion. A questionnaire answer is short.
             body: JSON.stringify({ model: this.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_object' }, temperature: 0.2, max_tokens: 800 }),
+            signal: AbortSignal.timeout(QUESTIONNAIRE_DRAFT_TIMEOUT_MS),
         });
         if (!res.ok) throw new Error(`OpenRouter questionnaire draft failed (HTTP ${res.status})`);
         const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
