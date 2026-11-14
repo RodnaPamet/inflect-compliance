@@ -155,8 +155,9 @@ export async function register() {
         initSentry();
         initMailerFromEnv();
         // Wire the automation bus to the BullMQ queue so domain
-        // events emitted from usecases enqueue dispatch jobs.
-        installAutomationBusDispatcher();
+        // events emitted from usecases enqueue dispatch jobs. 'web': held
+        // back while AUTOMATION_WEB_EVENTS_ENABLED is off (bus-bootstrap.ts).
+        installAutomationBusDispatcher('web');
         // Install the RLS observability tripwire. Idempotent — safe
         // under HMR. Installed here (not in `prisma.ts`) to avoid a
         // circular import with `db/rls-middleware.ts`.

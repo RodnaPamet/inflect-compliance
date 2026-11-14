@@ -106,6 +106,10 @@ jobs:
       AGENT_DRIVER_FLUE: '1'
       AGENT_DRIVER_TOOL_RUNNER: '1'
       AGENT_PROFILES: '1'
+      # The Tool Runner samples start from a TASK_CREATED rule fired by the
+      # harness's POST /tasks, an event the WEB process emits: held back
+      # unless this is on (owner decision 2026-11-13; docs/deployment.md).
+      AUTOMATION_WEB_EVENTS_ENABLED: '1'
       # D-EV-6: the model both engines run on for this job, every variable an
       # engine reads one from. The pinning guard holds each equal to the
       # budget's model, so the spend breaker prices what actually ran.
@@ -314,11 +318,18 @@ jobs:
           exit "$status"
 
       # A run that never settles is decided in the worker, whose log no other
-      # step shows. Warnings and errors only, each line cut short.
-      - name: Worker log (warnings and errors)
+      # step shows. Warnings and errors, each line cut short; and, at every
+      # level, the lines of the two jobs a Tool Runner sample's run starts
+      # through (automation-event-dispatch, then agent-invoke-dispatch), so a
+      # rule that did not fire is told from one that fired and was refused.
+      # Run 43429583015 printed none: no rule acted, and the warnings-only
+      # filter could not say whether a dispatch job had even run.
+      - name: Worker log (warnings, errors, automation dispatch)
         if: always() && steps.key.outputs.present == 'true'
         run: |
           grep -E '"level":(40|50|60)' /tmp/worker.log | tail -n 100 | cut -c1-400 || true
+          echo "--- automation dispatch (every level) ---"
+          grep -E '"component":"automation(-event-dispatch)?"|"jobName":"(automation-event-dispatch|agent-invoke-dispatch)"' /tmp/worker.log | tail -n 100 | cut -c1-400 || true
           grep -vE '^\{' /tmp/worker.log | tail -n 40 | cut -c1-400 || true
 
       - name: Upload records + Inspect logs

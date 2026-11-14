@@ -139,19 +139,45 @@ describe('the scripts it runs', () => {
         expect(reads.filter((l) => !/^\s*[a-z]+="\$\(docker logs /.test(l))).toEqual([]);
     });
 
-    it('docker exec runs only the read-only query and the bcrypt probe', () => {
+    it('docker exec runs only the read-only queries and the bcrypt probe', () => {
         const execs = remote.filter((l) => /\bdocker\s+exec\b/.test(l));
-        expect(execs).toHaveLength(2);
         const psql = execs.filter((l) => l.includes('need postgres'));
-        expect(psql).toHaveLength(1);
-        expect(psql[0]).toContain("PGOPTIONS='-c default_transaction_read_only=on'");
+        // access-review-dates and automation-rules.
+        expect(psql).toHaveLength(2);
+        expect(psql.filter((l) => !l.includes("PGOPTIONS='-c default_transaction_read_only=on'"))).toEqual([]);
         expect(execs.filter((l) => l.includes('need app'))).toHaveLength(1);
+        expect(execs).toHaveLength(psql.length + 1);
     });
 
-    it('the query reads and never writes', () => {
-        const sql = read('deploy/vm-check/remote.sh').split("<<'SQL'")[1]?.split(/^SQL$/m)[0] ?? '';
-        expect(sql).toMatch(/^\s*SELECT\b/);
-        expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i);
+    // Every heredoc fed to psql: one per query check, each its own string.
+    const sqlHeredocs = (rel: string): string[] =>
+        read(rel)
+            .split("<<'SQL'")
+            .slice(1)
+            .map((q) => q.split(/^SQL$/m)[0]);
+    const queries = sqlHeredocs('deploy/vm-check/remote.sh');
+
+    it('every query reads and never writes', () => {
+        expect(queries).toHaveLength(2);
+        expect(queries.filter((q) => !/^\s*SELECT\b/.test(q))).toEqual([]);
+        expect(queries.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
+    });
+
+    it('the automation-rules query prints counts, never a rule name, a tenant id or free text', () => {
+        // The log is public. A rule's name and its tenant's id are the
+        // tenant's; `triggerEvent` is a free String column, so it is printed
+        // only when it is an event-name literal and counted as (other) else.
+        const automation = queries.filter((q) => q.includes('"AutomationRule"'));
+        expect(automation).toHaveLength(1);
+        const selected = [...automation[0].matchAll(/SELECT([\s\S]*?)\bFROM\b/g)].map((m) => m[1]);
+        expect(selected).toHaveLength(3);
+        expect(
+            selected.filter((cols) => /"(name|description|id|tenantId|actionConfigJson|triggerFilterJson|createdByUserId)"(?!\))/.test(cols)),
+        ).toEqual([]);
+        expect(
+            automation.filter((q) => q.includes(`CASE WHEN "triggerEvent" ~ '^[A-Z][A-Z0-9_]{0,63}$' THEN "triggerEvent" ELSE '(other)' END`)),
+        ).toHaveLength(1);
+        expect(automation.filter((q) => q.includes('count(DISTINCT "tenantId")'))).toHaveLength(1);
     });
 
     it('remote.sh writes no file on the VM', () => {

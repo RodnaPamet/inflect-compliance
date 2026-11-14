@@ -13,8 +13,8 @@
 # free-text command would make every push to this repository a way to run
 # anything on production. A new check is a pull request.
 #
-# READ-ONLY. Every check reads; the database query runs in a read-only
-# transaction.
+# READ-ONLY. Every check reads; the database queries run in read-only
+# transactions.
 #
 # THE LOGS ARE PUBLIC, because the repository is. The checks print names,
 # states, versions and counts: never a log line, a row, an environment file, a
@@ -35,6 +35,7 @@ on:
                     - log-errors
                     - access-review-dates
                     - bcrypt
+                    - automation-rules
 
 # One at a time: two runs staging the script on the VM at once would race.
 concurrency:

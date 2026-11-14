@@ -64,6 +64,7 @@ curl http://localhost:3000/api/health | jq .
 | `ANTHROPIC_WORKSPACE_ID` | Optional | Only for an **organisation-level** `ANTHROPIC_API_KEY` — a key created inside a workspace needs nothing here. Anthropic refuses an organisation-level key's requests with HTTP 400 unless each names its workspace, so when this is set (a `wrkspc_…` identifier, not a secret) every request to the Anthropic API — the posture summary, AI risk suggestions and the Flue runtime's external provider — carries `anthropic-workspace-id: <id>`; unset, none does. It reaches the `app` and `worker` containers the way `ANTHROPIC_API_KEY` does: through the service's `env_file:` (`/opt/inflect/.env.prod` on the production VM). No Compose file lists either key under `environment:`, and none should — a service-level `environment:` entry overrides the env file, so an empty interpolation there would blank the value the container was given. |
 | `AGENT_FLUE_MODEL` | Optional (default `claude-sonnet-5-5`) | The model the Flue agent runtime's external provider names, and the default model `npm run skills:evaluate` records skill evaluations against. Its own variable on purpose: the compliance-posture summary and the AI risk suggestions keep `ANTHROPIC_MODEL` (default `claude-haiku-4-5`), and setting one never moves the other. The credential and workspace are still the shared `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID`. A `LOCAL_ONLY` tenant's run never reads it; its model is `AI_LOCAL_MODEL`. It reaches the `app` and `worker` containers through the service's `env_file:`, like `ANTHROPIC_API_KEY`. |
 | `AGENT_FLUE_WORKER_MODEL` | Optional (unset) | The WORKER role's model (D-L3-1): the model a Flue run's subagents run on, on the same external provider, key and workspace as `AGENT_FLUE_MODEL`. Registered beside it at boot, never instead of it. Unset, blank or equal to `AGENT_FLUE_MODEL`, subagents run on the run's own model, which is the behaviour before the variable existed; each run's opening audit entry records both models and whether the worker's was configured or a fallback. A `LOCAL_ONLY` tenant's run never reads it; both its roles use `AI_LOCAL_MODEL` or are refused. |
+| `AUTOMATION_WEB_EVENTS_ENABLED` | Optional (unset = off) | Whether automation events emitted in the **web** process (a task, risk or control created through the UI or the API) reach the job queue and fire automation rules. Off by default; see "Automation rules from web events" below before turning it on. `1` or `true` turns it on; any other value is off. |
 | `EVALS_CARD_HIDDEN_ORG_SLUGS` | Optional (unset) | The opt-out list for the read-only **Evaluations** card on `/org/<slug>/settings`. Every organization's admins (owner or admin) see the card by default, a newly created organization included; comma-separated organization slugs listed here do not. Unset or empty hides it nowhere. The card describes the garak and Inspect CI nightlies (`garak.yml`, `agent-evals.yml`) and where their repository variables `GARAK_ENABLED` / `AGENT_EVALS_ENABLED` are set; it is static content, reads no live state and calls nothing, so this opt-out list is all there is to configure. Not a sub-processor. |
 
 ## Docker Compose (Self-hosted / VPS)
@@ -178,6 +179,48 @@ How it is wired:
 > **Operator note — the `worker` service runs on the GCP VM.** Watchtower
 > swaps the *image* only; it never applies Compose structure changes. Structure
 > reaches the VM through `deploy/apply.sh` — see the next section.
+
+### Automation rules from web events (`AUTOMATION_WEB_EVENTS_ENABLED`)
+
+An automation rule fires when an event it is triggered by is emitted and
+dispatched to the queue. Events come from two processes. The **worker** emits
+them from jobs and scheduled sweeps, and those have always fired. The **web**
+process emits them from requests: a task, risk or control created through the
+UI or the API. Until #5541, **no web event ever reached the queue.** Next.js
+loaded the code that connects the automation bus to BullMQ and the route
+handlers as separate module instances, so every route emitted into a bus that
+discarded the event. No rule ever fired from a web event, in production
+included.
+
+#5541 fixed the bus and put the fix behind `AUTOMATION_WEB_EVENTS_ENABLED`, off
+by default (owner decision, 2026-11-13):
+
+- **Off** (unset, or any value but `1` / `true`): web events are not
+  dispatched, as before. The app logs `automation-bus.web_events_held` once per
+  process, at INFO, when it first holds one back.
+- **On** (`1` or `true`): web events are dispatched. **Every ENABLED rule wakes
+  for new web events at once**: its notifications, webhooks, task creations and
+  agent invocations start acting. Nothing is replayed: an event emitted while
+  the switch was off is gone, and only events emitted after the app restarts
+  with the switch on are dispatched.
+- **The worker never reads it.** Worker-emitted events fire whatever it says.
+
+It is off because turning it on changes what every tenant's enabled rules do,
+and nobody has seen those rules act on web events before. To turn it on in
+production:
+
+1. Run the `VM check` workflow with the `automation-rules` check. It counts the
+   ENABLED rules, per trigger event and per action type, and the tenants that
+   hold one.
+2. Decide, from those counts, whether the rules that would wake should.
+3. Add `AUTOMATION_WEB_EVENTS_ENABLED=1` to `/opt/inflect/.env.prod`. It
+   reaches the `app` container through `env_file:`.
+4. Apply (`VM apply`, action `apply`), which recreates the app with the new
+   environment. Look for `automation-bus.dispatcher_installed` with
+   `webEventsEnabled: true` in the app's log.
+
+To turn it off again, remove the line and apply. The switch takes effect at the
+next event; executions that have already been queued run to completion.
 
 ---
 
@@ -725,7 +768,7 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
 | `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
-| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`. |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`. |
 
 `VM check` is how a Claude Code session looks at production without holding a
 credential: the session dispatches it, the reviewer approves, and the session

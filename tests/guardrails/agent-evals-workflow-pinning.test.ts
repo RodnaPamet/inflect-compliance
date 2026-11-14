@@ -22,6 +22,8 @@
  *      for one is refused rather than masked and passed along unused.
  */
 import * as fs from 'fs';
+import * as os from 'os';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { codeOf } from '../helpers/source-blocks';
@@ -205,6 +207,44 @@ describe('the run shape', () => {
         expect(start).toMatch(/^\s*node dist\/worker\.mjs > \/tmp\/worker\.log 2>&1 &$/m);
         expect(steps.map((s) => s.run ?? '').join('\n')).not.toMatch(/scripts\/worker\.ts/);
         expect(read('deploy/docker-compose.prod.yml')).toContain('node dist/worker.mjs');
+    });
+
+    it('lets the web process dispatch automation events, which the Tool Runner samples start from', () => {
+        // A Tool Runner sample's run starts from a TASK_CREATED rule, and the
+        // task is created over HTTP: a web-tier event, held back by default.
+        expect(WORKFLOW.jobs.inspect.env.AUTOMATION_WEB_EVENTS_ENABLED).toBe('1');
+    });
+
+    it('prints the automation dispatch lines at every level, so a rule that never fired shows', () => {
+        // Run 43429583015: a Tool Runner sample's rule never acted, and a
+        // warnings-only filter could not say whether a dispatch job had run.
+        // The step's own grep, run over the lines those jobs really write.
+        const step = WORKFLOW.jobs.inspect.steps.find((s) => (s.name ?? '').startsWith('Worker log'));
+        const lines = (step?.run ?? '').split('\n').filter((l) => /^\s*grep /.test(l));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-evals-worker-log-'));
+        const log = path.join(dir, 'worker.log');
+        fs.writeFileSync(
+            log,
+            [
+                '{"level":30,"component":"job","jobName":"automation-event-dispatch","msg":"job started"}',
+                '{"level":30,"component":"automation-event-dispatch","matched":0,"msg":"automation-dispatch.complete"}',
+                '{"level":30,"component":"automation","tenantId":"t","msg":"agent-invoke: dispatched"}',
+                '{"level":30,"component":"job","jobName":"agent-invoke-dispatch","msg":"job completed"}',
+                '{"level":30,"component":"agentic","msg":"an unrelated info line"}',
+            ].join('\n') + '\n',
+        );
+        try {
+            const out = lines
+                .map((l) => execFileSync('bash', ['-c', l.replaceAll('/tmp/worker.log', log)], { encoding: 'utf8' }))
+                .join('');
+            expect(out).toContain('"jobName":"automation-event-dispatch"');
+            expect(out).toContain('automation-dispatch.complete');
+            expect(out).toContain('agent-invoke: dispatched');
+            expect(out).toContain('"jobName":"agent-invoke-dispatch"');
+            expect(out).not.toContain('an unrelated info line');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 
     it('is reachable only by schedule and dispatch', () => {
