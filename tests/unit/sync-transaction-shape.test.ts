@@ -45,6 +45,7 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 
 import { runHrisSync } from '@/app-layer/usecases/hris-sync';
 import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
+import { decryptField } from '@/lib/security/encryption';
 import {
     MAX_SYNC_BOOKKEEPING_TXS,
     SYNC_BOOKKEEPING_TX_TIMEOUT_MS,
@@ -614,5 +615,51 @@ describe('runIdentitySync opens the right transactions', () => {
 
         expect(txs.length).toBeGreaterThan(0);
         expect(txs.filter((t) => t.timeout === undefined)).toEqual([]);
+    });
+});
+
+// ── An unreadable connection secret (#5317) ─────────────────────────────
+
+describe('a connection secret that will not decrypt finalises the RUNNING row as ERROR', () => {
+    function unreadableSecret(provider: string) {
+        behaviours['integrationConnection.findFirst'] = () => ({
+            id: 'conn-1', provider, configJson: {}, secretEncrypted: 'v2:unreadable', isEnabled: true, syncCursor: null, syncPassStartedAt: null,
+        });
+        (decryptField as jest.Mock).mockImplementationOnce(() => {
+            throw new Error('Unsupported state or unable to authenticate data');
+        });
+    }
+
+    function finalStatusOfTheRun(): string | undefined {
+        const writes = ops.filter((o) => o.model === 'integrationExecution' && o.op === 'update');
+        return (writes.at(-1)?.args?.data as { status?: string } | undefined)?.status;
+    }
+
+    it('HRIS: the run is ERROR, not RUNNING for ever, and the provider is never reached', async () => {
+        unreadableSecret('bamboohr');
+        const seen = { depth: [] as number[], runningTxSettled: [] as boolean[] };
+        const provider = hrisProvider([emp(1)], seen, runningRowTx);
+
+        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(r.status).toBe('ERROR');
+        expect(r.noRetry).toBe(true);
+        expect(r.errorMessage).toMatch(/secret could not be read/);
+        expect(finalStatusOfTheRun()).toBe('ERROR');
+        expect(provider.listEmployees).not.toHaveBeenCalled();
+    });
+
+    it('identity: the run is ERROR, not RUNNING for ever, and the directory is never reached', async () => {
+        unreadableSecret('okta');
+        const seen = { depth: [] as number[], runningTxSettled: [] as boolean[] };
+        const provider = identityProvider([acct(1)], seen, runningRowTx);
+
+        const r = await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        expect(r.status).toBe('ERROR');
+        expect(r.noRetry).toBe(true);
+        expect(r.errorMessage).toMatch(/secret could not be read/);
+        expect(finalStatusOfTheRun()).toBe('ERROR');
+        expect(provider.listAccounts).not.toHaveBeenCalled();
     });
 });

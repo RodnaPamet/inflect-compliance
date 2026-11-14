@@ -145,6 +145,35 @@ export async function assertNoChainCycle(
             throw badRequest('Rule chain would create a cycle');
         }
     }
+    // And over BOTH edges at once (#5317): the dispatch follows whichever edge
+    // the filter picks at each hop, so A -next-> B -else-> C -next-> A loops at
+    // run time although neither single-edge walk above reaches A.
+    if (chainReachesRule(ruleId, roots, graph)) {
+        throw badRequest('Rule chain would create a cycle');
+    }
+}
+
+/**
+ * Whether `ruleId` is reachable from `roots` following `next` AND `else`
+ * edges in any mix. Exported for its unit test.
+ */
+export function chainReachesRule(
+    ruleId: string,
+    roots: readonly string[],
+    graph: ReadonlyMap<string, { next: string | null; else: string | null }>,
+): boolean {
+    const seen = new Set<string>();
+    const queue = [...roots];
+    while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (id === ruleId) return true;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const node = graph.get(id);
+        if (node?.next) queue.push(node.next);
+        if (node?.else) queue.push(node.else);
+    }
+    return false;
 }
 
 /** Optional free-text fields are sanitised before persistence. */

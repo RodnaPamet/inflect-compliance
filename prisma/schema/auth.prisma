@@ -839,7 +839,8 @@ model AccessReviewConnectedDecision {
   tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   accessReview AccessReview              @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
   account      ConnectedIdentityAccount? @relation(fields: [connectedAccountId, tenantId], references: [id, tenantId])
-  decidedBy    User?                     @relation("ConnectedDecisionDecider", fields: [decidedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  decidedBy    User?                     @relation("ConnectedDecisionDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
   /// Step 3a — the reviewer pack, the narrowings it proposed, and the
   /// retrospective sample drawn at close.
   agentPack       AccessReviewAgentPack?
@@ -1102,8 +1103,10 @@ model AccessReviewDecision {
   accessReview AccessReview      @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
   membership   TenantMembership? @relation("AccessReviewDecisionMembership", fields: [membershipId, tenantId], references: [id, tenantId])
   subjectUser  User              @relation("AccessReviewDecisionSubject", fields: [subjectUserId], references: [id])
-  decidedBy    User?             @relation("AccessReviewDecisionDecider", fields: [decidedByUserId], references: [id])
-  executedBy   User?             @relation("AccessReviewDecisionExecutor", fields: [executedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  decidedBy    User?             @relation("AccessReviewDecisionDecider", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  executedBy   User?             @relation("AccessReviewDecisionExecutor", fields: [executedByUserId], references: [id], onDelete: Restrict)
 
   /// One decision row per (campaign, subject user). Anchored on
   /// subjectUserId rather than membershipId so a membership that's

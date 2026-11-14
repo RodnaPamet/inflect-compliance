@@ -117,6 +117,7 @@ function makeDb(options: DbOptions = {}) {
                           riskTier: 'LOW',
                           riskTierScoredAt: new Date(),
                           _count: { tools: 1 },
+                          tools: [{ toolName: 'list_risks', createdAt: new Date(0) }],
                       }
                     : options.agent,
             ),
@@ -467,6 +468,7 @@ describe('external tools', () => {
         riskTier: 'LOW',
         riskTierScoredAt: new Date(),
         _count: { tools: 1 },
+        tools: [{ toolName: 'list_risks', createdAt: new Date(0) }],
     });
 
     it('grants one whose definition is pinned, to an agent that declared egress', async () => {
@@ -531,6 +533,7 @@ describe('A2A sends (#3679)', () => {
         riskTier: 'LOW',
         riskTierScoredAt: new Date(),
         _count: { tools: 1 },
+        tools: [{ toolName: 'list_risks', createdAt: new Date(0) }],
     };
 
     it('offers the send of a connection whose peer is pinned', async () => {

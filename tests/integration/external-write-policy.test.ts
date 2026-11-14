@@ -761,6 +761,20 @@ describe('what PROPOSE_ONLY counts as evidence', () => {
         expect(policy.evidenceInWindow).toBe(1);
     });
 
+    it('counts an approval the far end ACCEPTED for later delivery (#5317)', async () => {
+        // An async grant settles ACCEPTED and may stay there; the human review
+        // happened all the same, so it is evidence as FAILED is.
+        await armAtProposeOnly(conn);
+        const journalId = await approvedWrite(conn);
+        await prisma.externalWriteJournal.update({
+            where: { id: journalId },
+            data: { outcome: 'ACCEPTED', settledAt: new Date() },
+        });
+
+        const policy = await getExternalWritePolicy(ctx1, conn);
+        expect(policy.evidenceInWindow).toBe(1);
+    });
+
     it('ignores approvals from BEFORE the window opened', async () => {
         // Evidence from a previous stint at this rung is not evidence about this
         // one — the same window claim the DRY_RUN block makes.

@@ -639,9 +639,23 @@ export async function resolveGrantedExternalTools(
         const url = typeof config.url === 'string' ? config.url.trim() : '';
         if (!url) continue;
 
-        const secrets = connection.secretEncrypted
-            ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
-            : {};
+        // A secret that will not decrypt (a key-rotation problem, a corrupted
+        // row) or parse costs THIS connection and nothing else (#5317) — the
+        // same isolation as an unusable credential or an unreachable server
+        // below. Thrown out of the loop, it failed every invocation whose
+        // grants named any external tool, internal-only work included.
+        let secrets: Record<string, unknown>;
+        try {
+            secrets = connection.secretEncrypted
+                ? (JSON.parse(decryptField(connection.secretEncrypted)) as Record<string, unknown>)
+                : {};
+        } catch (err) {
+            logger.warn('mcp.external_secret_unreadable', {
+                connectionId: connection.id,
+                error: err instanceof Error ? err.name : 'non-Error thrown',
+            });
+            continue;
+        }
 
         // Minted through the SHARED resolver, so the runtime and the "Test
         // connection" button agree about what a credential means. A connection

@@ -177,7 +177,9 @@ describe('the refusal and the request id', () => {
             resolveInitiatorContext({ tenantId: 'tenant-A', userId: 'user-1', requestId: 'req-1' }),
         ).resolves.toBeNull();
         expect(prismaMock.tenantMembership.findFirst).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { userId: 'user-1', tenantId: 'tenant-A', status: 'ACTIVE' } }),
+            expect.objectContaining({
+                where: { userId: 'user-1', tenantId: 'tenant-A', status: 'ACTIVE', tenant: { deletedAt: null } },
+            }),
         );
     });
 

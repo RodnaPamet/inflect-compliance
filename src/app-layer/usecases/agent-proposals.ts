@@ -1633,6 +1633,21 @@ export async function approveAgentProposal(
         });
     }
 
+    // ═══ AN EXTERNAL WRITE IS APPROVED EXACTLY AS PROPOSED (#5317) ═══
+    //
+    // Its arguments and prior state are bound to what the paired read returned,
+    // and `openApprovedExternalWrite` opens the journal row from the STORED
+    // payload. Edits were accepted, stamped EDITED and then dropped from the
+    // write actually sent, so they are refused here, before the claim, leaving
+    // the row PENDING. To send something different, reject and re-propose.
+    if (proposal.kind === 'EXTERNAL_WRITE' && parsedEdits !== undefined) {
+        throw badRequest(
+            'EXTERNAL_WRITE_PROPOSAL_NOT_EDITABLE: an external write is approved exactly as proposed. ' +
+                'To send something different, reject it and propose the corrected write.',
+            { reason: 'EXTERNAL_WRITE_PROPOSAL_NOT_EDITABLE' },
+        );
+    }
+
     // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
     //
     // Read from the PIN. `??` is not a convenience: a row written before this

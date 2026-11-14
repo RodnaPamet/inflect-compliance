@@ -363,11 +363,15 @@ export class TaskRepository {
 
         // Generic TaskLink path (the control-tab create flow links via
         // TaskLink, not the FK). Indexed by [tenantId, entityType, entityId].
+        // The soft-delete extension filters top-level reads only, never a
+        // nested relation, so a deleted task reached through its link is
+        // filtered here (#5305) — as the direct read above is filtered for it.
         const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the controlIds set
             where: {
                 tenantId: ctx.tenantId,
                 entityType: 'CONTROL' as TaskLinkEntityType,
                 entityId: { in: controlIds },
+                task: { deletedAt: null },
             },
             select: {
                 entityId: true,
@@ -409,11 +413,15 @@ export class TaskRepository {
 
         // entityId → (taskId → status), dedup by task id.
         const perEntity = new Map<string, Map<string, string>>();
+        // A deleted task reached through its link is not counted (#5305): the
+        // soft-delete extension filters top-level reads only, so the column
+        // read 1/0 where the entity's Tasks tab read 0.
         const links = await db.taskLink.findMany({ // guardrail-allow: unbounded -- aggregate count, bounded by the entityIds set
             where: {
                 tenantId: ctx.tenantId,
                 entityType,
                 entityId: { in: entityIds },
+                task: { deletedAt: null },
             },
             select: {
                 entityId: true,
@@ -832,6 +840,10 @@ export class TaskRepository {
         if (isTerminalStatus(status)) {
             updateData.completedAt = new Date();
             if (resolution !== undefined) updateData.resolution = resolution;
+        } else {
+            // A reopened task is no longer complete, as `setStatus` has it
+            // (#5305); the bulk path left the old resolution time in place.
+            updateData.completedAt = null;
         }
         return db.task.updateMany({
             where: { id: { in: taskIds }, tenantId: ctx.tenantId },

@@ -91,14 +91,28 @@ describe('createWatcherNotifications', () => {
     });
 });
 
+/**
+ * `findMany` by `dedupeKey`, as the helper reads the inserted rows back
+ * (#5305): each key gets a row id that is NOT the key, so an event still
+ * carrying the dedupe key as its id fails the assertions below.
+ */
+const insertedRows = () =>
+    jest.fn(async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
+        where.dedupeKey.in.map((dedupeKey, i) => ({
+            id: `notif-row-${i + 1}`,
+            dedupeKey,
+            createdAt: new Date('2026-05-28T12:00:05Z'),
+        })),
+    );
+
 describe('createWatcherNotifications — SSE publish', () => {
     let createManyMock: jest.Mock;
-    let db: { notification: { createMany: jest.Mock } };
+    let db: { notification: { createMany: jest.Mock; findMany: jest.Mock } };
 
     beforeEach(() => {
         __resetNotificationBusForTests();
         createManyMock = jest.fn();
-        db = { notification: { createMany: createManyMock } };
+        db = { notification: { createMany: createManyMock, findMany: insertedRows() } };
     });
 
     it('fans each watcher event to the bus when rows insert (count > 0)', async () => {
@@ -110,7 +124,8 @@ describe('createWatcherNotifications — SSE publish', () => {
 
         expect(received).toHaveLength(1);
         expect(received[0].type).toBe('TASK_WATCH_UPDATE');
-        expect(received[0].id).toBe('tenant-1:TASK_WATCH:task-1:w1:commented:comment-1');
+        // The ROW's id, not the dedupe key it used to carry (#5305).
+        expect(received[0].id).toBe('notif-row-1');
     });
 
     it('SKIPS the bus publish when skipDuplicates collapses all inserts', async () => {

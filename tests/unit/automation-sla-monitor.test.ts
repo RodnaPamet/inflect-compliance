@@ -34,7 +34,9 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 jest.mock('@/app-layer/automation', () => ({
-    AutomationExecutionRepository: { recordCompletion: jest.fn() },
+    // The sweep settles through the RUNNING-only write (#5305); the default is
+    // that it won the race, set per test below.
+    AutomationExecutionRepository: { recordCompletionIfRunning: jest.fn() },
 }));
 
 jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
@@ -52,7 +54,10 @@ import { logEvent } from '@/app-layer/events/audit';
 
 const repo = AutomationExecutionRepository as jest.Mocked<typeof AutomationExecutionRepository>;
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+    jest.clearAllMocks();
+    repo.recordCompletionIfRunning.mockResolvedValue(true);
+});
 
 const NOW = new Date('2026-06-08T12:00:00.000Z');
 const twoHoursAgo = new Date('2026-06-08T10:00:00.000Z');
@@ -73,7 +78,7 @@ describe('sla-monitor sweepTenant', () => {
         const count = await sweepTenant('tenant-1', NOW);
 
         expect(count).toBe(1);
-        expect(repo.recordCompletion).toHaveBeenCalledWith(
+        expect(repo.recordCompletionIfRunning).toHaveBeenCalledWith(
             mockDb,
             expect.objectContaining({ tenantId: 'tenant-1' }),
             'exec-1',
@@ -103,7 +108,7 @@ describe('sla-monitor sweepTenant', () => {
         const count = await sweepTenant('tenant-1', NOW);
 
         expect(count).toBe(0);
-        expect(repo.recordCompletion).not.toHaveBeenCalled();
+        expect(repo.recordCompletionIfRunning).not.toHaveBeenCalled();
     });
 
     it('fires a NOTIFY_USER breach action as notifications', async () => {
@@ -129,5 +134,30 @@ describe('sla-monitor sweepTenant', () => {
                 expect.objectContaining({ userId: 'u2', tenantId: 'tenant-1' }),
             ],
         });
+    });
+
+    it('an execution that settled SUCCEEDED after the read is neither audited nor notified as breached (#5305)', async () => {
+        mockDb.automationExecution.findMany.mockResolvedValue([
+            {
+                id: 'exec-4',
+                ruleId: 'rule-4',
+                startedAt: twoHoursAgo,
+                createdAt: twoHoursAgo,
+                rule: {
+                    slaWindowMinutes: 30,
+                    slaBreachActionType: 'NOTIFY_USER',
+                    slaBreachConfigJson: { userIds: ['u1'], message: 'Breached!' },
+                },
+            },
+        ]);
+        // The dispatcher committed SUCCEEDED between the sweep's read and its
+        // write, so the RUNNING-only write settles nothing.
+        repo.recordCompletionIfRunning.mockResolvedValue(false);
+
+        const count = await sweepTenant('tenant-1', NOW);
+
+        expect(count).toBe(0);
+        expect(logEvent).not.toHaveBeenCalled();
+        expect(mockDb.notification.createMany).not.toHaveBeenCalled();
     });
 });

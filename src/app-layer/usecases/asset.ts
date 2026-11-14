@@ -741,6 +741,9 @@ export async function bulkAssignAsset(
     const updated = await runInTenantContext(ctx, async (db) => {
         const rows = await AssetRepository.listByIds(db, ctx, assetIds);
         if (rows.length === 0) return 0;
+        // The same check every other owner write applies (#5317): a removed,
+        // inactive or other-tenant user is never written as an asset's owner.
+        if (ownerUserId) await assertActiveOwner(db, ctx.tenantId, ownerUserId);
         await AssetRepository.bulkUpdate(db, ctx, assetIds, {
             ownerUserId: ownerUserId || null,
         });

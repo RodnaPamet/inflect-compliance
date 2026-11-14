@@ -34,8 +34,17 @@ let _provider: StorageProvider | null = null;
 
 /**
  * Get the configured storage provider (singleton).
- * Default: 's3' if STORAGE_PROVIDER is not set (as `src/env.ts` declares),
- * so an unset value needs S3_BUCKET — local disk is an explicit opt-in.
+ *
+ * Default: **'s3'** when STORAGE_PROVIDER is not set. This docblock said
+ * `'local'` until #5616, which is the opposite of the line below it — an
+ * operator who trusted it ran with no STORAGE_PROVIDER expecting local disk
+ * and got `S3_BUCKET environment variable is required` from a provider they
+ * had not asked for. `'s3'` is the right default to keep, and it is what makes
+ * the production guard underneath meaningful: warning when `local` is used in
+ * production only reads as a warning if `s3` is the norm.
+ *
+ * This is the CONFIGURED provider. To read a stored object, ask the provider
+ * that wrote it — {@link getProviderByName} with the row's `storageProvider`.
  *
  * PRODUCTION GUARD: Logs a warning if local provider is used in production.
  * All production deployments should use cloud storage ('s3').

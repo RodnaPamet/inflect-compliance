@@ -18,6 +18,13 @@ export const MIN_PASSWORD_LENGTH = 8;
  * could cost the login route. It does NOT guard against bcrypt's 72-byte input
  * truncation — 128 ASCII characters are 128 bytes, and 128 Cyrillic ones are
  * 256 — so two passwords sharing their first 72 UTF-8 bytes verify alike.
- * Whether to cap by bytes or pre-hash is open (#5306).
+ *
+ * THAT QUESTION, left open by #5593, is answered in #5592: the password is
+ * PRE-HASHED before bcrypt sees it (`prehashForBcrypt`), so no input is
+ * truncated and this limit keeps only the job it could ever do. It lands in two
+ * deploys — the read side first, the write side after — because a pre-hashed
+ * hash cannot be opened by a build that compares the raw plaintext, so shipping
+ * both at once would let a rollback strand everyone who set a password in the
+ * window.
  */
 export const MAX_PASSWORD_LENGTH = 128;

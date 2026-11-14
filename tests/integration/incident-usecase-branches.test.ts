@@ -87,6 +87,27 @@ describeFn('incident usecase — branch coverage (integration)', () => {
         await globalPrisma.$disconnect();
     });
 
+    it('concurrent creates in one workspace each get their own reference (#5305)', async () => {
+        // Several people opening incidents at the same moment, which a real
+        // incident makes common. Each create used to count the year's
+        // incidents and insert count+1, so concurrent creates minted the same
+        // reference and all but one failed on @@unique([tenantId, reference]).
+        const year = 2025;
+        const made = await Promise.all(
+            Array.from({ length: 5 }, (_, i) =>
+                createIncident(ctx, {
+                    title: `Concurrent ${i}`,
+                    severity: 'LOW',
+                    incidentType: 'OTHER',
+                    detectedAt: `${year}-06-01T00:00:00.000Z`,
+                }),
+            ),
+        );
+        const refs = made.map((i) => i.reference).sort();
+        expect(new Set(refs).size).toBe(5);
+        expect(refs.every((r) => r.startsWith(`INC-${year}-`))).toBe(true);
+    });
+
     it('not-found paths throw across read + mutation usecases', async () => {
         await expect(getIncident(ctx, 'nope')).rejects.toThrow(/not found/i);
         await expect(updateIncident(ctx, 'nope', { title: 'x' })).rejects.toThrow(/not found/i);

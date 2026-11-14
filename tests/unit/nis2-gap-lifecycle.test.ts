@@ -200,4 +200,34 @@ describe('applyNis2Remediations', () => {
         expect(mockCreateTask).not.toHaveBeenCalled();
         expect(res.skipped).toBe(1);
     });
+
+    it('skips an approval whose kind differs from the engine classification (#5318)', async () => {
+        wireApply([gap({ questionId: 'q-task', timeToFix: 'QUICK_WIN' })]);
+        const res = await applyNis2Remediations(ctx(), [
+            { questionId: 'q-task', kind: 'RISK' },
+            { questionId: 'q-task', kind: 'CONTROL_CREATE' },
+        ]);
+        expect(mockCreateRisk).not.toHaveBeenCalled();
+        expect(mockCreateControl).not.toHaveBeenCalled();
+        expect(res).toEqual({ risksCreated: 0, controlsCreated: 0, tasksCreated: 0, skipped: 2 });
+    });
+
+    it('skips a CONTROL_LINK naming a control the suggestion did not offer (#5318)', async () => {
+        wireApply([gap({ questionId: 'q-link' })]);
+        const res = await applyNis2Remediations(ctx(), [
+            { questionId: 'q-link', kind: 'CONTROL_LINK', linkControlId: 'c-not-offered' },
+        ]);
+        expect(mockCreateTask).not.toHaveBeenCalled();
+        expect(res.skipped).toBe(1);
+
+        wireApply([gap({ questionId: 'q-link' })]);
+        const ok = await applyNis2Remediations(ctx(), [
+            { questionId: 'q-link', kind: 'CONTROL_LINK', linkControlId: 'c-existing' },
+        ]);
+        expect(ok.tasksCreated).toBe(1);
+        expect(mockCreateTask).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ controlId: 'c-existing' }),
+        );
+    });
 });

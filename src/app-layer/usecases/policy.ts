@@ -205,9 +205,10 @@ async function assertOwnerIsActiveMember(
         select: { userId: true },
     });
     if (!membership) {
+        // Sentence first, code in details (#5318): the client shows `message`.
         throw badRequest(
-            'INVALID_OWNER',
             'The selected owner is not an active member of this tenant.',
+            { reason: 'INVALID_OWNER' },
         );
     }
 }
@@ -1084,6 +1085,13 @@ export async function publishPolicy(
         const version = await PolicyVersionRepository.getById(db, versionId);
         if (!version || version.policyId !== policyId) {
             throw badRequest('Version does not belong to this policy');
+        }
+
+        // An ARCHIVED policy is retired; the way back is `unarchivePolicy`
+        // (to DRAFT), as rollbackPolicy and requestPolicyApproval require.
+        // A bypass reason must not put it straight back live (#5318).
+        if (policy.status === 'ARCHIVED') {
+            throw conflict('This policy is archived. Restore it before publishing.');
         }
 
         // Capture the OUTGOING published version before it's replaced — used

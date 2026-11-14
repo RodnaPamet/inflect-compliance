@@ -35,6 +35,26 @@ which references would refuse the Stage 2 hard delete for a given subject, and
 writes nothing (`writes: 0`, asserted by capturing every statement it issues).
 It is likewise unmounted.
 
+**Erasure refuses up front when anything blocks it** (#5595, owner decision
+2026-11-14). `eraseUser` runs `planErasure` inside its own transaction before
+its first write and throws `ErasureBlockedError` (a 409 `ConflictError`
+carrying the blockers) when the plan lists any. Each blocker names a `reason`:
+
+| `reason` | Meaning |
+|----------|---------|
+| `IMMUTABLE_AUDIT_TRAIL` | `OrgAuditLog.actorUserId` / `targetUserId` names the subject. The table is append-only and hash-chained, so the reference stays. |
+| `STAMPED_DECISION_ACTOR` | A recorded decision names the subject as its actor: `AccessReviewDecision.decidedByUserId` / `executedByUserId`, `AccessReviewConnectedDecision.decidedByUserId`, `ControlException.approvedByUserId` / `rejectedByUserId`, `RiskTreatmentPlan.completedByUserId`, `TreatmentMilestone.completedByUserId`. A pair CHECK or a one-way trigger keeps that actor set. |
+| `RESTRICT_REFERENCE` | Any other `ON DELETE RESTRICT` / `NO ACTION` reference (a membership, a notification, …), which can be resolved and the erasure re-run. |
+
+The first two sets are `ON DELETE RESTRICT` in the database (migration
+`20261114140000_dsar_erasure_audit_references_restrict`), and `planErasure`
+treats them as blockers whatever action the catalog reports, because a SET NULL
+on any of them fails part-way on the trigger or the CHECK. `AuditLog.userId` is
+not among them: erasure pseudonymizes it, as described below. Erasing a person
+whom the org audit trail or a stamped decision names is not possible today; it
+would need a pseudonymisation of those records, which was considered and not
+chosen.
+
 Two deviations from the original brief, both flagged: (a) `DataSubjectRequest`
 carries **no `tenantId`** — a DSAR is user-scoped/cross-tenant, and a `tenantId`
 column would (correctly) pull the table into the RLS-coverage requirement; the

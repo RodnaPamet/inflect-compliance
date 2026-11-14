@@ -29,6 +29,7 @@
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest, ConflictError } from '@/lib/errors/types';
 import { ASSET_NAME_TAKEN } from '@/lib/asset-name-taken';
+import { VENDOR_NAME_TAKEN } from '@/lib/vendor-refusal-reasons';
 import type { RequestContext } from '../types';
 
 export type RestorableModel =
@@ -173,6 +174,73 @@ const ASSET_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
     }
 };
 
+/**
+ * The refusal a policy restore gets when a live policy now holds its slug
+ * (#5305), in `error.details.reason`.
+ */
+export const POLICY_SLUG_TAKEN = 'POLICY_SLUG_TAKEN' as const;
+
+/**
+ * `Policy` restore — refuse if a live policy now holds the same slug (#5305).
+ *
+ * Policy slugs are unique among LIVE policies only (`Policy_tenantId_slug_key`,
+ * `WHERE "deletedAt" IS NULL`), and a new policy titled like a deleted one is
+ * given the same slug, because the deleted row is invisible to the slug check
+ * at creation. Restoring the deleted one then hit the index as a bare P2002,
+ * answered with a generic sentence that named no cause. Slugs cannot be
+ * edited, so the restore can succeed only once that other policy is gone —
+ * which is what the refusal says.
+ */
+const POLICY_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
+    const row = record as { id: string; slug: string | null };
+    if (!row.slug) return;
+    const holder = await db.policy.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            slug: row.slug,
+            deletedAt: null,
+            id: { not: row.id },
+        },
+        select: { id: true },
+    });
+    if (holder) {
+        throw new ConflictError(
+            'Cannot restore: a live policy now has this policy\'s identifier (it was created with the same title after this one was deleted). Delete that policy first, then retry.',
+            { reason: POLICY_SLUG_TAKEN },
+        );
+    }
+};
+
+/**
+ * `Vendor` restore — refuse if a live vendor now holds the same name (#5305).
+ *
+ * Vendor names are unique among LIVE vendors only
+ * (`Vendor_tenantId_name_live_key`, `WHERE "deletedAt" IS NULL`), so a deleted
+ * vendor's name is free for reuse. Restoring it afterwards hit the index as a
+ * bare P2002; it now gets the `VENDOR_NAME_TAKEN` refusal a create or rename
+ * already gets, which the vendor pages can word. Same question as the index:
+ * exact name, same tenant, live, not itself.
+ */
+const VENDOR_VALIDATOR: RestoreValidator = async (ctx, db, record) => {
+    const row = record as { id: string; name: string | null };
+    if (!row.name) return;
+    const holder = await db.vendor.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            name: row.name,
+            deletedAt: null,
+            id: { not: row.id },
+        },
+        select: { id: true },
+    });
+    if (holder) {
+        throw new ConflictError(
+            'Cannot restore: another vendor now has this name. Rename that vendor first, then retry.',
+            { reason: VENDOR_NAME_TAKEN },
+        );
+    }
+};
+
 // ─── Registry ────────────────────────────────────────────────────────
 
 export const RESTORE_VALIDATORS: Record<RestorableModel, RestoreValidator> = {
@@ -180,8 +248,8 @@ export const RESTORE_VALIDATORS: Record<RestorableModel, RestoreValidator> = {
     Risk: NOOP_VALIDATOR,
     Control: NOOP_VALIDATOR,
     Evidence: EVIDENCE_VALIDATOR,
-    Policy: NOOP_VALIDATOR,
-    Vendor: NOOP_VALIDATOR,
+    Policy: POLICY_VALIDATOR,
+    Vendor: VENDOR_VALIDATOR,
     FileRecord: NOOP_VALIDATOR,
     Task: TASK_VALIDATOR,
     Finding: NOOP_VALIDATOR,

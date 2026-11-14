@@ -299,9 +299,12 @@ export async function startWorkflowRun(
          * allows (`resolveRunDefinition`): `'TEST_RUN'` from the Test-run
          * usecase (which alone also admits a Test-run key and a SUBMITTED
          * version), `'ASK'` from `startInteractiveRun`, `'AUTOMATION'` from the
-         * `agent-invoke` dispatcher. Ignored for a registered workflow key.
+         * `agent-invoke` dispatcher. Ignored for a registered workflow key
+         * but one: the ad-hoc question is refused a start that names no
+         * trigger and is no A2A delivery (#5304).
          * The generic start route passes none, so it starts no profile
-         * (`PROFILE_TRIGGER_REQUIRED`) and no Test-run key.
+         * (`PROFILE_TRIGGER_REQUIRED`), no Test-run key and no ad-hoc question
+         * (`AD_HOC_QUESTION_USE_QUESTIONS_ROUTE`).
          */
         profileTrigger?: ProfileTrigger;
     } = {},
@@ -2008,6 +2011,8 @@ export async function executeQueuedWorkflowRun(
  * `executeQueuedWorkflowRun` needs a registered agent and a dispatch to reach.
  */
 export async function rebuildRunContext(row: {
+    /** The run's id: the rebuilt context's requestId names it. */
+    id: string;
     tenantId: string;
     startedByUserId: string | null;
     triggeredViaKeyId: string | null;
@@ -2087,7 +2092,9 @@ export async function rebuildRunContext(row: {
     return {
         // Correlates every log line and audit row of this attempt back to the
         // run, which is what an operator has when they open the page.
-        requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
+        // The run's OWN id (#5318). It was tenant + starter, which every run
+        // that person started shared, so searching by it returned all of them.
+        requestId: `agent-run-${row.id}`,
         userId: row.startedByUserId,
         tenantId: row.tenantId,
         // The principal's authority exactly as a request resolves it, custom

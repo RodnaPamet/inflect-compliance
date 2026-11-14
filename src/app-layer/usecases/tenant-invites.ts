@@ -515,6 +515,34 @@ async function finalizeInviteRedemption(
     }
 
     const txResult = await prisma.$transaction(async (tx) => {
+        // An invite never changes the role of a membership that is already
+        // ACTIVE (#5318). `createInviteToken` refuses to invite an ACTIVE
+        // member; this is the redemption-side half, for a person who became
+        // ACTIVE by another path (SSO JIT, SCIM, the members page) while the
+        // invite sat unaccepted. Redeeming it used to reset their role to the
+        // invite's, unaudited: a demotion of a since-promoted member, or an
+        // escalation by an invite issued at a higher role. The claim is
+        // already committed, so the invite is consumed and the role stands.
+        const current = await tx.tenantMembership.findUnique({
+            where: { tenantId_userId: { tenantId: invite.tenantId, userId } },
+            select: { id: true, status: true, role: true, customRoleId: true },
+        });
+        if (current?.status === 'ACTIVE') {
+            const tenant = await tx.tenant.findUnique({
+                where: { id: invite.tenantId },
+                select: { slug: true },
+            });
+            if (!tenant) throw internal('Invariant: tenant disappeared mid-redemption');
+            return {
+                membershipId: current.id,
+                tenantId: invite.tenantId,
+                userId,
+                role: current.role as Role,
+                slug: tenant.slug,
+                alreadyActive: true,
+            };
+        }
+
         // The upsert's update arm keeps an existing membership's custom role,
         // so an OWNER invite redeemed onto a membership carrying one would make
         // an OWNER with a custom role — which never exists (#3720). Refused,
@@ -529,10 +557,7 @@ async function finalizeInviteRedemption(
         // ADMIN is not reactivated under another role with it kept. Only what
         // the redemption ADDS is refused, so a legacy row is not trapped.
         if (invite.role !== 'ADMIN') {
-            const existing = await tx.tenantMembership.findUnique({
-                where: { tenantId_userId: { tenantId: invite.tenantId, userId } },
-                select: { role: true, customRoleId: true },
-            });
+            const existing = current;
             if (existing?.customRoleId && !mayCarryCustomRole(invite.role)) {
                 throw new ConflictError(builtInScopeRoleMessage(invite.role, 'invite'), {
                     reason: BUILT_IN_SCOPE_REFUSAL,
@@ -585,6 +610,7 @@ async function finalizeInviteRedemption(
             userId,
             role: invite.role as Role,
             slug: tenant.slug,
+            alreadyActive: false,
         };
     });
 
@@ -598,9 +624,11 @@ async function finalizeInviteRedemption(
         detailsJson: {
             category: 'entity_lifecycle',
             entityName: 'TenantMembership',
-            operation: 'created',
+            operation: txResult.alreadyActive ? 'updated' : 'created',
             after: { status: 'ACTIVE', role: txResult.role },
-            summary: `Accepted invite as ${txResult.role}`,
+            summary: txResult.alreadyActive
+                ? `Invite consumed; already an active ${txResult.role}, role unchanged (invite was for ${invite.role})`
+                : `Accepted invite as ${txResult.role}`,
         },
     });
 

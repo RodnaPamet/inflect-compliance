@@ -294,6 +294,26 @@ describe('a verified receipt produces an artefact on the right control', () => {
         }
     });
 
+    it('names a control with no code by id, never as the literal "null" (#5317)', async () => {
+        await prisma.control.update({ where: { id: controls.ASI04 }, data: { code: null } });
+        try {
+            await ingestReceipt(ctx(), signedReceipt(receiptRecord()));
+            await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+            const artefact = (await artefacts()).find(
+                (a) => a.kind === ARTEFACT_KIND_RECEIPTS && a.controlId === controls.ASI04,
+            );
+            const evidence = await prisma.evidence.findUniqueOrThrow({
+                where: { id: artefact!.evidenceId },
+                select: { title: true, content: true },
+            });
+            expect(evidence.title).not.toMatch(/\bnull\b/);
+            expect(evidence.content).not.toMatch(/Control: null/);
+            expect(evidence.title).toContain(`uncoded control ${controls.ASI04}`);
+        } finally {
+            await prisma.control.update({ where: { id: controls.ASI04 }, data: { code: 'CTL-ASI04' } });
+        }
+    });
+
     it('counts an unverified receipt separately rather than as an attested action', async () => {
         await ingestReceipt(ctx(), signedReceipt(receiptRecord()));
         const stranger = generateKeyPairSync('ed25519');

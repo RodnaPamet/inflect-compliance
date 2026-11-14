@@ -573,8 +573,10 @@ model ControlException {
   renewals            ControlException[] @relation("ControlExceptionRenewalChain")
   createdBy           User               @relation("ControlExceptionCreatedBy", fields: [createdByUserId], references: [id])
   riskAcceptedBy      User               @relation("ControlExceptionRiskAcceptedBy", fields: [riskAcceptedByUserId], references: [id])
-  approvedBy          User?              @relation("ControlExceptionApprovedBy", fields: [approvedByUserId], references: [id])
-  rejectedBy          User?              @relation("ControlExceptionRejectedBy", fields: [rejectedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  approvedBy          User?              @relation("ControlExceptionApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict)
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  rejectedBy          User?              @relation("ControlExceptionRejectedBy", fields: [rejectedByUserId], references: [id], onDelete: Restrict)
   deletedBy           User?              @relation("ControlExceptionDeletedBy", fields: [deletedByUserId], references: [id])
 
   /// Composite parent key. Used by the self-referential FK above

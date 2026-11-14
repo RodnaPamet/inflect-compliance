@@ -394,7 +394,9 @@ export async function coverageSummary(ctx: RequestContext) {
         const [risksWithControls, controlsWithRisks, assetsWithControls, policiesWithControls] = await Promise.all([
             db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { riskId: true }, distinct: ['riskId'] }),
             db.riskControl.findMany({ where: { tenantId: t, ...LIVE_RISK_CONTROL }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.controlAsset.findMany({ where: { tenantId: t, control: { deletedAt: null }, asset: { deletedAt: null } }, select: { assetId: true }, distinct: ['assetId'] }),
+            // `status: 'ACTIVE'` as the denominator counts (#5318): a RETIRED
+            // asset's control links pushed this past 100%.
+            db.controlAsset.findMany({ where: { tenantId: t, control: { deletedAt: null }, asset: { deletedAt: null, status: 'ACTIVE' } }, select: { assetId: true }, distinct: ['assetId'] }),
             // Counting policies is gated by the same predicate, applied to the
             // linked policy so an unpublished policy's links don't inflate coverage.
             db.policyControlLink.findMany({ where: { tenantId: t, policy: policyCountsWhere(t), control: { deletedAt: null } }, select: { policyId: true }, distinct: ['policyId'] }),

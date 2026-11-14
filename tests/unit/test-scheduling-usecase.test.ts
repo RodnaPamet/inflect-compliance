@@ -235,6 +235,31 @@ describe('scheduleTestPlan — happy path', () => {
         });
     });
 
+    test('an omitted scheduleTimezone computes nextRunAt in the STORED zone (#5318)', async () => {
+        mockTx.controlTestPlan.findFirst.mockResolvedValueOnce({
+            id: 'plan-1',
+            tenantId: 'tenant-1',
+            automationType: 'SCRIPT',
+            schedule: '0 9 * * *',
+            scheduleTimezone: 'Asia/Tokyo',
+            nextRunAt: new Date(),
+        });
+        mockTx.controlTestPlan.update.mockResolvedValueOnce({ id: 'plan-1' });
+
+        await scheduleTestPlan(makeCtx(), 'plan-1', {
+            schedule: '0 10 * * *',
+            automationType: 'SCRIPT',
+            automationConfig: { scriptId: 'aws.iam.password-policy' },
+        });
+
+        const updateCall = mockTx.controlTestPlan.update.mock.calls[0][0];
+        expect(updateCall.data.scheduleTimezone).toBe('Asia/Tokyo');
+        // 10:00 in Tokyo (UTC+9, no DST) is 01:00 UTC — not 10:00 UTC.
+        const next = updateCall.data.nextRunAt as Date;
+        expect(next.getUTCHours()).toBe(1);
+        expect(next.getUTCMinutes()).toBe(0);
+    });
+
     test('plan-not-found surfaces a notFound error', async () => {
         mockTx.controlTestPlan.findFirst.mockResolvedValueOnce(null);
         await expect(

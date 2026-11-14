@@ -26,7 +26,9 @@
 // ─── Mocks (declared before imports) ───────────────────────────────
 
 const mockTx = {
-    vendorAssessment: { findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn() },
+    vendorAssessment: { findFirst: jest.fn(), update: jest.fn(),
+        // The status transition is claimed with a conditional write (#5318).
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }), findMany: jest.fn() },
     vendorAssessmentAnswer: { updateMany: jest.fn(), findMany: jest.fn() },
     vendorAssessmentTemplateQuestion: { findMany: jest.fn() },
     vendorAssessmentTemplate: { findUnique: jest.fn() },
@@ -197,6 +199,8 @@ beforeEach(() => {
             fn.mockReset();
         }
     }
+    // Every test transitions the row it reads (#5318's conditional claim).
+    mockTx.vendorAssessment.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.vendor.findFirst.mockReset();
     mockPrisma.vendor.updateMany.mockReset();
     mockPrisma.vendorAssessment.findUnique.mockReset();

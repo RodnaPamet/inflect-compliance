@@ -79,9 +79,19 @@ describe('evidence bundles', () => {
         await listEvidenceBundles(ctx, 'v1');
         expect(mockDbHolder.db.vendorEvidenceBundle.findMany).toHaveBeenCalled();
 
+        mockDbHolder.db.vendor.findFirst.mockResolvedValueOnce({ id: 'v1' });
         await createEvidenceBundle(ctx, 'v1', { name: 'Q1', description: 'd' });
         expect(mockDbHolder.db.vendorEvidenceBundle.create).toHaveBeenCalled();
         expect((logEvent as jest.Mock).mock.calls[0][2].action).toBe('VENDOR_EVIDENCE_BUNDLE_CREATED');
+    });
+
+    it('createEvidenceBundle refuses a vendor this tenant does not hold, before writing (#5318)', async () => {
+        const db = mockDbHolder.db;
+        db.vendor.findFirst.mockResolvedValueOnce(null);
+        await expect(createEvidenceBundle(ctx, 'v-foreign', { name: 'Q1' })).rejects.toThrow('Vendor not found');
+        expect(db.vendor.findFirst.mock.calls[0][0].where).toEqual({ id: 'v-foreign', tenantId: ctx.tenantId });
+        expect(db.vendorEvidenceBundle.create).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
     });
 
     it('addBundleItem: rejects missing bundle, frozen bundle, then creates', async () => {

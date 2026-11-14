@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeDownloadToken, resolveDownloadToken } from '@/lib/trust-center/gated';
+import { resolveDownloadToken, spendDownloadToken } from '@/lib/trust-center/gated';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
-import { getStorageProvider } from '@/lib/storage';
+import { getProviderByName } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { recordFileDistribution } from '@/app-layer/services/file-distribution';
 import { logger } from '@/lib/observability/logger';
@@ -19,7 +19,7 @@ import { logger } from '@/lib/observability/logger';
  * asks for 300 explicitly. Nothing here justified the asymmetry — it was the
  * absence of an argument, not a decision.
  *
- * The single-use token is already consumed by the time we get here, so from
+ * The single-use token is spent immediately before the URL is minted, so from
  * this point the signed URL IS the bearer credential: shareable, replayable by
  * anyone who sees it, recorded in intermediary logs, and outside our
  * revocation. It must never outlive the authenticated path's, so it matches
@@ -30,13 +30,15 @@ const TRUST_DOWNLOAD_URL_TTL_SECONDS = 300;
 /** PR-8 — PUBLIC: download a gated document via a single-use, expiring token. */
 export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }: { params: Promise<{ token: string }> }) => {
     const { token } = await p;
-    // Resolve WITHOUT spending: the token is consumed below, only once the
-    // file has passed the AV + lifecycle gate. Spending it first made a file
-    // still PENDING its scan burn the requester's single-use link (#5316).
-    const pending = await resolveDownloadToken(token);
-    if (!pending) return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
+    // RESOLVE, do not spend (#5614). Every gate below is a reason to serve
+    // nothing, and none of them is a reason to cost the requester their one
+    // use: a mid-scan file becomes servable when the scan finishes, and a
+    // quarantined one when a rescan clears it. The token is spent further
+    // down, immediately before the URL that serves the bytes is minted.
+    const resolved = await resolveDownloadToken(token);
+    if (!resolved) return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
     const file = await prisma.fileRecord.findUnique({
-        where: { id: pending.fileRecordId },
+        where: { id: resolved.fileRecordId },
         // scanStatus / status / deletedAt are SELECTED so they can be gated on
         // below. Selecting only pathKey + originalName is what made this route
         // serve INFECTED, mid-scan and soft-deleted files: a column you don't
@@ -44,8 +46,12 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
         // id / tenantId / sha256 are selected for the distribution ledger
         // below: the exposure report joins on the CONTENT HASH, so a row that
         // does not carry it cannot be answered for later.
+        // storageProvider is selected for the same reason as the three above —
+        // it decides WHICH provider can read `pathKey` (#5615). Presigning with
+        // the process-wide default sent a reader to the configured bucket for a
+        // key that, on a deployment that migrated providers, is not in it.
         select: {
-            id: true, tenantId: true, sha256: true,
+            id: true, tenantId: true, sha256: true, storageProvider: true,
             pathKey: true, originalName: true, scanStatus: true, status: true, deletedAt: true,
         },
     });
@@ -64,7 +70,7 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
     if (file.status !== 'STORED' || file.deletedAt || !isDownloadAllowed(file.scanStatus)) {
         logger.warn('trust-center download blocked', {
             component: 'trust-center',
-            fileRecordId: pending.fileRecordId,
+            fileRecordId: resolved.fileRecordId,
             status: file.status,
             scanStatus: file.scanStatus,
             softDeleted: Boolean(file.deletedAt),
@@ -72,14 +78,37 @@ export const GET = withApiErrorHandling(async (_req: NextRequest, { params: p }:
         return jsonResponse({ error: 'not_found' }, { status: 404 });
     }
 
-    // The file is servable: spend the token now. A concurrent request that
-    // claimed it first, or a token revoked in between, gets the same 404.
-    const resolved = await consumeDownloadToken(token);
-    if (!resolved || resolved.fileRecordId !== pending.fileRecordId) {
+    // ─── Provider rail ───
+    // Read with the provider that WROTE the bytes, not the configured default
+    // (#5615) — that is the dual-read `FileRecord.storageProvider` exists for,
+    // and what the authenticated paths do (`usecases/file.ts`, `evidence.ts`,
+    // `av-rescan.ts`, `evidence-blob-purge.ts`).
+    //
+    // `local` is refused rather than served, because the local provider's
+    // "signed URL" is `/api/files/<key>`, an AUTHENTICATED route
+    // (`getLegacyCtx`), which an anonymous requester cannot open. Handing it
+    // out would spend the token on a URL that cannot work. 404 and a log line
+    // naming the cause is the honest answer, and the token survives for an
+    // operator who moves the object into the bucket.
+    const recordedProvider = file.storageProvider === 's3' ? 's3' : 'local';
+    if (recordedProvider !== 's3') {
+        logger.warn('trust-center download has no anonymously readable provider', {
+            component: 'trust-center',
+            fileRecordId: resolved.fileRecordId,
+            storageProvider: file.storageProvider,
+        });
+        return jsonResponse({ error: 'not_found' }, { status: 404 });
+    }
+
+    // ─── Spend ───
+    // Last gate passed, so take the single use now. A concurrent request that
+    // also resolved and also passed every gate races here; the loser serves
+    // nothing rather than minting a second URL for a one-use token.
+    if (!(await spendDownloadToken(resolved.accessRequestId))) {
         return jsonResponse({ error: 'invalid_or_expired' }, { status: 404 });
     }
 
-    const url = await getStorageProvider().createSignedDownloadUrl(file.pathKey, {
+    const url = await getProviderByName(recordedProvider).createSignedDownloadUrl(file.pathKey, {
         expiresIn: TRUST_DOWNLOAD_URL_TTL_SECONDS,
         downloadFilename: file.originalName,
     });

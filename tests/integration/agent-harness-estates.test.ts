@@ -376,6 +376,18 @@ describe('2. the health view, from real scans through the real ingest', () => {
         expect(view).toMatchObject({ scanWindow: 1, windowTruncated: true });
     });
 
+    it('a busier scanner filling the shared window does not turn a fresh estate STALE (#5317)', async () => {
+        // Globex now scans an hour ago, the newest scan of all. With the shared
+        // window narrowed to one scan, Acme's fresh scan (two hours ago) is
+        // crowded out of it — and the card must still judge Acme as the daily
+        // staleness pass does, over Acme's own freshness window.
+        await scanAndIngest(T1, 1, 1);
+        const view = await getHarnessEstateHealth(ctxFor(T1), { now: new Date(START + 60_000), limits: { scans: 1 } });
+        expect(view.windowTruncated).toBe(true);
+        expect(rowNamed(view.estates.rows, 'Acme production').status).toBe('FRESH');
+        expect(rowNamed(view.estates.rows, 'Globex identity').status).toBe('FRESH');
+    });
+
     it('no credential reached a stored scan or an estate audit row', async () => {
         const scans = await prisma.agentHarnessScan.findMany({ where: { tenantId: T1 }, select: { sourcesJson: true, signature: true } });
         const audits = await prisma.auditLog.findMany({ where: { tenantId: T1, action: { startsWith: 'AGENT_HARNESS_' } } });

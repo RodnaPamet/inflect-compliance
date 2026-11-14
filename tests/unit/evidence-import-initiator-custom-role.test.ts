@@ -220,7 +220,8 @@ describe('the membership refusal is unchanged', () => {
         );
         expect(prismaMock.tenantMembership.findFirst).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { userId: 'initiator-1', tenantId: 'tenant-A', status: 'ACTIVE' },
+                // A soft-deleted tenant refuses too (#5305).
+                where: { userId: 'initiator-1', tenantId: 'tenant-A', status: 'ACTIVE', tenant: { deletedAt: null } },
             }),
         );
         expect(storage.readStream).not.toHaveBeenCalled();

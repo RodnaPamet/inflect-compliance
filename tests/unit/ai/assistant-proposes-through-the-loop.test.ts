@@ -189,6 +189,24 @@ describe('the sentence is composed from the outcome, never relayed', () => {
         expect(res.proposalStatus).toBe('PENDING');
     });
 
+    it('a queued proposal whose TITLE holds a path is still reported as queued (#5317)', async () => {
+        // The title is the person's text, composed into the sentence. The
+        // guidance check is about screens the MODEL names; applying it to the
+        // composed sentence replaced a real proposal with the unknown-screen
+        // refusal, so the person was never told it existed.
+        (assistantTools as jest.Mock).mockReturnValue(
+            toolSetReturning(funnelResult('FINDING', ['p-9'], [])),
+        );
+        providerThatProposesThenLies([{ title: 'Missing auth on /api/upload' }]);
+
+        const res = await askAssistant(ctx, { question: 'raise a finding: missing auth on /api/upload' });
+
+        expect(res.kind).toBe('proposal');
+        expect(res.proposalId).toBe('p-9');
+        expect(res.message).toContain("I've queued");
+        expect(res.message).toContain('/api/upload');
+    });
+
     it('a MIXED batch states both facts, not one summary', async () => {
         (assistantTools as jest.Mock).mockReturnValue(
             toolSetReturning(funnelResult('FINDING', ['p-1', 'p-2'], ['q-1'])),

@@ -115,6 +115,13 @@ jest.mock('@/lib/storage', () => ({
         createSignedDownloadUrl: (...a: unknown[]) => createSignedDownloadUrlMock(...a),
         readStream: (...a: unknown[]) => readStreamMock(...a),
     }),
+    // The trust-center download reads with the provider the FileRecord names
+    // rather than the configured default (#5615).
+    getProviderByName: () => ({
+        createSignedDownloadUrl: (...a: unknown[]) => createSignedDownloadUrlMock(...a),
+        readStream: (...a: unknown[]) => readStreamMock(...a),
+    }),
+    sanitizeFileName: jest.requireActual('@/lib/storage').sanitizeFileName,
     assertTenantKey: (pathKey: string, tenantId: string) => {
         if (!pathKey.startsWith(`tenants/${tenantId}/`)) throw new Error('Tenant isolation violation');
     },
@@ -125,13 +132,12 @@ jest.mock('@/lib/storage/av-scan', () => ({
 }));
 
 // ─── Trust-center token ───
-const consumeDownloadTokenMock = jest.fn();
+const resolveDownloadTokenMock = jest.fn();
+const spendDownloadTokenMock = jest.fn();
 jest.mock('@/lib/trust-center/gated', () => ({
     __esModule: true,
-    consumeDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
-    // The route resolves without spending, then consumes once the file is
-    // servable (#5316); both answer the same request here.
-    resolveDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
+    resolveDownloadToken: (...a: unknown[]) => resolveDownloadTokenMock(...a),
+    spendDownloadToken: (...a: unknown[]) => spendDownloadTokenMock(...a),
 }));
 
 // ─── Evidence download route ───
@@ -222,11 +228,15 @@ beforeEach(() => {
     };
     createSignedDownloadUrlMock.mockResolvedValue('https://signed.example/blob');
     readStreamMock.mockImplementation(() => bufStream('bytes'));
-    consumeDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1', accessRequestId: 'tcar-77' });
+    resolveDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1', accessRequestId: 'tcar-77' });
+    spendDownloadTokenMock.mockResolvedValue(true);
     trustFindUnique.mockResolvedValue({
         id: 'file-1',
         tenantId: 'tenant-1',
         sha256: 'b'.repeat(64),
+        // s3, because a locally-stored file is refused on this path: the local
+        // provider's URL is an authenticated route (#5615).
+        storageProvider: 's3',
         pathKey: 'tenants/tenant-1/trust/soc2.pdf',
         originalName: 'soc2.pdf',
         scanStatus: 'CLEAN',
@@ -340,7 +350,7 @@ describe('trust-center download — the unauthenticated egress is recorded', () 
 
     it('records nothing when the gate refused to serve', async () => {
         trustFindUnique.mockResolvedValueOnce({
-            id: 'file-1', tenantId: 'tenant-1', sha256: 'b'.repeat(64),
+            id: 'file-1', tenantId: 'tenant-1', sha256: 'b'.repeat(64), storageProvider: 's3',
             pathKey: 'tenants/tenant-1/trust/soc2.pdf', originalName: 'soc2.pdf',
             scanStatus: 'INFECTED', status: 'STORED', deletedAt: null,
         });

@@ -131,7 +131,10 @@ describe('the membership refusal is unchanged', () => {
             'sharepoint-delta-sync: user actor-1 is not an active member of tenant tenant-A',
         );
         expect(prismaMock.tenantMembership.findFirst).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { userId: 'actor-1', tenantId: 'tenant-A', status: 'ACTIVE' } }),
+            // A soft-deleted tenant refuses too (#5305).
+            expect.objectContaining({
+                where: { userId: 'actor-1', tenantId: 'tenant-A', status: 'ACTIVE', tenant: { deletedAt: null } },
+            }),
         );
         expect(runSharePointDeltaSync).not.toHaveBeenCalled();
     });

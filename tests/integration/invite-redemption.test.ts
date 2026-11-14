@@ -350,6 +350,31 @@ describeFn('invite-redemption usecases', () => {
         expect(count).toBe(1);
     });
 
+    it('9b. a pending invite never changes the role of a member who became ACTIVE another way (#5318)', async () => {
+        const { tenantId, ownerCtx } = await setupTenant('active-keeps-role');
+        const inviteeEmail = emailFor('invitee-active-keeps-role');
+        const user = await createUser(inviteeEmail);
+
+        // Invited as READER; before redeeming, joins another way and is
+        // promoted to ADMIN (SSO JIT / SCIM / the members page).
+        await createInviteToken(ownerCtx, { email: inviteeEmail, role: 'READER' });
+        await prisma.tenantMembership.create({
+            data: { tenantId, userId: user.id, role: 'ADMIN', status: 'ACTIVE' },
+        });
+
+        const redeemed = await redeemPendingInvitesByEmail({ userId: user.id, userEmail: inviteeEmail });
+        expect(redeemed).toHaveLength(1);
+        expect(redeemed[0]).toMatchObject({ tenantId, role: 'ADMIN' });
+
+        const membership = await prisma.tenantMembership.findUnique({
+            where: { tenantId_userId: { tenantId, userId: user.id } },
+            select: { status: true, role: true },
+        });
+        expect(membership).toEqual({ status: 'ACTIVE', role: 'ADMIN' });
+        // The invite is consumed, so a later sign-in finds nothing pending.
+        expect(await redeemPendingInvitesByEmail({ userId: user.id, userEmail: inviteeEmail })).toHaveLength(0);
+    });
+
     it('10. audit chain — MEMBER_INVITED, MEMBER_INVITE_ACCEPTED, MEMBER_INVITE_REVOKED all written + chain valid', async () => {
         const { tenantId, ownerCtx } = await setupTenant('audit-chain');
         const inviteeEmail = emailFor('invitee-audit');

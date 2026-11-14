@@ -30,6 +30,18 @@ jest.mock('@/app-layer/repositories/PortfolioRepository', () => ({
     },
 }));
 
+// Every tenant in the fixture is one the caller holds a membership in:
+// the list* drill-downs filter by membership before fanning out (#5318).
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: {
+        tenantMembership: {
+            findMany: (q: { where: { tenantId: { in: string[] } } }) =>
+                Promise.resolve(q.where.tenantId.in.map((tenantId) => ({ tenantId }))),
+        },
+    },
+}));
+
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
     withTenantDb: (...a: unknown[]) => withTenantDbMock(...a),

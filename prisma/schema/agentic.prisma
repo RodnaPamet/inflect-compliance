@@ -1110,8 +1110,9 @@ model AgentRiskAssessment {
   basisDataAccessScope AgentDataAccessScope?
   basisReversibility   AgentReversibility?
   basisProvenance      AgentProvenance?
-  /// How many tools were granted at scoring time. A grant added afterwards is
-  /// one of the four staleness triggers.
+  /// How many tools were granted at scoring time, recorded for the evidence
+  /// and the audit row. Staleness does not read it: TOOL_GRANTED fires when any
+  /// current grant's `createdAt` is later than `completedAt` (#5304).
   basisToolCount       Int?
   /// Which underlying model the agent ran on at scoring time (see
   /// `RegisteredAgent.modelRef`). NULL means never declared.

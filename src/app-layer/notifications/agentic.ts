@@ -91,6 +91,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { insertedNotificationIds } from './inserted-ids';
 import { isInAppTypeEnabled } from './settings';
 
 /** The agentic members of `NotificationType`. */
@@ -359,6 +360,8 @@ export async function createAgenticNotification(
             ? null
             : copy.linkPath(target.tenantSlug, target.entityId);
 
+    const keyFor = (userId: string) =>
+        buildAgenticDedupeKey(target.tenantId, kind, target.entityId, userId, now);
     const res = await db.notification.createMany({
         data: recipients.map((userId) => ({
             tenantId: target.tenantId,
@@ -367,30 +370,29 @@ export async function createAgenticNotification(
             title: copy.title,
             message,
             linkUrl,
-            dedupeKey: buildAgenticDedupeKey(
-                target.tenantId,
-                kind,
-                target.entityId,
-                userId,
-                now,
-            ),
+            dedupeKey: keyFor(userId),
         })),
         skipDuplicates: true,
     });
 
     // Published only on a real write. Pushing an SSE event for a row the
     // dedupe key rejected would make the bell show a notification that is not
-    // in the list it opens.
+    // in the list it opens. Each event carries the ROW's id, read back by the
+    // unique dedupe key (#5305): the synthetic `kind:entity:user` it used to
+    // carry named no notification, so marking the pushed row read failed.
     if (res.count > 0) {
+        const inserted = await insertedNotificationIds(db, target.tenantId, recipients.map(keyFor));
         for (const userId of recipients) {
+            const written = inserted.get(keyFor(userId));
+            if (!written) continue;
             publishNotificationEvent(target.tenantId, userId, {
-                id: `${kind}:${target.entityId}:${userId}`,
+                id: written.id,
                 type: kind,
                 title: copy.title,
                 message,
                 read: false,
                 linkUrl,
-                createdAt: now.toISOString(),
+                createdAt: written.createdAt.toISOString(),
             });
         }
     }

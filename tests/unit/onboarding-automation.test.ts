@@ -216,6 +216,11 @@ function freshDb() {
             findFirst: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockResolvedValue({}),
         },
+        // Starter tasks go through `TaskRepository.create`, which mints the
+        // per-tenant `TSK-N` key off this counter (#5318).
+        taskKeySequence: {
+            upsert: jest.fn().mockResolvedValue({ tenantId: 't1', lastValue: 1 }),
+        },
         // No saved matrix: the default 5x5 bounds every score (#5080).
         riskMatrixConfig: {
             findUnique: jest.fn().mockResolvedValue(null),
@@ -544,6 +549,16 @@ describe('executeTeamSetup', () => {
         expect(r?.created).toBe(5);
         expect(db.task.create).toHaveBeenCalledTimes(5);
         expect((logEvent as jest.Mock).mock.calls[0][2].action).toBe('ONBOARDING_TASKS_CREATED');
+    });
+
+    it('mints a TSK-N key for every starter task (#5318)', async () => {
+        const db = mockDbHolder.db;
+        let n = 0;
+        db.taskKeySequence.upsert.mockImplementation(async () => ({ tenantId: 't1', lastValue: ++n }));
+        await runStepAction(ctx, 'TEAM_SETUP', {}, {});
+        const keys = db.task.create.mock.calls.map((c: any) => c[0].data.key);
+        expect(keys).toEqual(['TSK-1', 'TSK-2', 'TSK-3', 'TSK-4', 'TSK-5']);
+        expect(db.task.create.mock.calls.every((c: any) => c[0].data.assigneeUserId === ctx.userId)).toBe(true);
     });
 
     it('skips starter tasks that already exist and emits no audit when none created', async () => {

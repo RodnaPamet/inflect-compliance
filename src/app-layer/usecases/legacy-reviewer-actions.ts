@@ -298,7 +298,9 @@ async function requireTenantEmployee(ctx: RequestContext, employeeId: string): P
 async function requireActiveOwner(ctx: RequestContext, userId: string): Promise<void> {
     const found = await runInTenantContext(ctx, (db) =>
         db.tenantMembership.findFirst({
-            where: { userId, tenantId: ctx.tenantId },
+            // ACTIVE only: a DEACTIVATED or REMOVED membership is an owner who
+            // has left, which is the state this check exists to refuse.
+            where: { userId, tenantId: ctx.tenantId, status: 'ACTIVE' },
             select: { userId: true },
         })
     );

@@ -157,6 +157,13 @@ describe('with NO model configured, nothing proposes (#3882)', () => {
         expect(getDashboardData).toHaveBeenCalled();
     });
 
+    it('the fallback does not offer to queue actions it can never queue (#5317)', async () => {
+        const res = await askAssistant(ctx, { question: 'hello there' });
+        expect(res.kind).toBe('answer');
+        expect(res.message).toContain('read questions');
+        expect(res.message.toLowerCase()).not.toContain('queue');
+    });
+
     it('does the same for a risk phrasing — the pattern is gone, not narrowed', async () => {
         const res = await askAssistant(ctx, {
             question: 'create a risk for third-party data processing',

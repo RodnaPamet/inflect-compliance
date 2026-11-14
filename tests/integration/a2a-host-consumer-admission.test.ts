@@ -734,3 +734,66 @@ describe('the per-consumer kill switch (#3861)', () => {
         ).rejects.toThrow(/not found/);
     });
 });
+
+describe('a host consumer message, end to end (#5317)', () => {
+    async function tasksGet(tenantId: string, taskId: string, rpcId: string, token = tokenFor(tenantId)) {
+        const { handleInboundA2a } = await import('@/app-layer/usecases/a2a-inbound');
+        return handleInboundA2a({
+            tenantSlug: tenantId,
+            authorization: `Bearer ${token}`,
+            receiptHeader: null,
+            body: JSON.stringify({ jsonrpc: '2.0', id: rpcId, method: 'tasks/get', params: { id: taskId } }),
+            requestId: `req-${rpcId}`,
+        });
+    }
+
+    beforeAll(async () => {
+        await prisma.tenantSecuritySettings.updateMany({
+            where: { tenantId: T1 },
+            data: { agentMonthlyTokenBudget: 100_000, agentMaxConcurrentRuns: 5 },
+        });
+    });
+
+    it('a follow-up on an EMPTY_CATALOGUE run reports it over, not "still running"', async () => {
+        const run = await prisma.workflowRun.create({
+            data: {
+                tenantId: T1,
+                workflowKey: 'sap-transaction-review',
+                status: 'EMPTY_CATALOGUE',
+                inboundHostConsumerId: world[T1].consumerId,
+                inboundHostMessageId: 'hc-msg-origin',
+            },
+        });
+        const res = await tasksGet(T1, run.id, 'rpc-empty');
+        expect(res.status).toBe(200);
+        const text = JSON.parse(res.body).result.status.message.parts[0].text as string;
+        expect(text).not.toMatch(/still running/);
+    });
+
+    it('a write failure that is not a unique violation is thrown, not answered REPLAY', async () => {
+        // A real non-unique database failure: a trigger refusing every insert
+        // into the message table, installed for this case only.
+        await prisma.$executeRawUnsafe(
+            'CREATE OR REPLACE FUNCTION hc_msg_test_fail() RETURNS trigger AS $f$ '
+                + "BEGIN RAISE EXCEPTION 'hc-msg-test-outage'; END; $f$ LANGUAGE plpgsql",
+        );
+        await prisma.$executeRawUnsafe(
+            'CREATE TRIGGER hc_msg_test_fail BEFORE INSERT ON "HostConsumerMessage" '
+                + 'FOR EACH ROW EXECUTE FUNCTION hc_msg_test_fail()',
+        );
+        try {
+            await expect(tasksGet(T1, 'no-such-run', 'rpc-outage')).rejects.toThrow(/hc-msg-test-outage/);
+        } finally {
+            await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS hc_msg_test_fail ON "HostConsumerMessage"');
+            await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS hc_msg_test_fail()');
+        }
+    });
+
+    it('the identical body under the identical token is still a REPLAY', async () => {
+        const token = tokenFor(T1);
+        await tasksGet(T1, 'nope', 'rpc-r', token);
+        const second = await tasksGet(T1, 'nope', 'rpc-r', token);
+        expect(second.status).toBe(409);
+        expect(second.outcome).toBe('REPLAY');
+    });
+});

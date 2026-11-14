@@ -21,6 +21,7 @@ import { getLatestSimulation } from './monte-carlo';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { createTask, addTaskLink } from './task';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
 export type BreachType = 'PORTFOLIO_ALE' | 'SINGLE_RISK_ALE' | 'QUAL_SCORE' | 'CATEGORY_ALE';
 
@@ -358,8 +359,8 @@ const BREACH_TASK_TITLE: Record<BreachType, (b: { thresholdValue: number; actual
  *
  * Idempotent: each breach claims at most ONE task — the claim is a
  * conditional update (`remediationTaskId: null` → task id), so a
- * double-click or a concurrent admin gets the existing task back
- * instead of a duplicate. The task is linked to the breached risk
+ * double-click or a concurrent admin gets the existing task back, and
+ * the task the losing request created is removed. The task is linked to the breached risk
  * (TaskLink RISK) when the breach is risk-attributed; portfolio /
  * category breaches produce an unlinked task. Composes the existing
  * `createTask` / `addTaskLink` usecases — no parallel task-creation
@@ -426,6 +427,29 @@ export async function createBreachRemediationTask(
                 select: { remediationTaskId: true },
             }),
         );
+        // The loser's task is a duplicate nothing records (#5318): two
+        // concurrent requests both passed the `remediationTaskId` check above
+        // and both created one. Remove it (Task is soft-deleted) rather than
+        // leave an orphan P1 on the task board.
+        if (winner?.remediationTaskId && winner.remediationTaskId !== task.id) {
+            await runInTenantContext(ctx, async (db) => {
+                await db.task.delete({ where: { id: task.id } });
+                await logEvent(db, ctx, {
+                    action: 'TASK_DELETED',
+                    entityType: 'Task',
+                    entityId: task.id,
+                    details: `Deleted duplicate remediation task for breach ${breachId}`,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'Task',
+                        operation: 'deleted',
+                        summary: 'Duplicate breach remediation task removed: a concurrent request claimed the breach first',
+                    },
+                    metadata: { breachId, keptTaskId: winner.remediationTaskId },
+                });
+            });
+            await bumpEntityCacheVersion(ctx, 'task');
+        }
         return { taskId: winner?.remediationTaskId ?? task.id, created: false };
     }
 

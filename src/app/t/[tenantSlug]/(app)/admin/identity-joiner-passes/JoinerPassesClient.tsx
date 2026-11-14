@@ -75,6 +75,8 @@ interface JoinerPassRow {
 
 const STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     PASSED: 'success',
+    // A pass that acted and created fewer accounts than it planned (#5317).
+    PARTIAL: 'warning',
     NOT_APPLICABLE: 'warning',
     ERROR: 'error',
 };

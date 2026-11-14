@@ -10,7 +10,7 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-import { requestTrustCenterAccess, consumeDownloadToken, resolveDownloadToken, listPublicTrustCenterDocuments, getPublicGatedDocuments } from '@/lib/trust-center/gated';
+import { requestTrustCenterAccess, resolveDownloadToken, spendDownloadToken, listPublicTrustCenterDocuments, getPublicGatedDocuments } from '@/lib/trust-center/gated';
 import { prisma } from '@/lib/prisma';
 import * as tcAdmin from '@/app-layer/usecases/trust-center-documents';
 
@@ -54,22 +54,6 @@ describe('requestTrustCenterAccess', () => {
         expect(withNda?.downloadToken).toBeUndefined();
     });
 
-    it('a trust center requiring its NDA refuses a request that did not accept it, and stores nothing (#5316)', async () => {
-        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', accessDomainAllowlist: [], ndaRequired: true });
-        for (const ndaAccepted of [undefined, false]) {
-            await expect(
-                requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted }, NOW),
-            ).rejects.toMatchObject({ status: 400, message: 'nda_required' });
-        }
-        expect(m.trustCenterAccessRequest.create).not.toHaveBeenCalled();
-    });
-
-    it('a request that accepted the NDA records when', async () => {
-        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', accessDomainAllowlist: [], ndaRequired: true });
-        await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted: true }, NOW);
-        expect(m.trustCenterAccessRequest.create.mock.calls[0][0].data.ndaSignedAt).toEqual(NOW);
-    });
-
     it('returns null for a disabled/missing slug (no existence disclosure)', async () => {
         m.trustCenter.findFirst.mockResolvedValue(null);
         expect(await requestTrustCenterAccess('nope', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW)).toBeNull();
@@ -79,50 +63,117 @@ describe('requestTrustCenterAccess', () => {
         m.trustCenterDocument.findFirst.mockResolvedValue(null);
         expect(await requestTrustCenterAccess('acme', 'doc-x', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW)).toBeNull();
     });
+
+    // ── #5613: the NDA is a server rule, not a browser one ──────────────
+    it('REFUSES a request that did not accept a required NDA, and records nothing', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', ndaRequired: true });
+        const r = await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW);
+        expect(r).toEqual({ status: 'NDA_REQUIRED' });
+        // The whole defect: a row used to be written with ndaSignedAt null.
+        expect(m.trustCenterAccessRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an explicit ndaAccepted: false the same way', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', ndaRequired: true });
+        const r = await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted: false }, NOW);
+        expect(r).toEqual({ status: 'NDA_REQUIRED' });
+        expect(m.trustCenterAccessRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('decides the NDA refusal BEFORE looking a document up, so it is no existence oracle', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', ndaRequired: true });
+        await requestTrustCenterAccess('acme', 'whatever-id', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW);
+        // A real and a bogus documentId are indistinguishable to a caller who
+        // omits the NDA, because no document is read at all.
+        expect(m.trustCenterDocument.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('records ndaSignedAt when a required NDA IS accepted', async () => {
+        m.trustCenter.findFirst.mockResolvedValue({ id: 'tc-1', tenantId: 'T1', ndaRequired: true });
+        const r = await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com', ndaAccepted: true }, NOW);
+        expect(r?.status).toBe('REQUESTED');
+        expect(m.trustCenterAccessRequest.create.mock.calls[0][0].data.ndaSignedAt).toEqual(NOW);
+    });
+
+    it('a center that requires no NDA still records a request that did not mention one', async () => {
+        const r = await requestTrustCenterAccess('acme', 'doc-1', { requesterName: 'X', requesterEmail: 'x@acme.com' }, NOW);
+        expect(r?.status).toBe('REQUESTED');
+        expect(m.trustCenterAccessRequest.create.mock.calls[0][0].data.ndaSignedAt).toBeNull();
+    });
 });
 
-describe('consumeDownloadToken', () => {
-    it('serves once then is single-use', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        m.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 1 });
-        const r = await consumeDownloadToken('ictc_abc', NOW);
+describe('resolveDownloadToken (#5614 — resolving never spends)', () => {
+    const approved = (over: Record<string, unknown> = {}) => ({
+        id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null,
+        document: { fileRecordId: 'file-1', trustCenter: { enabled: true } }, ...over,
+    });
+
+    it('returns the file and the request it came from, and spends NOTHING', async () => {
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue(approved());
+        const r = await resolveDownloadToken('ictc_abc', NOW);
         // accessRequestId is carried out so the distribution ledger can name WHO
         // received the bytes on the only unauthenticated egress. toEqual is exact,
         // so this assertion is what will notice if that stops being returned.
         expect(r).toEqual({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
-        // the consume was atomic on downloadedAt: null
-        expect(m.trustCenterAccessRequest.updateMany.mock.calls[0][0].where.downloadedAt).toBeNull();
-    });
-
-    it('resolveDownloadToken answers the same request and spends nothing (#5316)', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        expect(await resolveDownloadToken('ictc_abc', NOW)).toEqual({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
+        // THE point of the split: the token is still unspent after a successful
+        // resolve, so the caller's own gates can refuse without costing the
+        // requester their one use.
         expect(m.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: NOW, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 
     it('rejects an already-downloaded token', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: null, downloadedAt: NOW, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue(approved({ expiresAt: null, downloadedAt: NOW }));
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 
     it('rejects an expired token', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2020-01-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue(approved({ expiresAt: new Date('2020-01-01') }));
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
     });
 
     it('serves nothing once the trust center is unpublished, and does not spend the token', async () => {
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'APPROVED', expiresAt: new Date('2026-12-01'), downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: false } } });
-        expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue(approved({ document: { fileRecordId: 'file-1', trustCenter: { enabled: false } } }));
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
         expect(m.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
         expect(m.trustCenterAccessRequest.findUnique.mock.calls[0][0].select.document.select.trustCenter).toEqual({ select: { enabled: true } });
     });
 
     it('rejects a non-approved or wrong-format token', async () => {
-        expect(await consumeDownloadToken('bad', NOW)).toBeNull();
-        m.trustCenterAccessRequest.findUnique.mockResolvedValue({ id: 'req-1', status: 'REQUESTED', expiresAt: null, downloadedAt: null, document: { fileRecordId: 'file-1', trustCenter: { enabled: true } } });
-        expect(await consumeDownloadToken('ictc_abc', NOW)).toBeNull();
+        expect(await resolveDownloadToken('bad', NOW)).toBeNull();
+        m.trustCenterAccessRequest.findUnique.mockResolvedValue(approved({ status: 'REQUESTED', expiresAt: null }));
+        expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
+    });
+
+    it('never spends on ANY refusal path', async () => {
+        // One assertion over every way resolve can say no, so a future early
+        // return that spends first fails here rather than in a route test.
+        const refusals = [
+            approved({ status: 'REQUESTED' }),
+            approved({ downloadedAt: NOW }),
+            approved({ expiresAt: new Date('2020-01-01') }),
+            approved({ document: { fileRecordId: 'f', trustCenter: { enabled: false } } }),
+            null,
+        ];
+        for (const r of refusals) {
+            m.trustCenterAccessRequest.findUnique.mockResolvedValue(r);
+            expect(await resolveDownloadToken('ictc_abc', NOW)).toBeNull();
+        }
+        expect(m.trustCenterAccessRequest.updateMany).not.toHaveBeenCalled();
+    });
+});
+
+describe('spendDownloadToken (#5614)', () => {
+    it('claims the single use atomically on downloadedAt: null', async () => {
+        m.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 1 });
+        await expect(spendDownloadToken('req-1', NOW)).resolves.toBe(true);
+        const call = m.trustCenterAccessRequest.updateMany.mock.calls[0][0];
+        expect(call.where).toEqual({ id: 'req-1', downloadedAt: null });
+        expect(call.data).toEqual({ downloadedAt: NOW });
+    });
+
+    it('returns false when a concurrent request already took the use', async () => {
+        m.trustCenterAccessRequest.updateMany.mockResolvedValue({ count: 0 });
+        await expect(spendDownloadToken('req-1', NOW)).resolves.toBe(false);
     });
 });
 

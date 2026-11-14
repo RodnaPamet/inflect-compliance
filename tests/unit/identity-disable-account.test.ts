@@ -2151,6 +2151,28 @@ describe('a refusal reconciles a stranded write instead of freezing it', () => {
         expect(w.disabled).toEqual([]);
     });
 
+    it('audits a reconciling refusal as RECONCILED with no write attempted by this pass (#5317)', async () => {
+        withStrandedRow();
+        setMode('AUTOMATIC');
+        const w = fakeWriter({ readState: async () => disabledInDirectory() });
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ linkId: 'link-p', isProtected: true })],
+            population: 500,
+        });
+
+        expect(r.results[0].outcome).toBe('REFUSED_PROTECTED');
+        expect(w.disabled).toEqual([]);
+        expect(appendAudit).toHaveBeenCalledTimes(1);
+        const row = appendAudit.mock.calls[0][0];
+        expect(row.action).toBe('IDENTITY_ACCOUNT_DISABLE_RECONCILED');
+        expect(row.detailsJson).toMatchObject({
+            outcome: 'REFUSED_PROTECTED',
+            writeAttempted: false,
+            reconciledEarlierWrite: true,
+            journalId: 'journal-1',
+        });
+    });
+
     it('settles the row when LEAVER WRITES ARE OFF and the account is disabled', async () => {
         withStrandedRow();
         setMode('DISABLED');

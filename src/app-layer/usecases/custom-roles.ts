@@ -404,6 +404,24 @@ export async function deleteCustomRole(ctx: RequestContext, roleId: string) {
             throw notFound('Custom role not found.');
         }
 
+        // Deleting the role clears it from every carrier. On a (legacy) OWNER
+        // carrier that clear restores full OWNER authority, which is an
+        // OWNER's change — the same rule `assignCustomRole` holds for the
+        // direct clear (#3720), so the delete must not be a way round it
+        // (#5317). Refused before anything is written.
+        if (!ctx.appPermissions.admin.owner_management) {
+            // One row per distinct carrier role — the Role enum is small.
+            const carrierRoles = await db.tenantMembership.findMany({
+                where: { tenantId: ctx.tenantId, customRoleId: roleId },
+                select: { role: true },
+                distinct: ['role'],
+                take: 10,
+            });
+            if (carrierRoles.some((m) => clearingCustomRoleIsOwnerTier(m.role))) {
+                throw forbidden(ownerTierClearMessage(), { reason: OWNER_TIER_CLEAR_REFUSAL });
+            }
+        }
+
         // Soft-delete: deactivate the role. A legacy row built on OWNER or
         // AI_ADMIN would fail `TenantCustomRole_base_role_not_built_in_scope`
         // (#3734) on any UPDATE that keeps that base, so the deactivation also

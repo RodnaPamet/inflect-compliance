@@ -781,7 +781,12 @@ function getEntraGraphFetchDuration() {
  */
 export function recordEntraGroupResolution(attrs: {
     source: 'token' | 'graph_overage';
-    outcome: 'resolved' | 'empty';
+    /**
+     * `partial` is a Graph read that stopped mid-pagination (#5600). It used to
+     * report `resolved`, because a prefix is non-empty — so the failure an
+     * operator most needs to see was the one indistinguishable from success.
+     */
+    outcome: 'resolved' | 'empty' | 'partial';
     groupCount: number;
     graphFetchDurationMs?: number;
 }): void {
@@ -897,7 +902,14 @@ export function recordEntraRoleSync(attrs: {
         | 'ambiguous_tie'
         | 'custom_role_held'
         | 'foreign_directory'
-        | 'domain_not_allowed';
+        | 'domain_not_allowed'
+        /**
+         * The Graph group read stopped mid-pagination, so neither the role
+         * mapping nor the gate was applied (#5600). Distinct from `no_match`,
+         * which is a complete read that matched nothing — the two used to be
+         * indistinguishable, and only one of them is a reason to look at Graph.
+         */
+        | 'partial_group_read';
 }): void {
     getEntraRoleSync().add(1, { outcome: attrs.outcome });
 }

@@ -445,7 +445,10 @@ describe('invites redeemed as OWNER onto a membership carrying a custom role', (
         claimed('ADMIN');
         const tx = redemptionTx('cr-1');
         await redeemInvite({ token: 't', userId: 'u-1', userEmail: 'x@example.com' });
-        expect(tx.tenantMembership.findUnique).not.toHaveBeenCalled();
+        // The membership itself is read once since #5318 (an ACTIVE one keeps
+        // its role); the custom role it carries is never read for an ADMIN invite.
+        expect(tx.tenantMembership.findUnique).toHaveBeenCalledTimes(1);
+        expect(tx.tenantCustomRole.findMany).not.toHaveBeenCalled();
         expect(tx.tenantMembership.upsert).toHaveBeenCalledTimes(1);
     });
 

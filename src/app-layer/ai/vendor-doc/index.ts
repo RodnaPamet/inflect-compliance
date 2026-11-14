@@ -24,6 +24,12 @@ import { logger } from '@/lib/observability';
 import type { ProviderSelection } from '@/app-layer/ai/risk-assessment';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+/**
+ * Bound on the extraction call, headers AND body (#5305). Without it a gateway
+ * that accepted the connection and stalled held the request until undici's
+ * 300 s default instead of returning the empty extraction.
+ */
+export const VENDOR_DOC_EXTRACTION_TIMEOUT_MS = 30_000;
 const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet-20241022';
 
 // ─── Zod extraction schema (shape + value validation) ───────────────
@@ -177,6 +183,7 @@ export async function extractDocument(
                 max_tokens: 4096,
                 response_format: { type: 'json_object' },
             }),
+            signal: AbortSignal.timeout(VENDOR_DOC_EXTRACTION_TIMEOUT_MS),
         });
         if (!response.ok) throw new Error(`OpenRouter ${response.status}`);
         const data: { choices?: { message?: { content?: string } }[] } = await response.json();
