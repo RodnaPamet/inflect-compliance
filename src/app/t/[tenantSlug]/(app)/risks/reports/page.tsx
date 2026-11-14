@@ -153,11 +153,16 @@ export default function RiskReportsPage() {
          * next render — it would read the PREVIOUS value and silently generate
          * the wrong scope.
          */
-        riskIdOverride?: string,
+        riskIdOverride?: string | null,
     ) => {
         setGeneratingId(tpl.id);
         try {
-            const riskId = riskIdOverride ?? (isDeepDive(tpl) ? deepDiveRisk[tpl.id] ?? undefined : undefined);
+            // `null` is an explicit "no risk": a retry of a whole-portfolio
+            // run. It used to read as "not given" and fall through to the
+            // picker, so the retry ran for whichever risk it held (#5313).
+            const riskId = riskIdOverride !== undefined
+                ? riskIdOverride ?? undefined
+                : (isDeepDive(tpl) ? deepDiveRisk[tpl.id] ?? undefined : undefined);
             const res = await fetch(apiUrl('/risks/reports'), {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ templateId: tpl.id, format, ...(riskId ? { parameters: { riskId } } : {}) }),
@@ -185,7 +190,7 @@ export default function RiskReportsPage() {
         await generate(
             tpl,
             (r.format as 'PDF' | 'CSV' | 'PPTX') ?? 'PDF',
-            r.parametersJson?.riskId,
+            r.parametersJson?.riskId ?? null,
         );
     };
 

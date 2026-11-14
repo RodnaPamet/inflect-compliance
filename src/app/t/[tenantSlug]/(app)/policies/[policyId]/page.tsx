@@ -360,13 +360,20 @@ export default function PolicyDetailPage() {
         }
     };
 
+    /** The cadence the stepper shows — and so the one Save sends. */
+    const reviewDaysShown = reviewDays === '' ? 30 : Number(reviewDays) || 30;
+
     const saveReview = async () => {
         setSavingReview(true);
         setError('');
         try {
-            const body: Record<string, unknown> = {};
-            if (reviewDays) body.reviewFrequencyDays = parseInt(reviewDays);
-            if (nextReview) body.nextReviewAt = nextReview;
+            // Save what the editor shows (#5313). The stepper shows 30 for a
+            // policy with no cadence, and that 30 used to be dropped; a cleared
+            // date used to be dropped too, so it could never be cleared.
+            const body: Record<string, unknown> = {
+                reviewFrequencyDays: reviewDaysShown,
+                nextReviewAt: nextReview || null,
+            };
             const res = await fetch(apiUrl(`/policies/${policyId}`), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -935,11 +942,7 @@ export default function PolicyDetailPage() {
                                         className="w-32"
                                         size="sm"
                                         ariaLabel={t('detail.freqAria')}
-                                        value={
-                                            reviewDays === ""
-                                                ? 30
-                                                : Number(reviewDays) || 30
-                                        }
+                                        value={reviewDaysShown}
                                         onChange={(v) => setReviewDays(String(v))}
                                         min={1}
                                         max={3650}
@@ -1039,7 +1042,11 @@ export default function PolicyDetailPage() {
                 />
             )}
 
-            {tab === 'current' && <PolicySharePointSection policyId={policyId} />}
+            {/* Every SharePoint route on a policy — the status read included —
+                takes `policies.edit` (and the usecase the write tier), so a
+                viewer without it was offered link, push, pull and unlink that
+                the server refused (#5313). */}
+            {tab === 'current' && canEditPolicy && <PolicySharePointSection policyId={policyId} />}
 
             {/* ── Version History ── */}
             {tab === 'versions' && (

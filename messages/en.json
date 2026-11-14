@@ -1201,7 +1201,9 @@
       "loadFailed": "Couldn't load the bow-tie analysis.",
       "retry": "Retry",
       "emptyTitle": "Nothing to diagram yet",
-      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own."
+      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own.",
+      "nodeScore": "Score {score}",
+      "nodeAlePerYear": "{amount}/yr"
     },
     "fair": {
       "readOnlyNotice": "Read-only — changes here are not saved.",
@@ -1864,7 +1866,8 @@
       "thresholdsLower": "Green ≥ {green} · Amber ≥ {amber}",
       "greenMin": "Green ≥",
       "amberMin": "Amber ≥",
-      "targetLine": "Target {value}"
+      "targetLine": "Target {value}",
+      "thresholdNotNumber": "Thresholds and the target must be numbers."
     },
     "lossEvents": {
       "breadcrumb": "Loss events",
@@ -9311,7 +9314,8 @@
     "backToPreview": "Back to the preview",
     "fileReadError": "Couldn't read the file. Check that it is a CSV saved as text, then choose it again.",
     "untitledRows": "{count, plural, one {# row has} other {# rows have}} no title and won't be imported.",
-    "importBreadcrumb": "Import"
+    "importBreadcrumb": "Import",
+    "tooManyRows": "This file has {count} risks; one import takes at most {max}. Split the file and import each part."
   },
   "ui": {
     "combobox": {

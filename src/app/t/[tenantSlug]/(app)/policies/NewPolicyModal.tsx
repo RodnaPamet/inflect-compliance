@@ -217,6 +217,9 @@ export function NewPolicyModal({
                 onConfirm={() => {
                     const next = pendingClose.current ?? false;
                     pendingClose.current = null;
+                    // Discard means discard: the dialog stays mounted while
+                    // closed, so the draft would otherwise reappear (#5313).
+                    form.reset();
                     setOpen(next);
                 }}
                 onCancel={() => {
