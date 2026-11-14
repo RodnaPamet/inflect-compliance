@@ -610,31 +610,31 @@ model AgentActionReceipt {
 // loop). See src/app-layer/ai/decision-log/.
 // ─────────────────────────────────────────────────────────────────
 model AiDecisionLog {
-  id            String         @id @default(cuid())
-  tenantId      String
+  id              String         @id @default(cuid())
+  tenantId        String
   /// The AI feature (e.g. 'risk-suggestions').
-  feature       String
+  feature         String
   /// Optional link to a registered AI system (EU AI Act registry). When set to
   /// a HIGH-risk system, this row is the Art 12 record for that system.
-  aiSystemId    String?
-  provider      String
-  model         String?
+  aiSystemId      String?
+  provider        String
+  model           String?
   /// SHA-256 of the sanitised provider input — NEVER the raw prompt/PII.
-  inputDigest   String
+  inputDigest     String
   /// Bounded, sanitised summary of the output — never raw content.
-  outputSummary String?
-  latencyMs     Int?
-  tokensIn      Int?
-  tokensOut     Int?
+  outputSummary   String?
+  latencyMs       Int?
+  tokensIn        Int?
+  tokensOut       Int?
   /// Output-guard verdict (redactions / dropped-low-confidence / error).
-  guardVerdict  String?
-  humanOutcome  AiHumanOutcome @default(PENDING)
+  guardVerdict    String?
+  humanOutcome    AiHumanOutcome @default(PENDING)
   /// The generating session — the feedback join key `recordDecisionOutcome`
   /// stamps by. A `RiskSuggestionSession` id for the suggestion features; the
   /// `WorkflowRun` id for an agentic run, whose reviewable event is the run a
   /// human resumes or aborts rather than a session it never opened.
-  sessionRef    String?
-  userId        String?
+  sessionRef      String?
+  userId          String?
   /// The registered agent the writing request spoke for — `ctx.agentId`, the
   /// agent its API key is bound to — or NULL for a person, an unbound key, a
   /// system job, and every row written before migration 20261018140000 (#3700).
@@ -647,17 +647,37 @@ model AiDecisionLog {
   /// through a tenant purge and never DML'd by it (`NEVER_DML`), so an FK to the
   /// purgeable register would either block the purge or have to rewrite a row
   /// the trigger keeps immutable. NULL is "unattributed", never "some agent".
-  agentId       String?
-  createdAt     DateTime       @default(now())
+  agentId         String?
+  /// The `AgentProposal` this row is the Art 12 record of — written by
+  /// `createAgentProposal` at insert, NULL for every other feature and for every
+  /// proposal row written before migration 20261114120000 (#5191). It is the
+  /// Art 14 stamp's key on the proposal path (`recordDecisionOutcomeForProposal`):
+  /// the input digest is a pure function of the proposal's CONTENT, so two
+  /// proposals with identical content share it, and a stamp keyed by the digest
+  /// alone recorded one reviewer's decision on both.
+  ///
+  /// Covered by the immutability trigger, so a decision row can never be moved
+  /// onto a different proposal. NO foreign key, for the reason `agentId` has
+  /// none: this table survives a tenant purge and is never DML'd by it.
+  agentProposalId String?
+  createdAt       DateTime       @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   aiSystem AiSystem? @relation(fields: [aiSystemId, tenantId], references: [id, tenantId])
 
+  /// One decision row per proposal, held by the database, and the lookup the
+  /// proposal-path stamp runs on. Unique rather than a plain index because
+  /// "exactly one row is this proposal's record" is the claim the stamp rests
+  /// on; NULLs are distinct in Postgres, so every row of every other feature,
+  /// and every legacy proposal row, is unaffected.
+  @@unique([tenantId, agentProposalId])
   @@index([tenantId, createdAt])
   @@index([tenantId, aiSystemId])
   @@index([tenantId, sessionRef])
-  /// The Art 14 stamp's lookup. `recordDecisionOutcomeForDigest` updates by
-  /// (tenantId, inputDigest, humanOutcome=PENDING), and this table grows by one
+  /// The digest lookup: the decisions page's `?digest=` filter, and the legacy
+  /// arm of `recordDecisionOutcomeForProposal`, which reads
+  /// (tenantId, inputDigest, humanOutcome=PENDING) for a proposal row written
+  /// before `agentProposalId` existed (#5191). This table grows by one
   /// row per AI-feature invocation — so without a digest-leading composite the
   /// stamp degrades to a scan of everything the tenant has ever generated, on
   /// the path a reviewer waits for.

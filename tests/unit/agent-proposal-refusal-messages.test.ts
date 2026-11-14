@@ -51,7 +51,7 @@ jest.mock('@/lib/audit', () =>
 );
 jest.mock('@/app-layer/ai/decision-log', () => ({
     logAiDecision: jest.fn(async () => 'decision-1'),
-    recordDecisionOutcomeForDigest: jest.fn(async () => undefined),
+    recordDecisionOutcomeForProposal: jest.fn(async () => undefined),
 }));
 jest.mock('@/lib/observability/logger', () => ({
     // The real module beside a silent logger: the route's error wrapper reads
@@ -218,8 +218,8 @@ describe('a rejection that loses the race to an approval (#5111)', () => {
         // conditional write moved nothing.
         db.agentProposal.findFirst.mockResolvedValue(pendingRow({ requiredApprovals: 1 }));
         db.agentProposal.updateMany.mockResolvedValueOnce({ count: 0 });
-        const { recordDecisionOutcomeForDigest } = jest.requireMock('@/app-layer/ai/decision-log') as {
-            recordDecisionOutcomeForDigest: jest.Mock;
+        const { recordDecisionOutcomeForProposal } = jest.requireMock('@/app-layer/ai/decision-log') as {
+            recordDecisionOutcomeForProposal: jest.Mock;
         };
 
         const err = (await rejectAgentProposal(ctx, 'p1').catch((e: unknown) => e)) as {
@@ -229,7 +229,7 @@ describe('a rejection that loses the race to an approval (#5111)', () => {
 
         expect(err.status).toBe(409);
         expect(err.details).toEqual({ reason: 'PROPOSAL_ALREADY_DECIDED' });
-        expect(recordDecisionOutcomeForDigest).not.toHaveBeenCalled();
+        expect(recordDecisionOutcomeForProposal).not.toHaveBeenCalled();
         expect(appendAuditEntry.mock.calls.map((c) => c[0].action)).not.toContain('AGENT_PROPOSAL_REJECTED');
     });
 
