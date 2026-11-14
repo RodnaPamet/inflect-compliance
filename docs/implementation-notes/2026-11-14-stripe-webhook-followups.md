@@ -41,7 +41,7 @@ any throw ─► route: 503 (re-fetch) or 500 (anything else), nothing recorded
 
 | File | Role |
 |---|---|
-| `src/lib/stripe.ts` | `idOf`, `invoiceSubscriptionId`, `recordBillingEvent`, `applySubscriptionEvent` (the stored-subscription check); every branch goes through it |
+| `src/lib/stripe.ts` | `idOf`, `invoiceSubscriptionId`, `recordBillingEvent`, `applySubscriptionEvent` (the stored-subscription check), `applyLiveSubscription`'s `WriteCondition` and outcomes; every branch goes through it |
 | `src/app/api/stripe/webhook/route.ts` | 500 on any processing error; logs event id, type, error class and code |
 | `tests/unit/lib/stripe.test.ts` | non-current subscription ignored, checkout exempt, invoice shapes, late invoice on a cancelled account, invoice with no subscription |
 | `tests/unit/stripe-webhook-route-refetch.test.ts` | 500 on a write, record or idempotency-read failure; no `BillingEvent` on failure; log fields; 400 kept |
@@ -62,17 +62,43 @@ any throw ─► route: 503 (re-fetch) or 500 (anything else), nothing recorded
   `apiVersion`) types only `invoice.parent.subscription_details.subscription`.
   A webhook endpoint configured on an older API version sends
   `invoice.subscription`. Both are narrowed with type guards; no `as any`.
-- **The stored-subscription check reads the row once, before the re-fetch.**
-  It is not part of the write's `WHERE`. A checkout for a new subscription
-  committing between that read and an old event's write can still be
-  overwritten; the window is one Stripe round trip. Closing it needs a
-  conditional update and was not part of the decision.
-- **A null stored id applies any subscription's live state, as decided.** An
-  ended subscription is applied as the deletion write (CANCELED, FREE). For an
-  account that never subscribed, or whose subscription was already deleted,
-  that is harmless for entitlements, which read the plan alone. It is not
-  harmless for an account whose plan an operator set with `changeTenantPlan`
-  after its subscription ended: that usecase writes the plan and leaves
-  `stripeSubscriptionId` null, so a late event about the old subscription
-  resets the operator's plan to FREE. Reported for an owner decision, not
-  changed here.
+
+## Second round (owner decisions, 2026-11-14)
+
+The first commit reported two open cases; the owner decided both.
+
+4. **No stored subscription: an ended subscription changes nothing.**
+   `changeTenantPlan` writes the plan and leaves `stripeSubscriptionId` null,
+   so after a subscription ended and an operator set a plan, a late event
+   about the old subscription re-fetched it as cancelled and reset the plan
+   to FREE. A never-subscribed FREE/ACTIVE account was also moved to
+   CANCELED. Now, when the stored id is null and the live subscription has
+   ended (`canceled`, `incomplete_expired`, `resource_missing`), nothing is
+   written, one info line is logged and the event is recorded. A live state
+   that has not ended is still applied to a null stored id.
+5. **The write is conditional on the stored id it read.** Every event but a
+   checkout writes with `updateMany` whose `WHERE` names the
+   `stripeSubscriptionId` read before the Stripe round trip, null included.
+   A checkout committing a new subscription in that window makes the old
+   event's write match no row; one info line is logged.
+
+```
+read account (stored id S) ──► re-fetch ──► ended and S is null ─► no write
+                                        └─► updateMany WHERE stripeSubscriptionId = S
+                                              count 0 ─► superseded, no write
+record BillingEvent in every outcome above
+```
+
+- **A superseded event is recorded.** The account already holds state another
+  event for this customer wrote after the read. A re-delivery would read that
+  newer state and be ignored as non-current, or hit the null-and-ended rule, or
+  apply the same live answer the other event applied. Answering non-2xx would
+  buy a retry that changes nothing.
+- **A completed checkout stays unconditional.** It sets a new subscription
+  over whatever is stored. Conditioning it on the id it read would let the old
+  subscription's deletion, committing during the checkout's re-fetch, make the
+  checkout's write miss and leave a paying tenant on FREE with no
+  subscription. Unconditional, the checkout lands last or the deletion's own
+  conditional write misses the new id.
+- **A checkout of a subscription that has since ended still writes the
+  deletion.** It is unaffected by the null-stored rule, as decided.

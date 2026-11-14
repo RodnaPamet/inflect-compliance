@@ -271,37 +271,79 @@ async function retrieveLiveSubscription(
 const ENDED_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set(['canceled', 'incomplete_expired']);
 
 /**
+ * Which account state a write may overwrite.
+ *
+ * `UNCONDITIONAL` is a completed checkout's: it sets a new subscription over
+ * whatever is stored. `STORED_SUBSCRIPTION_UNCHANGED` is every other event's:
+ * the write lands only while `stripeSubscriptionId` still holds the value
+ * read before the Stripe round trip (null included), so a checkout that
+ * commits during the re-fetch is not overwritten by an older event (#5316).
+ */
+type WriteCondition =
+    | { kind: 'UNCONDITIONAL' }
+    | { kind: 'STORED_SUBSCRIPTION_UNCHANGED'; storedSubscriptionId: string | null };
+
+/**
+ * `APPLIED` — the live state was written.
+ * `ENDED_WITH_NO_STORED_SUBSCRIPTION` — the subscription has ended and the
+ *   account stores none, so there was nothing to end; nothing written.
+ * `SUPERSEDED` — the stored subscription changed during the re-fetch; the
+ *   conditional write matched no row and nothing was written.
+ */
+type LiveApplyOutcome = 'APPLIED' | 'ENDED_WITH_NO_STORED_SUBSCRIPTION' | 'SUPERSEDED';
+
+/**
  * Re-fetch the subscription an event names and apply Stripe's current state
  * to the customer's billing account. A subscription that has ended, or that
  * Stripe no longer has, is applied as a deletion: the same write the
- * `customer.subscription.deleted` branch made before #5316.
+ * `customer.subscription.deleted` branch made before #5316 — except to an
+ * account that stores no subscription, which it leaves alone. Such an
+ * account either never subscribed or already had the deletion applied, and
+ * its plan may be one an operator set with `changeTenantPlan`, which the
+ * deletion would reset to FREE (owner decision, 2026-11-14).
  */
-async function applyLiveSubscription(customerId: string, subscriptionId: string): Promise<void> {
+async function applyLiveSubscription(
+    customerId: string,
+    subscriptionId: string,
+    condition: WriteCondition,
+): Promise<LiveApplyOutcome> {
     const sub = await retrieveLiveSubscription(subscriptionId);
+    const ended = sub === null || ENDED_SUBSCRIPTION_STATUSES.has(sub.status as string);
 
-    if (sub === null || ENDED_SUBSCRIPTION_STATUSES.has(sub.status as string)) {
-        await db.billingAccount.update({
-            where: { stripeCustomerId: customerId },
-            data: {
-                status: 'CANCELED',
-                // The subscription is gone, so is what it paid for (#5082).
-                plan: 'FREE',
-                stripeSubscriptionId: null,
-            },
-        });
-        return;
+    if (
+        ended &&
+        condition.kind === 'STORED_SUBSCRIPTION_UNCHANGED' &&
+        condition.storedSubscriptionId === null
+    ) {
+        return 'ENDED_WITH_NO_STORED_SUBSCRIPTION';
     }
 
-    await db.billingAccount.update({
-        where: { stripeCustomerId: customerId },
-        data: {
-            stripeSubscriptionId: subscriptionId,
-            plan: planForSubscription(sub),
-            status: mapStripeStatus(sub.status as string),
-            currentPeriodEnd: getSubscriptionPeriodEnd(sub),
-            trialEndsAt: getSubscriptionTrialEnd(sub),
-        },
+    const data =
+        sub === null || ended
+            ? {
+                  status: 'CANCELED' as const,
+                  // The subscription is gone, so is what it paid for (#5082).
+                  plan: 'FREE' as const,
+                  stripeSubscriptionId: null,
+              }
+            : {
+                  stripeSubscriptionId: subscriptionId,
+                  plan: planForSubscription(sub),
+                  status: mapStripeStatus(sub.status as string),
+                  currentPeriodEnd: getSubscriptionPeriodEnd(sub),
+                  trialEndsAt: getSubscriptionTrialEnd(sub),
+              };
+
+    if (condition.kind === 'UNCONDITIONAL') {
+        await db.billingAccount.update({ where: { stripeCustomerId: customerId }, data });
+        return 'APPLIED';
+    }
+
+    const { count } = await db.billingAccount.updateMany({
+        where: { stripeCustomerId: customerId, stripeSubscriptionId: condition.storedSubscriptionId },
+        data,
     });
+    return count === 0 ? 'SUPERSEDED' : 'APPLIED';
 }
 
 // ─── Which subscription an event is about ───
@@ -370,21 +412,36 @@ async function applySubscriptionEvent(
     });
     if (!billingAccount) return;
 
-    const stored = billingAccount.stripeSubscriptionId;
-    if (scope === 'STORED_SUBSCRIPTION_ONLY' && stored && stored !== subscriptionId) {
+    const logFields = {
+        component: 'billing',
+        eventId: event.id,
+        eventType: event.type,
+        tenantId: billingAccount.tenantId,
+    };
+    const stored = billingAccount.stripeSubscriptionId ?? null;
+    if (scope === 'STORED_SUBSCRIPTION_ONLY' && stored !== null && stored !== subscriptionId) {
         // An event about a replaced subscription. Recorded so Stripe does not
         // deliver it for ever; the account is left as it is.
-        logger.info('Stripe event concerned a non-current subscription; ignored', {
-            component: 'billing',
-            eventId: event.id,
-            eventType: event.type,
-            tenantId: billingAccount.tenantId,
-        });
+        logger.info('Stripe event concerned a non-current subscription; ignored', logFields);
         await recordBillingEvent(billingAccount.tenantId, event);
         return;
     }
 
-    await applyLiveSubscription(customerId, subscriptionId);
+    const outcome = await applyLiveSubscription(
+        customerId,
+        subscriptionId,
+        scope === 'SETS_SUBSCRIPTION'
+            ? { kind: 'UNCONDITIONAL' }
+            : { kind: 'STORED_SUBSCRIPTION_UNCHANGED', storedSubscriptionId: stored },
+    );
+    if (outcome === 'ENDED_WITH_NO_STORED_SUBSCRIPTION') {
+        logger.info('Stripe event: the subscription has ended and the account stores no subscription; nothing changed', logFields);
+    } else if (outcome === 'SUPERSEDED') {
+        logger.info('Stripe event superseded: the stored subscription changed during the re-fetch; nothing changed', logFields);
+    }
+    // Recorded in every outcome. A superseded event lost to a newer write
+    // for this customer; its re-delivery would find that newer state and
+    // change nothing either.
     await recordBillingEvent(billingAccount.tenantId, event);
 }
 

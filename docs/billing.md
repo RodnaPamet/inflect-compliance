@@ -306,10 +306,25 @@ an invoice event's type sets no status of its own (#5316).
   other subscription is recorded in `BillingEvent`, changes nothing, and
   logs one line ("concerned a non-current subscription"). A completed
   checkout is what sets a new subscription, so it is exempt.
+* The write itself is conditional on the `stripeSubscriptionId` read
+  before the Stripe round trip (an `updateMany` naming that value, null
+  included). If another event changed it in the meantime, typically a
+  checkout committing a new subscription, the write matches no row,
+  changes nothing and logs one line ("changed during the re-fetch"). The
+  event is still recorded: the account already holds newer state, and a
+  re-delivery would find it and change nothing either. A completed
+  checkout writes unconditionally, because it replaces whatever is
+  stored, including a deletion that committed during its own re-fetch.
 
 * A live status of `canceled` or `incomplete_expired`, or Stripe
   answering `resource_missing`, is written as a deletion: `status =
-  CANCELED`, `plan = FREE`, `stripeSubscriptionId = null`.
+  CANCELED`, `plan = FREE`, `stripeSubscriptionId = null`. The
+  exception is an account that stores no subscription: it never
+  subscribed or already had the deletion applied, so the event changes
+  nothing (one log line, the event recorded). That keeps a late event
+  about an old subscription from resetting a plan an operator set with
+  `changeTenantPlan` to FREE. A completed checkout of an ended
+  subscription is still written as a deletion.
 * Any other live status is written as it stands: plan from the
   subscription's `metadata.plan`, status mapped from Stripe's, period
   end and trial end from the subscription.

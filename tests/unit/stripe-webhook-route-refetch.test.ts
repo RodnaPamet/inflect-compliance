@@ -17,7 +17,7 @@ const stripeMock = {
 jest.mock('stripe', () => ({ __esModule: true, default: jest.fn(() => stripeMock) }));
 
 const db = {
-    billingAccount: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+    billingAccount: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
     billingEvent: { findUnique: jest.fn(), create: jest.fn() },
 };
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: db, prisma: db }));
@@ -44,7 +44,8 @@ beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...OLD_ENV, STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_WEBHOOK_SECRET: 'whsec_x' }; // pragma: allowlist secret — test-only placeholder
     db.billingEvent.findUnique.mockResolvedValue(null);
-    db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1', stripeCustomerId: 'cus_1' });
+    db.billingAccount.findUnique.mockResolvedValue({ tenantId: 't1', stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1' });
+    db.billingAccount.updateMany.mockResolvedValue({ count: 1 });
     stripeMock.webhooks.constructEvent.mockReturnValue({
         id: 'evt_1',
         type: 'customer.subscription.updated',
@@ -63,7 +64,7 @@ describe('POST /api/stripe/webhook — live subscription re-fetch', () => {
         const res = await POST(webhookRequest());
 
         expect(res.status).toBe(503);
-        expect(db.billingAccount.update).not.toHaveBeenCalled();
+        expect(db.billingAccount.updateMany).not.toHaveBeenCalled();
         expect(db.billingEvent.create).not.toHaveBeenCalled();
     });
 
@@ -75,8 +76,8 @@ describe('POST /api/stripe/webhook — live subscription re-fetch', () => {
         const res = await POST(webhookRequest());
 
         expect(res.status).toBe(200);
-        expect(db.billingAccount.update).toHaveBeenCalledWith({
-            where: { stripeCustomerId: 'cus_1' },
+        expect(db.billingAccount.updateMany).toHaveBeenCalledWith({
+            where: { stripeCustomerId: 'cus_1', stripeSubscriptionId: 'sub_1' },
             data: { status: 'CANCELED', plan: 'FREE', stripeSubscriptionId: null },
         });
     });
@@ -89,7 +90,7 @@ describe('POST /api/stripe/webhook — live subscription re-fetch', () => {
         const res = await POST(webhookRequest());
 
         expect(res.status).toBe(200);
-        expect(db.billingAccount.update).toHaveBeenCalledWith(
+        expect(db.billingAccount.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ status: 'PAST_DUE' }) }),
         );
     });
@@ -109,8 +110,8 @@ describe('POST /api/stripe/webhook — any processing error is retried', () => {
     });
 
     it('answers 500 and records no BillingEvent when the account write fails', async () => {
-        db.billingAccount.update.mockRejectedValueOnce(
-            Object.assign(new Error('Invalid `prisma.billingAccount.update()` invocation'), {
+        db.billingAccount.updateMany.mockRejectedValueOnce(
+            Object.assign(new Error('Invalid `prisma.billingAccount.updateMany()` invocation'), {
                 name: 'PrismaClientKnownRequestError',
                 code: 'P1017',
             }),
@@ -136,11 +137,11 @@ describe('POST /api/stripe/webhook — any processing error is retried', () => {
         const res = await POST(webhookRequest());
 
         expect(res.status).toBe(500);
-        expect(db.billingAccount.update).not.toHaveBeenCalled();
+        expect(db.billingAccount.updateMany).not.toHaveBeenCalled();
     });
 
     it('logs the event id and type, never the payload', async () => {
-        db.billingAccount.update.mockRejectedValueOnce(new Error('connection terminated'));
+        db.billingAccount.updateMany.mockRejectedValueOnce(new Error('connection terminated'));
 
         await POST(webhookRequest());
 
@@ -150,6 +151,17 @@ describe('POST /api/stripe/webhook — any processing error is retried', () => {
         const logged = JSON.stringify((logger.error as jest.Mock).mock.calls[0]);
         expect(logged).not.toContain('metadata');
         expect(logged).not.toContain('"customer"');
+    });
+
+    it('answers 200 and records the event when the conditional write is superseded', async () => {
+        // The stored subscription changed during the re-fetch: the write
+        // matches no row. That is newer state, not a failure to retry.
+        db.billingAccount.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        const res = await POST(webhookRequest());
+
+        expect(res.status).toBe(200);
+        expect(db.billingEvent.create).toHaveBeenCalledTimes(1);
     });
 
     it('still answers 400 to a signature failure', async () => {
