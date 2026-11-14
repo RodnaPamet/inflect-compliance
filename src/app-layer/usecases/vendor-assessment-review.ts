@@ -34,7 +34,7 @@
 import type { RequestContext } from '../types';
 import type { VendorCriticality } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { assertCanApproveAssessment } from '../policies/vendor.policies';
@@ -135,6 +135,19 @@ export async function reviewAssessment(
                 'This assessment was created via the legacy approval flow. ' +
                     'Use decideAssessment instead.',
             );
+        }
+
+        // ── Claim the transition before any side effect (#5318) ──
+        // The status check above is a read; two concurrent reviews both
+        // passed it, and both filed evidence, queued a REVIEWED email and
+        // ran the risk writeback. The conditional write takes the row lock:
+        // the second waits for the first to commit, then matches nothing.
+        const claimed = await db.vendorAssessment.updateMany({
+            where: { id: assessment.id, tenantId: ctx.tenantId, status: 'SUBMITTED' },
+            data: { status: 'REVIEWED' },
+        });
+        if (claimed.count === 0) {
+            throw conflict('This assessment has already been reviewed. Reload to see the review.');
         }
 
         // ── Apply per-answer overrides ──
@@ -1018,6 +1031,17 @@ export async function closeAssessment(
                 `Cannot close an assessment in status ${assessment.status}. ` +
                     `Only REVIEWED assessments can be closed.`,
             );
+        }
+
+        // Claim the transition first (#5318), conditional on REVIEWED, so a
+        // concurrent close matches nothing and is refused rather than writing
+        // a second CLOSED audit row over the first closer's stamp.
+        const claimed = await db.vendorAssessment.updateMany({
+            where: { id: assessment.id, tenantId: ctx.tenantId, status: 'REVIEWED' },
+            data: { status: 'CLOSED' },
+        });
+        if (claimed.count === 0) {
+            throw conflict('This assessment has already been closed. Reload to see it.');
         }
 
         const closedAt = new Date();

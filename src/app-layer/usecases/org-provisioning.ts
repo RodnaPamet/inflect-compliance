@@ -136,7 +136,10 @@ export async function provisionOrgAdminToTenants(
     db: DbClient = prisma,
 ): Promise<ProvisionResult> {
     const tenants = await db.tenant.findMany({
-        where: { organizationId: orgId },
+        // `deletedAt: null` (#5318): a removed tenant's memberships were
+        // DEACTIVATED by `removeTenantFromOrg`; fanning a fresh ACTIVE ADMIN
+        // row into it would re-create the grant the removal revoked.
+        where: { organizationId: orgId, deletedAt: null },
         select: { id: true },
     });
     if (tenants.length === 0) {

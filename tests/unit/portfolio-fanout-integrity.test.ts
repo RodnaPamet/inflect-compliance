@@ -53,6 +53,9 @@ import {
     getNonPerformingControls,
     getCriticalRisksAcrossOrg,
     getOverdueEvidenceAcrossOrg,
+    listNonPerformingControls,
+    listCriticalRisksAcrossOrg,
+    listOverdueEvidenceAcrossOrg,
 } from '@/app-layer/usecases/portfolio';
 import type { OrgContext } from '@/app-layer/types';
 
@@ -246,5 +249,24 @@ describe('drill-down integrity check — reused consistently across usecases', (
         const firstWithTenantDbOrder =
             withTenantDbMock.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
         expect(integrityOrder).toBeLessThan(firstWithTenantDbOrder);
+    });
+});
+
+// ── The paginated list* drill-downs filter the same way (#5318) ───────
+
+describe('paginated drill-downs — the same membership filter as the preview', () => {
+    it.each([
+        ['listNonPerformingControls', listNonPerformingControls],
+        ['listCriticalRisksAcrossOrg', listCriticalRisksAcrossOrg],
+        ['listOverdueEvidenceAcrossOrg', listOverdueEvidenceAcrossOrg],
+    ])('%s reads only the tenants the caller holds a membership in', async (_label, fn) => {
+        getOrgTenantIdsMock.mockResolvedValue(TENANTS);
+        tenantMembershipFindManyMock.mockResolvedValue([{ tenantId: 't-1' }, { tenantId: 't-3' }]);
+
+        await fn(ctxFor());
+
+        const tenantIdsRead = withTenantDbMock.mock.calls.map((c) => c[0]);
+        expect(new Set(tenantIdsRead)).toEqual(new Set(['t-1', 't-3']));
+        expect(tenantIdsRead).not.toContain('t-2');
     });
 });

@@ -172,7 +172,9 @@ describe('provisionOrgAdminToTenants', () => {
 
         expect(tenantFindManyMock).toHaveBeenCalledTimes(1);
         const arg = tenantFindManyMock.mock.calls[0][0];
-        expect(arg.where).toEqual({ organizationId: 'org-target' });
+        // `deletedAt: null`: a removed (soft-deleted) tenant is never fanned
+        // into — its memberships were revoked by the removal (#5318).
+        expect(arg.where).toEqual({ organizationId: 'org-target', deletedAt: null });
     });
 });
 

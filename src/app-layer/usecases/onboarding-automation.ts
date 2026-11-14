@@ -18,6 +18,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { OnboardingRepository } from '../repositories/OnboardingRepository';
 import { RiskRepository } from '../repositories/RiskRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import { badRequest, isAppError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import type { OnboardingRefusal } from '@/lib/onboarding-refusals';
@@ -487,16 +488,15 @@ async function executeTeamSetup(ctx: RequestContext, allData: StepData, locale: 
                 continue;
             }
 
-            await db.task.create({
-                data: {
-                    tenantId: ctx.tenantId,
-                    title: task.title,
-                    description: task.description,
-                    type: task.type,
-                    status: 'OPEN',
-                    createdByUserId: ctx.userId,
-                    assigneeUserId: ctx.userId,
-                },
+            // Through the repository so the TSK-N key is minted (#5318), as
+            // the starter risks go through RiskRepository.create. A bare
+            // `db.task.create` left every starter task with a NULL key and a
+            // blank Code column. Status defaults to OPEN in the schema.
+            await TaskRepository.create(db, ctx, {
+                title: task.title,
+                description: task.description,
+                type: task.type,
+                assigneeUserId: ctx.userId,
             });
             created++;
         }
