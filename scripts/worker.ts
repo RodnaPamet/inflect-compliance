@@ -41,6 +41,7 @@ import Redis from 'ioredis';
 
 import { beat } from '../src/app-layer/jobs/worker-heartbeat';
 import { createProcessLogger } from '../src/lib/observability/process-logger';
+import { jobPayloadLogFields } from '../src/lib/observability/job-payload-log';
 import {
     QUEUE_NAME,
     type JobName,
@@ -277,7 +278,14 @@ async function bootstrap(): Promise<void> {
                     const startTime = performance.now();
                     const payload = stripTraceCarrier(job.data as Record<string, unknown>);
 
-                    log.info({ jobName, jobId: job.id, payload }, 'processing job');
+                    // NOT the whole payload (#5635): it ships to Cloud Logging and
+                    // carries email addresses, remote issue bodies and entity
+                    // titles. Flat, so pino's root-level redaction can see what
+                    // does go out.
+                    log.info(
+                        { jobName, jobId: job.id, ...jobPayloadLogFields(payload) },
+                        'processing job',
+                    );
 
                     // GAP-22: forward the BullMQ Job's progress channel so
                     // executors that report mid-run progress (currently
