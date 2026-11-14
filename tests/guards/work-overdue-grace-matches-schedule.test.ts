@@ -203,8 +203,9 @@ describe('the overdue-work reporter declares a grace per family (#3558)', () => 
  * AND THE COLUMNS DIFFER BY TABLE, which looks like an inconsistency and is
  * not. Only one of the two records a transition time:
  *
- *   · `NotificationOutbox` has no `updatedAt`, and `processOutbox`'s failure
- *     branch writes only `status` and `lastError` — `sendAfter` never moves. So
+ *   · `NotificationOutbox` has no `updatedAt`, and `processOutbox` moves
+ *     `sendAfter` only to lease a row for one send (#5110), putting it back if
+ *     the send fails — at rest it never moves. So
  *     `createdAt` is the only timestamp available, and it is a sound proxy
  *     because no backoff is applied.
  *   · `AuditOutbox` DOES back off (`audit-outbox-flush.ts` writes

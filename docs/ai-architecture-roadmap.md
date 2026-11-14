@@ -444,21 +444,21 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments
   naming what `AI_LOCAL_BASE_URL` may point at.
 - **Every container has a memory limit and a CPU cap** (C1, applied
-  2026-11-12, #5324), set from the peaks C0 measured the same day: 10,496 MiB of
-  limits across the stack and its overlays, against a 14.5 GB line
-  (§ Capacity budget). The embedding, rerank, parsing, NeMo and PII services the
-  2026-11-11 wave prepared are each held by the capacity rule; the first one
-  that crosses the line carries the resize (D-CAP-1), and pgvector adds no
-  container (it is absorbed into `postgres`'s existing 2,048 MiB limit, owner,
-  2026-11-13). With D-L4-3 decided the same day, the standing additions fit
-  the line within a few hundred MiB before C1b, so retrieval does not trigger
-  the resize.
+  2026-11-12, #5324), set from the peaks C0 measured the same day, and `app`,
+  `worker` and the harness scanner re-sized by C1b from 24 hours of measured
+  peaks, the nightly jobs included (2026-11-14): 9,216 MiB of limits across
+  the stack and its overlays, against a 14.5 GB line (§ Capacity budget). The
+  embedding, rerank, parsing, NeMo and PII services the 2026-11-11 wave
+  prepared are each held by the capacity rule, and pgvector adds no container
+  (it is absorbed into `postgres`'s existing 2,048 MiB limit, owner,
+  2026-11-13). With D-L4-3 decided and C1b applied, the standing additions fit
+  about 950 MiB under the stricter line, so no addition planned today triggers
+  the resize (D-CAP-1).
 - **Model usage is LLM API keys.** `inflect-external` is registered from
   `ANTHROPIC_API_KEY` or the OpenRouter key, and `docs/sub-processors.md`
   bounds what each provider receives.
-- Missing for completeness: C1b's re-measure of `app` and `worker` across the
-  nightly jobs (#5327) and C2, the resize, with the first addition that
-  crosses the line (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
+- Missing for completeness: C2, the resize, only if an addition is measured
+  above its estimate and crosses the line (§ Capacity budget). By the owner's decision of 2026-10-31, Layer 5's model
   serving (a self-hosted model route, the GPU arms other roadmaps deferred,
   Triton, a NIM proof of concept) is optional and starts only after every
   other roadmap is complete. Modal is not adopted.
@@ -723,10 +723,11 @@ the child wins if the two disagree. Five rules make the definition hold:
 ### Capacity budget
 
 Every phase that adds a container to the production VM spends from one budget
-(G5). Until 2026-10-31 there was no budget, and there are no limits: no service
-in `deploy/docker-compose.prod.yml` sets a memory or CPU limit, and only Redis
-caps its own data, at 256 MB. So the kernel's out-of-memory killer is the
-only memory limit, and it picks which process to kill. The one precedent for a
+(G5). Until 2026-10-31 there was no budget, and until C1 (2026-11-12) there
+were no limits: no service in `deploy/docker-compose.prod.yml` set a memory or
+CPU limit, and only Redis capped its own data, at 256 MB, so the kernel's
+out-of-memory killer was the only memory limit and picked which process to
+kill. Since C1 every container has both. The one precedent for a
 limited model service is the retired Laya estate, which ran at 1 vCPU and
 4 GB.
 
@@ -761,8 +762,8 @@ that measures it.
 
 | Line | Containers | Added by | Memory ceiling | CPU cap | Basis |
 | --- | --- | --- | --- | --- | --- |
-| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **9,472 MiB of limits** (C1, applied 2026-11-12): clamav 3,072, postgres 2,048, app 1,536, worker 1,536, redis 768, caddy 256, pgbouncer 128, watchtower 128. Measured peaks (C0, 2026-11-12) total about 3.6 GB, clamav 2.1 GB of it | app and postgres 1.5; clamav, worker, redis, caddy, pgbouncer 1.0 (clamav and worker at half CPU weight); watchtower 0.25 | C0 (`VM capacity` run 43209382354) and C1 (#5324, re-measured in run 43253038007). `app` and `worker` are provisional until C1b re-measures them across the nightly jobs (#5327) |
-| Overlays | `harness-scanner`, `harness-egress`, `legacy-mcp-proving` | on `main` | **1,024 MiB of limits** (C1): 512, 256 and 256; peaks 134, 85 and 67 MiB | 1.0 (half weight), 0.5, 0.5 | the same two runs. The OrangeHRM lab left the VM on 2026-11-12 |
+| Today's stack | `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`, `watchtower`, `caddy` | on `main` | **8,448 MiB of limits** (C1, applied 2026-11-12; `app` and `worker` re-sized by C1b, 2026-11-14): clamav 3,072, postgres 2,048, app 1,024, worker 1,024, redis 768, caddy 256, pgbouncer 128, watchtower 128. `app` and `worker` are **measured**: max `memory.peak` 593 and 385 MiB over 24 hours of recorder history, parser and nightly windows included, so 1.5 times is 890 and 578; the worker is held at 1,024 rather than 768 until the history holds a Sunday and a month start. clamav's peak is 2,099 MiB (its 3,072 covers a signature reload), postgres's 343 | app and postgres 1.5; clamav, worker, redis, caddy, pgbouncer 1.0 (clamav and worker at half CPU weight); watchtower 0.25 | C0 (`VM capacity` run 43209382354), C1 (#5324, re-measured in run 43253038007) and C1b (`VM capacity` history run 43566712099, 2026-11-14; `docs/implementation-notes/2026-11-14-capacity-c1b.md`) |
+| Overlays | `harness-scanner`, `harness-egress`, `legacy-mcp-proving` | on `main` | **768 MiB of limits** (C1; the scanner re-sized by C1b): 256, 256 and 256; peaks 134, 85 and 108 MiB | 1.0 (half weight), 0.5, 0.5 | the same runs. The scanner's 256 is owner-approved (2026-11-13): peaks 155 (C0) and 134, 1.5 times 233. The OrangeHRM lab left the VM on 2026-11-12 |
 | Embeddings | `tei-embed` | Retriever 1 | 1 GB (estimate until measured) | 1.0 | `intfloat/multilingual-e5-small` (D-L4-3, decided 2026-11-13): 118M parameters, weights about 0.47 GB at fp32 (TEI on CPU runs fp32 only), plus the TEI engine. Per-pipeline memory was not measured by the benchmark; the retriever's Phase 0.5 measures it on the VM |
 | Reranking | `tei-rerank` | Retriever 2 | about 1.5 GB (estimate until measured) | 1.0 | `BAAI/bge-reranker-base` (D-L4-3, decided 2026-11-13): 278M parameters, weights about 1.1 GB at fp32, plus the TEI engine |
 | Vectors | none: pgvector inside `postgres` (D-L4-1, 2026-11-11) | Vector store 1 | 0 added: absorbed into `postgres`'s existing 2,048 MiB limit (owner, 2026-11-13). Measured `postgres` peaks are 406 MiB (C0) and 332 MiB (2026-11-13); with about 0.5 GB of vectors that is about 918 MiB, and 1.5 times it (the reset rule) about 1,377 MiB, still under the limit. Re-checked once vectors are loaded | `postgres`'s own | a 1024-dimensional `float4` vector is 4 KiB, so 100k chunks are about 0.4 GB of heap plus an HNSW graph of similar order, served from shared buffers and the page cache; index builds take `maintenance_work_mem`, capped for the build. No container is added, so the "no new container until C1" rule is not crossed. **The image changes:** no Postgres image in the repository ships pgvector (every one is `postgres:16-alpine`); a repo-built image `FROM postgres:16-alpine` compiling pgvector replaces all of them in one pull request, a SIGNIFICANT change, with its patch cadence open (D-L4-8). Weaviate's 1.5 GB line returns only if the vector store's conditional Phase 4 is triggered |
@@ -782,34 +783,47 @@ otherwise, a parsing-only service, traces OTel-only) brought the estimate to
 about 8.5 GB with the smallest open models, or up to about 12 GB with the
 largest small candidates. D-L4-3's amendment (2026-11-13) removed the Nemotron
 pair, which would have taken it to about 16 GB.
-C0 and C1 answered the fit on 2026-11-12: today's stack is limited to
+C0 and C1 answered the fit on 2026-11-12: today's stack was limited to
 10,496 MiB, leaving about 4 GB of the 14.5 GB line unallocated, so even 8.5 GB
-does not fit beside it.
+did not fit beside it. C1b (2026-11-14) re-sized `app` and `worker` from 24
+hours of measured peaks, the parser and nightly windows included, and cut the
+harness scanner from 512 to 256 MiB (owner-approved): today's stack and its
+overlays are now limited to 9,216 MiB.
 
-Recomputed after the decisions of 2026-11-13 (the smaller pieces below, D-L4-3
-decided on `multilingual-e5-small` + `bge-reranker-base`, pgvector absorbed into
-`postgres`'s existing limit, the parser in its nightly window):
+Recomputed after C1b and the decisions of 2026-11-13 (the smaller pieces below,
+D-L4-3 decided on `multilingual-e5-small` + `bge-reranker-base`, pgvector
+absorbed into `postgres`'s existing limit, the parser in its nightly window):
 
 | | MiB |
 | --- | --- |
-| Today's limits (C1) | 10,496 |
+| Today's limits (C1, re-sized by C1b) | 9,216 |
 | Embedding, about 1 GB (estimate) | 1,024 |
 | Reranking, about 1.5 GB (estimate) | 1,536 |
 | PII detection, 0.7 GB (estimate) | 717 |
 | Guard rails, 1 GB (estimate) | 1,024 |
 | Vectors (absorbed by `postgres`) and the parser (in its window) | 0 |
-| **Total** | **14,797** |
+| **Total** | **13,517** |
 
-The standing additions come to about 4.2 GB (4,301 MiB). Against the 14.5 GB
-line (14,848 MiB) the total fits, with about 50 MiB to spare. On the stricter
-reading, the measured host memory minus 1.5 GB (16,003 − 1,536 = 14,467 MiB,
-`docs/implementation-notes/2026-11-12-capacity-c1.md`), it is about 330 MiB
-over. Either way it is within a few hundred MiB of the line before C1b, and
-C1b is what gives the margin: the harness scanner's limit goes from 512 to
-256 MiB (owner-approved), and `app` and `worker` are re-sized from the
-capacity recorder's history across the nightly jobs. Every addition above is
-an estimate until its phase measures it. **Retrieval does not trigger
-D-CAP-1's resize.** D-CAP-1's options, as decided:
+The standing additions come to 4,301 MiB. On the stricter reading of the line,
+the measured host memory minus 1.5 GB (16,003 − 1,536 = 14,467 MiB,
+`docs/implementation-notes/2026-11-12-capacity-c1.md`), the total is about
+950 MiB under it; against the 14.5 GB line (14,848 MiB) it is about 1,330 MiB
+under. **Recommendation: no resize.** D-CAP-1 is satisfied by the smaller
+pieces plus C1b. It is revisited when a phase measures a service above its
+estimate, because every addition above is an estimate until its phase measures
+it.
+
+**The window rule, checked.** The always-on containers' highest `memory.peak`
+over the 00:15–01:45 UTC parser window (C1b, 9 of 9 recorder passes) sum to
+3,881 MiB: app 593, worker 385, clamav 2,099, postgres 343, harness-scanner
+134, harness-egress 85, legacy-mcp-proving 108, caddy 51, redis 30, watchtower
+39, pgbouncer 14. With the future standing services at their limits (4,301)
+and the parser's 3,072 that is 11,254 MiB, about 3.2 GB under the stricter
+line. `app` and `worker` restarted inside the window (Watchtower), so their
+figures cover short lifetimes; the margin is wide enough that this changes
+nothing.
+
+D-CAP-1's options, as decided:
 
 - **Resize** to `e2-highmem-4` (4 vCPU, 32 GB). This doubles the machine, and
   its cost, and keeps one Compose file.
@@ -845,7 +859,11 @@ production VM.
   line is corrected from 1.5 to 0.7 GB. Its record's floors (D-L1-11) still
   decide whether they are enough.
 - **Every container's limit is reset to 1.5 times its measured peak** after
-  C1b's re-measure across the nightly jobs, not only `app` and `worker`.
+  C1b's re-measure across the nightly jobs, not only `app` and `worker`. Done
+  in C1b (2026-11-14) where a service's mechanics allow: `app`, `worker` and
+  the scanner moved; clamav (signature reload), postgres (pgvector, owner),
+  redis (AOF fork) and the services at their floors kept their limits, each
+  for the reason its row in the C1b note gives.
 
 **The budget's own phases** (a status-board row; complete at C1, and C2 if
 needed):
@@ -860,11 +878,20 @@ needed):
       and page-cache memory, average CPU and OOM kills, and optional samples.
       A session cannot do it itself: this environment's proxy carries HTTPS
       only, so no SSH or IAP tunnel reaches the VM from a session.
-- [x] **C1 — limit today's stack** (done 2026-11-12: #5324, applied the same day, every container limited; C1b re-measures `app` and `worker`, #5327). A memory limit and CPU cap on each of the
+- [x] **C1 — limit today's stack** (done 2026-11-12: #5324, applied the same day, every container limited; C1b re-measured `app` and `worker`, #5327). A memory limit and CPU cap on each of the
       eight services, at 1.5× its measured peak, in
       `deploy/docker-compose.prod.yml`, applied with `deploy/apply.sh`. A
       structural Compose change, so it carries a rollback plan: revert the
       file and apply.
+- [x] **C1b — re-size from measured nightly peaks** (done 2026-11-14,
+      #5327; `VM capacity` history run 43566712099, 24 hours, the parser and
+      nightly windows fully recorded). `app` 1,536 → 1,024 and `worker`
+      1,536 → 1,024 (V8 heap 768 each), `harness-scanner` 512 → 256
+      (owner-approved). Every other limit kept: clamav for its signature
+      reload (peak 2,099, about 1.46 times), postgres by the owner's pgvector
+      decision, redis for its AOF fork, the rest at their floors. 9,216 MiB in
+      all. Tightening the worker to 768 waits for recorder history that holds a
+      Sunday and a month start.
 - [ ] **C2 — D-CAP-1's answer (decided 2026-11-12: measure, smaller pieces,
       then resize), applied by the first addition that crosses the line.** The resize, the second VM or the smaller pieces, in the pull
       request that would otherwise cross it.
@@ -896,7 +923,7 @@ completion.
 | Self-hosted model route (was "Modal") | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional | **optional, after completion**; Modal not adopted (D-L5-1) | — | not part of completeness | D-L5-2 (deferred) |
 | Triton | 5 | [`triton.md`](./ai-architecture/triton.md) | optional | optional, after completion | — | not part of completeness | D-L5-3 (deferred) |
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
-| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited (10,496 MiB of the 14.5 GB line); D-CAP-1 decided (measure, smaller pieces, then resize) | C0, C1 | C1b (#5327), and C2, the resize, with the first addition that crosses the line | — |
+| Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited; C1b done 2026-11-14: `app`, `worker` and the scanner re-sized from measured nightly peaks (9,216 MiB of the 14.5 GB line; the standing additions fit about 950 MiB under the stricter line); D-CAP-1 decided (measure, smaller pieces, then resize) and satisfied without a resize | C0, C1, C1b | C2, the resize, only if a phase measures an addition above its estimate and it crosses the line | — |
 | Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built (USD 2.50 of the shared USD 5, D-EV-11), non-blocking until 2027-02-28, off unless `GARAK_ENABLED` is `true`, keyed by the shared `ANTHROPIC_API_KEY` when its own key is unset; first run dispatched 2026-11-13. 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
 | Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's USD 2.50 each); 0.5 (one seed set with the retriever's) open | 0 | 3 | — |
 | ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | Phase 0: D-EV-3 decided; labelling not yet done | — | 3, or 2's recorded failure to calibrate | — |
@@ -1125,7 +1152,7 @@ D-L1-15, D-L1-16, D-L4-7, D-EV-6 and D-EV-11 by name.
 | D-L5-1 | Model usage through LLM API keys; no self-hosting now; Modal not adopted; Layer 5 optional, after every other roadmap is complete | modal-inference | **decided 2026-10-31** (owner) |
 | D-L5-2 | If Layer 5 is taken up: model, weights and licence, GPU class, zone and quota, cost | modal-inference | **deferred** until Layer 5 is taken up |
 | D-L5-3 | Triton consolidation trigger | triton | **deferred** with Layer 5 |
-| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule (`bge-reranker-base`, decided 2026-11-13), Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b |
+| D-CAP-1 | Where the completeness services run once the measured sum crosses the line: resize the VM, a second CPU VM, or smaller pieces (smaller embedding models, quantised weights; the parsing-only service and OTel-only traces are already decided) | § Capacity budget | **decided 2026-11-12** (owner: the default, adopted): measure first; take the smaller pieces the records allow; then resize the VM to `e2-highmem-4` (4 vCPU, 32 GB); a second VM only if memory alone cannot fit; never self-host Langfuse on the production VM. C1 (limits on every container) was applied the same day. **Smaller pieces taken 2026-11-13** (owner): the parser as a nightly batch under the new window rule, the reranker by the amended D-L4-3 rule (`bge-reranker-base`, decided 2026-11-13), Presidio on its small pipelines (0.7 GB), and every limit reset to 1.5 times its peak after C1b. **C1b done 2026-11-14** (`VM capacity` history run 43566712099): `app` and `worker` 1,536 → 1,024, the harness scanner 512 → 256, 9,216 MiB in all; with the standing additions the total is 13,517 MiB, about 950 MiB under the stricter line, so **no resize**: the smaller pieces plus C1b satisfy it, revisited when a phase measures a service above its estimate |
 | D-EV-1 | Which model answers garak probes in CI, and the nightly budget | garak | **decided 2026-11-11** (owner): a Haiku-class model through a dedicated CI key, capped at USD 5 a night, seed data only |
 | D-EV-2 | Ragas judge residency and cost | ragas | **decided 2026-11-11** (owner): as D-EV-1, one shared cap |
 | D-EV-3 | Who labels ARES triples, from the seed corpus | ares | **decided 2026-11-11** (owner): operator, seed data only |

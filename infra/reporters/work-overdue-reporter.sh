@@ -107,8 +107,11 @@ DRY_RUN=${WORK_OVERDUE_DRY_RUN:-0}
 # THE COLUMNS DIFFER BY TABLE, and each is the right one:
 #
 #   · `NotificationOutbox` records NO transition time — no `updatedAt`, and
-#     `processOutbox`'s failure branch writes only `status` and `lastError`, so
-#     `sendAfter` never moves. `createdAt` is therefore the only timestamp, and
+#     `processOutbox` moves `sendAfter` only to lease a row for the length of
+#     one send (#5110), putting it back if the send fails, so at rest it is
+#     still when the row first came due. (A pass that crashes mid-send leaves
+#     the lease to expire, which delays that row's overdue count by the lease.)
+#     `createdAt` is therefore the only timestamp, and
 #     it is a sound proxy: with no backoff applied, `attempts` capped at 3 and
 #     the flusher on */10, a row reaches FAILED within about half an hour of
 #     being queued. If a backoff is ever added there, this proxy weakens and

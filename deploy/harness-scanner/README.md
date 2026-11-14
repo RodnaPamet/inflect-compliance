@@ -48,7 +48,7 @@ What the move changed, and what it did not:
 | Signing key | `SCANNER_SIGNING_KEY` in `.env.scanner` | the same key, kept: the registered public key stays valid |
 | Report | contract `/4` | contract `/4`, from the same `@rodnapamet/scanent-contract` the ingest uses |
 | User, filesystem | uid 1000, read-only | uid 1000, read-only, distroless (no shell), `pids_limit: 256` |
-| Memory | 512m | 512m: scanent's own 1.5 GiB is for its `file` output's rendering, which does not run here |
+| Memory | 512m | 256m (capacity C1b, from measured peaks of 155 and 134 MiB): scanent's own 1.5 GiB is for its `file` output's rendering, which does not run here |
 
 scanent reads each credential once, when `schedule` starts. `configure`
 rewrites `.env.scanner`, and the following `start` re-creates the container
