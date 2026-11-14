@@ -62,7 +62,7 @@ import {
     dummyVerify,
     hashPassword,
     needsRehash,
-    verifyPassword,
+    verifyPasswordWithScheme,
 } from './passwords';
 import {
     recordLoginFailure,
@@ -343,7 +343,10 @@ export async function authenticateWithPassword(
         return { ok: false, reason: 'credentials_invalid' };
     }
 
-    const valid = await verifyPassword(password, user.passwordHash);
+    const { ok: valid, legacyScheme } = await verifyPasswordWithScheme(
+        password,
+        user.passwordHash,
+    );
     if (!valid) {
         if (runProgressive && progressiveKey) {
             recordProgressiveFailure(progressiveKey, LOGIN_PROGRESSIVE_POLICY);
@@ -379,6 +382,13 @@ export async function authenticateWithPassword(
     // the plaintext we already have in hand and store a fresh hash. The
     // next login won't need this path. Errors here MUST NOT fail the
     // login — the user already proved they know the password.
+    // `legacyScheme` is NOT consulted yet, on purpose (#5592 deploy 1). Every
+    // stored hash is legacy today because `hashPassword` still writes that
+    // form, so acting on it here would rewrite the row on every single login.
+    // It is wired in deploy 2, in the same diff that starts writing the
+    // pre-hashed form — which is what makes the flag mean "behind the current
+    // scheme" rather than "a hash".
+    void legacyScheme;
     if (needsRehash(user.passwordHash)) {
         try {
             const newHash = await hashPassword(password);

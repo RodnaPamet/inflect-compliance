@@ -13,6 +13,15 @@
  */
 export const MIN_PASSWORD_LENGTH = 8;
 
-/** Max length guards against bcrypt's documented 72-byte input truncation
- *  surprise and against memory-abuse via a giant body on the login route. */
+/**
+ * Max length. A bound on the BODY of a login or set-password request, and
+ * nothing more.
+ *
+ * It used to claim it also guarded "bcrypt's documented 72-byte input
+ * truncation surprise", which it could not: 128 characters is nearly double
+ * that, and every check compares `String.length` — UTF-16 code units — against
+ * it. The cut fell at the 37th Cyrillic character, on a product that ships a
+ * Bulgarian UI. Truncation is handled where it can be, by pre-hashing the
+ * password before bcrypt sees it (`prehashForBcrypt`, #5592).
+ */
 export const MAX_PASSWORD_LENGTH = 128;

@@ -132,13 +132,31 @@ jest.mock('@/lib/auth/security-events', () => ({
 }));
 
 // Password primitives — deterministic, no bcrypt cost.
-jest.mock('@/lib/auth/passwords', () => ({
-    verifyPassword: jest.fn(),
-    dummyVerify: jest.fn(async () => undefined),
-    needsRehash: jest.fn(() => false),
-    hashPassword: jest.fn(async () => 'hashed'),
-    BCRYPT_COST: 12,
-}));
+//
+// `verifyPasswordWithScheme` is DEFINED IN TERMS of the mocked
+// `verifyPassword` rather than given its own `jest.fn`. This is a partial
+// mock of a barrel, which goes stale the moment the module gains an export
+// its consumer calls — exactly what happened when #5592 added the
+// scheme-reporting verify: every test here died with
+// "verifyPasswordWithScheme is not a function", nowhere near the thing they
+// test. Delegating means the one mock these tests already drive keeps
+// controlling the answer, and a future export that wraps `verifyPassword`
+// needs no edit here.
+jest.mock('@/lib/auth/passwords', () => {
+    const verifyPassword = jest.fn();
+    return {
+        verifyPassword,
+        verifyPasswordWithScheme: jest.fn(async (...args: unknown[]) => ({
+            ok: await (verifyPassword as (...a: unknown[]) => Promise<boolean>)(...args),
+            legacyScheme: false,
+        })),
+        dummyVerify: jest.fn(async () => undefined),
+        needsRehash: jest.fn(() => false),
+        hashPassword: jest.fn(async () => 'hashed'),
+        prehashForBcrypt: jest.fn((pw: string) => `prehashed:${pw}`),
+        BCRYPT_COST: 12,
+    };
+});
 
 // Prisma — simulate "user exists with a password hash".
 const fakeUser = {
