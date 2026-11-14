@@ -348,6 +348,29 @@ interface JobOutcome {
     noRetry?: boolean;
 }
 
+/**
+ * The outcome of a fan-out sweep that isolates per-item failures (#5307).
+ *
+ * Isolation keeps one tenant's fault from stopping the others, but the run is
+ * still not a clean one: any isolated failure makes it an ERROR, the shape
+ * `snapshot` and `sla-monitor` already use (`success: errored === 0`).
+ * `noRetry`, because the sweep already ran every item once and a BullMQ retry
+ * would re-run the whole fan-out for the ones that succeeded; the next
+ * scheduled tick is the retry.
+ */
+export function fanOutOutcome(
+    jobName: string,
+    failures: number,
+    what: string,
+): JobOutcome | undefined {
+    if (failures === 0) return undefined;
+    return {
+        status: 'ERROR',
+        errorMessage: `${jobName}: ${failures} ${what}`,
+        noRetry: true,
+    };
+}
+
 /** The outcome of a master-KEK rotation sweep (#5299). */
 export function keyRotationOutcome(
     totalErrors: number,
@@ -1186,7 +1209,7 @@ executorRegistry.register('report-delivery', async (payload) => {
     const r = await runReportDelivery(payload);
     return makeResult('report-delivery', startedAt, startMs, r.due, r.generated, r.failed, {
         due: r.due, generated: r.generated, delivered: r.delivered, pushed: r.pushed, failed: r.failed,
-    });
+    }, fanOutOutcome('report-delivery', r.failed, 'scheduled report(s) failed to generate or deliver'));
 });
 
 // RQ-2 — daily cross-tenant risk-appetite breach monitor.
@@ -1197,7 +1220,11 @@ executorRegistry.register('risk-appetite-monitor', async (payload) => {
     const r = await runRiskAppetiteMonitor(payload);
     // A tenant this job could not act in used to be a hardcoded ZERO here, so a
     // workspace that had silently stopped being monitored scored as a clean run
-    // (#4388). It is a failure, and it is counted as one.
+    // (#4388). It is now COUNTED — as `itemsSkipped` and `details.unroutable` —
+    // but it does not fail the job (#5307 corrected this comment, which said
+    // it did): an unroutable tenant is a standing configuration state, reported
+    // with its count the way `sharepoint-delta-sync-dispatch` reports its
+    // unroutable connections, not a fault a retry or a red run would fix.
     return makeResult('risk-appetite-monitor', startedAt, startMs, r.scanned, r.newBreaches, r.unroutable, {
         tenants: r.tenants,
         scanned: r.scanned,
@@ -1849,6 +1876,7 @@ executorRegistry.register('external-write-dispatch', async (payload) => {
     const { runExternalWriteDispatchJob } = await import('./external-write-dispatch');
     const r = await runExternalWriteDispatchJob({ tenantId: payload.tenantId });
     return makeResult('external-write-dispatch', startedAt, startMs, r.scanned, r.applied, r.refused, {
+        failedTenantPasses: r.failedTenantPasses,
         tenants: r.tenants,
         indeterminate: r.indeterminate,
         // `accepted` was missing here, which made the whole ACCEPTED population
@@ -1863,7 +1891,7 @@ executorRegistry.register('external-write-dispatch', async (payload) => {
         reconcileNotYet: r.reconcile.notYet,
         reconcileUnreadable: r.reconcile.unreadable,
         reconcileUnverifiable: r.reconcile.unverifiable,
-    });
+    }, fanOutOutcome('external-write-dispatch', r.failedTenantPasses, 'tenant pass(es) threw'));
 });
 
 // ── agent-proposal-expiry ───────────────────────────────────────────

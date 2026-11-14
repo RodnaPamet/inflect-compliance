@@ -50,6 +50,7 @@ jest.mock('@/app-layer/usecases/workflow-runs', () => ({ startWorkflowRun }));
 import { runAgentInvokeDispatch, MAX_AGENT_INVOKE_DEPTH } from '@/app-layer/jobs/agent-invoke-dispatch';
 import { prisma } from '@/lib/prisma';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { ForbiddenError } from '@/lib/errors/types';
 
 const mockPrisma = prisma as any;
 
@@ -159,6 +160,27 @@ describe('an automation rule invoking an agent', () => {
         // Never resolve a context for a principal nobody named: that would be
         // an automation running with permissions nobody granted it.
         expect(resolveTenantContext).not.toHaveBeenCalled();
+    });
+
+    it('refuses — does not throw — when the rule owner is no longer an active member (#5307)', async () => {
+        // A deactivated or removed author is a rule that outlived its owner: a
+        // misconfiguration, which must not put the job into retry.
+        (resolveTenantContext as jest.Mock).mockRejectedValueOnce(
+            new ForbiddenError('Your account has been deactivated by a tenant administrator.'),
+        );
+        const { refusal, result } = await runAgentInvokeDispatch(payload() as never);
+        expect(refusal).toBe('rule_owner_not_member');
+        expect(startWorkflowRun).not.toHaveBeenCalled();
+        expect((result as unknown as { success: boolean }).success).toBe(true);
+        expect(summaryOf(result)).toContain('rule_owner_not_member');
+    });
+
+    it('still THROWS for a fault that is not a membership refusal', async () => {
+        // The retry exists for infrastructure faults; only the named
+        // misconfiguration is converted into a refusal.
+        (resolveTenantContext as jest.Mock).mockRejectedValueOnce(new Error('connection reset'));
+        await expect(runAgentInvokeDispatch(payload() as never)).rejects.toThrow('connection reset');
+        expect(startWorkflowRun).not.toHaveBeenCalled();
     });
 
     it('caps recursion — an agent run that re-fires its own rule cannot loop', async () => {
