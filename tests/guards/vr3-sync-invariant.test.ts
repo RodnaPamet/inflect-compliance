@@ -72,6 +72,22 @@ describe('VR-3 — sync invariant', () => {
         expect(src).toMatch(/ruleId: rule\.id/);
     });
 
+    it('sub-flow membership is the ONE structural fact that reaches a rule, and only as subFlowGroupId (#5477)', () => {
+        // Owner decision 2026-11-14: a rule belongs to the group its step is
+        // nested in. That reads `parentNodeKey`, so it lives in its own module
+        // rather than the sync file — and that module may write nothing to a
+        // rule but `subFlowGroupId`, and may not read a position at all.
+        const src = read('src/app-layer/services/canvas-subflow-membership.ts');
+        expect(src).toMatch(/parentNodeKey: true/);
+        expect(src).not.toMatch(/posX/);
+        expect(src).not.toMatch(/posY/);
+        const ruleWrites = src.match(/automationRule\.(?:update|updateMany|create|upsert)\(\{[\s\S]{0,400}?\n {8}\}\);/g) ?? [];
+        expect(ruleWrites).toHaveLength(1);
+        expect(ruleWrites[0]).toMatch(/data: \{ subFlowGroupId: target \}/);
+        // The sync calls it, so the membership is written on every AUTOMATION save.
+        expect(read(SYNC)).toMatch(/await reconcileSubFlowMembership\(/);
+    });
+
     it('the save/load usecase gates sync on AUTOMATION mode', () => {
         const src = read('src/app-layer/usecases/process-map.ts');
         expect(src).toMatch(/syncCanvasToRules/);

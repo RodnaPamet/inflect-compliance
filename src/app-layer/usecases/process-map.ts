@@ -15,6 +15,7 @@ import {
     hydrateCanvasFromRules,
     prepareCanvasNodesForSave,
 } from '../services/canvas-rule-sync';
+import { readMapGroupKeys } from '../services/canvas-subflow-membership';
 import type {
     CreateProcessMapInput,
     SaveProcessMapInput,
@@ -25,6 +26,16 @@ export async function listProcessMaps(ctx: RequestContext) {
     return runInTenantContext(ctx, (db) =>
         ProcessMapRepository.list(db, ctx),
     );
+}
+
+/**
+ * #5477 — the sub-flow groups an `INVOKE_SUBFLOW` rule can target, labelled by
+ * map and group for the rule builder's picker. The same read gate as the
+ * canvas itself (`getProcessMap`).
+ */
+export async function listSubflowGroups(ctx: RequestContext) {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) => ProcessMapRepository.listSubflowGroups(db, ctx));
 }
 
 export async function getProcessMap(ctx: RequestContext, id: string) {
@@ -130,6 +141,9 @@ async function saveProcessMapInTx(
     // Keep each step's rule link, and drop display-only rule fields; see
     // `prepareCanvasNodesForSave` for the duplicate-rule bug this closes.
     const nodes = await prepareCanvasNodesForSave(db, ctx, id, input.nodes);
+    // The groups as stored BEFORE this save, so the sync can take a rule out of
+    // a group this save deletes (#5477).
+    const priorGroupKeys = await readMapGroupKeys(db, ctx, id);
     const map = await ProcessMapRepository.replaceGraph(db, ctx, id, {
         name: input.name,
         description: input.description ?? undefined,
@@ -158,7 +172,7 @@ async function saveProcessMapInTx(
     });
     let ruleIdByNodeKey: Record<string, string> = {};
     if (meta?.canvasMode === 'AUTOMATION') {
-        ({ ruleIdByNodeKey } = await syncCanvasToRules(db, ctx, id));
+        ({ ruleIdByNodeKey } = await syncCanvasToRules(db, ctx, id, { priorGroupKeys }));
     }
 
     await logEvent(db, ctx, {

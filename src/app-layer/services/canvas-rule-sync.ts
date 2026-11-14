@@ -18,7 +18,10 @@
  * sync. So this bridge's job is narrow + invariant-safe:
  *   Canvas → Rules (on save): create a stub rule for each NEW action node
  *     (write `ruleId` back), then wire chain topology (`chain-delay` edges →
- *     `nextRuleId`/`nextRuleDelay`). It never copies node logic to the rule.
+ *     `nextRuleId`/`nextRuleDelay`), then sub-flow group membership
+ *     (`subFlowGroupId`, #5477 — see canvas-subflow-membership.ts, which owns
+ *     the one structural fact a rule takes from the canvas). It never copies
+ *     node logic to the rule.
  *   Rules → Canvas (on load): merge each rule's live status + executionCount
  *     + a derived subtitle into the node for DISPLAY only (not persisted).
  */
@@ -33,6 +36,7 @@ import { logEvent } from '../events/audit';
 import { UNSET_TRIGGER_EVENT } from '../automation/rule-readiness';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { RULE_OWNING_KINDS } from './canvas-rule-link';
+import { reconcileSubFlowMembership } from './canvas-subflow-membership';
 import { HYDRATED_DISPLAY_KEYS } from '@/lib/processes/canvas-rule-wiring';
 
 /** Rule names are capped at 200 by the rule schema. */
@@ -92,6 +96,8 @@ interface GraphEdge {
 export interface SyncResult {
     rulesCreated: number;
     chainsLinked: number;
+    /** Rules whose sub-flow group membership this save changed (#5477). */
+    subFlowMembershipChanged: number;
     /**
      * The rule every rule-owning step is linked to after the sync, by
      * `nodeKey`. The save returns it so the open canvas learns a NEW step's
@@ -172,6 +178,13 @@ export async function syncCanvasToRules(
     db: PrismaTx,
     ctx: RequestContext,
     processMapId: string,
+    options: {
+        /**
+         * The map's group keys BEFORE the save replaced the graph, so a rule
+         * whose group was deleted in this save leaves that group (#5477).
+         */
+        priorGroupKeys?: readonly string[];
+    } = {},
 ): Promise<SyncResult> {
     const nodes = (await db.processNode.findMany({
         where: { processMapId, tenantId: ctx.tenantId, nodeType: { in: [...RULE_OWNING_KINDS] } },
@@ -331,17 +344,29 @@ export async function syncCanvasToRules(
         }
     }
 
+    // Sub-flow group membership (#5477): a rule belongs to the group its step
+    // is nested in. Written after the chain wiring so it sees every rule this
+    // save linked, and gated by the same `assertCanManageAutomation` inside.
+    const membershipChanged = await reconcileSubFlowMembership(
+        db,
+        ctx,
+        processMapId,
+        ruleByNodeKey,
+        options.priorGroupKeys ?? [],
+    );
+    const subFlowMembershipChanged = membershipChanged.length;
+
     // Audit the RULE writes specifically. `saveProcessMap` already emits a
     // ProcessMap/UPDATE row, but it carries no rule ids — so a chain rewire
     // through the canvas left no trace naming which automation rules changed,
     // which is exactly what a reviewer would need. Emitted only when something
     // was written, so a read-only save stays quiet.
-    if (rulesCreated > 0 || chainsLinked > 0 || chainsUnlinked > 0) {
+    if (rulesCreated > 0 || chainsLinked > 0 || chainsUnlinked > 0 || subFlowMembershipChanged > 0) {
         await logEvent(db, ctx, {
             action: 'AUTOMATION_RULES_SYNCED_FROM_CANVAS',
             entityType: 'ProcessMap',
             entityId: processMapId,
-            details: `Canvas sync wrote ${rulesCreated} rule(s), ${chainsLinked} chain link(s) and removed ${chainsUnlinked}`,
+            details: `Canvas sync wrote ${rulesCreated} rule(s), ${chainsLinked} chain link(s), removed ${chainsUnlinked} and changed ${subFlowMembershipChanged} sub-flow membership(s)`,
             detailsJson: {
                 category: 'relationship',
                 entityName: 'ProcessMap',
@@ -349,12 +374,18 @@ export async function syncCanvasToRules(
                 rulesCreated,
                 chainsLinked,
                 chainsUnlinked,
-                ruleIds: Array.from(new Set(ruleByNodeKey.values())),
+                subFlowMembershipChanged,
+                ruleIds: Array.from(new Set([...ruleByNodeKey.values(), ...membershipChanged])),
             },
         });
     }
 
-    return { rulesCreated, chainsLinked, ruleIdByNodeKey: Object.fromEntries(ruleByNodeKey) };
+    return {
+        rulesCreated,
+        chainsLinked,
+        subFlowMembershipChanged,
+        ruleIdByNodeKey: Object.fromEntries(ruleByNodeKey),
+    };
 }
 
 export interface HydratedNode extends GraphNode {

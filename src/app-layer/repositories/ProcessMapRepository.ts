@@ -26,6 +26,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { RequestContext } from '../types';
+import type { SubflowGroupItem } from '@/lib/processes/subflow-groups';
 import { staleData, badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
 import type {
@@ -896,5 +897,38 @@ export class ProcessMapRepository {
                 nodeKey: r.nodeKey,
                 nodeLabel: r.label,
             }));
+    }
+
+    /**
+     * #5477 — the tenant's sub-flow groups: every `group` node on a live
+     * AUTOMATION map, for the rule builder's `INVOKE_SUBFLOW` target picker.
+     * Only AUTOMATION maps, because only their saves write the membership an
+     * invocation reads (`subFlowGroupId`); a group on a DOCUMENT map has no
+     * rules and would start nothing.
+     */
+    static async listSubflowGroups(
+        db: PrismaTx,
+        ctx: RequestContext,
+    ): Promise<SubflowGroupItem[]> {
+        const rows = await db.processNode.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                nodeType: 'group',
+                processMap: { deletedAt: null, canvasMode: 'AUTOMATION' },
+            },
+            orderBy: [{ processMap: { name: 'asc' } }, { label: 'asc' }, { nodeKey: 'asc' }],
+            select: {
+                nodeKey: true,
+                label: true,
+                processMap: { select: { id: true, name: true } },
+            },
+            take: 500,
+        });
+        return rows.map((r) => ({
+            mapId: r.processMap.id,
+            mapName: r.processMap.name,
+            nodeKey: r.nodeKey,
+            label: r.label,
+        }));
     }
 }

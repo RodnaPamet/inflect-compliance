@@ -59,6 +59,17 @@ matched rule, which fires the real side effect for the rule's
 and marks the execution `SUCCEEDED`/`FAILED` accordingly — see
 "Extending the dispatcher" below.
 
+**Sub-flow groups are canvas nesting.** `INVOKE_SUBFLOW` names a group node
+by its `nodeKey` (`targetGroupId`, chosen in the rule builder from the
+tenant's groups on live automation canvases). The subflow dispatcher starts
+the group's ENABLED rule with the highest `priority` (ties: oldest, then id)
+as a child execution whose `parentExecutionId` is the invoking execution. A
+rule is in a group when its canvas step sits inside that group node — its
+nearest enclosing group only — and the canvas save is the only writer of
+`AutomationRule.subFlowGroupId` (`services/canvas-subflow-membership.ts`): it
+sets the key, and clears it when the step leaves the group or is removed, or
+the group is removed.
+
 ---
 
 ## Adding a new automation event
