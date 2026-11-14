@@ -313,10 +313,31 @@ export function validateScopes(scopes: unknown): string[] {
 }
 
 /**
+ * A READ-CLASS action group: `read`, or a named `*_view` group
+ * (`admin:agent_registry_view`, `audits:workpaper_view`). What such a group
+ * grants is a permission to look, and a coarse tier raised from it would let a
+ * look-only key pass the `assertCanWrite` / `assertCanAdmin` behind a route
+ * gated on a view key (#5306; see `raiseApiKeyCoarseTier`).
+ */
+export function isReadClassScopeGroup(group: string): boolean {
+    return group === 'read' || group.endsWith('_view');
+}
+
+/**
  * Convert an array of scope strings into a PermissionSet.
  * Used to build appPermissions for API-key-authenticated contexts.
+ *
+ * `readClassGroups: 'exclude'` answers a narrower question: which of these
+ * permissions do the scopes grant through a group that is NOT read-class
+ * (`isReadClassScopeGroup`)? Only the per-request coarse raise asks it. It
+ * also skips the `*` shortcut, whose holder already sits at ADMIN, the top of
+ * what any scope can reach, so it has nothing to raise.
  */
-export function scopesToPermissions(scopes: string[]): PermissionSet {
+export function scopesToPermissions(
+    scopes: string[],
+    opts: { readClassGroups?: 'include' | 'exclude' } = {},
+): PermissionSet {
+    const excludeReadClass = opts.readClassGroups === 'exclude';
     // Start with all-false
     const base = getPermissionsForRole('READER');
     const result: Record<string, Record<string, boolean>> = {};
@@ -346,7 +367,7 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
     // which `*` DOES grant, and deliberately: those are ordinary privileged
     // operations on data. These two are authority over the principals
     // themselves, which is a different kind of thing to hand a token.
-    if (scopes.includes('*')) {
+    if (!excludeReadClass && scopes.includes('*')) {
         // Resolved ONCE, rather than calling the role resolver a second time
         // for the nested spread. Two calls built two identical objects for no
         // reason, and the duplicated call site also made
@@ -403,13 +424,14 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
             const excluded = WILDCARD_EXCLUDED_ACTIONS[resource] ?? [];
             for (const [group, permActions] of Object.entries(SCOPE_ACTION_MAP[resource])) {
                 if (excluded.includes(group)) continue;
+                if (excludeReadClass && isReadClassScopeGroup(group)) continue;
                 for (const permAction of permActions) {
                     if (permAction in result[resource]) {
                         result[resource][permAction] = true;
                     }
                 }
             }
-        } else if (action in SCOPE_ACTION_MAP[resource]) {
+        } else if (action in SCOPE_ACTION_MAP[resource] && !(excludeReadClass && isReadClassScopeGroup(action))) {
             // Specific action group
             const permActions = SCOPE_ACTION_MAP[resource][action];
             for (const permAction of permActions) {
@@ -436,6 +458,13 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
  * Scopes ALONE. An agent-bound key is narrowed further by its principal, and a
  * job is narrowed by the initiator's membership — both at their own call sites,
  * because neither term is knowable from a scope list.
+ *
+ * The role is the key's BASELINE coarse tier, kept as it is (#5306, owner
+ * decision 2026-11-14): `admin:*` still reads EDITOR here. Behind a route's
+ * `requirePermission(<key>)` the tier is raised for that request alone to the
+ * lowest built-in role holding the key (`raiseApiKeyCoarseTier` in
+ * `src/lib/security/api-key-coarse-raise.ts`); do not raise it here, where it
+ * would reach every coarse-only route.
  */
 export function keyAuthorityFromScopes(scopes: string[]): {
     role: Role;

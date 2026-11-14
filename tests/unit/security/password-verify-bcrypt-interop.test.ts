@@ -21,10 +21,23 @@
  *
  * Both `verifyPassword` exports (src/lib/auth/passwords.ts and its
  * re-export in src/lib/auth.ts) are exercised.
+ *
+ * A third thing changed on 2026-11-14 (#5592 deploy 2): bcrypt's INPUT is now
+ * the sha256-base64 pre-hash rather than the raw plaintext, so every stored
+ * hash above remains readable (the probe falls back to the legacy compare) while
+ * new ones are written in the pre-hashed form. The hashes enumerated in (1) are
+ * exactly the population that fallback exists for.
  */
 
 import bcryptjs from 'bcryptjs';
-import { BCRYPT_COST, hashPassword, needsRehash, verifyPassword as verifyPasswordCanonical } from '@/lib/auth/passwords';
+import {
+    BCRYPT_COST,
+    hashPassword,
+    needsRehash,
+    prehashForBcrypt,
+    verifyPassword as verifyPasswordCanonical,
+    verifyPasswordWithScheme,
+} from '@/lib/auth/passwords';
 import { verifyPassword as verifyPasswordLegacy } from '@/lib/auth';
 
 const KNOWN_PASSWORD = 'CorrectHorseBatteryStaple-2026'; // pragma: allowlist secret — fixed test password for the bcrypt interop regression guard
@@ -61,10 +74,46 @@ describe('verifyPassword reads every hash already stored', () => {
         expect(await verifyPasswordCanonical('password123', seedStyleHash)).toBe(true);
     });
 
-    it('a hash the new hasher writes is one bcryptjs reads, so a rollback strands nobody', async () => {
+    /**
+     * This case guarded "a rollback strands nobody" for the bcryptjs → native
+     * bcrypt migration, and it is what caught #5592 being planned as ONE
+     * deploy: it asserted `bcryptjs.compare(KNOWN_PASSWORD, fresh)`, which a
+     * pre-hashing `hashPassword` makes false, and an image comparing the raw
+     * plaintext cannot open such a hash.
+     *
+     * #5592 deploy 2 is the flip, so the property is restated rather than
+     * relaxed — and the ROLLBACK TARGET is what changed. It is no longer "an
+     * image that compares the raw plaintext": deploy 1 is already on main, and
+     * its probe tries the pre-hashed compare first and falls back to the legacy
+     * one. That is the image a revert of this deploy lands on, and it reads
+     * both forms. Reverting PAST deploy 1 would strand anyone who set a
+     * password in between, which is the cost the two-deploy split buys down and
+     * the reason the order cannot be reversed.
+     *
+     * The bcryptjs-interop property itself is unchanged and still asserted: the
+     * library reads our hash. What moved is the INPUT bcrypt is given.
+     */
+    it('a hash the new hasher writes is still a well-formed bcrypt hash bcryptjs reads', async () => {
         const fresh = await hashPassword(KNOWN_PASSWORD);
         expect(fresh.startsWith(`$2b$${String(BCRYPT_COST).padStart(2, '0')}$`)).toBe(true);
-        expect(await bcryptjs.compare(KNOWN_PASSWORD, fresh)).toBe(true);
+        // bcryptjs verifies it, given what bcrypt was actually given.
+        expect(await bcryptjs.compare(prehashForBcrypt(KNOWN_PASSWORD), fresh)).toBe(true);
+        // And NOT against the raw plaintext — the fact that makes deploy 1 a
+        // precondition rather than a nicety. Asserted so a future revert of
+        // `hashPassword` alone turns this red instead of silently passing.
+        expect(await bcryptjs.compare(KNOWN_PASSWORD, fresh)).toBe(false);
+    }, 30_000);
+
+    it('deploy 1 reads what deploy 2 writes — the rollback target, named', async () => {
+        const fresh = await hashPassword(KNOWN_PASSWORD);
+        // `verifyPasswordWithScheme` is the probe deploy 1 shipped. It opens a
+        // deploy-2 hash and reports it as the CURRENT scheme, so a revert of
+        // this deploy strands nobody and re-hashes nobody on every login.
+        expect(await verifyPasswordWithScheme(KNOWN_PASSWORD, fresh)).toEqual({
+            ok: true,
+            legacyScheme: false,
+        });
+        expect(await verifyPasswordCanonical('not-the-password', fresh)).toBe(false);
     }, 30_000);
 
     it('the legacy export in src/lib/auth.ts is the same function', async () => {

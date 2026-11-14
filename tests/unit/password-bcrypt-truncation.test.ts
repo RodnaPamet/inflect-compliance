@@ -22,6 +22,11 @@
  * shape is asserted structurally instead, by counting compares.
  */
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { repoFiles } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
 
 import {
     BCRYPT_COST,
@@ -48,17 +53,11 @@ async function legacyHash(plaintext: string): Promise<string> {
     return (await bcryptMod()).hash(plaintext, BCRYPT_COST);
 }
 
-/**
- * A hash in the scheme deploy 2 will write.
- *
- * Built here rather than through `hashPassword` BECAUSE deploy 1 does not
- * write this form — it only has to read it. Pointing these cases at
- * `hashPassword` would make them assert deploy 2's behaviour from deploy 1,
- * and they would fail until the flip, which is the wrong signal.
- */
-async function newSchemeHash(plaintext: string): Promise<string> {
-    return (await bcryptMod()).hash(prehashForBcrypt(plaintext), BCRYPT_COST);
-}
+// The `newSchemeHash` helper that used to stand here built the pre-hashed form
+// by hand, because deploy 1 only had to READ it. Deploy 2 writes it, so these
+// cases call `hashPassword` directly: the subject is now the production writer,
+// and a local re-implementation would have let the two drift while staying
+// green — the helper's own docblock said to re-point it at the flip.
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 
@@ -93,7 +92,7 @@ describe('a password longer than 72 bytes is no longer truncated', () => {
     it('refuses one that differs only after the 72nd byte', async () => {
         const base = 'correct-horse-battery-staple-'.repeat(3); // 87 bytes
         expect(bytes(base)).toBeGreaterThan(72);
-        const hash = await newSchemeHash(`${base}TAIL-A`);
+        const hash = await hashPassword(`${base}TAIL-A`);
 
         await expect(verifyPassword(`${base}TAIL-A`, hash)).resolves.toBe(true);
         // THE DEFECT. Under the old scheme both inputs reached bcrypt as the
@@ -106,7 +105,7 @@ describe('a password longer than 72 bytes is no longer truncated', () => {
         // usable rather than refused — which is the half a byte cap would
         // have cost.
         const pw = 'z'.repeat(MAX_PASSWORD_LENGTH);
-        const hash = await newSchemeHash(pw);
+        const hash = await hashPassword(pw);
         await expect(verifyPassword(pw, hash)).resolves.toBe(true);
     });
 });
@@ -125,7 +124,7 @@ describe('Cyrillic, where the cut actually fell', () => {
         const a = `${prefix}тест`;
         const b = `${prefix}тесн`;
         expect(a).toHaveLength(40);
-        const hash = await newSchemeHash(a);
+        const hash = await hashPassword(a);
 
         await expect(verifyPassword(a, hash)).resolves.toBe(true);
         await expect(verifyPassword(b, hash)).resolves.toBe(false);
@@ -146,7 +145,7 @@ describe('hashes made before the pre-hash still authenticate, then migrate', () 
         // The other half: were `legacyScheme` always true, every sign-in would
         // rewrite the row for ever.
         const pw = 'новата-ми-парола-1234';
-        const stored = await newSchemeHash(pw);
+        const stored = await hashPassword(pw);
 
         expect(await verifyPasswordWithScheme(pw, stored)).toEqual({
             ok: true,
@@ -170,7 +169,7 @@ describe('hashes made before the pre-hash still authenticate, then migrate', () 
         // The migration completing: the same user, re-hashed on login, now has
         // a hash their 80th-character neighbour cannot open.
         const pw = `${'q'.repeat(80)}-tail`;
-        const migrated = await newSchemeHash(pw);
+        const migrated = await hashPassword(pw);
         await expect(verifyPassword(pw, migrated)).resolves.toBe(true);
         await expect(verifyPassword(`${'q'.repeat(80)}-xxxx`, migrated)).resolves.toBe(false);
     });
@@ -210,28 +209,96 @@ describe('the refusal shapes are unchanged', () => {
 
 // ── the deploy-1 boundary ───────────────────────────────────────────────
 
-describe('deploy 1 reads the new scheme but does not write it', () => {
-    it('hashPassword still writes a hash a RAW comparison can open', async () => {
-        // The rollback guarantee, and the reason this is two deploys. A
-        // pre-hashed hash cannot be opened by any build that compares the raw
-        // plaintext — including the previous image — so writing one before the
-        // probe has shipped would strand every user who set a password in the
-        // window. `password-verify-bcrypt-interop` states the same property
-        // against bcryptjs, and it is what caught this.
+describe('deploy 2 writes the scheme deploy 1 taught the probe to read', () => {
+    // These two cases replace the pair that pinned deploy 1's deliberate
+    // RESTRAINT ("hashPassword still writes a hash a RAW comparison can open").
+    // That property was true and load-bearing for one deploy and is now
+    // reversed on purpose, so the assertions are inverted rather than deleted:
+    // a revert of `hashPassword` alone turns these red instead of passing
+    // quietly.
+    //
+    // The rollback guarantee has not gone away, it has moved. A pre-hashed hash
+    // cannot be opened by a build that compares the raw plaintext, so writing
+    // one before the probe shipped would have stranded every user who set a
+    // password in the window. The probe IS shipped (deploy 1, on main), so the
+    // image a revert of this deploy lands on reads both forms.
+    // `password-verify-bcrypt-interop` names that target explicitly.
+
+    it('hashPassword writes the PRE-HASHED form', async () => {
         const pw = 'CorrectHorseBatteryStaple-2026'; // pragma: allowlist secret -- test fixture
         const written = await hashPassword(pw);
         const bcrypt = await bcryptMod();
 
-        await expect(bcrypt.compare(pw, written)).resolves.toBe(true);
-        // And NOT the pre-hashed form, which is what deploy 2 will change.
-        await expect(bcrypt.compare(prehashForBcrypt(pw), written)).resolves.toBe(false);
+        await expect(bcrypt.compare(prehashForBcrypt(pw), written)).resolves.toBe(true);
+        // The inversion: the raw plaintext no longer opens it. This is what
+        // made deploy 1 a precondition rather than a nicety.
+        await expect(bcrypt.compare(pw, written)).resolves.toBe(false);
     });
 
-    it('but a pre-hashed hash already verifies, so deploy 2 is a one-line flip', async () => {
+    it('and the probe reports it as CURRENT, so no login re-hashes it', async () => {
+        // The other half of the migration being finite: were this `true`, the
+        // `legacyScheme ||` branch in credentials.ts would rewrite the row on
+        // every single sign-in, for ever.
         const pw = 'дълга-парола-с-много-знаци-2026';
-        expect(await verifyPasswordWithScheme(pw, await newSchemeHash(pw))).toEqual({
+        expect(await verifyPasswordWithScheme(pw, await hashPassword(pw))).toEqual({
             ok: true,
             legacyScheme: false,
         });
+    });
+
+    it('a password past the old 72-byte cut now round-trips through hashPassword', async () => {
+        // The end-to-end point of #5592, asserted against the real writer
+        // rather than a local re-implementation of it.
+        const base = 'парола'.repeat(6); // 36 chars, exactly 72 bytes
+        const a = `${base}-ОПАШКА-А`;
+        const b = `${base}-ОПАШКА-Б`;
+        expect(bytes(a)).toBeGreaterThan(72);
+
+        const written = await hashPassword(a);
+        await expect(verifyPassword(a, written)).resolves.toBe(true);
+        await expect(verifyPassword(b, written)).resolves.toBe(false);
+    });
+});
+
+describe('the pre-hash has ONE seam, which is what makes deploy 2 complete', () => {
+    // Every password writer — the seed, /api/auth/register, the staging seed,
+    // credentials.ts's rehash-on-verify, and both password-management paths —
+    // reaches bcrypt through `hashPassword`. That is why flipping one line
+    // migrates all of them, and it is a property worth pinning: a second
+    // writer calling bcrypt directly would silently keep minting hashes in the
+    // legacy scheme, which still VERIFY (the probe falls back) and so would
+    // show up as nothing at all until somebody counted schemes.
+    //
+    // Population from git, not a directory walk with a skip list — a
+    // hand-maintained denominator is how `.claude/worktrees/` once got scanned.
+    const ROOT = path.resolve(__dirname, '../..');
+    const sources = [
+        ...repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] }),
+        ...repoFiles({ under: 'prisma', extensions: ['.ts'] }),
+    ];
+
+    // `repoFiles` returns ABSOLUTE paths; the expectations below are written
+    // repo-relative, so strip the root rather than joining it on twice.
+    const callersOf = (re: RegExp) => sources
+        .filter((abs) => re.test(codeOf(readFileSync(abs, 'utf-8'))))
+        .map((abs) => path.relative(ROOT, abs).replace(/\\/g, '/'))
+        .sort();
+
+    it('exactly one file calls bcrypt.hash, and it is passwords.ts', () => {
+        // Comments are masked by `codeOf`, so a docblock mentioning
+        // `bcrypt.hash` cannot satisfy this.
+        expect(callersOf(/bcrypt\.hash\(/)).toEqual(['src/lib/auth/passwords.ts']);
+    });
+
+    it('nothing else imports bcrypt at all', () => {
+        expect(callersOf(/from 'bcrypt'|import\('bcrypt'\)|require\('bcrypt'\)/))
+            .toEqual(['src/lib/auth/passwords.ts']);
+    });
+
+    it('and that one call pre-hashes its input', () => {
+        // The assertion the two above exist to make meaningful: one seam is
+        // only worth having if the seam itself is right.
+        const code = codeOf(readFileSync(path.join(ROOT, 'src/lib/auth/passwords.ts'), 'utf-8'));
+        expect(code).toMatch(/bcrypt\.hash\(prehashForBcrypt\(plaintext\), BCRYPT_COST\)/);
     });
 });

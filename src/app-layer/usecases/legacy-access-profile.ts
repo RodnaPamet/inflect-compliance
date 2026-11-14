@@ -202,6 +202,9 @@ function deniedEntry(name: string): ProfiledColumn {
             rowsSampled: 0,
             nonNullCount: 0,
             distinctCount: 0,
+            // Zero like the rest, and the gate reads it as below the repetition
+            // floor (#5620) — a denylisted column must never reach the screen.
+            minValueCount: 0,
             emailShare: 0,
             dateShare: 0,
             integerShare: 0,
