@@ -164,6 +164,11 @@ export function isPerAgentKind(kind: string): kind is PerAgentArtefactKind {
 
 export type ArtefactWithdrawalReason =
     | 'CONTROL_REMOVED'
+    /**
+     * RESERVED (#5317): allowed by the DB CHECK, but no code path withdraws for
+     * it — nothing re-verifies a receipt after emission, and re-emission only
+     * recomputes the counts. See `withdrawStaleAgenticEvidence`.
+     */
     | 'SOURCE_UNVERIFIABLE'
     /**
      * The control still exists, but it no longer discharges this obligation —

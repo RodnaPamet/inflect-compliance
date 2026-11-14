@@ -1312,7 +1312,16 @@ async function loadAgents(ctx: RequestContext): Promise<{
                 ownerUserId: true, vendorId: true, riskTier: true,
                 riskTierScoredAt: true, isLegacyPlaceholder: true,
                 owner: { select: { name: true } },
-                _count: { select: { apiKeys: true } },
+                // LIVE keys only: a revoked or expired key no longer speaks for
+                // the agent, and counting the cascade's revoked keys made a
+                // retired agent look as if it still held credentials (#5317).
+                _count: {
+                    select: {
+                        apiKeys: {
+                            where: { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+                        },
+                    },
+                },
             },
         });
 

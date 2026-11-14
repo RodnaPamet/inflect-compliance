@@ -128,6 +128,8 @@ beforeEach(() => {
         assertCanFreezePack as jest.Mock,
         assertCanViewPack as jest.Mock,
     ].forEach((m: any) => m.mockReset && m.mockReset());
+    // The DRAFT interlock both writers take (#5317): it matches by default.
+    mockTdb.auditPack.updateMany.mockResolvedValue({ count: 1 });
     (assertCanManageAuditPacks as jest.Mock).mockImplementation(() => policyCalls.push('manage'));
     (assertCanFreezePack as jest.Mock).mockImplementation(() => policyCalls.push('freeze'));
     (assertCanViewPack as jest.Mock).mockImplementation(() => policyCalls.push('view'));
@@ -256,6 +258,11 @@ describe('getAuditPack', () => {
         const ctrlWhere = mockTdb.control.findMany.mock.calls[0][0].where;
         expect(ctrlWhere.tenantId).toBe('tenant-1');
         expect(ctrlWhere.id.in.sort()).toEqual(['c-1', 'c-gone']);
+        // A soft-deleted source still answers its name (#5317): every name read
+        // opts out of the soft-delete filter, which would otherwise drop it.
+        for (const m of [mockTdb.control.findMany, mockTdb.policy.findMany, mockTdb.evidence.findMany, mockTdb.task.findMany]) {
+            expect(m.mock.calls[0][0]).toMatchObject({ __includeDeleted: true });
+        }
     });
 });
 
@@ -323,6 +330,18 @@ describe('addAuditPackItems', () => {
 
     it('REJECTS adds to non-DRAFT pack (immutability gate)', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'FROZEN' });
+        await expect(
+            addAuditPackItems(ctx, 'p-1', [{ entityType: 'CONTROL', entityId: 'c-1' }]),
+        ).rejects.toThrow(/cannot add items to a frozen/i);
+        expect(mockTdb.auditPackItem.createMany).not.toHaveBeenCalled();
+    });
+
+    it('REJECTS an add that loses the race with a freeze, inserting nothing (#5317)', async () => {
+        // Read as DRAFT, but the interlock matches nothing: a freeze committed
+        // in between.
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        mockTdb.control.findMany.mockResolvedValueOnce([{ id: 'c-1' }]);
+        mockTdb.auditPack.updateMany.mockResolvedValueOnce({ count: 0 });
         await expect(
             addAuditPackItems(ctx, 'p-1', [{ entityType: 'CONTROL', entityId: 'c-1' }]),
         ).rejects.toThrow(/cannot add items to a frozen/i);
@@ -467,6 +486,19 @@ describe('freezeAuditPack', () => {
     it('REJECTS freeze on already-FROZEN pack', async () => {
         mockTdb.auditPack.findFirst.mockResolvedValue({ id: 'p-1', status: 'FROZEN', items: [] });
         await expect(freezeAuditPack(ctx, 'p-1')).rejects.toThrow(/already frozen/i);
+    });
+
+    it('REJECTS a second freeze that waited on the first, writing nothing (#5317)', async () => {
+        // The row read still says DRAFT in this fixture; the interlock is what
+        // a waiting second freeze sees once the first has committed.
+        mockTdb.auditPack.findFirst.mockResolvedValue({
+            id: 'p-1', status: 'DRAFT', _count: { items: 1 },
+            items: [{ id: 'i-1', entityType: 'CONTROL', entityId: 'c-1', snapshotJson: '{}' }],
+        });
+        mockTdb.auditPack.updateMany.mockResolvedValue({ count: 0 });
+        await expect(freezeAuditPack(ctx, 'p-1')).rejects.toThrow(/already frozen/i);
+        expect(mockTdb.auditPack.update).not.toHaveBeenCalled();
+        expect(mockTdb.auditPackItem.update).not.toHaveBeenCalled();
     });
 
     it('REJECTS freeze on an empty pack', async () => {
@@ -986,5 +1018,31 @@ describe('exportAuditPack', () => {
 
         // Each embedded `"` becomes `""` in CSV.
         expect(result.csv).toMatch(/""hi""/);
+    });
+
+    it('a stored snapshot that is not a JSON object does not fail the export (#5317)', async () => {
+        mockTdb.auditPack.findFirst.mockResolvedValue({
+            id: 'p-1', name: 'X', status: 'FROZEN', frozenAt: new Date(),
+            items: [
+                { entityType: 'FILE', entityId: 'f-1', sortOrder: 0, snapshotJson: 'abc' },
+                { entityType: 'READINESS_REPORT', entityId: 'r-1', sortOrder: 1, snapshotJson: 'null' },
+            ],
+            cycle: {}, _count: {},
+        });
+
+        const json = await exportAuditPack(ctx, 'p-1') as any;
+        expect(json.items.map((i: any) => i.snapshot)).toEqual([{ snapshotUnreadable: true }, { snapshotUnreadable: true }]);
+        const csv = await exportAuditPack(ctx, 'p-1', 'csv') as any;
+        expect(csv.csv).toContain('"FILE"');
+    });
+});
+
+describe('addAuditPackItems — a computed item\'s snapshot must be a JSON object (#5317)', () => {
+    it.each(['abc', 'null', '[1]'])('refuses %s, inserting nothing', async (snapshotJson) => {
+        mockTdb.auditPack.findFirst.mockResolvedValueOnce({ id: 'p-1', status: 'DRAFT' });
+        await expect(
+            addAuditPackItems(ctx, 'p-1', [{ entityType: 'FILE', entityId: 'f-1', snapshotJson }]),
+        ).rejects.toThrow(/must be a JSON object/);
+        expect(mockTdb.auditPackItem.createMany).not.toHaveBeenCalled();
     });
 });

@@ -10,7 +10,7 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { createFinding } from './finding';
@@ -55,7 +55,7 @@ export async function getAiGovAssessmentState(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ) {
-    if (!ctx.permissions.canRead) throw badRequest('Read access required.');
+    if (!ctx.permissions.canRead) throw forbidden('Read access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 
@@ -115,7 +115,7 @@ export async function saveAiGovAnswer(
     ctx: RequestContext,
     input: { questionId: string; answer: AiGovAnswerValue; note?: string | null },
 ) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     if (!ANSWER_VALUES.includes(input.answer)) {
         throw badRequest(`Invalid answer '${input.answer}'.`);
     }
@@ -161,7 +161,7 @@ export async function saveAiGovAnswer(
 
 /** Mark the active assessment COMPLETED + audit. */
 export async function completeAiGovAssessment(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     const assessment = await activeAssessment(ctx);
     return runInTenantContext(ctx, async (db) => {
         const done = await db.aiGovSelfAssessment.update({
@@ -190,7 +190,7 @@ export async function raiseFindingsFromAiGovGaps(
     ctx: RequestContext,
     opts: { architecture?: AiGovArchitecture } = {},
 ): Promise<{ created: string[] }> {
-    if (!ctx.permissions.canWrite) throw badRequest('Write access required.');
+    if (!ctx.permissions.canWrite) throw forbidden('Write access required.');
     const arch = opts.architecture ?? 'NONE';
     const assessment = await activeAssessment(ctx);
 

@@ -137,6 +137,14 @@ export interface ClaimedReplies {
 const EMPTY: ClaimedReplies = { deliver: [], refused: [], waiting: [] };
 
 /**
+ * How many of a run's decided ledger rows are read to exclude from the page.
+ * A run's replies are bounded by its own step and tool-call caps, far below
+ * this; past it the exclusion is partial and the per-page re-check below still
+ * keeps a decided reply from being decided twice.
+ */
+const DECIDED_REPLIES_READ_CAP = 5000;
+
+/**
  * Decide and record the delivery of every undecided reply for one run.
  *
  * Returns the envelopes the caller should fence. Writes exactly one ledger row
@@ -154,6 +162,16 @@ export async function claimPeerRepliesForRun(
             select: { id: true, status: true },
         });
 
+        // The replies this run has ALREADY decided, read first so the page
+        // below is a page of UNDECIDED replies. Filtering after the `take`
+        // instead meant that once the oldest 20 were decided, every later reply
+        // was never claimed, delivered or refused (#5317).
+        const decidedForRun = await db.peerAgentReplyDelivery.findMany({
+            where: { tenantId: ctx.tenantId, runId },
+            select: { messageId: true },
+            take: DECIDED_REPLIES_READ_CAP,
+        });
+
         // Every inbound reply bound to this run that has no decision yet. The
         // `runId` index on `PeerAgentMessage` is what makes this cheap enough to
         // ask at a step boundary.
@@ -164,6 +182,7 @@ export async function claimPeerRepliesForRun(
                 direction: 'INBOUND',
                 // A reply, not a task the peer opened: it names one of ours.
                 relatesToMessageId: { not: null },
+                ...(decidedForRun.length > 0 ? { id: { notIn: decidedForRun.map((d) => d.messageId) } } : {}),
             },
             select: {
                 id: true,

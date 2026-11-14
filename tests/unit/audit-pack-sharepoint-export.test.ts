@@ -22,6 +22,7 @@ jest.mock('@/lib/db-context', () => ({
 jest.mock('@/lib/storage', () => ({
     __esModule: true,
     getStorageProvider: () => ({ readStream: (...a: unknown[]) => mockReadStream(...a) }),
+    sanitizeFileName: jest.requireActual('@/lib/storage').sanitizeFileName,
     // Mirrors the real `assertTenantKey` rather than stubbing it to a no-op:
     // the export's tenant-prefix check is one of the things under test here,
     // and a mock that always passes would assert nothing about it.
@@ -137,6 +138,30 @@ describe('exportAuditPackToSharePoint', () => {
             evidenceSkipped: 1,
         });
     });
+    it('never writes an uploaded filename\'s path segments into the ZIP (#5317)', async () => {
+        const { Readable } = await import('node:stream');
+        const JSZip = (await import('jszip')).default;
+        mockGetPack.mockResolvedValueOnce({
+            id: 'p1', name: 'Q2', status: 'FROZEN', frozenAt: new Date('2026-01-01'),
+            items: [{ entityType: 'EVIDENCE', entityId: 'ev1' }, { entityType: 'EVIDENCE', entityId: 'ev2' }],
+        });
+        mockDb.evidence.findMany.mockResolvedValueOnce([
+            { fileRecord: { pathKey: 'tenants/t1/evidence/k1', originalName: '../../../Startup/x.bat', scanStatus: 'CLEAN', status: 'STORED', deletedAt: null } },
+            { fileRecord: { pathKey: 'tenants/t1/evidence/k2', originalName: '..', scanStatus: 'CLEAN', status: 'STORED', deletedAt: null } },
+        ]);
+        mockReadStream.mockImplementation(() => Readable.from([Buffer.from('DATA')]));
+
+        await exportAuditPackToSharePoint(admin, 'p1', { driveId: 'd1' }, { now: () => new Date('2026-06-09T00:00:00Z') });
+
+        const zipBytes = mockClient.uploadNewFile.mock.calls[0][3];
+        const zip = await JSZip.loadAsync(zipBytes);
+        const entries = Object.keys(zip.files).filter((n) => n.startsWith('evidence/'));
+        expect(entries).toEqual(expect.arrayContaining(['evidence/x.bat', 'evidence/file']));
+        for (const n of entries) {
+            expect(n.slice('evidence/'.length)).not.toMatch(/[\\/]|\.\./);
+        }
+    });
+
     it('bundles a generated export (FILE item) from its storage key, not as a FileRecord id (#5121)', async () => {
         // `audit-hardening.ts` records a FILE item with `entityId = pathKey`
         // and no FileRecord, so the old FileRecord lookup found nothing and the

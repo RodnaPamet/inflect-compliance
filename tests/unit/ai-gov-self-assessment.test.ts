@@ -126,3 +126,15 @@ describe('raiseFindingsFromAiGovGaps', () => {
         expect(r.created).toEqual([]);
     });
 });
+
+describe('an authorization refusal is a 403, not a 400 (#5317)', () => {
+    it('a READER saving an answer is refused FORBIDDEN', async () => {
+        await expect(
+            saveAiGovAnswer(makeRequestContext('READER'), { questionId: 'aig-4-01', answer: 'YES' }),
+        ).rejects.toMatchObject({ status: 403 });
+    });
+
+    it('a READER raising findings is refused FORBIDDEN', async () => {
+        await expect(raiseFindingsFromAiGovGaps(makeRequestContext('READER'))).rejects.toMatchObject({ status: 403 });
+    });
+});
