@@ -648,7 +648,12 @@ const HIGH_MULTIPLICITY = 5;
 // which the claim-before-act change (#5103) took to nine positions in each;
 // they now ask for the execution row's `triggeredBy: …, parentExecutionId,`
 // pair, the one place lineage is written. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1127;
+//
+// 1127 -> 1126 on 2026-11-14 (#5308). The connection-pooling guard asked
+// `.env.example` for `toContain('5434')`, which the comment above the URL also
+// satisfied. It now reads the DIRECT_DATABASE_URL line's port and compares it
+// with the port docker-compose.yml publishes, which moved to 5436. Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1126;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
