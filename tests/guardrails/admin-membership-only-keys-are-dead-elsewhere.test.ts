@@ -14,9 +14,12 @@
  *     taking something away without anybody deciding it should — so rules 1 to
  *     4 below fail first, and the key either moves to the second part by a
  *     decision or the consumer moves.
- *   - `SIDE_DOOR_ADMIN_KEYS`, the four refused BY DECISION (owner decision,
- *     2026-10-30): `scim`, `compliance_dsar_manage`, `agent_harness_ingest` and
- *     `agent_external_tools`. They are NOT dead elsewhere, and rules 1 to 4 do
+ *   - `SIDE_DOOR_ADMIN_KEYS`, the five refused BY DECISION (owner decision,
+ *     2026-10-30): `scim`, `compliance_dsar_manage`, `agent_harness_ingest`,
+ *     `agent_external_tools` and, beside the harness key for its reason,
+ *     `integrations_ingest` (an agent-bound API key with
+ *     `admin:integrations_ingest` posts a third-party application scan past the
+ *     edge). They are NOT dead elsewhere, and rules 1 to 4 do
  *     not ask about them. Rule 5 holds the opposite claim — that each is still
  *     reached outside the admin API's role gate — so the docblock saying the
  *     rule takes them away stays true, and a key that has gone dead is noticed
@@ -250,18 +253,24 @@ describe('4. no bearer token carries a listed agent key, and nothing reads admin
 });
 
 /**
- * The four refused by decision are refused BECAUSE they are live outside the
+ * The five refused by decision are refused BECAUSE they are live outside the
  * admin API's role gate. If one stops being reached that way, the docblock in
  * `src/lib/roles.ts` that says the rule takes it away is wrong, and the key
  * belongs in the first part, where rules 1 to 4 would hold it.
  */
-describe('5. the four refused by decision are live elsewhere, and the list is exactly six plus four', () => {
+describe('5. the five refused by decision are live elsewhere, and the list is exactly six plus five', () => {
     it('the list is the two parts, disjoint, and nothing else', () => {
         expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS].sort()).toEqual([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS].sort());
         expect(new Set<string>([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS]).size).toBe(
             ADMIN_API_ONLY_KEYS.length + SIDE_DOOR_ADMIN_KEYS.length,
         );
-        expect(SIDE_DOOR_ADMIN_KEYS).toEqual(['scim', 'compliance_dsar_manage', 'agent_harness_ingest', 'agent_external_tools']);
+        expect(SIDE_DOOR_ADMIN_KEYS).toEqual([
+            'scim',
+            'compliance_dsar_manage',
+            'agent_harness_ingest',
+            'agent_external_tools',
+            'integrations_ingest',
+        ]);
     });
 
     it.each(SIDE_DOOR_ADMIN_KEYS)(

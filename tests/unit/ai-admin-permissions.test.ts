@@ -71,6 +71,7 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
         agent_kill_switch: true,
         agent_external_tools: true,
         agent_harness_ingest: true,
+        integrations_ingest: true,
         agent_ownership: true,
         agent_skill_review: true,
         agent_skill_author: true,
@@ -110,7 +111,12 @@ describe('AI_ADMIN — every PermissionSet key, classified', () => {
     it('AGENT_ADMIN_KEYS names only real admin keys, and every agent_* key in the schema', () => {
         for (const k of AGENT_ADMIN_KEYS) expect(PERMISSION_SCHEMA.admin).toContain(k);
         const agentNamed = PERMISSION_SCHEMA.admin.filter((k) => k.startsWith('agent_')).sort();
-        expect(agentNamed).toEqual([...AGENT_ADMIN_KEYS].sort());
+        // `integrations_ingest` is the one agent key not named `agent_*`: the
+        // owner named it for the report it submits (the third-party
+        // applications a directory has granted access to), and it is held
+        // exactly as its twin `agent_harness_ingest` is — the scanner's key.
+        expect(agentNamed).toEqual([...AGENT_ADMIN_KEYS].filter((k) => k !== 'integrations_ingest').sort());
+        expect(AGENT_ADMIN_KEYS).toContain('integrations_ingest');
     });
 
     it('outside the admin domain it is exactly a READER', () => {

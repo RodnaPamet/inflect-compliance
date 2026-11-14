@@ -99,6 +99,8 @@ const EXEMPTIONS: Record<string, string> = {
         '(b) multi-section — read-only fixed-column scan log (as of, received, scanner, version, scan, completeness, agents, sources); per-column hide/show not meaningful.',
     'agents/peers/[peerId]/PeerDetailClient.tsx':
         '(a) sub-component — two detail-tab sub-tables (kill history, signed messages) with fixed columns; the receipt column is the point of the table, so per-column hide/show is not meaningful.',
+    'agents/reports/integrations/IntegrationsSection.tsx':
+        '(b) multi-section — one card per scanner on the Integrations tab of /agents/reports, fixed columns (application, privilege, publisher, owners, last sign-in, open findings); hiding a column would hide a conclusion, or a "not known", the report exists to show.',
     'agents/reports/harness/ScannerKeysCard.tsx':
         '(b) multi-section — the scanner-key register, a short fixed-column list (scanner, fingerprint, added, status, revoke); per-column hide/show not meaningful.',
     'admin/api-keys/page.tsx':

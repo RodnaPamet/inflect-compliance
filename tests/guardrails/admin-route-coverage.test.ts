@@ -247,6 +247,10 @@ const ADMIN_ONLY_ROUTES = [
     // deciding whose reports count, and accepting a shortfall, are the
     // register's authority.
     'admin/agents/harness-scans/route.ts',
+    // The third-party application ingest (`scanent-integrations/1`): its POST
+    // has its own rule, `admin.integrations_ingest`, and its GET the inventory
+    // read, both above the subtree rule, as the harness scan route's are.
+    'admin/agents/integration-scans/route.ts',
     'admin/agents/harness-scanner-keys/route.ts',
     'admin/agents/harness-scanner-keys/[keyId]/route.ts',
     'admin/agents/harness-acceptances/route.ts',

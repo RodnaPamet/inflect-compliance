@@ -200,6 +200,9 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
         'AgentHarnessScannerKey', 'AgentHarnessScan', 'AgentHarnessScanItem',
         'AgentHarnessAcceptance', 'AgentHarnessEstate', 'AgentHarnessEstateSource',
         'DiscoveredAgent', 'DiscoveredAgentAttribution', 'AgentServicePrincipalConfirmation',
+        // The third-party application scans: read on the Integrations tab of
+        // `/agents/reports`, under the same inventory rule as the harness scans.
+        'ThirdPartyAppScan', 'DiscoveredThirdPartyApp', 'ThirdPartyAppScanItem',
         'AgentOwnershipTransfer', 'AgentSpendingAuthority', 'OpenShellSandboxLease',
         'PeerAgent', 'PeerAgentMessage', 'PeerAgentReplyDelivery', 'PeerAgentKillSwitch',
         'PeerAgentInboundCredential', 'PeerInvitation', 'TenantA2aSigningKey',

@@ -344,6 +344,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/admin/agents/harness-scanner-keys/[keyId]/route.ts',
     't/[tenantSlug]/admin/agents/harness-scanner-keys/route.ts',
     't/[tenantSlug]/admin/agents/harness-scans/route.ts',
+    // The third-party application ingest (`scanent-integrations/1`), the harness
+    // ingest's twin and MACHINE surface for the same reason: a scanner POSTs a
+    // signed report with an API key scoped to `admin:integrations_ingest` and
+    // nothing else. The Integrations tab on `/agents/reports` reads the scans
+    // server-side through the usecase, so no page calls it either way.
+    't/[tenantSlug]/admin/agents/integration-scans/route.ts',
     // #4472 — the discovered agents a person can start a discovered-agent
     // review with. GET only, the inventory read; the runs page's start form
     // calls it for its picker, offered only to a caller who can load it.
@@ -846,6 +852,13 @@ describe('the harness register half is called from the tab; the machine surface 
     it('no page calls the scan ingest — it is a scanner\'s, behind its own API-key scope', () => {
         const pageCallers = SOURCES.filter(
             (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/harness-scans'),
+        ).map((s) => s.rel);
+        expect(pageCallers).toEqual([]);
+    });
+
+    it('no page calls the third-party application ingest either — the same reason, its own scope', () => {
+        const pageCallers = SOURCES.filter(
+            (s) => s.rel.startsWith(APP) && s.code.includes('/admin/agents/integration-scans'),
         ).map((s) => s.rel);
         expect(pageCallers).toEqual([]);
     });

@@ -625,6 +625,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'ingests nothing: the report must be signed by a scanner key the ' +
             'tenant registered, which takes admin.agent_registry.',
     },
+    // ── Third-party application scans (`scanent-integrations/1`) ─────
+    //
+    // The scanner's second report, its own key by owner decision: a key
+    // minted to post agent reports does not post application reports. Above
+    // the catch-all so a POST resolves here; the GET is the inventory read
+    // (below), as the harness list's is.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/integration-scans$`),
+        methods: ['POST'],
+        permission: 'admin.integrations_ingest',
+        note:
+            'Submit a signed scanent-integrations/1 report: the third-party ' +
+            'applications a directory has granted access to. The key alone ' +
+            'ingests nothing: the report must be signed by a scanner key the ' +
+            'tenant registered, which takes admin.agent_registry.',
+    },
     // The tenant's own A2A signing key (#3679; owner decision 2026-10-19).
     // Rotating it is OWNER-tier — the key that rotates the tenant's DEK — and
     // reading its public half is the register key's, as handing a peer its
@@ -788,6 +804,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'List harness scans. Reading the inventory, so the view key or the ' +
             'register key; submitting one is the ingest key, above.',
+    },
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/integration-scans$`),
+        methods: ['GET'],
+        permission: ['admin.agent_registry_view', 'admin.agent_registry'],
+        mode: 'any',
+        note:
+            'List third-party application scans. Reading the inventory, as the ' +
+            'harness list is; submitting one is the integrations ingest key, above.',
     },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/discovered$`),

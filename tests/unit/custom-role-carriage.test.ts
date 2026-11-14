@@ -42,7 +42,7 @@ function role(base: string, admin: Partial<PermissionSet['admin']> = {}): Custom
 const on = (membershipRole: string, customRole: CustomRoleForCarriage | null) => ({ membershipRole, customRole });
 
 describe('the list', () => {
-    it('is exactly the ten keys the owner ruled on, and each is a real admin key', () => {
+    it('is exactly the eleven keys the owner ruled on, and each is a real admin key', () => {
         // Six because only the admin API reads them…
         expect([...ADMIN_API_ONLY_KEYS]).toEqual([
             'sso',
@@ -52,15 +52,17 @@ describe('the list', () => {
             'agent_skill_review',
             'agent_skill_author',
         ]);
-        // …and four by decision, although they are live outside it.
+        // …and five by decision, although they are live outside it — the fifth,
+        // `integrations_ingest`, for `agent_harness_ingest`'s reason.
         expect([...SIDE_DOOR_ADMIN_KEYS]).toEqual([
             'scim',
             'compliance_dsar_manage',
             'agent_harness_ingest',
             'agent_external_tools',
+            'integrations_ingest',
         ]);
         expect([...ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS]).toEqual([...ADMIN_API_ONLY_KEYS, ...SIDE_DOOR_ADMIN_KEYS]);
-        expect(new Set(ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS).size).toBe(10);
+        expect(new Set(ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS).size).toBe(11);
         for (const key of ADMIN_MEMBERSHIP_ONLY_ADMIN_KEYS) expect(PERMISSION_SCHEMA.admin).toContain(key);
     });
 
@@ -124,6 +126,7 @@ describe('rule 1 — the admin-membership-only keys', () => {
             'compliance_dsar_manage',
             'agent_harness_ingest',
             'agent_external_tools',
+            'integrations_ingest',
         ]);
         // ...and on a READER base, it grants none.
         expect(customRoleCarriageOffence(on('READER', { baseRole: 'READER', permissionsJson: {} })).adminKeys).toEqual([]);
