@@ -6,6 +6,12 @@
  * bounded timeout, retries with quadratic backoff on 429/5xx, and throws a
  * descriptive Error after `maxRetries` exhaustion.
  *
+ * Any other non-2xx answer (403, 404, 400, …) is NOT retried: it throws a
+ * `NonRetryableHttpError` on the first attempt, carrying the status. Re-sending
+ * a request the server has refused on its merits only delays the failure and
+ * dresses a credential problem up as a transient outage. Network errors and
+ * timeouts still retry.
+ *
  * First real consumer: Epic E.2 (audit-stream webhook delivery).
  *
  * @param input  - The URL or Request to fetch.
@@ -14,6 +20,16 @@
  * @param options.maxRetries - Maximum attempts before throwing (default 10).
  * @param options.retryDelay - Base delay between retries in ms (default 1 000).
  */
+export class NonRetryableHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'NonRetryableHttpError';
+    this.status = status;
+  }
+}
+
 export async function fetchWithRetry(
   input: RequestInfo | URL,
   init?: RequestInit | undefined,
@@ -54,7 +70,7 @@ export async function fetchWithRetry(
 
       // Handle unauthorized errors
       if (response.status === 403) {
-        throw new Error("Unauthorized");
+        throw new NonRetryableHttpError(403, "Unauthorized");
       }
 
       // Handle other errors
@@ -66,10 +82,13 @@ export async function fetchWithRetry(
         } catch {
           errorMessage = `HTTP error ${response.status}`;
         }
-        throw new Error(errorMessage);
+        throw new NonRetryableHttpError(response.status, errorMessage);
       }
     } catch (error) {
       clearTimeout(timeoutId);
+      // The server refused this request on its merits: re-sending it
+      // changes nothing, so surface the refusal now.
+      if (error instanceof NonRetryableHttpError) throw error;
       lastError = error instanceof Error ? error : new Error(String(error));
 
       // If this is the last retry, throw the error

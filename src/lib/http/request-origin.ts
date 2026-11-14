@@ -18,6 +18,12 @@ import { env } from '@/env';
  *      middleware uses.
  *   2. The configured public URL (`NEXTAUTH_URL` / `AUTH_URL`).
  *   3. `req.nextUrl.origin` — last resort (dev / no proxy).
+ *
+ * Only for a redirect the SAME browser follows. A URL that leaves the
+ * request — an emailed invite link, a string an operator pastes elsewhere —
+ * is built with `publicBaseUrl` (`./public-base-url.ts`), which never reads
+ * `X-Forwarded-Host`: a caller who reaches the app without the proxy sets
+ * that header to whatever it likes (#5316).
  */
 export function resolvePublicOrigin(req: NextRequest): string {
     const fwdHost = req.headers.get('x-forwarded-host');

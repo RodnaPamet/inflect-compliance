@@ -39,6 +39,7 @@ jest.mock('@/auth', () => ({
 
 import { POST as createPost, GET as listGet } from '@/app/api/org/[orgSlug]/invites/route';
 import { GET as acceptGet, POST as acceptPost } from '@/app/api/org/invite/[token]/route';
+import { ConsoleEmailProvider, StubEmailProvider, setEmailProvider } from '@/lib/mailer';
 
 function ctxFor(canManageMembers: boolean) {
     return {
@@ -96,6 +97,43 @@ describe('POST /api/org/[orgSlug]/invites', () => {
         const body = await res.json();
         expect(body.invite.email).toBe('a@b.com');
         expect(body.url).toBe('/invite/org/abc');
+    });
+
+    it('builds the emailed link on APP_URL, never on a spoofed X-Forwarded-Host', async () => {
+        getOrgCtxMock.mockResolvedValue(ctxFor(true));
+        createOrgInviteTokenMock.mockResolvedValue({
+            invite: {
+                id: 'inv-1',
+                email: 'a@b.com',
+                role: 'ORG_READER',
+                expiresAt: new Date(Date.now() + 86400000),
+                createdAt: new Date(),
+            },
+            url: '/invite/org/abc',
+        });
+        const transport = new StubEmailProvider();
+        setEmailProvider(transport);
+        const original = process.env.APP_URL;
+        process.env.APP_URL = 'https://inflect.example.io';
+        try {
+            const req = new NextRequest('http://localhost/api/org/acme-org/invites', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-forwarded-host': 'evil.example',
+                },
+                body: JSON.stringify({ email: 'a@b.com', role: 'ORG_READER' }),
+            });
+            const res = await createPost(req, { params: Promise.resolve({ orgSlug: 'acme-org' }) });
+            expect(res.status).toBe(201);
+        } finally {
+            if (original === undefined) delete process.env.APP_URL;
+            else process.env.APP_URL = original;
+            setEmailProvider(new ConsoleEmailProvider());
+        }
+        const [msg] = transport.sentMessages;
+        expect(msg.text).toContain('https://inflect.example.io/invite/org/abc');
+        expect(msg.text).not.toContain('evil.example');
     });
 
     it('returns 403 when caller lacks canManageMembers', async () => {
