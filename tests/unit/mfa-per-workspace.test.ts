@@ -281,6 +281,7 @@ describe('a read failure while checking a KNOWN pending challenge (#5306)', () =
         prisma.userSession.findUnique.mockRejectedValueOnce(new Error('pool exhausted'));
         const after: any = await jwtCallback({ token: { ...signedIn, userSessionId: 'sess-this' } as any } as any);
         expect(after.mfaPending).toBe(true);
-        expect(after.error).toBeUndefined();
+        // #5587 (on main): the error is set for every tenant, not only fail-closed ones.
+        expect(after.error).toBe('MfaDependencyFailure');
     });
 });

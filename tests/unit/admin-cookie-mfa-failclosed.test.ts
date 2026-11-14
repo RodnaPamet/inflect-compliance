@@ -137,108 +137,24 @@ describe('isMutationMethod', () => {
     });
 });
 
-// ─── Fail-Closed MFA Policy ─────────────────────────────────────────
-
-describe('Fail-closed MFA policy', () => {
-
-    /**
-     * These tests verify the fail-closed MFA logic that was implemented in
-     * src/auth.ts JWT callback. They test the decision logic directly:
-     * - When mfaFailClosed=true, MFA dependency failures should deny access
-     * - When mfaFailClosed=false (default), a failure of the SIGN-IN policy read
-     *   allows through; a failure while checking a known pending challenge
-     *   never clears it (#5306). The real callback is driven in
-     *   tests/unit/mfa-per-workspace.test.ts.
-     */
-
-    interface TokenState {
-        mfaPending: boolean;
-        mfaFailClosed: boolean;
-        error?: string;
-    }
-
-    // Simulate the fail-closed catch block logic from auth.ts (sign-in path)
-    function simulateSignInMfaCatch(token: TokenState): TokenState {
-        // This mirrors the catch block in auth.ts JWT callback (sign-in)
-        if (token.mfaFailClosed) {
-            return {
-                ...token,
-                mfaPending: true,
-                error: 'MfaDependencyFailure',
-            };
-        }
-        // Default: fail open — no change to token
-        return { ...token };
-    }
-
-    // Simulate the fail-closed catch block logic from auth.ts (challenge completion check)
-    function simulateChallengeCheckCatch(token: TokenState): TokenState {
-        // This mirrors the catch block in auth.ts JWT callback (challenge check)
-        if (token.mfaFailClosed) {
-            return {
-                ...token,
-                // mfaPending stays true
-                error: 'MfaDependencyFailure',
-            };
-        }
-        // Default: the challenge is known to be pending, so a failed read
-        // is not a pass — mfaPending stays as it was (#5306).
-        return { ...token };
-    }
-
-    describe('sign-in MFA dependency failure', () => {
-        test('fail-closed: denies access when MFA lookup fails', () => {
-            const result = simulateSignInMfaCatch({
-                mfaPending: false,
-                mfaFailClosed: true,
-            });
-            expect(result.mfaPending).toBe(true);
-            expect(result.error).toBe('MfaDependencyFailure');
-        });
-
-        test('fail-open (default): allows access when MFA lookup fails', () => {
-            const result = simulateSignInMfaCatch({
-                mfaPending: false,
-                mfaFailClosed: false,
-            });
-            expect(result.mfaPending).toBe(false);
-            expect(result.error).toBeUndefined();
-        });
-    });
-
-    describe('challenge completion check failure', () => {
-        test('fail-closed: keeps mfaPending=true when challenge check fails', () => {
-            const result = simulateChallengeCheckCatch({
-                mfaPending: true, // was pending before
-                mfaFailClosed: true,
-            });
-            expect(result.mfaPending).toBe(true);
-            expect(result.error).toBe('MfaDependencyFailure');
-        });
-
-        test('fail-open: still keeps mfaPending=true when challenge check fails (#5306)', () => {
-            const result = simulateChallengeCheckCatch({
-                mfaPending: true, // was pending before
-                mfaFailClosed: false,
-            });
-            expect(result.mfaPending).toBe(true);
-            expect(result.error).toBeUndefined();
-        });
-    });
-
-    describe('tenant opt-in/opt-out', () => {
-        test('tenant with mfaFailClosed=true gets strict behavior', () => {
-            const token: TokenState = { mfaPending: false, mfaFailClosed: true };
-            const result = simulateSignInMfaCatch(token);
-            expect(result.mfaPending).toBe(true);
-            expect(result.error).toBe('MfaDependencyFailure');
-        });
-
-        test('tenant with mfaFailClosed=false gets lenient behavior (default)', () => {
-            const token: TokenState = { mfaPending: false, mfaFailClosed: false };
-            const result = simulateSignInMfaCatch(token);
-            expect(result.mfaPending).toBe(false);
-            expect(result.error).toBeUndefined();
-        });
-    });
-});
+// ─── Fail-closed MFA: moved, and why ────────────────────────────────
+//
+// A `describe('Fail-closed MFA policy')` block lived here with two local
+// helpers, `simulateSignInMfaCatch` and `simulateChallengeCheckCatch`, whose
+// comments read "This mirrors the catch block in auth.ts". They imported
+// nothing from `src/auth.ts`, so the four assertions certified that this
+// file's own copy behaved as this file had written it. The real catch blocks
+// could be fixed, broken or deleted and every test stayed green (#5589).
+//
+// Two defects behind it went unnoticed with those tests passing: the
+// completion check cleared a KNOWN pending challenge when its read failed
+// (#5587), and `mfaFailClosed` was read inside the catch of the very query
+// that was supposed to assign it (#5588).
+//
+// They are now in `tests/unit/auth-mfa-dependency-failure.test.ts`, which
+// calls the real `authOptions.callbacks.jwt` and asserts on the token it
+// returns. Nothing was lost: every case the simulators covered has a
+// counterpart there, driven through the callback.
+//
+// The file name is kept because the admin-session-guard tests above are its
+// subject and are unaffected.

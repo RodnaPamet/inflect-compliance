@@ -115,9 +115,10 @@ The two MFA check points in `src/auth.ts` JWT callback:
    wanted at all.
 2. **Challenge completion check** — a session already known to be pending
    STAYS pending on a read failure whatever the setting says: failing to read
-   whether the challenge was passed is not evidence that it was. Fail closed
-   also sets `error='MfaDependencyFailure'`. (Before #5306 fail open cleared
-   `mfaPending` here, so one transient read failure turned pending into passed.)
+   whether the challenge was passed is not evidence that it was, and
+   `error='MfaDependencyFailure'` is set for every tenant (#5587). (Before
+   that, fail open cleared `mfaPending` here, so one transient read failure
+   turned pending into passed.)
 
 The `mfaFailClosed` flag is cached in the JWT token so subsequent requests don't need to re-read settings.
 
