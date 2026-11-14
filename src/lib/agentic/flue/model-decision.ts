@@ -27,8 +27,10 @@ import { logger } from '@/lib/observability/logger';
  * run's prompt.
  *
  * That digest is NOT how a human outcome reaches this row, and the audit that
- * asked for this paragraph found out the hard way. The three call sites of
- * `recordDecisionOutcomeForDigest` all pass `AgentProposal.guardInputDigest` —
+ * asked for this paragraph found out the hard way. The proposal stamp's three
+ * call sites passed `AgentProposal.guardInputDigest` to what was then
+ * `recordDecisionOutcomeForDigest` (now `recordDecisionOutcomeForProposal`,
+ * keyed by the proposal's id since #5191) —
  * a digest over `{ kind, payload, rationale }`, the PROPOSAL's content. This
  * row's digest is over the run PROMPT. Two `sha256:` strings of identical
  * shape, computed over different content, which never match: the stamp

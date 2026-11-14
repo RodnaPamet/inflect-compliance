@@ -38,7 +38,11 @@ import {
     guardAgentProposal,
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
-import { logAiDecision, recordDecisionOutcome, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
+import {
+    logAiDecision,
+    recordDecisionOutcome,
+    recordDecisionOutcomeForProposal,
+} from '@/app-layer/ai/decision-log';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
 import {
@@ -954,7 +958,15 @@ export async function createAgentProposal(
         // `AiDecisionLog.inputDigest` and `AgentProposal.guardInputDigest` are
         // the same string and the two records join. `logAiDecision` hashes it
         // and discards it; nothing of the content is persisted here.
+        //
+        // The digest joins CONTENT, though, not decisions: two proposals with
+        // identical content share it (#5191). So the row also names THIS
+        // proposal, and that id — never the digest — is what the Art 14 stamp
+        // keys on when a person decides it.
         await logAiDecision(db, ctx, {
+            // `AGENT_PROPOSAL_DECISION_FEATURE` in the decision-log module, which
+            // the legacy arm of the proposal stamp filters on. Spelled out here
+            // because unit suites replace that module wholesale.
             feature: 'agent-proposal',
             provider: 'mcp-agent',
             sanitizedInput: { kind: input.kind, payload: sanitized, rationale },
@@ -964,6 +976,7 @@ export async function createAgentProposal(
             guardVerdict: `${guard.verdict} provenance=${guard.provenance} rules=${guard.ruleIds.join('|') || 'none'}`,
             guardBlocked: guard.quarantined,
             sessionRef: input.proposedBySessionRef ?? null,
+            agentProposalId: row.id,
         }).catch(() => undefined);
 
         return row;
@@ -1489,6 +1502,28 @@ async function refuseFourEyes(
     }).catch(() => undefined);
 
     throw forbidden(refusal.message, { reason: 'agent_proposal_four_eyes' });
+}
+
+/**
+ * An Art 14 stamp that THREW after an approval had committed. The approval
+ * stands — undoing an applied proposal over a logging failure would be worse —
+ * but the register is now missing a decision, and that must reach a log line
+ * rather than a `.catch(() => undefined)`. Ids and the error's message only.
+ */
+function logStampFailure(
+    ctx: RequestContext,
+    failed: { readonly proposalId: string; readonly stamp: 'proposal' | 'run' },
+    err: unknown,
+): void {
+    // Member reads, never bare locals — see the quarantine bell's note on
+    // `local/no-raw-prompt-logging`.
+    logger.warn('ai-decision-log: Art 14 stamp failed after approval', {
+        component: 'agent-proposals',
+        tenantId: ctx.tenantId,
+        proposalId: failed.proposalId,
+        stamp: failed.stamp,
+        error: err instanceof Error ? err.message : 'non-Error thrown',
+    });
 }
 
 /**
@@ -2067,23 +2102,30 @@ export async function approveAgentProposal(
     // vocabulary `AiDecisionOutcome` uses, so the reviewer's edit is carried
     // rather than flattened to a plain accept.
     //
-    // Keyed by the guard digest, never by `sessionRef`: an ordinary agent
-    // proposal carries no session, so a session-keyed stamp would match nothing
-    // and report success. Best-effort — a failed stamp must not undo an applied
-    // proposal — but the count is asserted in the tests, because a stamp that
-    // silently touches zero rows is indistinguishable from one that worked.
-    if (proposal.guardInputDigest) {
-        await runInTenantContext(ctx, (db) =>
-            recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest!, status),
-        ).catch(() => undefined);
-    }
+    // Keyed by THIS PROPOSAL's id, which its row carries — never by
+    // `sessionRef` (an ordinary agent proposal has none, so a session-keyed
+    // stamp would match nothing and report success) and never by the guard
+    // digest alone (identical content shares it, so a digest-keyed stamp wrote
+    // this decision onto every identical proposal's row too — #5191).
+    //
+    // Best-effort — a failed stamp must not undo an applied proposal, which has
+    // already committed — but never silent: a stamp that lands on no row logs
+    // why from inside the stamp, and one that throws is logged here.
+    await runInTenantContext(ctx, (db) =>
+        recordDecisionOutcomeForProposal(
+            db,
+            ctx,
+            { proposalId: proposal.id, inputDigest: proposal.guardInputDigest },
+            status,
+        ),
+    ).catch((err: unknown) => logStampFailure(ctx, { proposalId: proposal.id, stamp: 'proposal' }, err));
     // …and the model calls of the RUN that proposed it (#4896): a person has
     // now reviewed what that run produced. Keyed by the run id, which those
     // rows carry as `sessionRef`. One-way, so the first decision on a run's
     // proposals is the one its calls record.
     if (proposal.runId) {
         await runInTenantContext(ctx, (db) => recordDecisionOutcome(db, ctx, proposal.runId!, status)).catch(
-            () => undefined,
+            (err: unknown) => logStampFailure(ctx, { proposalId: proposal.id, stamp: 'run' }, err),
         );
     }
 
@@ -2144,9 +2186,12 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         // write: a rejection recorded on the proposal but not on the decision
         // log is a register that says a human is still deciding something they
         // have already refused.
-        if (proposal.guardInputDigest) {
-            await recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest, 'REJECTED');
-        }
+        await recordDecisionOutcomeForProposal(
+            db,
+            ctx,
+            { proposalId: proposal.id, inputDigest: proposal.guardInputDigest },
+            'REJECTED',
+        );
         // …and the model calls of the run that proposed it (#4896).
         if (proposal.runId) {
             await recordDecisionOutcome(db, ctx, proposal.runId, 'REJECTED');
@@ -2332,8 +2377,13 @@ export async function bulkRejectAgentProposals(
         });
         const ids = new Set(written.map((r) => r.id));
         for (const row of accepted) {
-            if (ids.has(row.id) && row.guardInputDigest) {
-                await recordDecisionOutcomeForDigest(db, ctx, row.guardInputDigest, 'REJECTED');
+            if (ids.has(row.id)) {
+                await recordDecisionOutcomeForProposal(
+                    db,
+                    ctx,
+                    { proposalId: row.id, inputDigest: row.guardInputDigest },
+                    'REJECTED',
+                );
             }
             // …and the model calls of the run that proposed it (#4896).
             if (ids.has(row.id) && row.runId) {

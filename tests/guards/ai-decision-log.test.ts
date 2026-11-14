@@ -109,7 +109,8 @@ describe('immutability — append-only core record', () => {
         // EVERY write-back is checked, rather than counting them.
         //
         // This asserted `updates.length === 1` until a second legitimate stamp
-        // arrived — `recordDecisionOutcomeForDigest`, the same one-way
+        // arrived — `recordDecisionOutcomeForDigest` (now
+        // `recordDecisionOutcomeForProposal`), the same one-way
         // humanOutcome transition keyed by digest instead of session — and the
         // count went red for a change that honoured the invariant exactly. The
         // pairing was also weaker than it looked: `toMatch(/data:\s*\{\s*humanOutcome:/)`
@@ -161,7 +162,7 @@ describe('feedback + indexes', () => {
         //
         // `toContain('export async function recordDecisionOutcome')` was
         // satisfied by any function whose name merely STARTS with that — which
-        // `recordDecisionOutcomeForDigest` does. The assertion would have
+        // `recordDecisionOutcomeForProposal` does. The assertion would have
         // survived deleting the function it is named for, which is precisely
         // the Class D failure `assertion-needle-uniqueness-ratchet` counts.
         // Narrowing the read also makes the PENDING needle unique again: both
@@ -172,14 +173,20 @@ describe('feedback + indexes', () => {
         expect(fn).toMatch(/data:\s*\{\s*humanOutcome: outcome\s*\}/);
     });
 
-    it('the digest-keyed sibling makes the same one-way transition', () => {
+    it('the proposal-keyed sibling makes the same one-way transition', () => {
         // The second stamp is the reason the assertion above had to be bound.
         // It gets its own, equally bound, rather than sharing a file-scope
         // needle that would then prove nothing about either.
+        //
+        // Keyed by the PROPOSAL (#5191), not by the digest: the digest is a
+        // function of content, and two identical proposals share it. That the
+        // stamp moves ONE row is a behavioural claim, held against the real
+        // database in `tests/integration/agentic-art14-human-outcome.test.ts`
+        // and `agent-proposal-decision-stamp-per-proposal.test.ts`.
         const mod = read('src/app-layer/ai/decision-log/index.ts');
-        const fn = functionBodyOf(mod, 'recordDecisionOutcomeForDigest');
+        const fn = functionBodyOf(mod, 'recordDecisionOutcomeForProposal');
         expect(fn).toMatch(/humanOutcome:\s*'PENDING'/);
-        expect(fn).toMatch(/inputDigest/);
+        expect(fn).toMatch(/agentProposalId:\s*ref\.proposalId/);
     });
 
     it('AiDecisionLog carries the two tenantId-leading indexes', () => {
