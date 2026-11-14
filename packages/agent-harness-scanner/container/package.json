@@ -5,7 +5,7 @@
   "license": "BUSL-1.1",
   "description": "What the scanner container installs: the runner, the parser the code source reads TypeScript with, the YAML parser the cicd source reads workflows with, and the schema library. Exact versions, the ones the repository's tests run the scanner against. See ../README.md, Container.",
   "dependencies": {
-    "@rodnapamet/scanent-contract": "https://github.com/RodnaPamet/scanent/releases/download/v0.15.0/rodnapamet-scanent-contract-0.15.0.tgz",
+    "@rodnapamet/scanent-contract": "https://github.com/RodnaPamet/scanent/releases/download/v0.16.0/rodnapamet-scanent-contract-0.16.0.tgz",
     "js-yaml": "5.5.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
