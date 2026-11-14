@@ -732,6 +732,96 @@ describe('the on-premises flag is re-read, not trusted from the database', () =>
         expect(calls.filter(isPatch)).toHaveLength(0);
     });
 
+    describe('restore checks the FRESH read too, not only the capture (#5569)', () => {
+        /**
+         * A capture of an enabled cloud-only account, then a restore whose own
+         * read answers however the test wants.
+         *
+         * Read 0 is the capture: enabled, and whatever on-prem shape is passed.
+         * Read 1 is restore's own check: disabled, same on-prem shape. That
+         * split is the whole point — the capture is what was true at disable
+         * time and cannot answer for today.
+         */
+        function restoreWith(fresh: Record<string, unknown>, patchStatus?: number) {
+            const routes: Parameters<typeof scriptedFetch>[0] = [
+                tokenRoute(TOKEN_WITH_WRITE),
+                { when: isMemberOf, reply: () => json({ value: [] }) },
+            ];
+            if (patchStatus !== undefined) {
+                // `null`, not `''` — the Response constructor rejects a body on
+                // a 204, and an invalid-status TypeError reaches the writer as a
+                // LOST RESPONSE, which is a different test entirely.
+                routes.push({ when: isPatch, reply: () => new Response(null, { status: patchStatus }) });
+            }
+            routes.push({
+                when: isUserGet,
+                // `fresh` is applied to read 1 ONLY. Spreading it over both was
+                // this block's first version and it made the synced test pass
+                // for the wrong reason: the CAPTURE then said synced too, so the
+                // pre-token captured rail — which existed before #5569 — did the
+                // refusing, and deleting the rail under test changed nothing.
+                // Mutation-proving found it; the suite was green.
+                reply: (n: number) =>
+                    json({ ...graphUser({ accountEnabled: n === 0 }), ...(n === 0 ? {} : fresh) }),
+            });
+            return scriptedFetch(routes);
+        }
+
+        it('refuses a now-synced account even though the capture said cloud-only', async () => {
+            const { impl, calls } = restoreWith({ onPremisesSyncEnabled: true });
+            const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+            // The capture's own flag must be the PERMISSIVE value, or the
+            // pre-token captured check refuses and this test never reaches the
+            // rail it is named for — the way the token-500 test in this file
+            // once did. Asserted, because that is precisely how this test was
+            // wrong the first time.
+            const captured = await writer.readState(USER_ID);
+            expect(captured.priorState.onPremisesSyncEnabled).toBe(false);
+            expect(captured.priorState.onPremStateObserved).toBe(true);
+
+            const err = await writer.restore!(USER_ID, captured).catch((e: unknown) => e);
+            expect(err).toBeInstanceOf(DirectoryWriteError);
+            expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+            expect((err as Error).message).toMatch(/Azure AD Connect/);
+            expect(calls.filter(isPatch)).toHaveLength(0);
+        });
+
+        it('refuses when the fresh read did not observe the sync state at all', async () => {
+            // Graph omitting the field entirely. `readState` records that as
+            // `onPremStateObserved: false`, and unknown must not be read as
+            // cloud-only: that is the permissive default `disable` refuses in
+            // terms, and restore inherited none of it until #5569.
+            const noFlag = { onPremisesSyncEnabled: undefined };
+            const { impl, calls } = restoreWith(noFlag);
+            const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+            const captured = await writer.readState(USER_ID);
+            // Observed at CAPTURE time and unobserved now, so a rail reading the
+            // capture instead of the fresh read would let this through.
+            expect(captured.priorState.onPremStateObserved).toBe(true);
+
+            const err = await writer.restore!(USER_ID, captured).catch((e: unknown) => e);
+            expect(err).toBeInstanceOf(DirectoryWriteError);
+            expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
+            expect((err as Error).message).toMatch(/was not observed/);
+            expect(calls.filter(isPatch)).toHaveLength(0);
+        });
+
+        it('restores a cloud-only OBSERVED account — the rails refuse the hazard, not the case', async () => {
+            // The positive control, and it is the one that matters: two new
+            // refusals in front of a write are one `!==` away from refusing
+            // every restore, and both tests above would still pass.
+            const { impl, calls } = restoreWith({ onPremisesSyncEnabled: false }, 204);
+            const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+            const captured = await writer.readState(USER_ID);
+
+            await expect(writer.restore!(USER_ID, captured)).resolves.toBeUndefined();
+
+            const patches = calls.filter(isPatch);
+            expect(patches).toHaveLength(1);
+            expect(patches[0].body).toBe('{"accountEnabled":true}');
+        });
+    });
+
     it('BOTH write selects carry onPremisesSyncEnabled — the observation claim rests on it', async () => {
         // The connector got this test in the same diff; the writer is the half
         // that actually authorises the live write and only its FULL select was

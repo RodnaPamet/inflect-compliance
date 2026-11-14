@@ -1161,13 +1161,26 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * most of its disabling. Named rather than hidden, which is the standard
      * this file already holds `disable` to.
      *
-     * ═══ THE ON-PREM REFUSALS APPLY UNCHANGED ═══
+     * ═══ THE ON-PREM REFUSALS, AND WHICH READ EACH ONE USES ═══
      *
      * A directory-synced account restored through Graph is reverted at the next
      * Azure AD Connect cycle, exactly as a disable would be — and would report
      * success while the account stayed disabled. Unknown is refused for the
      * same reason it is on the way down: it is not the same as cloud-only, and
      * the two differ precisely where it matters.
+     *
+     * There are THREE refusals and they do not read the same state, which is
+     * the part this paragraph used to leave out:
+     *
+     *   • the CAPTURE's `onPremisesSyncEnabled`, before any token is fetched —
+     *     cheapest, and true of what it tests: the account was already synced
+     *     when this product disabled it.
+     *   • the FRESH read's `onPremisesSyncEnabled`, after the enabled check.
+     *   • the FRESH read's `onPremStateObserved`, likewise.
+     *
+     * Only the first existed until #5569, so an account brought under Azure AD
+     * Connect in between — the whole case the paragraph describes — passed. The
+     * capture cannot answer for today, and today is what reverts the write.
      */
     async restore(externalUserId: string, captured: DirectoryAccountState): Promise<void> {
         const id = assertEntraObjectId(externalUserId);
@@ -1210,6 +1223,46 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 `Refusing to restore account ${id}: it is already enabled. Either the restore has already run ` +
                     'or somebody re-enabled the account by hand, and repeating the write would record a ' +
                     'recovery that did not happen.',
+                { definitivelyNotApplied: true },
+            );
+        }
+
+        // ── THE ON-PREM RAILS, ON THE READ TAKEN JUST NOW (#5569) ──
+        //
+        // The captured flag checked above says what was true when the DISABLE
+        // ran. These say what is true now, and a restore is reverted by
+        // whatever masters the account today. An account that was cloud-only
+        // when this product disabled it and has since been brought under Azure
+        // AD Connect passes the captured check and fails these — which was the
+        // defect: the PATCH went out, the journal recorded RESTORED, and the
+        // next Connect cycle disabled the account again.
+        //
+        // The docblock above has claimed these refusals all along. It said
+        // "THE ON-PREM REFUSALS APPLY UNCHANGED" and that unknown "is refused
+        // for the same reason it is on the way down", while the method checked
+        // neither. A reader asking whether the hazard was handled found a
+        // paragraph saying yes.
+        //
+        // Read from the FRESH state rather than the capture for a second reason
+        // as well: a `v1` journal row predates `onPremStateObserved`, so an
+        // absent key there cannot be told from one Graph did not answer. A read
+        // taken now is always the current capture schema's shape.
+        if (current.priorState.onPremisesSyncEnabled === true) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id} through Graph: a read taken just now reports it ` +
+                    `directory-synced (onPremisesSyncEnabled: true), so it is mastered on-premises and this ` +
+                    `write would be reverted at the next Azure AD Connect cycle — the account would report ` +
+                    `enabled and then disable itself again, with an audit trail saying the restore ` +
+                    `succeeded. The captured state said otherwise, so the account was brought under Azure ` +
+                    `AD Connect after it was disabled; restore it in Active Directory instead.`,
+                { definitivelyNotApplied: true },
+            );
+        }
+        if (current.priorState.onPremStateObserved !== true) {
+            throw new DirectoryWriteError(
+                `Refusing to restore account ${id}: its on-premises sync state was not observed on the read ` +
+                    `taken just now. Unknown is not the same as cloud-only, and the two differ exactly where ` +
+                    `it matters.`,
                 { definitivelyNotApplied: true },
             );
         }
