@@ -37,6 +37,13 @@ export interface EntraGroupResolution {
     groups: string[];
     /** True when the list came from the Graph overage fallback, not the token. */
     overage: boolean;
+    /**
+     * False when `groups` is a PREFIX of the membership, because the Graph
+     * pagination stopped early (#5600). A consumer must then take no decision
+     * from an absence: no role write, no gate verdict. Always true for the
+     * inline token claim, which carries the whole membership by construction.
+     */
+    complete: boolean;
 }
 
 export interface ResolveEntraGroupClaimsDeps {
@@ -50,9 +57,11 @@ export interface ResolveEntraGroupClaimsDeps {
  * Resolve a user's AAD security-group membership at sign-in.
  *
  * - **Overage** (`_claim_names.groups` present AND an access token is available):
- *   fetch the full membership from Graph. The Graph helper fails open to `[]`,
- *   so a Graph outage never blocks sign-in — it just yields no groups (and an
- *   `outcome: 'empty'` metric so operators can alert on it).
+ *   fetch the full membership from Graph. A Graph outage never blocks sign-in:
+ *   the read reports `complete: false` and the caller then takes no decision
+ *   from it, with an `outcome: 'partial'` metric to alert on. It used to be
+ *   described as failing open to `[]`, which it did only on the first page
+ *   (#5600).
  * - **Normal**: use the inline `groups` claim (empty array if absent).
  *
  * Records exactly one `recordEntraGroupResolution` per call.
@@ -71,8 +80,15 @@ export async function resolveEntraGroupClaims(
             deps.fetchImpl,
         );
         const graphFetchDurationMs = now() - started;
-        const groups = fetched.map((g) => g.id);
-        const outcome = groups.length > 0 ? 'resolved' : 'empty';
+        const groups = fetched.groups.map((g) => g.id);
+        // `partial` FIRST, and the reason moved with #5593. It used to be that a
+        // prefix had `groups.length > 0` and so reported `resolved`. Since that
+        // fix empties the list, an incomplete read would now report `empty`
+        // instead — which is the opposite error and no better: `empty` is a
+        // FACT about the directory ("this user is in no groups"), and a failed
+        // read is not that fact. Either way the one signal the docblock offered
+        // operators could not name the failure (#5600).
+        const outcome = !fetched.complete ? 'partial' : groups.length > 0 ? 'resolved' : 'empty';
 
         recordEntraGroupResolution({
             source: 'graph_overage',
@@ -87,7 +103,7 @@ export async function resolveEntraGroupClaims(
             groupCount: groups.length,
             graphFetchDurationMs,
         });
-        return { groups, overage: true };
+        return { groups, overage: true, complete: fetched.complete };
     }
 
     const groups = Array.isArray(p.groups) ? p.groups : [];
@@ -96,5 +112,6 @@ export async function resolveEntraGroupClaims(
         outcome: groups.length > 0 ? 'resolved' : 'empty',
         groupCount: groups.length,
     });
-    return { groups, overage: false };
+    // The inline claim is the whole membership by construction.
+    return { groups, overage: false, complete: true };
 }

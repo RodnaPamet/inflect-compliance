@@ -129,6 +129,14 @@ export async function syncEntraMembershipRole(
          * non-empty domain list refuses.
          */
         signInEmail?: string | null;
+        /**
+         * False when `aadGroups` is a PREFIX of the membership (#5600).
+         *
+         * Defaults to true, which keeps the SCIM Groups path untouched: its
+         * list arrives in the push body and is complete by construction. Only
+         * the sign-in path, which reads Graph, can supply false.
+         */
+        aadGroupsComplete?: boolean;
     },
     deps: { db?: EntraSyncDb } = {},
 ): Promise<EntraRoleSyncResult> {
@@ -196,6 +204,35 @@ export async function syncEntraMembershipRole(
     if (membership && assignableRoles && !assignableRoles.includes(membership.role)) {
         recordEntraRoleSync({ outcome: 'role_protected' });
         return { effectiveRole: membership.role, changed: false, gateDenied: false };
+    }
+
+    // ═══ A PREFIX DECIDES NOTHING (#5600) ═══
+    //
+    // Placed HERE, and not at the top, on purpose: everything above is
+    // independent of the group LIST — the mappings, the membership, OWNER
+    // immunity, the directory and domain checks, the ceiling guard — so a
+    // sign-in refused for any of those still reports its own, more specific
+    // outcome. This is the first decision that reads `aadGroups`, and the
+    // first that an incomplete list can get wrong.
+    //
+    // Both of the decisions below are driven by ABSENCE: `resolveRoleFromGroups`
+    // picks a role from which mapped groups are missing, and the gate denies
+    // when none matched. On a prefix, an absence means "not read yet", so each
+    // would be a guess — and the demotion it produced was audited as the
+    // directory's own doing.
+    //
+    // NO WRITE AND NO GATE VERDICT, which is `NO_OP`'s exact shape, so a Graph
+    // outage leaves the membership and the session exactly as they were rather
+    // than refusing the workspace (owner decision, 2026-11-14).
+    if (input.aadGroupsComplete === false) {
+        recordEntraRoleSync({ outcome: 'partial_group_read' });
+        edgeLogger.warn('Entra group read incomplete: mappings and gate not applied', {
+            component: 'entra',
+            tenantId,
+            reason: 'partial_group_read',
+            groupsRead: aadGroups.length,
+        });
+        return { effectiveRole: membership?.role ?? null, changed: false, gateDenied: false };
     }
 
     const { role: mappedRole, matchedGroupIds, clampedGroupIds, ambiguousGroupIds } = resolveRoleFromGroups(
@@ -407,6 +444,12 @@ export async function syncEntraMembershipRolesAtSignIn(
     input: {
         userId: string;
         aadGroups: readonly string[];
+        /**
+         * False when `aadGroups` is a prefix of the membership (#5600) —
+         * forwarded to every workspace's sync, each of which then writes no
+         * role and reaches no gate verdict.
+         */
+        aadGroupsComplete?: boolean;
         signInDirectoryId: string | null;
         signInEmail: string | null;
     },
@@ -434,6 +477,7 @@ export async function syncEntraMembershipRolesAtSignIn(
                     userId: input.userId,
                     tenantId,
                     aadGroups: input.aadGroups,
+                    aadGroupsComplete: input.aadGroupsComplete,
                     signInDirectoryId: input.signInDirectoryId,
                     signInEmail: input.signInEmail,
                 },
