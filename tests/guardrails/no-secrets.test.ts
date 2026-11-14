@@ -39,10 +39,31 @@ const ALLOWLIST_MARKER = 'pragma: allowlist secret';
 
 // ─── Path skips ─────────────────────────────────────────────────────
 //
-// Mirror the bash scanner's SKIP_PATHS so the local + CI scanners scan
-// the same surface. Substring match against the relative path.
-const SKIP_PATHS: readonly string[] = [
+// Mirror the bash scanner's two lists so the local + CI scanners scan the
+// same surface. Any-depth for the first, ROOT-ANCHORED for the second.
+/**
+ * Names that may appear at ANY depth, because nothing here is ever genuinely
+ * called them — a nested install, and the lockfiles a nested package owns.
+ */
+const SKIP_ANY_DEPTH: readonly string[] = [
     'node_modules/',
+    'package-lock.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+];
+
+/**
+ * Build output and fixed locations, matched only at the REPOSITORY ROOT
+ * (#5631).
+ *
+ * The whole list used to be a bare substring match, and `coverage/` is an
+ * ordinary word: it skipped `src/app/api/t/[tenantSlug]/coverage/route.ts`,
+ * the agent coverage route and all three
+ * `src/app/t/[tenantSlug]/(app)/coverage/` files. Five source files, scanned
+ * by neither this guardrail nor the pre-commit hook, both reporting success
+ * because neither looked.
+ */
+const SKIP_PATHS: readonly string[] = [
     '.next/',
     'dist/',
     'build/',
@@ -51,9 +72,6 @@ const SKIP_PATHS: readonly string[] = [
     'test-results/',
     '.git/',
     '.husky/_/',
-    'package-lock.json',
-    'yarn.lock',
-    'pnpm-lock.yaml',
     'prisma/migrations/',
     'public/',
 
@@ -72,8 +90,9 @@ const SKIP_PATHS: readonly string[] = [
     'tests/fixtures/secrets/',
 ];
 
-function isSkippedPath(rel: string): boolean {
-    return SKIP_PATHS.some((skip) => rel.includes(skip));
+export function isSkippedPath(rel: string): boolean {
+    if (SKIP_ANY_DEPTH.some((skip) => rel.includes(skip))) return true;
+    return SKIP_PATHS.some((skip) => rel.startsWith(skip));
 }
 
 // ─── Repo-baseline allowlist ───────────────────────────────────────
@@ -418,5 +437,93 @@ describe('GAP-16 — no tracked .env files (filename guard)', () => {
         } finally {
             fs.rmSync(tmp, { recursive: true, force: true });
         }
+    });
+});
+
+// ─── #5631: the skip lists, and keeping the two scanners in step ────────
+//
+// Both scanners matched their whole skip list mid-path, so `coverage/` — an
+// ordinary word — skipped five tenant coverage source files in the pre-commit
+// hook AND here. A credential in one of them shipped with both gates green,
+// because neither looked.
+describe('path skips are anchored where they must be (#5631)', () => {
+    const SCANNED = [
+        'src/app/api/t/[tenantSlug]/coverage/route.ts',
+        'src/app/api/t/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
+        'src/app/t/[tenantSlug]/(app)/coverage/page.tsx',
+        'src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx',
+        'src/app/t/[tenantSlug]/(app)/coverage/loading.tsx',
+    ];
+
+    it.each(SCANNED)('scans %s', (rel) => {
+        expect(isSkippedPath(rel)).toBe(false);
+    });
+
+    it('still skips the build output these words were listed for', () => {
+        // The control. Anchoring must not stop skipping the real coverage
+        // report, or this gate drowns in generated noise and gets disabled.
+        expect(isSkippedPath('coverage/lcov-report/index.html')).toBe(true);
+        expect(isSkippedPath('coverage/coverage-final.json')).toBe(true);
+        expect(isSkippedPath('.next/server/app/page.js')).toBe(true);
+        expect(isSkippedPath('dist/index.js')).toBe(true);
+        expect(isSkippedPath('public/favicon.ico')).toBe(true);
+        expect(isSkippedPath('playwright-report/index.html')).toBe(true);
+    });
+
+    it('skips a NESTED lockfile and a nested install, which are any-depth by design', () => {
+        // Why the list is split rather than wholly anchored: these are real
+        // paths in this repo and are noise, not surface.
+        expect(isSkippedPath('site/package-lock.json')).toBe(true);
+        expect(isSkippedPath('packages/agent-harness-scanner/container/package-lock.json')).toBe(true);
+        expect(isSkippedPath('packages/ui/node_modules/x/index.js')).toBe(true);
+    });
+
+    it('a directory merely NAMED like build output, at depth, is scanned', () => {
+        // The general form of the defect, so a future list entry inherits the
+        // property rather than needing its own case.
+        expect(isSkippedPath('src/app/t/[tenantSlug]/(app)/dist/page.tsx')).toBe(false);
+        expect(isSkippedPath('src/lib/build/plan.ts')).toBe(false);
+        expect(isSkippedPath('src/components/public/Banner.tsx')).toBe(false);
+    });
+
+    it('the fix only ever WIDENS what is scanned, measured over the real tree', () => {
+        // The safety property for a security gate: anchoring must not newly
+        // exempt anything. Compared against the old bare-substring rule over
+        // every tracked file, so this is a measurement rather than a claim.
+        const oldRule = (rel: string) =>
+            [...SKIP_ANY_DEPTH, ...SKIP_PATHS].some((skip) => rel.includes(skip));
+        const newlySkipped = listTrackedFiles()
+            .filter((rel) => isSkippedPath(rel) && !oldRule(rel));
+        expect(newlySkipped).toEqual([]);
+    });
+});
+
+describe('the bash scanner and this guardrail skip the SAME surface (#5631)', () => {
+    // The TS comment above claims to mirror the bash lists, and until now
+    // nothing checked it. A fix applied to one scanner only is precisely the
+    // half-fix #5631 warns about, so the claim is now enforced.
+    const sh = fs.readFileSync(path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), 'utf-8');
+
+    const bashArray = (name: string): string[] => {
+        const m = new RegExp(`${name}=\\(([\\s\\S]*?)\\n\\)`).exec(sh);
+        if (!m) throw new Error(`${name} not found in detect-secrets.sh`);
+        return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+    };
+
+    it('the any-depth lists are identical', () => {
+        expect(bashArray('SKIP_ANY_DEPTH')).toEqual([...SKIP_ANY_DEPTH].sort());
+    });
+
+    it('the root-anchored lists are identical', () => {
+        expect(bashArray('SKIP_PATHS')).toEqual([...SKIP_PATHS].sort());
+    });
+
+    it('the bash scanner anchors its SKIP_PATHS loop and not its any-depth loop', () => {
+        // The lists agreeing is not enough: they are applied by two different
+        // loops, and the defect was in the APPLICATION, not the list.
+        const anyDepthLoop = /SKIP_ANY_DEPTH\[@\]\}"; do\s*\n\s*case "\$file" in\s*\n\s*"\$skip"\*\|\*"\/\$skip"\*\)/;
+        const anchoredLoop = /SKIP_PATHS\[@\]\}"; do\s*\n\s*case "\$file" in\s*\n\s*"\$skip"\*\)/;
+        expect(anyDepthLoop.test(sh)).toBe(true);
+        expect(anchoredLoop.test(sh)).toBe(true);
     });
 });

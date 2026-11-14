@@ -110,6 +110,53 @@ describe('verdictOf', () => {
         expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: [], logsReadable: true })).toBe('NO_FAIL_LINE');
     });
 
+    // #5630: the negative verdict needs EVERY log read. These sit before the
+    // case below, whose name claims "only when NO failing suite is in the
+    // diff" — true of the dimension it drove, and silent about this one.
+    it('refuses OUTSIDE_DIFF when some logs could not be read', () => {
+        // Two shards failed: one log unreadable, the other naming an
+        // out-of-diff suite. Saying "not this diff" here is an exoneration
+        // drawn from the half that was not read.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: false,
+        })).toBe('INCOMPLETE');
+    });
+
+    it('still says OUTSIDE_DIFF when every log WAS read', () => {
+        // The control: without it, a verdictOf that always answered
+        // INCOMPLETE would pass the case above.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: true,
+        })).toBe('OUTSIDE_DIFF');
+    });
+
+    it('still says IN_DIFF with unreadable logs — positive evidence is not weakened', () => {
+        // The asymmetry. An in-diff failure that WAS read is yours whatever
+        // else could not be fetched, and demoting it would bury the one
+        // actionable signal the comment exists to surface.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/mine.test.ts', 'tests/unit/elsewhere.test.ts'],
+            changedFiles: ['tests/unit/mine.test.ts'],
+            logsReadable: false,
+        })).toBe('IN_DIFF');
+    });
+
+    it('a cancellation still wins over an incomplete read', () => {
+        expect(verdictOf({
+            cancelled: true,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: [],
+            logsReadable: false,
+        })).toBe('CANCELLED');
+    });
+
     it('says OUTSIDE_DIFF only when NO failing suite is in the diff', () => {
         expect(verdictOf({
             cancelled: false,
@@ -196,6 +243,23 @@ describe('attributionBody', () => {
         const body = attributionBody({ ...base, conclusion: 'cancelled', failingFiles: [], changedFiles: [] });
         expect(body).toContain('**The candidate was CANCELLED, which is not a failing test.**');
         expect(body).not.toContain('outside this PR');
+    });
+
+    it('never claims "not this diff" when a log could not be read (#5630)', () => {
+        const body = attributionBody({
+            ...base,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: false,
+        });
+        // The sentence that must not appear, asserted as an absence because it
+        // is the claim that misleads.
+        expect(body).not.toContain('Every failing suite is outside');
+        expect(body).not.toContain('not this diff');
+        expect(body).toContain('incomplete');
+        expect(body).toContain('not** evidence either way');
+        // It still names what it DID read, so the comment stays useful.
+        expect(body).toContain('tests/unit/elsewhere.test.ts');
     });
 
     it('distinguishes unreadable logs from a clean log with no FAIL line', () => {
