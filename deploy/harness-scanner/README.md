@@ -124,14 +124,24 @@ scanner on the VM has no GitHub token to federate with.
 2. Create an API key bound to that agent, holding `admin:harness_ingest` and
    `mcp:read`, with "Agent tool calls only through a short-lived, tool-scoped
    token" ticked (#5004). That is `INFLECT_INGEST_KEY`.
-3. Grant the scanner agent the tool `get_harness_register`, and nothing else.
+3. Create a second API key bound to the same agent, holding
+   `admin:integrations_ingest` and nothing else. That is
+   `INFLECT_INTEGRATIONS_KEY`: it posts the integrations report (scanent
+   0.16.0 and later), and a key minted for one report does not post the other.
+4. Grant the scanner agent the tool `get_harness_register`, and nothing else.
    Keep it at autonomy 1 with no behaviour profile: that bound is what its
    read-only H3 verdicts stand on.
-4. Give it a policy card.
-5. The estate the scanner reports for declares its four sources: `entra-sp`,
+5. Give it a policy card.
+6. The estate the scanner reports for declares its four agent-report sources: `entra-sp`,
    `inflect-register`, `cicd` and `gcp-sa`. The pilot read Inflect's own
    `/api/mcp` as an `mcp` source until 2026-11-08 (#5004 part C); an estate
    still declaring `mcp` reads STALE until that source is removed from it.
+
+The scanner also reads two integrations sources, `entra-integrations` (the
+same Entra application) and `github-integrations` (the organisation's App
+installations and webhook hosts), and posts their report to the tenant's
+integrations ingest. Its results are the Integrations tab on Agent reports.
+Neither needs a host the agent sources do not already reach.
 
 The scanner runs behind its own egress proxy (#5004 part C; the overlay's
 header), which ships in scanent's image. `configure` refuses an image without
@@ -149,8 +159,16 @@ the overlay's `EGRESS_ALLOW`.
   - `SCANNER_ENTRA_DIRECTORY_ID`
   - `SCANNER_ENTRA_CLIENT_ID`
   - `INFLECT_INGEST_KEY`
-  - `ENTRA_CLIENT_SECRET`
+  - `ENTRA_CLIENT_SECRET`: the secret of the Entra application both Entra
+    sources read with. It holds the Microsoft Graph application permissions
+    `Application.Read.All` and `Directory.Read.All` (the integrations source
+    needs the second), with admin consent, and nothing that writes.
+  - `INFLECT_INTEGRATIONS_KEY`
   - `SCANNER_GITHUB_READ_TOKEN`: GitHub reserves the `GITHUB_` prefix. It becomes `GITHUB_READ_TOKEN` on the VM.
+  - `SCANNER_GITHUB_INTEGRATIONS_TOKEN`: a fine-grained token whose resource
+    owner is the organisation, with the organisation permissions
+    Administration: read and Webhooks: read and nothing else. It becomes
+    `GITHUB_INTEGRATIONS_TOKEN` on the VM.
   - `GCP_SCANNER_KEY`: the JSON key file's contents.
 
   The four ids are secrets only so they are masked in the logs, which are
