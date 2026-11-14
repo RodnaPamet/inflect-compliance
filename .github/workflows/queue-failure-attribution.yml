@@ -151,7 +151,10 @@ jobs:
               }
             }
 
-            let changedFiles = [];
+            // null, not [], when the listing fails (#5308): an empty list
+            // would render "not among the 0 file(s) this PR changes" — an
+            // exoneration built on a read that failed.
+            let changedFiles = null;
             try {
               const files = await github.paginate(github.rest.pulls.listFiles, {
                 owner, repo, pull_number: prNumber, per_page: 100,

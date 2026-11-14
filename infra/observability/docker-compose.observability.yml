@@ -18,8 +18,10 @@
 #
 # The app's `app` container reaches `otel-collector` by DNS because this
 # project joins the app's external bridge network (see `networks:` below).
-# Set APP_NETWORK_NAME in .env to the app compose's real network name
-# (typically "<project>_internal", e.g. inflect_internal). See README.md.
+# Set APP_NETWORK_NAME in .env to the app compose's real network name. On
+# the production VM that is `inflect_default` (deploy/docker-compose.prod.yml
+# declares no networks); for the local root docker-compose.prod.yml it is
+# "<project>_internal". See README.md.
 # =============================================================================
 
 services:
@@ -180,8 +182,12 @@ volumes:
 #  - app           : the app compose's PRE-EXISTING bridge network, joined as
 #                    external so the app's `app` container can resolve
 #                    `otel-collector`. Set APP_NETWORK_NAME in .env to the
-#                    real docker network name (usually "<project>_internal",
-#                    e.g. inflect_internal). Find it with:
+#                    real docker network name. Production
+#                    (deploy/docker-compose.prod.yml in /opt/inflect)
+#                    declares no networks, so it is the project default,
+#                    `inflect_default` — the default below. The local root
+#                    docker-compose.prod.yml uses "<project>_internal".
+#                    Find it with:
 #                        docker network ls
 # =============================================================================
 networks:
@@ -190,4 +196,4 @@ networks:
     driver: bridge
   app:
     external: true
-    name: ${APP_NETWORK_NAME:-inflect_internal}
+    name: ${APP_NETWORK_NAME:-inflect_default}

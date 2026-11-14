@@ -456,9 +456,10 @@ HIGH+, highest observed risk Medium. Removing `continue-on-error`
 matters beyond findings: `action-baseline` calls `core.setFailed` on
 zap-baseline.py exit 3 ("could not scan the target") REGARDLESS of
 `fail_action`, so it was also masking a scan that never ran as a green
-nightly. The weekly ACTIVE scan stays non-blocking on a real dated
-deferral (it mutates requests and has a younger baseline), but its
-HIGH+ gate runs today.
+nightly. The weekly ACTIVE scan is blocking too, since 2026-10-12: its
+dated deferral expired, the guard failed the next day as designed, and
+it was flipped the same way (a red Sunday run expects triage, not
+dismissal). Its HIGH+ gate was never deferred.
 
 The guard no longer accepts a non-blocking scan silently: a deferral
 must carry `DAST-NON-BLOCKING-UNTIL: <YYYY-MM-DD>`, which

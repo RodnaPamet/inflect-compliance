@@ -41,7 +41,8 @@ Discovered, not configured. It prefers a **host-only** interface (`vboxnet0`
 here) over the real LAN: both satisfy the allowlist identically, so the choice
 is ours, and a stub serving fixture data over a certificate nobody else trusts
 has no business being reachable from the office network. With two candidates and
-neither host-only it refuses to choose and tells you to pass `--host` — binding
+neither host-only it refuses to choose and tells you to name one yourself, as
+`HOST=<address> ./run-stub.sh` and `./make-dev-cert.sh <address>` — binding
 the wrong interface gives you a stub that works from the wrong places, which is
 harder to notice than one that does not start.
 

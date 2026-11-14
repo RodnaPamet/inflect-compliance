@@ -888,16 +888,17 @@ jobs:
             --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # One of the EIGHT artifacts the merged gate expects. The other seven
-      # are the five sibling shards, the `Ratchets` job and `Flue` — see
-      # the population note on `coverage-gate`.
+      # One of the artifacts the merged gate expects: one per Test shard
+      # in the matrix above, plus `Ratchets` and `Flue` — see the
+      # population note on `coverage-gate`.
       #
-      # It said FIVE, and enumerated five, for as long as
-      # `coverage-shard-flue` has existed (#3253). The count the gate
-      # actually enforces is the trailing argument to
-      # `check-merged-coverage.ts` in the `coverage-gate` job, and the
-      # guard derives its expectation from this workflow rather than from
-      # a literal — so both were right and only the prose was pinned.
+      # This comment deliberately states no number. It said FIVE, then
+      # EIGHT, and was wrong both times, because nothing makes prose
+      # follow the matrix. The count the gate actually enforces is the
+      # trailing argument to `check-merged-coverage.ts` in the
+      # `coverage-gate` job, and
+      # tests/guardrails/coverage-gate-population.test.ts derives its
+      # expectation from this workflow rather than from a literal.
       - name: Upload shard coverage
         uses: actions/upload-artifact@v7
         with:
@@ -944,7 +945,7 @@ jobs:
     # The cancellations were also expensive to read: a cancelled job
     # is not a failed one, so it surfaced as "Test" and
     # "Coverage (>=60%)" failing — Test checks needs.ratchets.result,
-    # and Coverage finds four shard artifacts instead of five. Two red
+    # and Coverage finds one artifact fewer than it expects. Two red
     # checks on jobs that were never the problem.
     timeout-minutes: 20
     env:
@@ -1143,30 +1144,33 @@ jobs:
   #  main, on a check the PR author never saw.
   #
   #  The matrix is gone. Coverage now comes from the runs that already
-  #  happen — the four Test shards and the Ratchets job — so the gate
-  #  costs ~2 min/shard instead of a parallel suite, and it runs at PR
-  #  time.
+  #  happen — every Test shard, the Ratchets job and the Flue job — so
+  #  the gate costs ~2 min/shard instead of a parallel suite, and it
+  #  runs at PR time.
   #
   #  THE POPULATION IS THE LOAD-BEARING PART. `jest.thresholds.json`
   #  has five keys, and a path key REMOVES its files from `global` —
   #  so `global` is a residue, and changing WHICH tests contribute
   #  changes what every floor means without changing a single number.
-  #  The old matrix ran the whole suite in one command. The five jobs
-  #  that replace it must therefore partition that same suite exactly:
+  #  The old matrix ran the whole suite in one command. The jobs that
+  #  replace it must therefore partition that same suite exactly:
   #
-  #    Test shards 1-4  (node + jsdom projects)  1386 test files
-  #    Ratchets         (guards+guardrails+contracts, minus
-  #                      rls-coverage, which stays in the shards)
-  #                                              654 test files
-  #                                             ---- 2040 = the whole
-  #                                                  suite, disjoint
+  #    Test shards      (node + jsdom projects; one artifact per
+  #                      matrix entry in the `test` job)
+  #    Ratchets         (the `scan` project: guards + guardrails +
+  #                      contracts, minus rls-coverage, which stays
+  #                      in the shards)
+  #    Flue             (the Flue runtime tests)
   #
-  #  Verified with `jest --listTests` on 2026-08-25: the two sets are
-  #  disjoint and their union is byte-identical to the unfiltered list.
-  #  `tests/guardrails/coverage-gate-population.test.ts` re-derives that
-  #  partition from THIS file, so a fifth shard, a dropped `--coverage`,
-  #  or a missing upload fails a test rather than quietly shrinking the
-  #  measured population.
+  #  The expected artifact count is the trailing argument to
+  #  `check-merged-coverage.ts` below — one per Test shard, plus
+  #  Ratchets and Flue. Read it there; this block names no number,
+  #  because every number it used to carry (four shards, five
+  #  artifacts, eight) went stale while the argument stayed right.
+  #  `tests/guardrails/coverage-gate-population.test.ts` re-derives the
+  #  partition and the count from THIS file, so an added shard, a
+  #  dropped `--coverage`, or a missing upload fails a test rather than
+  #  quietly shrinking the measured population.
   # ═══════════════════════════════════════════════════════════════
   coverage-gate:
     name: "Coverage (≥60%)"
@@ -1193,8 +1197,9 @@ jobs:
           pattern: coverage-shard-*
           path: coverage-shards
 
-      # Merges the eight `coverage-final.json` files (six Test shards,
-      # Ratchets and Flue) and compares the total
+      # Merges the `coverage-final.json` files (one per Test shard,
+      # Ratchets and Flue; the count is the trailing argument below) and
+      # compares the total
       # against jest.thresholds.json — reproducing what Jest's own
       # `--coverageThreshold` did before the job was sharded, including
       # the rule that a path group's files are REMOVED from `global`.

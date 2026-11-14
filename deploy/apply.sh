@@ -1156,11 +1156,17 @@ caddy_apply || CADDY_FAILED=1
 # `shred` rather than `rm`: these are credential files on a VM whose disk is a
 # GCE persistent disk, and the cost of overwriting a handful of small files is
 # nothing next to leaving them recoverable.
+#
+# Candidates are listed with `find`, not `ls *.bak.*`: a shell glob does not
+# match a leading dot, so `.env.prod.bak.*` — the files named above as the
+# reason for pruning at all — were never pruned (#5308). The per-base `ls`
+# below is safe, because its pattern starts with the base's own leading dot.
+# tests/unit/deploy-apply-backup-prune.test.ts runs this block.
 KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 log "pruning backups, keeping the newest ${KEEP_BACKUPS} per file"
 ssh_vm "sudo sh -c '
   cd \"${REMOTE_DIR}\" 2>/dev/null || exit 0
-  for base in \$(ls -1 *.bak.* 2>/dev/null | sed \"s/\\.bak\\..*//\" | sort -u); do
+  for base in \$(find . -maxdepth 1 -type f -name \"*.bak.*\" 2>/dev/null | sed -e \"s|^\\./||\" -e \"s/\\.bak\\..*//\" | sort -u); do
     ls -1t \"\$base\".bak.* 2>/dev/null | tail -n +\$((${KEEP_BACKUPS} + 1)) | while read -r old; do
       shred -u \"\$old\" 2>/dev/null || rm -f \"\$old\"
     done
