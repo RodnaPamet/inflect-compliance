@@ -10593,7 +10593,7 @@
       "openRun": "Отваряне на изпълнението",
       "openQueue": "Отваряне на опашката с предложения",
       "stepLabel": "Подадено от стъпка {seq}",
-      "windowCloses": "Прозорецът за одобрение на изпълнението се затваря в {at}. Решение, взето след това, няма да възобнови изпълнението.",
+      "windowCloses": "Прозорецът за одобрение на изпълнението се затваря в {at} (UTC). Решение, взето след това, няма да възобнови изпълнението.",
       "flaggedBlocked": "Защитата на изхода маркира това предложение ({rules}), затова то се одобрява в опашката с предложения, а не от картата — идентификаторите на правилата и записът на изпълнението са там.",
       "truncated": "Тази контролна точка е подала повече предложения, отколкото се показват тук. Прегледайте останалите в опашката с предложения."
     },
@@ -15016,7 +15016,9 @@
       "cancel": "Отказ",
       "selectedCount": "{count} избрани",
       "importCount": "Импортирай {count}",
-      "select": "Избери"
+      "select": "Избери",
+      "loadMore": "Зареди още",
+      "morePages": "Тази папка съдържа повече елементи от показаните."
     },
     "bia": {
       "protects": "Защитава",
@@ -16036,7 +16038,9 @@
       "agentWorkflowPlaceholder": "Изберете работен процес",
       "agentInputMappingLabel": "Съответствие на входните данни",
       "agentInputMappingHint": "По един на ред, във вида inputKey: triggerField. Само имена на полета — никога свободен текст.",
-      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity"
+      "agentInputMappingPlaceholder": "riskId: id\nseverity: severity",
+      "detailLoading": "Правилото се зарежда…",
+      "detailLoadFailed": "Правилото не можа да се зареди. Затворете конструктора и го отворете отново, преди да запазите."
     },
     "autoInspector": {
       "actionNotify": "Уведоми потребител",
@@ -16152,7 +16156,22 @@
       "paletteAria": "Палитра с процеси",
       "tools": "Инструменти",
       "dragToAdd": "Плъзнете, за да добавите възел {label}",
-      "clickToAdd": "Добавете стъпка {label} (щракнете или плъзнете върху платното)"
+      "clickToAdd": "Добавете стъпка {label} (щракнете или плъзнете върху платното)",
+      "kinds": {
+        "processStep": "Стъпка от процеса",
+        "decision": "Решение",
+        "control": "Контрол",
+        "risk": "Риск",
+        "asset": "Актив",
+        "external": "Външна страна",
+        "annotation": "Бележка",
+        "group": "Група",
+        "trigger": "Задействане",
+        "condition": "Условие",
+        "action": "Действие",
+        "agent": "Агент",
+        "slaGate": "SLA контролна точка"
+      }
     },
     "canvasBase": {
       "emptyState": "Плъзнете стъпка от процес от палитрата, за да започнете.",
@@ -16409,7 +16428,29 @@
     "entityTest": "Тестове",
     "entityEvidence": "Доказателства",
     "entityFramework": "Рамки",
-    "entityAsset": "Активи"
+    "entityAsset": "Активи",
+    "commands": {
+      "goToDashboard": "Към таблото",
+      "goToControls": "Към контролите",
+      "goToRisks": "Към рисковете",
+      "goToPolicies": "Към политиките",
+      "goToEvidence": "Към доказателствата",
+      "goToTasks": "Към задачите",
+      "goToCalendar": "Към календара",
+      "goToFrameworks": "Към рамките",
+      "goToVendors": "Към доставчиците",
+      "goToReports": "Към отчетите",
+      "goToAgentRegister": "Към регистъра на агентите",
+      "goToAgentProposals": "Към предложенията на агентите",
+      "goToAgentQuarantine": "Към карантината на агентите",
+      "suspendAgent": "Спиране на агент",
+      "killSwitch": "Аварийно спиране",
+      "goToAdmin": "Към администрацията",
+      "askAssistant": "Попитайте асистента",
+      "toggleTheme": "Смяна на темата",
+      "signOut": "Изход"
+    },
+    "searchFailed": "Търсенето не успя. Опитайте отново след малко."
   },
   "shortcuts": {
     "title": "Клавишни комбинации",

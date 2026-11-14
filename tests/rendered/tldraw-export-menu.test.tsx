@@ -148,11 +148,28 @@ describe('which items render', () => {
                 mapName="m"
                 tenantSlug="acme"
                 mapId="map-1"
+                canAttachEvidence
             />,
         );
         await open();
         expect(screen.getByTestId('tldraw-export-pdf')).toBeInTheDocument();
         expect(screen.getByTestId('tldraw-export-evidence')).toBeInTheDocument();
+    });
+
+    it('Evidence is hidden from a viewer who may not upload evidence (#5309)', async () => {
+        render(
+            <TldrawCanvasExportMenu
+                editor={EDITOR}
+                mapName="m"
+                tenantSlug="acme"
+                mapId="map-1"
+                canAttachEvidence={false}
+            />,
+        );
+        await open();
+        // PDF is a read; it stays.
+        expect(screen.getByTestId('tldraw-export-pdf')).toBeInTheDocument();
+        expect(screen.queryByTestId('tldraw-export-evidence')).not.toBeInTheDocument();
     });
 
     it('stay hidden with only ONE of the two', async () => {
@@ -200,6 +217,7 @@ describe('what each item calls', () => {
                 mapName="m"
                 tenantSlug="acme"
                 mapId="map-1"
+                canAttachEvidence
             />,
         );
         await open();
@@ -216,6 +234,7 @@ describe('what each item calls', () => {
                 mapName="m"
                 tenantSlug="acme"
                 mapId="map-1"
+                canAttachEvidence
             />,
         );
         await open();

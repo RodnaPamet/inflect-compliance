@@ -114,17 +114,21 @@ function PaletteItem({
     const t = useTranslations("automation.palette");
     const meta = NODE_TAXONOMY[kind];
     const Icon = meta.icon;
+    // The kind's name in the reader's language (#5309). It is also the label a
+    // new step is created with, so it is stored as the reader sees it rather
+    // than in English.
+    const label = t(`kinds.${kind}`);
     return (
         <button
             type="button"
             draggable
-            onDragStart={(e) => onDragStart(e, kind, meta.label)}
-            onClick={() => onAdd?.(kind, meta.label)}
+            onDragStart={(e) => onDragStart(e, kind, label)}
+            onClick={() => onAdd?.(kind, label)}
             data-palette-item={kind}
             data-process-palette-item="true"
-            title={meta.label}
+            title={label}
             aria-label={t(onAdd ? "clickToAdd" : "dragToAdd", {
-                label: meta.label.toLowerCase(),
+                label: label.toLowerCase(),
             })}
             className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-[8px] border border-canvas-border bg-canvas-node-muted text-content-default transition-colors hover:border-border-emphasis hover:bg-canvas-node hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasis active:cursor-grabbing"
         >
