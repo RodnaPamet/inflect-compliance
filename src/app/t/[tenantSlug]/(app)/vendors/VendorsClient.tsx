@@ -116,14 +116,6 @@ interface VendorsClientProps {
  * Client island for vendors — handles filter interactions and table navigation.
  * Data is pre-fetched server-side and passed via props.
  */
-/** Subset of getVendorMetrics the KPI row reads. */
-interface VendorMetricsPayload {
-    totalVendors: number;
-    byStatus?: Record<string, number>;
-    byCriticality?: Record<string, number>;
-    overdueReview: number;
-}
-
 /**
  * Shape of GET /api/t/:slug/vendors. `kpiCounts` is computed by aggregate in
  * VendorRepository.kpiCounts — not derived from `rows`, and not from
@@ -493,45 +485,17 @@ function VendorsPageInner({ initialVendors, initialKpiCounts, initialFilters, te
     // ─── R23-PR-F — KPI definitions for the Vendors page ───
     type VendorKpiId = 'total' | 'active' | 'critical' | 'reviewOverdue';
 
-    // KPI counts come from the tenant-wide metrics endpoint, NOT from the
-    // loaded rows.
-    //
-    // `vendors` is the server-FILTERED result and may additionally be capped
-    // (`truncated`), so counting it put a filtered, possibly-truncated number
-    // under a label reading "Total vendors" — and clicking that card called
-    // clearAll(), which widened the filter and made the number it had just
-    // quoted jump. reviewOverdue was worse: computed client-side against the
-    // browser clock, but drilling through to `reviewDue=overdue`, which the
-    // server evaluates against its own clock over the uncapped set. The card
-    // and its destination could disagree by construction.
-    //
-    // getVendorMetrics is the same source the vendor dashboard uses, so the
-    // two surfaces now agree as well.
-    //
-    // The path is TENANT-RELATIVE: useTenantSWR prepends `/api/t/{slug}`
-    // itself. Passing an absolute `/api/t/${tenantSlug}/...` here
-    // double-prefixed the URL into `/api/t/{slug}/api/t/{slug}/...`,
-    // which 404'd (× the SWR retry count) and left every KPI card on
-    // this page reading 0.
-    const metricsQuery = useTenantSWR<VendorMetricsPayload>('/vendors/metrics');
-    const metrics = metricsQuery.data;
-
-    // KPI card counts come from the LIST endpoint's aggregates, not from
+    // KPI card counts come from the LIST endpoint's aggregates
+    // (`VendorRepository.kpiCounts`), not from the loaded rows and not from
     // /vendors/metrics.
     //
-    // Both are server values, so this was never the client-derives-from-a-page
-    // defect — it is that defect one layer down. getVendorMetrics is a
-    // `findMany({ take: 5000 })` with an assessment include, looped in memory:
-    // above 5,000 vendors these four numbers were silently wrong, and the cost
-    // of producing them was the whole register plus a join.
-    //
-    // They are also now FILTER-AWARE. The metrics key is bare, so the cards
-    // used to show tenant-wide numbers while their clicks intersect with
-    // whatever filters are already set — the same disagreement `total` had on
-    // Policies. The list endpoint already knows the active filters.
-    //
-    // metrics is still read for the dashboard tiles below, which genuinely
-    // need the latest assessment per vendor.
+    // Not the rows: `vendors` is the server-FILTERED result and may be capped
+    // (`truncated`), so counting it put a filtered, possibly-truncated number
+    // under "Total vendors". Not /vendors/metrics: getVendorMetrics is a
+    // bounded `findMany` looped in memory (wrong above 5,000 vendors), and its
+    // key is bare, so its numbers ignored the active filters the cards' clicks
+    // intersect with. This page used to fetch it anyway on every view and use
+    // none of it (#5313).
     //
     // With the list unreachable the cards show "—", not the previous filter's
     // numbers or a 0 nobody counted.

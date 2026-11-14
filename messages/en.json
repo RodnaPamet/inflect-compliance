@@ -9674,7 +9674,13 @@
       },
       "freezeConfirmTitle": "Freeze this bundle?",
       "freezeConfirmBody": "Its items can no longer be added, removed or changed.",
-      "freezeFailed": "The bundle was not frozen. Try again."
+      "freezeFailed": "The bundle was not frozen. Try again.",
+      "addDocFailed": "Could not add the document.",
+      "createBundleFailed": "Could not create the evidence bundle.",
+      "addBundleItemFailed": "Could not add the item to the bundle.",
+      "removeBundleItemFailed": "Could not remove the item from the bundle.",
+      "addSubFailed": "Could not add the subprocessor.",
+      "enrichFailed": "Could not autofill the vendor's details."
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
