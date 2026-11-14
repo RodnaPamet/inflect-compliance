@@ -140,6 +140,14 @@
 #                                # `show` below — and gcloud runs with --quiet,
 #                                # because a runner cannot answer a prompt.
 #
+#   IAP_ATTEMPTS=3 IAP_BACKOFF_SECONDS=5 …
+#                                # every call to the VM is attempted up to
+#                                # IAP_ATTEMPTS times when its IAP connection
+#                                # drops (ssh exit 255; scp any failure), with a
+#                                # linear backoff, and the run STOPS when it stays
+#                                # dropped — never reading the silence as an
+#                                # answer. See deploy/lib/iap.sh.
+#
 # Applying recreates containers. Expect a short 502 window on `app` and a
 # Redis restart (AOF-persisted, so queued BullMQ jobs survive). Run it in a
 # service window. HOST_CONFIG_ONLY=1 is the exception: it recreates nothing.
@@ -337,9 +345,43 @@ OPS_AGENT_COMPILED="/run/google-cloud-ops-agent-opentelemetry-collector/otel.yam
 # silently did nothing.
 OPS_AGENT_COMPILED_NEEDLE="/var/lib/docker/containers"
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"} --command "$1"; }
+# Both retry a dropped IAP connection and stop the run when it stays dropped
+# (deploy/lib/iap.sh), so an unanswered call is never read as an answer. That
+# makes every ssh_vm below a call that may run TWICE, and each is written to be
+# safe to repeat: reads, validations that leave their staged input in place
+# until a separate cleanup, `cp -a` backups taken before the file they copy is
+# replaced, `install`, `place_staged` (a move that is a no-op the second time),
+# `systemctl restart`, `caddy reload` and `docker compose up -d`.
+# shellcheck source=deploy/lib/iap.sh
+. "${SCRIPT_DIR}/lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"} --command "$1"; }
 # scp_vm <local file> <remote path>
-scp_vm() { gcloud compute scp "$1" "${VM_NAME}:$2" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"}; }
+scp_vm() { iap_retry scp any - gcloud compute scp "$1" "${VM_NAME}:$2" --zone "$VM_ZONE" --tunnel-through-iap ${QUIET_FLAG:+"$QUIET_FLAG"}; }
+
+# place_staged <staged path> <target path> <expected sha256> [chmod mode]
+#
+# Move a staged file into place, so that running it twice is the same as once.
+# A bare `mv` is not: when the connection drops AFTER the move, the retry finds
+# no staged file and fails. So the move happens only while the staged file
+# exists, and success is decided by the hash the target then holds, which is
+# the property that matters either way. A `mv` (not a copy) because it replaces
+# the inode, as these pushes always have.
+place_staged() {
+    local got
+    got="$(ssh_vm "if sudo test -e '$1'; then sudo mv '$1' '$2'; fi
+        sudo chown root:root '$2'${4:+ && sudo chmod $4 '$2'}
+        sudo sha256sum '$2' 2>/dev/null" | first_sha)" || got=""
+    [ -n "$got" ] && [ "$got" = "$3" ] && return 0
+    err "$2 did not land on the VM: it should hash ${3:0:12}, and it hashes ${got:-(unreadable)}."
+    return 1
+}
+
+# The last `<marker> <number>` line of a remote validation's output, or empty.
+# A validation that prints its marker AFTER the validator ran is how "it
+# rejected the file" is told apart from "it never ran": only the first is a
+# verdict about the file.
+verdict_of() { awk -v m="$1" '$1 == m && NF == 2 && $2 ~ /^[0-9]+$/ { v = $2 } END { print v }'; }
+without_marker() { awk -v m="$1" '$1 != m'; }
 
 # The first `gcloud compute ssh` on a machine with no key GENERATES one, and
 # ssh-keygen writes its banner, the key paths, the fingerprint and the randomart
@@ -409,7 +451,7 @@ host_config_owner() {
 }
 
 host_config_preflight() {
-    local entry local_path remote_path base lsha rsha staged rc recorder=0
+    local entry local_path remote_path base lsha rsha staged rc out verdict recorder=0
     log "host config set (pushed outside ${REMOTE_DIR}, reloads a host service):"
     for entry in "${HOST_CONFIG_SET[@]}"; do
         local_path="${entry%%:*}"; remote_path="${entry#*:}"; base="$(basename "$remote_path")"
@@ -454,16 +496,30 @@ host_config_preflight() {
         # counterpart of the compose `up --dry-run` below: it shows what the
         # agent would actually run, including that the built-in pipelines
         # survive the merge.
-        ssh_vm "set -e
+        #
+        # The engine's exit comes back as an `engine-exit <n>` line printed
+        # after it ran, so "the engine rejected it" is said only when the engine
+        # ran. The staged file is removed by a separate call afterwards, not by
+        # this one's trap: a retry of this call must find its input still there.
+        out="$(ssh_vm "set -e
+            sudo test -x '${OPS_AGENT_ENGINE}'
             T=\$(mktemp -d)
-            trap 'sudo rm -rf \"\$T\" \"${staged}\"' EXIT
+            trap 'sudo rm -rf \"\$T\"' EXIT
             sudo mkdir -p \"\$T/logs\" \"\$T/state\"
             rc=0
             sudo ${OPS_AGENT_ENGINE} -service=otel -in '${staged}' \\
                 -logs \"\$T/logs\" -state \"\$T/state\" >\"\$T/out\" 2>&1 || rc=\$?
             sed 's/^/      /' \"\$T/out\"
-            exit \$rc" 2>&1 | show diagnostics || rc=$?
-        if [ "$rc" -ne 0 ]; then
+            echo \"engine-exit \$rc\"" 2>&1)" || rc=$?
+        verdict="$(printf '%s\n' "$out" | verdict_of engine-exit)"
+        [ -z "$out" ] || printf '%s\n' "$out" | without_marker engine-exit | show diagnostics
+        ssh_vm "sudo rm -f '${staged}'" >/dev/null
+        if [ -z "$verdict" ]; then
+            err "${OPS_AGENT_UNIT}'s engine did not run on the VM (exit ${rc}). This is NOT a"
+            err "  verdict on ${base}: nothing was validated, and nothing was changed."
+            return 1
+        fi
+        if [ "$verdict" -ne 0 ]; then
             err "${base} is NOT a valid ${OPS_AGENT_UNIT} config — the engine rejected it."
             err "  Its own message is printed above and names either the unsupported field"
             err "  or the line:column of the YAML error. Nothing was changed."
@@ -499,25 +555,29 @@ recorder_preflight() {
         scp_vm "$local_path" "${staged}/$(basename "$remote_path")" >/dev/null
     done
     rc=0
+    # No trap removing ${staged} here: a retry of this call must find the
+    # staged files still in place. They are removed by the calls below.
     ssh_vm "set -e
-        trap 'sudo rm -rf \"${staged}\"' EXIT
         bash -n '${staged}/$(basename "$RECORDER_SCRIPT")'
         rc=0
         systemd-analyze verify '${staged}/${RECORDER_UNIT}.service' '${staged}/${RECORDER_UNIT}.timer' >'${staged}/verify.out' 2>&1 || rc=\$?
         sed 's/^/      /' '${staged}/verify.out'
         exit \$rc" 2>&1 | show diagnostics || rc=$?
     if [ "$rc" -ne 0 ]; then
+        ssh_vm "sudo rm -rf '${staged}'" >/dev/null
         err "the capacity recorder's script or units did NOT validate. The message is above."
         err "  Nothing was changed."
         return 1
     fi
     # The trial pass. Only three numbers come back: rows written, containers
-    # named, and rows carrying a memory.peak.
-    ssh_vm "rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
+    # named, and rows carrying a memory.peak. It clears its own output first,
+    # so a retry counts one pass rather than two.
+    ssh_vm "sudo rm -rf '${staged}' && mkdir -m 700 '${staged}'" >/dev/null
     scp_vm "${SCRIPT_DIR}/capacity/recorder/$(basename "$RECORDER_SCRIPT")" "${staged}/trial.sh" >/dev/null
-    counts="$(ssh_vm "sudo env DATA_DIR='${staged}/data' bash '${staged}/trial.sh' >/dev/null 2>&1
-        sudo sh -c \"cat '${staged}'/data/capacity-*.tsv 2>/dev/null\" | awk -F'\t' '!/^#/ && NF == 9 { r++; n[\$3] = 1; if (\$6 ~ /^[0-9]+\$/) p++ } END { c = 0; for (k in n) c++; print \"counts\", r + 0, c, p + 0 }'
-        sudo rm -rf '${staged}'" 2>/dev/null | awk '$1 == "counts" && NF == 4 { print $2, $3, $4 }')" || counts=""
+    counts="$(ssh_vm "sudo rm -rf '${staged}/data'
+        sudo env DATA_DIR='${staged}/data' bash '${staged}/trial.sh' >/dev/null 2>&1
+        sudo sh -c \"cat '${staged}'/data/capacity-*.tsv 2>/dev/null\" | awk -F'\t' '!/^#/ && NF == 9 { r++; n[\$3] = 1; if (\$6 ~ /^[0-9]+\$/) p++ } END { c = 0; for (k in n) c++; print \"counts\", r + 0, c, p + 0 }'" 2>/dev/null | awk '$1 == "counts" && NF == 4 { print $2, $3, $4 }')" || counts=""
+    ssh_vm "sudo rm -rf '${staged}'" >/dev/null
     read -r rows containers peaks <<<"${counts:-0 0 0}"
     if [ "${rows:-0}" -lt 1 ]; then
         err "the capacity recorder's trial pass wrote NO row on this host. Either docker did"
@@ -536,7 +596,7 @@ recorder_preflight() {
 # serving something. A validate alone would happily accept a file that drops a
 # production vhost.
 caddy_preflight() {
-    local lsha rsha staged rc repo_hosts live_hosts gone
+    local lsha rsha staged rc out verdict repo_hosts live_hosts gone
     [ -f "$CADDY_LOCAL" ] || { err "Caddyfile missing from the repo: $CADDY_LOCAL"; return 1; }
 
     log "Caddyfile (pushed to ${CADDY_REMOTE}, activated by reload — no container is recreated):"
@@ -559,15 +619,28 @@ caddy_preflight() {
     # because the staged file is not mounted anywhere — and `caddy validate`
     # resolves `import` relative to the config, so it has to sit where the real
     # one does for a multi-file config to behave the same way.
-    ssh_vm "set -e
+    #
+    # "caddy rejected it" must mean caddy RAN and rejected it (VM apply run
+    # 43604116595 refused an unchanged, already-validated file because this
+    # call's ssh had dropped). So caddy's own exit is printed as a
+    # `caddy-validate-exit <n>` line by a shell INSIDE the container, after
+    # caddy returned: a failed ssh, docker cp or docker exec prints no such line
+    # and is reported as not having run. The staged file is removed by a
+    # separate call, so a retry of this one still finds it.
+    out="$(ssh_vm "set -e
         sudo docker cp '${staged}' '${CADDY_CONTAINER}:/tmp/Caddyfile.candidate'
-        rc=0
-        sudo docker exec '${CADDY_CONTAINER}' caddy validate \
-            --config /tmp/Caddyfile.candidate --adapter caddyfile >/tmp/caddyval.${TS} 2>&1 || rc=\$?
-        sed 's/^/      /' /tmp/caddyval.${TS}
-        sudo rm -f /tmp/caddyval.${TS} '${staged}'
-        exit \$rc" 2>&1 | show diagnostics || rc=$?
-    if [ "$rc" -ne 0 ]; then
+        sudo docker exec '${CADDY_CONTAINER}' sh -c 'caddy validate --config /tmp/Caddyfile.candidate --adapter caddyfile 2>&1; echo \"caddy-validate-exit \$?\"' \
+            | sed 's/^/      /; s/^      caddy-validate-exit /caddy-validate-exit /'" 2>&1)" || rc=$?
+    verdict="$(printf '%s\n' "$out" | verdict_of caddy-validate-exit)"
+    [ -z "$out" ] || printf '%s\n' "$out" | without_marker caddy-validate-exit | show diagnostics
+    ssh_vm "sudo rm -f '${staged}'" >/dev/null
+    if [ -z "$verdict" ]; then
+        err "caddy validate did not run in ${CADDY_CONTAINER} (exit ${rc}). This is NOT a"
+        err "  verdict on the Caddyfile: nothing was validated, and nothing was changed."
+        ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
+        return 1
+    fi
+    if [ "$verdict" -ne 0 ]; then
         err "the repo Caddyfile is NOT valid — caddy rejected it. Its message is above."
         err "  Nothing was changed."
         ssh_vm "sudo docker exec '${CADDY_CONTAINER}' rm -f /tmp/Caddyfile.candidate" >/dev/null 2>&1 || true
@@ -633,7 +706,7 @@ caddy_apply() {
     # `/tmp/caddy/Caddyfile.new` for this nested path, and /tmp/caddy does not
     # exist — the mechanical blocker the UNRECONCILED entry named.
     scp_vm "$CADDY_LOCAL" "${staged}"
-    ssh_vm "sudo mv '${staged}' '${CADDY_REMOTE}' && sudo chown root:root '${CADDY_REMOTE}'"
+    place_staged "${staged}" "${CADDY_REMOTE}" "$(sha256sum "$CADDY_LOCAL" | first_sha)" || return 1
 
     log "reloading caddy (keeps listeners and issued certificates)"
     rc=0
@@ -704,9 +777,8 @@ host_config_apply() {
         # regardless, because a dead copy has no reader to accommodate. The
         # parent is made first: the recorder's script directory does not exist
         # until its first push.
-        ssh_vm "sudo install -d -m 755 -o root -g root '$(dirname "$remote_path")' \
-            && sudo mv '/tmp/${base}.new.${TS}' '${remote_path}' \
-            && sudo chown root:root '${remote_path}' && sudo chmod 644 '${remote_path}'"
+        ssh_vm "sudo install -d -m 755 -o root -g root '$(dirname "$remote_path")'"
+        place_staged "/tmp/${base}.new.${TS}" "${remote_path}" "$(sha256sum "$local_path" | first_sha)" 644 || return 1
     done
 
     # Each owner is activated once, after all its files are in place.
@@ -1041,8 +1113,9 @@ fi
 #    `up` time. Nothing live is touched: the live file still has its name.
 STAGED="${REMOTE_COMPOSE}.new.${TS}"
 log "staging ${LOCAL_COMPOSE} → ${VM_NAME}:${STAGED}"
+LOCAL_COMPOSE_SHA="$(sha256sum "$LOCAL_COMPOSE" | first_sha)"
 scp_vm "$LOCAL_COMPOSE" "/tmp/${COMPOSE_BASENAME}.new.${TS}"
-ssh_vm "sudo mv '/tmp/${COMPOSE_BASENAME}.new.${TS}' '${STAGED}'"
+place_staged "/tmp/${COMPOSE_BASENAME}.new.${TS}" "${STAGED}" "$LOCAL_COMPOSE_SHA" || exit 1
 
 cleanup_staged() { ssh_vm "sudo rm -f '${STAGED}'" >/dev/null 2>&1 || true; }
 
@@ -1114,14 +1187,14 @@ log "backing up ${REMOTE_COMPOSE} → ${REMOTE_COMPOSE}.bak.${TS}"
 ssh_vm "sudo cp -a '${REMOTE_COMPOSE}' '${REMOTE_COMPOSE}.bak.${TS}' && sudo chmod 600 '${REMOTE_COMPOSE}.bak.${TS}'"
 
 log "installing the validated file"
-ssh_vm "sudo mv '${STAGED}' '${REMOTE_COMPOSE}' && sudo chown root:root '${REMOTE_COMPOSE}'"
+place_staged "${STAGED}" "${REMOTE_COMPOSE}" "$LOCAL_COMPOSE_SHA" || exit 1
 
 for entry in "${CANONICAL_SET[@]:1}"; do
     local_path="${entry%%:*}"; remote_base="${entry##*:}"
     log "pushing ${remote_base}"
     ssh_vm "sudo sh -c \"cp -a '${REMOTE_DIR}/${remote_base}' '${REMOTE_DIR}/${remote_base}.bak.${TS}' && chmod 600 '${REMOTE_DIR}/${remote_base}.bak.${TS}'\" 2>/dev/null || true"
     scp_vm "$local_path" "/tmp/${remote_base}.new.${TS}"
-    ssh_vm "sudo mv '/tmp/${remote_base}.new.${TS}' '${REMOTE_DIR}/${remote_base}' && sudo chown root:root '${REMOTE_DIR}/${remote_base}'"
+    place_staged "/tmp/${remote_base}.new.${TS}" "${REMOTE_DIR}/${remote_base}" "$(sha256sum "$local_path" | first_sha)" || exit 1
 done
 
 # The host config set, before the prune below so the backup it writes is

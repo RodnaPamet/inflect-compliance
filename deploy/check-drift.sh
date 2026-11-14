@@ -56,6 +56,16 @@ err()  { printf '\033[31m[drift]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33m[drift]\033[0m %s\n' "$*" >&2; }
 ok()   { printf '\033[32m[drift]\033[0m %s\n' "$*"; }
 
+# Every call to the VM retries a dropped IAP connection (ssh exit 255) and, when
+# it stays dropped, stops the run with exit 2, UNKNOWN (deploy/lib/iap.sh). A
+# dropped hash read used to come back empty and be reported as "absent or
+# unreadable" drift; it is now never a verdict. Every call here is a read.
+IAP_UNREACHABLE_EXIT=2
+# shellcheck source=deploy/lib/iap.sh
+. "${SCRIPT_DIR}/lib/iap.sh"
+# ssh_vm <command> [file for its stdin]
+ssh_vm() { iap_retry ssh 255 "${2:--}" gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --command "$1"; }
+
 # Same allowlist as apply.sh: this reports on ONE compose file, and a bare
 # override would silently point it at a file nobody deploys — drift then
 # stays green on the file it is not looking at, which is the failure mode
@@ -126,14 +136,12 @@ UNRECONCILED=(
 )
 
 remote_sha() {
-    gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
-        --command "sudo sha256sum '$1' 2>/dev/null || true" 2>/dev/null | awk '{print $1}'
+    ssh_vm "sudo sha256sum '$1' 2>/dev/null || true" 2>/dev/null | awk '{print $1}'
 }
 
 # Reachability probe FIRST, so "could not reach the VM" is never scored as
 # "nothing differs". A failed probe means UNKNOWN.
-if ! gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
-        --command "test -d '${REMOTE_DIR}'" >/dev/null 2>&1; then
+if ! ssh_vm "test -d '${REMOTE_DIR}'" >/dev/null 2>&1; then
     err "could not reach ${REMOTE_DIR} on ${VM_NAME} (${VM_ZONE})."
     err "  This is UNKNOWN, not 'in sync'. Check gcloud auth / IAP / VM state."
     exit 2
@@ -251,8 +259,12 @@ sudo find "$REMOTE_DIR_X" -maxdepth 1 -type f \( -perm /o+r -o -perm /g+r \) 2>/
 done
 REMOTE
 )
-CLASSIFIED=$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap \
-    --command "sh -s '${REMOTE_DIR}'" <<< "$CLASSIFY" 2>/dev/null || true)
+# The script goes in on stdin, from a file, so that a retried attempt is given
+# it again rather than an already-drained here-string.
+CLASSIFY_FILE="$(mktemp)"
+trap 'rm -f "$CLASSIFY_FILE"' EXIT
+printf '%s\n' "$CLASSIFY" > "$CLASSIFY_FILE"
+CLASSIFIED=$(ssh_vm "sh -s '${REMOTE_DIR}'" "$CLASSIFY_FILE" 2>/dev/null || true)
 
 SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
 

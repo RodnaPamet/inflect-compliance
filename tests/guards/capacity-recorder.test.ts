@@ -510,7 +510,10 @@ describe('apply.sh host-config preflight', () => {
                 '',
             ].join('\n'),
         );
-        exe('sudo', '#!/usr/bin/env bash\ncase "$1" in /opt/google-cloud-ops-agent/*) echo "Valid configuration"; exit 0 ;; esac\nexec "$@"\n');
+        exe(
+            'sudo',
+            '#!/usr/bin/env bash\ncase "$*" in "test -x /opt/google-cloud-ops-agent/"*) exit 0 ;; esac\ncase "$1" in /opt/google-cloud-ops-agent/*) echo "Valid configuration"; exit 0 ;; esac\nexec "$@"\n',
+        );
         const run = () => {
             try {
                 const out = execFileSync('bash', [path.join(REPO_ROOT, APPLY)], {

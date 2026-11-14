@@ -48,7 +48,7 @@ LAB_VHOSTS="hrm-mcp.34-140-180-255.sslip.io orangehrm-lab.34-140-180-255.sslip.i
 # sets for the action.
 unset CONFIRM DRY_RUN DRY_RUN_ENV_FILE CADDY_ONLY CADDY_RETIRE_HOSTS HOST_CONFIG_ONLY ROLLBACK \
     COMPOSE_BASENAME I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE REMOTE_DIR HEALTH_ORIGINS \
-    KEEP_BACKUPS CADDY_CONTAINER
+    KEEP_BACKUPS CADDY_CONTAINER IAP_ATTEMPTS IAP_BACKOFF_SECONDS IAP_UNREACHABLE_EXIT
 export APPLY_PUBLIC_LOG=1 VM_NAME VM_ZONE
 
 # apply.sh in one mode, preflight only.
@@ -59,7 +59,15 @@ preflight_then_write() {
     env "$@" CONFIRM=1 "$APPLY"
 }
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+# A dropped IAP connection (ssh exit 255) is retried, and stops the run when it
+# stays dropped (deploy/lib/iap.sh) — but only for calls that are safe to run
+# twice: making the stage and copying into it. remote.sh's actions are writes
+# that are not known to be safe to repeat, so that call is `ssh_vm_once`: one
+# attempt, and a dropped connection is reported as an UNKNOWN outcome.
+# shellcheck source=deploy/lib/iap.sh
+. "$HERE/../lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+ssh_vm_once() { iap_once gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
 
 # remote.sh as root, from a private stage in the operator's home that is
 # removed whatever happened. `vm-apply-stage`, not `vm-check-stage`, so this
@@ -73,8 +81,8 @@ on_vm() {
     # Its stdout is discarded: on a runner this is the first ssh, which makes a
     # key and prints ssh-keygen's banner and randomart on stdout.
     ssh_vm 'rm -rf "$HOME/vm-apply-stage" && mkdir -m 700 "$HOME/vm-apply-stage"' >/dev/null
-    gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "${files[@]}" "$VM_NAME:vm-apply-stage/"
-    ssh_vm "sudo bash \"\$HOME/vm-apply-stage/remote.sh\" '$ACTION' \"\$HOME/vm-apply-stage\"; rc=\$?; rm -rf \"\$HOME/vm-apply-stage\"; exit \$rc"
+    iap_retry scp any - gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "${files[@]}" "$VM_NAME:vm-apply-stage/"
+    ssh_vm_once "sudo bash \"\$HOME/vm-apply-stage/remote.sh\" '$ACTION' \"\$HOME/vm-apply-stage\"; rc=\$?; rm -rf \"\$HOME/vm-apply-stage\"; exit \$rc"
 }
 
 case "$ACTION" in

@@ -34,7 +34,15 @@ IMAGE="$(sed -n 's#^ *image: *\(ghcr\.io/rodnapamet/scanent@sha256:[0-9a-f]\{64\
 [ -n "$IMAGE" ] || { echo "the overlay names no pinned scanner digest" >&2; exit 1; }
 [ "$(printf '%s\n' "$IMAGE" | wc -l)" -eq 1 ] || { echo "the overlay pins more than one scanner digest" >&2; exit 1; }
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+# A dropped IAP connection (ssh exit 255) is retried, and stops the run when it
+# stays dropped (deploy/lib/iap.sh) — but only for calls that are safe to run
+# twice: making the stage and copying into it. The action itself (configure,
+# start, stop, a dry run) is not known to be safe to repeat, so that call is
+# `ssh_vm_once`: one attempt, and a dropped connection is an UNKNOWN outcome.
+# shellcheck source=deploy/lib/iap.sh
+. "$HERE/../lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+ssh_vm_once() { iap_once gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
 
 LOCAL_STAGE="$(mktemp -d)"
 trap 'rm -rf "$LOCAL_STAGE"' EXIT
@@ -47,5 +55,5 @@ if [ "$ACTION" = configure ]; then
 fi
 
 ssh_vm 'rm -rf "$HOME/harness-scanner-stage" && mkdir -m 700 "$HOME/harness-scanner-stage"'
-gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$LOCAL_STAGE"/* "$VM_NAME:harness-scanner-stage/"
-ssh_vm "sudo bash \"\$HOME/harness-scanner-stage/remote.sh\" '$ACTION' \"\$HOME/harness-scanner-stage\" '$IMAGE'; rc=\$?; rm -rf \"\$HOME/harness-scanner-stage\"; exit \$rc"
+iap_retry scp any - gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$LOCAL_STAGE"/* "$VM_NAME:harness-scanner-stage/"
+ssh_vm_once "sudo bash \"\$HOME/harness-scanner-stage/remote.sh\" '$ACTION' \"\$HOME/harness-scanner-stage\" '$IMAGE'; rc=\$?; rm -rf \"\$HOME/harness-scanner-stage\"; exit \$rc"
