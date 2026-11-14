@@ -195,6 +195,59 @@ describe('RQ-3b precision — the gate', () => {
     });
 });
 
+// ─── 1b. #5619 — a folded address is not an EMAIL_EXACT ────────────────────
+
+describe('#5619 — EMAIL_EXACT is emailKey equality on the RAW value', () => {
+    /**
+     * Legacy snapshot data is untrusted input (invariant 3), so an address can
+     * arrive fullwidth or carrying an invisible character. `normaliseEmail`
+     * used to fold before taking the key, which made such a row EMAIL_EXACT —
+     * a STRONG signal — against a real employee, resolving it LINKED with no
+     * reviewer. The JML chain joins the raw column values, where the two
+     * addresses differ, so the link was one the leaver pass could not act on.
+     */
+    const employee: RosterEmployee = {
+        id: 'e-1',
+        fullName: 'Jo Smith',
+        status: 'ACTIVE',
+        workEmail: 'jsmith@corp.example.test',
+    };
+    const run = (email: string) => reconcile({
+        accounts: [{ accountKey: 'legacy-row-1', email }],
+        roster: [employee],
+        directory: [],
+        aliases: [],
+        now: NOW,
+    }).resolutions[0];
+
+    it('LINKS the byte-identical address, as it always did', () => {
+        const r = run('jsmith@corp.example.test');
+        expect(r.outcome).toBe('LINKED');
+        expect(r.signals.map((x) => x.kind)).toContain('EMAIL_EXACT');
+    });
+
+    it('does NOT link a fullwidth spelling of the same address', () => {
+        const r = run('ｊｓｍｉｔｈ@corp.example.test');
+        expect(r.outcome).not.toBe('LINKED');
+        expect(r.signals.map((x) => x.kind)).not.toContain('EMAIL_EXACT');
+    });
+
+    it('does NOT link an address carrying an invisible character', () => {
+        const r = run('jsm\u200bith@corp.example.test');
+        expect(r.outcome).not.toBe('LINKED');
+        expect(r.signals.map((x) => x.kind)).not.toContain('EMAIL_EXACT');
+    });
+
+    it('still FINDS the pair and offers it to a person', () => {
+        // The fold stays useful one layer up: the candidate is still reached and
+        // still scored, so the operator sees a suggestion rather than nothing.
+        // Losing the match entirely would be a different defect.
+        const r = run('ｊｓｍｉｔｈ@corp.example.test');
+        expect(r.signals.map((x) => x.kind)).toContain('EMAIL_UNTAGGED');
+        expect(r.candidates.map((c) => c.employeeId)).toContain('e-1');
+    });
+});
+
 // ─── 2. No combination of supporting signals ever links ────────────────────
 
 describe('RQ-3b — supporting signals cannot link, exhaustively', () => {

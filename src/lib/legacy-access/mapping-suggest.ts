@@ -54,11 +54,16 @@ export const VALUE_SET_MAX_DISTINCT = 12;
 export const VALUE_SET_MIN_ROWS = 20;
 
 /**
- * How often EACH value must recur: the rarest value in the column appears at
- * least this many times. An AVERAGE would not do — 37 rows of `sysadmin` and
- * eleven different people's logins average four apiece and would put all eleven
- * on the screen (#5316). Every value recurring is what separates a status
- * vocabulary from a short list of different people.
+ * How often EACH value must recur — a floor on the least frequent value, not an
+ * average (#5620).
+ *
+ * `distinct * 4 <= nonNull` was the test, and an average does not separate a
+ * status vocabulary from a short list of different people: one dominant value
+ * pays for the rest. 48 rows holding `'sysadmin'` 37 times and eleven different
+ * people's logins once each gives distinct=12, `12 * 4 = 48`, `48 > 48` false —
+ * so all four terms passed and eleven individual person values were rendered.
+ * Eleven of the twelve members described exactly one row, which is the opposite
+ * of the property this gate claims to establish.
  */
 export const VALUE_SET_MIN_REPETITION = 4;
 
@@ -68,6 +73,16 @@ export interface ColumnProfile {
     readonly rowsSampled: number;
     readonly nonNullCount: number;
     readonly distinctCount: number;
+    /**
+     * Occurrences of the LEAST frequent distinct value, or 0 for an empty
+     * column. A count, never a value, so it reaches the screen under the same
+     * rule as every other statistic here (#5620).
+     *
+     * On the profile rather than private to the profiler because
+     * {@link profileFor} asks the same predicate for a different question, and
+     * that coupling is deliberate — see the comment at its `status` arm.
+     */
+    readonly minValueCount: number;
     /** Share of NON-NULL values that parse as an email address, in [0, 1]. */
     readonly emailShare: number;
     /** Share that parse as a date. */
@@ -78,28 +93,26 @@ export interface ColumnProfile {
     readonly booleanShare: number;
     readonly maxLength: number;
     /**
-     * How many times the column's RAREST value occurs. A count, never a value.
-     * Absent reads as 0, so a profile that does not carry it exposes nothing.
-     */
-    readonly minValueCount?: number;
-    /**
      * The column's distinct values — present ONLY when they are a vocabulary.
      *
      * This is the single place a real value reaches the mapping screen, and the
      * conditions are the safety property rather than a convenience:
      * `distinctCount <= VALUE_SET_MAX_DISTINCT`, `nonNullCount >=
-     * VALUE_SET_MIN_ROWS`, every value recurring at least
-     * `VALUE_SET_MIN_REPETITION` times (`minValueCount`), and no value that looks like
-     * an email. Together those mean the column holds a small closed set each of
-     * whose members describes MANY rows — `A`/`I`/`LOCKD`, `Y`/`N` — which is a
-     * schema fact about the application, not data about a person.
+     * VALUE_SET_MIN_ROWS`, EVERY value recurring at least
+     * `VALUE_SET_MIN_REPETITION` times — the least frequent one, not the
+     * average (#5620) — and no value that looks like an email. Together those
+     * mean the column holds a small closed set each of whose members describes
+     * MANY rows — `A`/`I`/`LOCKD`, `Y`/`N` — which is a schema fact about the
+     * application, not data about a person.
      *
      * A name, an email or an employee number cannot satisfy them: those are
      * high-cardinality by definition, so they fail the repetition test however
-     * small the sample. {@link mayExposeValueSet} is the predicate, and the
-     * profiler is what must apply it — a caller that sets this field by hand is
-     * bypassing the only thing standing between the mapping screen and a
-     * customer's data.
+     * small the sample. That sentence was FALSE while the term was an average,
+     * because a column needs only its most common value to carry the mean — see
+     * {@link VALUE_SET_MIN_REPETITION}. {@link mayExposeValueSet} is the
+     * predicate, and the profiler is what must apply it — a caller that sets
+     * this field by hand is bypassing the only thing standing between the
+     * mapping screen and a customer's data.
      */
     readonly valueSet?: readonly string[];
 }
@@ -114,14 +127,21 @@ export function mayExposeValueSet(p: {
     readonly distinctCount: number;
     readonly nonNullCount: number;
     readonly emailShare: number;
-    readonly minValueCount?: number;
+    /**
+     * Occurrences of the LEAST frequent distinct value. Required rather than
+     * optional on purpose (#5620): a caller that cannot supply it must fail to
+     * compile, not fall through to the average test this replaced.
+     */
+    readonly minValueCount: number;
 }): boolean {
     if (p.distinctCount === 0) return false;
     if (p.distinctCount > VALUE_SET_MAX_DISTINCT) return false;
     if (p.nonNullCount < VALUE_SET_MIN_ROWS) return false;
+    // The average, kept as a cheap first cut: it can only ever be true of a
+    // column the per-value floor below also admits, so it narrows nothing.
     if (p.distinctCount * VALUE_SET_MIN_REPETITION > p.nonNullCount) return false;
-    // Per value, not on average: one singleton is one person's value.
-    if ((p.minValueCount ?? 0) < VALUE_SET_MIN_REPETITION) return false;
+    // The floor. This is the term the claim above actually needs.
+    if (p.minValueCount < VALUE_SET_MIN_REPETITION) return false;
     // Belt and braces. An email column is never a status vocabulary, and a
     // deployment with twenty rows and twelve shared mailboxes should not be the
     // case that disproves this module.

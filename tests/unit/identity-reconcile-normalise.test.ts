@@ -146,23 +146,45 @@ describe('every variant records its scheme, and the order is deterministic', () 
 });
 
 describe('emailKey is built on, never replaced', () => {
-    it('key is exactly what emailKey returns', () => {
+    // This block asserted `toBe(emailKey(baseClean(raw) || null))` until #5619 —
+    // the implementation restated, so it could not disagree with the code — and
+    // every sample was plain ASCII, where `baseClean` is a no-op, so even the
+    // correct assertion would have passed. The contract is `emailKey(raw)`, and
+    // it now has a sample that distinguishes the two.
+    it('key is exactly what emailKey returns FOR THE RAW VALUE', () => {
         for (const raw of ['Ivan.Ivanov@Example.TEST', ' ivan@example.test ', 'not-an-email', '']) {
             expect(normaliseEmail(raw).key).toBe(emailKey(raw));
         }
     });
 
-    it('key is NOT folded: a fullwidth or zero-width-spliced address keeps its own key (#5316)', () => {
-        // Legacy data is untrusted. NFKC folding and invisible-stripping belong to
-        // the SUPPORTING layer; if they reached `key`, EMAIL_EXACT — a STRONG
-        // signal — would link an address the JML chain treats as different.
-        for (const raw of ['\uFF4A\uFF53\uFF4D\uFF49\uFF54\uFF48@corp.com', 'js\u200Bmith@corp.com']) {
-            const n = normaliseEmail(raw);
-            expect(n.key).toBe(emailKey(raw));
-            expect(n.key).not.toBe(emailKey('jsmith@corp.com'));
-            // …while the folded comparison layer still sees the same mailbox.
-            expect(n.untagged).toBe('jsmith@corp.com');
-        }
+    it.each([
+        ['fullwidth characters', 'ｊｓｍｉｔｈ@corp.test'],
+        ['a zero-width space', 'jsm\u200bith@corp.test'],
+        ['a soft hyphen', 'jsm\u00adith@corp.test'],
+        // INSIDE the local part, not leading: U+FEFF is in ECMAScript's
+        // WhiteSpace production, so `emailKey`'s own trim() removes a leading
+        // one and the two forms agree. The `not.toBe` below caught that.
+        ['a BOM', 'jsm\ufeffith@corp.test'],
+        ['an internal double space', 'jsmith@corp.test'.replace('@', '  @')],
+    ])('key is NOT the folded form when the raw value carries %s', (_label, raw) => {
+        // The fold is what the JML chain never sees, so the key must not carry
+        // it: `Employee.workEmail` joins to `ConnectedIdentityAccount.email`
+        // through emailKey on the stored values.
+        expect(normaliseEmail(raw).key).toBe(emailKey(raw));
+        // And the sample must actually distinguish the two, or this case is
+        // vacuous in the same way the one above used to be.
+        expect(emailKey(raw)).not.toBe(emailKey(baseClean(raw) || null));
+    });
+
+    it('such an address does not become EMAIL_EXACT-equal to the clean one', () => {
+        // The defect, stated at the level the engine compares at: equal keys are
+        // what produce the STRONG signal, and these two must not have them.
+        const legacy = normaliseEmail('ｊｓｍｉｔｈ@corp.test');
+        const employee = normaliseEmail('jsmith@corp.test');
+        expect(legacy.key).not.toBe(employee.key);
+        // But the pair is still FOUND — the supporting layer still matches, so
+        // the blocking index puts them in one bucket and a person is asked.
+        expect(legacy.untagged).toBe(employee.untagged);
     });
 
     it('+tag stripping is a SEPARATE layer that leaves key untouched', () => {
