@@ -133,6 +133,10 @@ export function FrameworkBuilder({
         sectionId: string,
         requirementId: string,
     ) => {
+        // The row sits inside its draggable section card: let the dragstart
+        // reach the card and the drag carries a SECTION payload too, which a
+        // section drop zone accepts — moving the whole section (#5309).
+        e.stopPropagation();
         e.dataTransfer.setData(
             DRAG_TYPE_REQUIREMENT,
             JSON.stringify({ sectionId, requirementId }),

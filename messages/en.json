@@ -106,8 +106,8 @@
       "railCollapsed": "{label} (collapsed)",
       "previousPage": "previous page",
       "clearFilters": "Clear filters",
-      "noEntitiesAvailable": "No {entity}s available",
-      "noEntitiesMatch": "No {entity}s match",
+      "noEntitiesAvailable": "No {entity} available",
+      "noEntitiesMatch": "No {entity} match",
       "moreActions": "More actions",
       "menu": "Menu",
       "popoverContentDesc": "Popover content",
@@ -185,7 +185,21 @@
       "switcherWorkspaces": "Workspaces",
       "switcherNoWorkspaces": "No workspaces in this session.",
       "switcherNoOrganizations": "No organizations in this session.",
-      "switcherManageWorkspaces": "Manage workspaces"
+      "switcherManageWorkspaces": "Manage workspaces",
+      "entitiesLoadFailed": "Couldn't load {entity}",
+      "entityPlural": {
+        "CONTROL": "controls",
+        "RISK": "risks",
+        "ASSET": "assets",
+        "EVIDENCE": "evidence",
+        "VENDOR": "vendors",
+        "ISSUE": "tasks",
+        "POLICY": "policies",
+        "AUDIT_PACK": "audit packs",
+        "INCIDENT": "incidents",
+        "FRAMEWORK_REQUIREMENT": "framework requirements"
+      },
+      "noData": "No data"
     },
     "calendar": {
       "prevYear": "Go to previous year",
@@ -193,7 +207,22 @@
       "nextMonth": "Go to next month",
       "nextYear": "Go to next year",
       "selectDate": "Select date",
-      "clear": "Clear"
+      "clear": "Clear",
+      "clearRange": "Clear range",
+      "selectDateRange": "Select date range",
+      "presets": {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "last-7-days": "Last 7 days",
+        "last-30-days": "Last 30 days",
+        "last-90-days": "Last 90 days",
+        "month-to-date": "Month to date",
+        "quarter-to-date": "Quarter to date",
+        "year-to-date": "Year to date",
+        "last-month": "Last month",
+        "last-quarter": "Last quarter",
+        "last-year": "Last year"
+      }
     },
     "copy": {
       "copy": "Copy",
@@ -247,7 +276,14 @@
       "lossExceedanceAria": "Loss exceedance curve",
       "lossBucketsAria": "Loss buckets",
       "rangeAria": "{label}: {start} → {end}",
-      "pointAria": "{label}: {value}"
+      "pointAria": "{label}: {value}",
+      "cellAleAria": "annualised loss expectancy {amount}",
+      "cellCollisionAria": "warning: same-cell loss estimates differ ~{ratio}×",
+      "cellAle": "ALE {amount}",
+      "cellCollision": "ALEs in this cell differ ~{ratio}× — the matrix compresses them into one box; check the histogram view.",
+      "cellMore": "… + {count} more",
+      "cellRisksIdentified": "{count} Risks identified",
+      "movementMore": "+{count} more"
     },
     "sections": {
       "accessReviews": "Access reviews",

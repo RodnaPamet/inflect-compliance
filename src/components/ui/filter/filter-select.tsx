@@ -351,7 +351,18 @@ export function FilterSelect({
                           : search,
                       );
                       setIsOpen(false);
-                    } else selectOption(search);
+                    } else if (
+                      // Enter applies the typed text only where it is the
+                      // offered value: a free-text filter (no option list),
+                      // which `CommandEmpty` renders as a pickable row. For a
+                      // filter WITH options, no match means nothing to pick —
+                      // Enter used to set `status=xyz` anyway (#5309).
+                      search &&
+                      selectedFilter?.options?.length === 0 &&
+                      selectedFilter.shouldFilter !== false
+                    ) {
+                      selectOption(search);
+                    }
                   }}
                 />
                 {!selectedFilter && (

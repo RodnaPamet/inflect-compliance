@@ -70,22 +70,22 @@ const LEVEL_STYLES: Record<
     fresh: {
         dot: 'bg-bg-success-emphasis',
         text: 'text-content-success',
-        bg: 'bg-success',
-        border: 'border-success',
+        bg: 'bg-bg-success',
+        border: 'border-border-success',
         label: 'Fresh',
     },
     stale: {
         dot: 'bg-bg-warning-emphasis',
         text: 'text-content-warning',
-        bg: 'bg-warning',
-        border: 'border-warning',
+        bg: 'bg-bg-warning',
+        border: 'border-border-warning',
         label: 'Stale',
     },
     outdated: {
         dot: 'bg-bg-error-emphasis',
         text: 'text-content-error',
-        bg: 'bg-error',
-        border: 'border-error',
+        bg: 'bg-bg-error',
+        border: 'border-border-error',
         label: 'Outdated',
     },
     unknown: {

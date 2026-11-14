@@ -274,8 +274,14 @@ function ModalRoot({
         if (target?.isConnected) target.focus();
     };
 
-    const closeModal = ({ dragged }: { dragged?: boolean } = {}) => {
-        if (preventDefaultClose && !dragged) return;
+    // `preventDefaultClose` refuses EVERY dismissal while it is set — on the
+    // phone drawer too. The drawer's close used to pass `dragged: true` for a
+    // backdrop tap or Escape as well as a drag, which waved it through: a
+    // ConfirmDialog whose action was still running closed, and its
+    // `onCancel` cleared the caller's target while the request completed
+    // (#5309).
+    const closeModal = () => {
+        if (preventDefaultClose) return;
         onClose?.();
         if (setShowModal) setShowModal(false);
         else router.back();
@@ -301,7 +307,7 @@ function ModalRoot({
             <Drawer.Root
                 open={setShowModal ? showModal : true}
                 onOpenChange={(open) => {
-                    if (!open) closeModal({ dragged: true });
+                    if (!open) closeModal();
                 }}
                 {...drawerRootProps}
             >

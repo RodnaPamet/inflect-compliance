@@ -122,6 +122,9 @@ describe('RQ2-5 — matrix overlay zero-cost guarantee', () => {
     });
 
     test('the cell announces ALE to assistive tech when the overlay is on', () => {
-        expect(matrixCell).toMatch(/annualised loss expectancy/);
+        // The words live in the catalogue since #5309, so a Bulgarian reader
+        // hears them in Bulgarian; the cell asks for them by key.
+        expect(matrixCell).toMatch(/t\('cellAleAria', \{ amount:/);
+        expect(require('../../messages/en.json').common.chart.cellAleAria).toMatch(/annualised loss expectancy \{amount\}/);
     });
 });
