@@ -7,7 +7,9 @@
  * at profiling time nobody has classified anything else.
  */
 import { computeColumnProfiles, type ColumnProfile } from '@/lib/legacy-access/profile';
-import { VALUE_SET_MIN_ROWS } from '@/lib/legacy-access/mapping-suggest';
+import { VALUE_SET_MIN_ROWS,
+    VALUE_SET_MIN_REPETITION,
+} from '@/lib/legacy-access/mapping-suggest';
 
 const rowsOf = (n: number, make: (i: number) => Record<string, unknown>) =>
     Array.from({ length: n }, (_, i) => make(i));
@@ -144,6 +146,55 @@ describe('valueSet exposure — the only path a value takes to the screen', () =
         // 20 rows, 10 distinct — twice each, under the floor of four.
         const rows = rowsOf(20, (i) => ({ S: `v${i % 10}` }));
         expect(byName(computeColumnProfiles(rows, ['S']), 'S').valueSet).toBeUndefined();
+    });
+
+    // ── #5620: one dominant value must not pay for the singletons ───────
+    it('does NOT expose a CREATED_BY column where one dominant value carried the average', () => {
+        // 48 rows: 'sysadmin' 37 times, then eleven different people's logins
+        // once each. Every term of the gate passed before #5620 — distinct=12 is
+        // at the cap, the average is exactly satisfied (12 * 4 = 48, and
+        // 48 > 48 is false), and no value looks like an email — so all eleven
+        // people's logins were rendered on the mapping screen, and the column was
+        // suggested as a status vocabulary.
+        const people = ['ipetrov', 'mgeorgiev', 'adimitrova', 'kkolev', 'nstoyanov',
+            'vtodorov', 'ynikolova', 'bangelov', 'ssavova', 'dmarinov', 'tiliev'];
+        const rows = [
+            ...rowsOf(37, () => ({ CREATED_BY: 'sysadmin' })),
+            ...people.map((v) => ({ CREATED_BY: v })),
+        ];
+        const p = byName(computeColumnProfiles(rows, ['CREATED_BY']), 'CREATED_BY');
+
+        // The arithmetic that used to let it through, asserted so this test
+        // documents why it was reachable rather than only that it is closed.
+        expect(p.nonNullCount).toBe(48);
+        expect(p.distinctCount).toBe(12);
+        expect(p.distinctCount * VALUE_SET_MIN_REPETITION > p.nonNullCount).toBe(false);
+
+        expect(p.valueSet).toBeUndefined();
+        // And no person's login reached the output by any other field.
+        for (const v of people) expect(JSON.stringify(p)).not.toContain(v);
+    });
+
+    it('still exposes a vocabulary when EVERY value clears the floor', () => {
+        // The fix must not close the case the gate exists to allow: 48 rows,
+        // three values, sixteen each.
+        const rows = rowsOf(48, (i) => ({ STATUS: ['A', 'I', 'LOCKD'][i % 3] }));
+        expect(byName(computeColumnProfiles(rows, ['STATUS']), 'STATUS').valueSet)
+            .toEqual(['A', 'I', 'LOCKD']);
+    });
+
+    it('refuses a vocabulary carrying ONE rare extra value, keeping the rest hidden', () => {
+        // 100 rows of A/I plus a single 'MIGRATED' row. The set is still small
+        // and still recurring on average, but one member describes one row — and
+        // in a real table that one row is the interesting person.
+        const rows = [
+            ...rowsOf(99, (i) => ({ S: ['A', 'I'][i % 2] })),
+            { S: 'MIGRATED' },
+        ];
+        const p = byName(computeColumnProfiles(rows, ['S']), 'S');
+        expect(p.distinctCount).toBe(3);
+        expect(p.valueSet).toBeUndefined();
+        expect(JSON.stringify(p)).not.toContain('MIGRATED');
     });
 
     it('no value reaches the output except through valueSet', () => {
