@@ -64,8 +64,13 @@ export const BCRYPT_COST = 12;
 
 // The length limits live in a client-safe module so a form can check them
 // before it sends (#4688); they are re-exported here for the server.
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './password-limits';
-export { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH };
+import {
+    MAX_PASSWORD_BYTES,
+    MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
+    passwordByteLength,
+} from './password-limits';
+export { MAX_PASSWORD_BYTES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordByteLength };
 
 // ── Hashing ────────────────────────────────────────────────────────────
 
@@ -73,9 +78,12 @@ export { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH };
  * Hash a password for storage. Uses bcrypt at {@link BCRYPT_COST}.
  *
  * Throws if `plaintext` is falsy or exceeds {@link MAX_PASSWORD_LENGTH}.
- * Does NOT enforce {@link MIN_PASSWORD_LENGTH} — callers should run the
- * plaintext through {@link validatePasswordPolicy} first and surface
- * the error to the user before we get here.
+ * Does NOT enforce {@link MIN_PASSWORD_LENGTH} or {@link MAX_PASSWORD_BYTES} —
+ * callers setting a password run the plaintext through
+ * {@link validatePasswordPolicy} first and surface the error to the user
+ * before we get here. The byte cap stays out of here on purpose: the sign-in
+ * path rehashes an existing password with this function when the work factor
+ * moves, and a password set before the cap must keep signing in.
  */
 export async function hashPassword(plaintext: string): Promise<string> {
     if (!plaintext) throw new Error('hashPassword: plaintext is empty');
@@ -199,12 +207,19 @@ export type PasswordPolicyResult =
  * Keeps the policy narrow on purpose: length floor + length ceiling.
  * We don't mandate special characters / mixed case / etc. — NIST 800-63B
  * explicitly deprecates those requirements in favour of length and
- * breach-list screening. Breach-list screening lives in a later prompt.
+ * breach-list screening, which the routes run after this check.
+ *
+ * The floor counts characters; the ceiling counts UTF-8 BYTES
+ * ({@link MAX_PASSWORD_BYTES}, #5306), because bcrypt reads only the first 72
+ * bytes and a longer password would share its hash with every password that
+ * starts the same way. That ceiling is tighter than
+ * {@link MAX_PASSWORD_LENGTH} for every input — a character is at least one
+ * byte — so `too_long` always means "over 72 bytes".
  */
 export function validatePasswordPolicy(plaintext: string): PasswordPolicyResult {
     if (!plaintext) return { ok: false, reason: 'empty' };
     if (plaintext.length < MIN_PASSWORD_LENGTH) return { ok: false, reason: 'too_short' };
-    if (plaintext.length > MAX_PASSWORD_LENGTH) return { ok: false, reason: 'too_long' };
+    if (passwordByteLength(plaintext) > MAX_PASSWORD_BYTES) return { ok: false, reason: 'too_long' };
     return { ok: true };
 }
 
@@ -222,7 +237,10 @@ export function describePasswordPolicyFailure(
         case 'too_short':
             return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
         case 'too_long':
-            return `Password must be at most ${MAX_PASSWORD_LENGTH} characters.`;
+            return (
+                `Password must be at most ${MAX_PASSWORD_BYTES} bytes ` +
+                '(a Latin letter or digit is one byte, a Cyrillic letter two).'
+            );
         case 'empty':
             return 'Password is required.';
     }

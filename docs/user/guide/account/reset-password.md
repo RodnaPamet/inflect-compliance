@@ -28,7 +28,7 @@ If you open the page without a link from an email, it shows **{{ui:auth.reset.in
 
 ### Choose a new password
 
-1. Type your new password in **{{ui:auth.reset.newPasswordLabel}}**. It must be 8 to 128 characters and must not be one that has appeared in a known data breach.
+1. Type your new password in **{{ui:auth.reset.newPasswordLabel}}**. It must be at least 8 characters and at most 72 bytes (a Latin letter or digit is one byte, a Cyrillic letter two), and must not be one that has appeared in a known data breach.
 2. Type it again in **{{ui:auth.reset.confirmLabel}}**.
 3. Click **{{ui:auth.reset.resetPassword}}**.
 
@@ -45,7 +45,7 @@ If you open the page without a link from an email, it shows **{{ui:auth.reset.in
 | **{{ui:auth.reset.invalidLink}}** | The page was opened without a reset link | Click **{{ui:auth.reset.requestNewLink}}** and ask for one |
 | **{{ui:auth.reset.fillBoth}}** | One of the fields is empty | Fill in both |
 | **{{ui:auth.reset.passwordsNoMatch}}** | The two passwords differ | Type the same password in both |
-| **{{ui:auth.reset.tooShort}}** or **{{ui:auth.reset.tooLong}}** | The new password is shorter than 8 or longer than 128 characters | Choose another |
+| **{{ui:auth.reset.tooShort}}** or **{{ui:auth.reset.tooLong}}** | The new password is shorter than 8 characters or longer than 72 bytes | Choose another |
 | **{{ui:auth.reset.refused.RESET_LINK_EXPIRED}}** | The link is more than an hour old | Click **{{ui:auth.reset.requestNewLink}}** and use the newest email |
 | **{{ui:auth.reset.refused.RESET_LINK_INVALID}}** | The link has been used, or a newer one has been sent since | Click **{{ui:auth.reset.requestNewLink}}** and use the newest email |
 | **{{ui:auth.reset.refused.PASSWORD_BREACHED}}** | Attackers already know this password | Choose another |

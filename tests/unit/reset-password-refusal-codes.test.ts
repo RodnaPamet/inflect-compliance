@@ -19,7 +19,7 @@ jest.mock('@/lib/auth/password-management', () => ({
 
 import { POST } from '@/app/api/auth/reset-password/route';
 import { RESET_PASSWORD_REFUSALS } from '@/lib/auth/reset-password-refusals';
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
+import { MAX_PASSWORD_BYTES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
 import * as limits from '@/lib/auth/password-limits';
 
 const en = jest.requireActual('../../messages/en.json');
@@ -54,6 +54,9 @@ describe('POST /api/auth/reset-password refusal codes', () => {
     it('names each policy and breach refusal', async () => {
         expect(await refusal({ token: 't', newPassword: 'short' })).toBe('PASSWORD_TOO_SHORT');
         expect(await refusal({ token: 't', newPassword: 'x'.repeat(MAX_PASSWORD_LENGTH + 1) })).toBe('PASSWORD_TOO_LONG');
+        // Over 72 bytes (#5306): 73 Latin letters, and 37 Cyrillic ones.
+        expect(await refusal({ token: 't', newPassword: 'x'.repeat(MAX_PASSWORD_BYTES + 1) })).toBe('PASSWORD_TOO_LONG');
+        expect(await refusal({ token: 't', newPassword: 'ж'.repeat(37) })).toBe('PASSWORD_TOO_LONG');
         mockHibp.mockResolvedValue({ breached: true });
         expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('PASSWORD_BREACHED');
         expect(mockConsume).not.toHaveBeenCalled();
@@ -64,6 +67,14 @@ describe('POST /api/auth/reset-password refusal codes', () => {
         expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('RESET_LINK_EXPIRED');
         mockConsume.mockResolvedValue({ ok: false, reason: 'invalid' });
         expect(await refusal({ token: 't', newPassword: 'pass-ok-1234' })).toBe('RESET_LINK_INVALID');
+    });
+
+    it('accepts a new password of exactly 72 bytes (#5306)', async () => {
+        for (const newPassword of ['x'.repeat(MAX_PASSWORD_BYTES), 'ж'.repeat(MAX_PASSWORD_BYTES / 2)]) {
+            const res = await post({ token: 't', newPassword });
+            expect(res.status).toBe(200);
+        }
+        expect(mockConsume).toHaveBeenCalledTimes(2);
     });
 
     it('still answers ok on success', async () => {
@@ -78,11 +89,12 @@ describe('POST /api/auth/reset-password refusal codes', () => {
                 expect(typeof catalogue.auth.reset.refused[code]).toBe('string');
             }
             expect(catalogue.auth.reset.refused.PASSWORD_TOO_SHORT).toContain(String(MIN_PASSWORD_LENGTH));
-            expect(catalogue.auth.reset.refused.PASSWORD_TOO_LONG).toContain(String(MAX_PASSWORD_LENGTH));
-            expect(catalogue.auth.reset.tooLong).toContain(String(MAX_PASSWORD_LENGTH));
+            expect(catalogue.auth.reset.refused.PASSWORD_TOO_LONG).toContain(String(MAX_PASSWORD_BYTES));
+            expect(catalogue.auth.reset.tooLong).toContain(String(MAX_PASSWORD_BYTES));
         }
         // The client-safe limits are the ones the server enforces.
         expect(limits.MIN_PASSWORD_LENGTH).toBe(MIN_PASSWORD_LENGTH);
         expect(limits.MAX_PASSWORD_LENGTH).toBe(MAX_PASSWORD_LENGTH);
+        expect(limits.MAX_PASSWORD_BYTES).toBe(MAX_PASSWORD_BYTES);
     });
 });

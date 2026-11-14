@@ -1013,7 +1013,7 @@ export const AuthRegisterSchema = z.object({
     // `inflect_invite_token` cookie (#4689). Present: a new workspace.
     orgName: z.string().optional(),
 }).strip().openapi('AuthRegisterRequest', {
-    description: 'Self-service signup payload. With `orgName`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request\'s invite cookie, sent to the same email. The password must be 8 to 128 characters and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side.',
+    description: 'Self-service signup payload. With `orgName`, creates a workspace and makes the new account its Owner. Without it, creates an account only, and only for the pending invitation in the request\'s invite cookie, sent to the same email. The password must be at least 8 characters and at most 72 UTF-8 bytes, and is checked against HIBP via k-anonymity before persistence; emailVerification is initiated server-side.',
 });
 
 // `action: 'login'` was removed 2026-04-22 — the old bespoke /api/auth/

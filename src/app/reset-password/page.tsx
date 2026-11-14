@@ -9,7 +9,7 @@ import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Heading } from '@/components/ui/typography';
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/password-limits';
+import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH, passwordByteLength } from '@/lib/auth/password-limits';
 import { isResetPasswordRefusal, type ResetPasswordRefusal } from '@/lib/auth/reset-password-refusals';
 
 /**
@@ -46,7 +46,8 @@ function ResetPasswordForm() {
             setError(t('tooShort'));
             return;
         }
-        if (newPassword.length > MAX_PASSWORD_LENGTH) {
+        // Bytes, as the server counts (#5306): bcrypt reads only the first 72.
+        if (passwordByteLength(newPassword) > MAX_PASSWORD_BYTES) {
             setError(t('tooLong'));
             return;
         }

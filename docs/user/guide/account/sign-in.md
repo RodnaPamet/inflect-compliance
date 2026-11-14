@@ -57,7 +57,7 @@ If you have forgotten your password, click **{{ui:login.forgotPassword}}**. See 
 ### Create an organisation
 
 1. Click **{{ui:login.registerLink}}**. The heading changes to **{{ui:login.register}}**.
-2. Fill in **{{ui:login.name}}**, **{{ui:login.orgName}}**, **{{ui:login.email}}** and **{{ui:login.password}}**. The password must be 8 to 128 characters and must not be one that has appeared in a known data breach.
+2. Fill in **{{ui:login.name}}**, **{{ui:login.orgName}}**, **{{ui:login.email}}** and **{{ui:login.password}}**. The password must be at least 8 characters and at most 72 bytes (a Latin letter or digit is one byte, a Cyrillic letter two), and must not be one that has appeared in a known data breach.
 3. Click **{{ui:login.submitRegister}}**.
 
 A new workspace is created for your organisation, you are its Owner, and you are signed in to it. **{{ui:login.signInLink}}** switches back to signing in.

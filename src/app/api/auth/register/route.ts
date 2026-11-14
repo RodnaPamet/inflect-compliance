@@ -24,7 +24,7 @@ import prisma from '@/lib/prisma';
 import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
 import type { RegisterRefusal } from '@/lib/auth/register-refusals';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
-import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
+import { MAX_PASSWORD_BYTES, hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup } from '@/lib/security/encryption';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
@@ -121,7 +121,7 @@ async function handleRegister(body: { email: string; password: string; name: str
             policy.reason === 'too_short'
                 ? 'Password must be at least 8 characters'
                 : policy.reason === 'too_long'
-                  ? 'Password is too long'
+                  ? `Password is too long: at most ${MAX_PASSWORD_BYTES} bytes`
                   : 'Password is required',
         );
     }

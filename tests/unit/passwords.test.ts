@@ -11,7 +11,8 @@
  *     takes a plausible amount of time, not an exact number)
  *   - needsRehash correctly flags weaker hashes for silent migration
  *   - validatePasswordPolicy enforces length floor + ceiling with the
- *     documented reason codes
+ *     documented reason codes; the ceiling is 72 UTF-8 BYTES (#5306)
+ *   - an existing password longer than the cap still signs in
  *
  * Per-test timeout bump: bcrypt is CPU-heavy; under the full-suite
  * parallel run a single hash can push past Jest's 5s default.
@@ -23,9 +24,11 @@ import {
     BCRYPT_COST,
     MIN_PASSWORD_LENGTH,
     MAX_PASSWORD_LENGTH,
+    MAX_PASSWORD_BYTES,
     dummyVerify,
     hashPassword,
     needsRehash,
+    passwordByteLength,
     validatePasswordPolicy,
     verifyPassword,
 } from '@/lib/auth/passwords';
@@ -159,5 +162,47 @@ describe('validatePasswordPolicy', () => {
     it(`rejects above ${MAX_PASSWORD_LENGTH} chars with reason=too_long`, () => {
         const pw = 'a'.repeat(MAX_PASSWORD_LENGTH + 1);
         expect(validatePasswordPolicy(pw)).toEqual({ ok: false, reason: 'too_long' });
+    });
+
+    // #5306 — bcrypt reads only the first 72 bytes, so a new password is
+    // capped in BYTES where it is set.
+    it('caps a new password at 72 UTF-8 bytes', () => {
+        expect(MAX_PASSWORD_BYTES).toBe(72);
+        expect(validatePasswordPolicy('a'.repeat(72))).toEqual({ ok: true });
+        expect(validatePasswordPolicy('a'.repeat(73))).toEqual({ ok: false, reason: 'too_long' });
+    });
+
+    it('counts bytes, not characters', () => {
+        // A Cyrillic letter is two bytes: 36 of them are exactly the cap.
+        expect(passwordByteLength('ж'.repeat(36))).toBe(72);
+        expect(validatePasswordPolicy('ж'.repeat(36))).toEqual({ ok: true });
+        // 37 characters, far under 72, but 74 bytes.
+        const cyrillic = 'ж'.repeat(37);
+        expect(cyrillic.length).toBeLessThan(72);
+        expect(validatePasswordPolicy(cyrillic)).toEqual({ ok: false, reason: 'too_long' });
+        // An emoji is four bytes and two UTF-16 code units: 38 code units, 76 bytes.
+        const emoji = '\u{1F600}'.repeat(19);
+        expect(emoji.length).toBe(38);
+        expect(validatePasswordPolicy(emoji)).toEqual({ ok: false, reason: 'too_long' });
+        // A mixed passphrase: 61 characters, 73 bytes.
+        const mixed = 'a'.repeat(49) + 'ж'.repeat(12);
+        expect(mixed.length).toBe(61);
+        expect(passwordByteLength(mixed)).toBe(73);
+        expect(validatePasswordPolicy(mixed)).toEqual({ ok: false, reason: 'too_long' });
+    });
+});
+
+describe('an existing password over the byte cap (#5306)', () => {
+    // The cap is applied where a password is SET. Sign-in does not check it,
+    // and hashPassword — which the sign-in path calls to rehash — does not
+    // either, so a password set before the cap keeps working.
+    it('still signs in, in Latin and in Cyrillic', async () => {
+        for (const existing of ['a1'.repeat(50), 'парола'.repeat(10)]) {
+            expect(passwordByteLength(existing)).toBeGreaterThan(MAX_PASSWORD_BYTES);
+            expect(existing.length).toBeLessThanOrEqual(MAX_PASSWORD_LENGTH);
+            const hash = await hashPassword(existing);
+            await expect(verifyPassword(existing, hash)).resolves.toBe(true);
+            await expect(verifyPassword('wrong-guess', hash)).resolves.toBe(false);
+        }
     });
 });

@@ -75,7 +75,7 @@ jest.mock('@/app-layer/usecases/tenant-invites', () => ({
 
 import { POST } from '@/app/api/auth/register/route';
 import { REGISTER_REFUSALS } from '@/lib/auth/register-refusals';
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
+import { MAX_PASSWORD_BYTES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
 
 const en = jest.requireActual('../../messages/en.json');
 const bg = jest.requireActual('../../messages/bg.json');
@@ -119,6 +119,9 @@ describe('POST /api/auth/register refusal codes', () => {
     it('names each password and account refusal', async () => {
         expect(await refusal({ ...base, orgName: 'Acme', password: 'short' })).toBe('PASSWORD_TOO_SHORT');
         expect(await refusal({ ...base, orgName: 'Acme', password: 'x'.repeat(MAX_PASSWORD_LENGTH + 1) })).toBe('PASSWORD_TOO_LONG');
+        // Over 72 bytes (#5306): 73 Latin letters, and 37 Cyrillic ones.
+        expect(await refusal({ ...base, orgName: 'Acme', password: 'x'.repeat(MAX_PASSWORD_BYTES + 1) })).toBe('PASSWORD_TOO_LONG');
+        expect(await refusal({ ...base, orgName: 'Acme', password: 'ж'.repeat(37) })).toBe('PASSWORD_TOO_LONG');
         mockHibp.mockResolvedValueOnce({ breached: true });
         expect(await refusal({ ...base, orgName: 'Acme' })).toBe('PASSWORD_BREACHED');
         mockFindUser.mockResolvedValueOnce({ id: 'u-0' });
@@ -142,7 +145,7 @@ describe('POST /api/auth/register refusal codes', () => {
                 expect(typeof catalogue.login.refused[code]).toBe('string');
             }
             expect(catalogue.login.refused.PASSWORD_TOO_SHORT).toContain(String(MIN_PASSWORD_LENGTH));
-            expect(catalogue.login.refused.PASSWORD_TOO_LONG).toContain(String(MAX_PASSWORD_LENGTH));
+            expect(catalogue.login.refused.PASSWORD_TOO_LONG).toContain(String(MAX_PASSWORD_BYTES));
         }
     });
 });

@@ -29,7 +29,7 @@ If your account has no password, the card instead says: {{ui:account.security.pa
 ### Change your password
 
 1. Type your current password.
-2. Type the new one twice. It must be 8 to 128 characters, different from your current password, and must not be a password that has appeared in a known data breach.
+2. Type the new one twice. It must be at least 8 characters and at most 72 bytes (a Latin letter or digit is one byte, a Cyrillic letter two), different from your current password, and must not be a password that has appeared in a known data breach.
 3. Click **{{ui:account.security.changePassword}}**.
 
 The message **{{ui:account.security.passwordChangedRedirect}}** confirms it, and you are taken to the sign-in page.
@@ -47,7 +47,7 @@ The message **{{ui:account.security.passwordChangedRedirect}}** confirms it, and
 | **{{ui:account.security.newPasswordsNoMatch}}** | The two new passwords differ | Type the same new password in both |
 | **{{ui:account.security.tooShort}}** | The new password is too short | Use at least 8 characters |
 | **{{ui:account.security.mustDiffer}}** | The new password is the same as the current one | Choose a different one |
-| **{{ui:account.security.tooLong}}** | The new password is too long | Use at most 128 characters |
+| **{{ui:account.security.tooLong}}** | The new password is too long | Use at most 72 bytes: 72 Latin letters or digits, or 36 Cyrillic letters |
 | **{{ui:account.security.currentIncorrect}}** | The current password you typed is wrong | Type it again. If you have forgotten it, sign out and use the forgotten-password link on the sign-in page |
 | **{{ui:account.security.breached}}** | The new password is one attackers already know | Choose another |
 | **{{ui:account.security.withoutPassword}}** | You sign in through Google, Microsoft or single sign-on | Nothing to change here |

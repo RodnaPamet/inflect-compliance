@@ -22,7 +22,7 @@ jest.mock('@/lib/auth/password-management', () => ({
 
 import { POST } from '@/app/api/auth/change-password/route';
 import { CHANGE_PASSWORD_REFUSALS } from '@/lib/auth/change-password-refusals';
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
+import { MAX_PASSWORD_BYTES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
 
 const en = jest.requireActual('../../messages/en.json');
 const bg = jest.requireActual('../../messages/bg.json');
@@ -59,6 +59,9 @@ describe('POST /api/auth/change-password refusal codes', () => {
         expect(await refusal({ currentPassword: 'same-password', newPassword: 'same-password' })).toBe('SAME_AS_CURRENT');
         expect(await refusal({ currentPassword: 'old-password', newPassword: 'short' })).toBe('PASSWORD_TOO_SHORT');
         expect(await refusal({ currentPassword: 'old-password', newPassword: 'x'.repeat(MAX_PASSWORD_LENGTH + 1) })).toBe('PASSWORD_TOO_LONG');
+        // Over 72 bytes (#5306): 73 Latin letters, and 37 Cyrillic ones.
+        expect(await refusal({ currentPassword: 'old-password', newPassword: 'x'.repeat(MAX_PASSWORD_BYTES + 1) })).toBe('PASSWORD_TOO_LONG');
+        expect(await refusal({ currentPassword: 'old-password', newPassword: 'ж'.repeat(37) })).toBe('PASSWORD_TOO_LONG');
 
         mockHibp.mockResolvedValueOnce({ breached: true });
         expect(await refusal({ currentPassword: 'old-password', newPassword: 'password123' })).toBe('PASSWORD_BREACHED');
@@ -90,7 +93,7 @@ describe('the page can say every refusal', () => {
     it("states the policy's own bounds", () => {
         for (const catalogue of [en, bg]) {
             expect(catalogue.account.security.tooShort).toContain(String(MIN_PASSWORD_LENGTH));
-            expect(catalogue.account.security.tooLong).toContain(String(MAX_PASSWORD_LENGTH));
+            expect(catalogue.account.security.tooLong).toContain(String(MAX_PASSWORD_BYTES));
         }
     });
 });
