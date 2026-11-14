@@ -99,9 +99,9 @@ x-logging: &default-logging
 #
 # The figures and their basis — the C0 measurement of 2026-11-12, VM capacity
 # run 43209382354 — are in docs/implementation-notes/2026-11-12-capacity-c1.md.
-# The app and worker limits are PROVISIONAL: their peaks were measured over 24
-# minutes that held no nightly job, and they are re-measured after a day that
-# spans 02:00-05:30 UTC, then tightened.
+# The app and worker limits were re-sized in C1b from the capacity recorder's
+# 24 hours of history, parser and nightly windows included (VM capacity run
+# 43566712099, 2026-11-14): docs/implementation-notes/2026-11-14-capacity-c1b.md.
 
 services:
   # ── Postgres ──────────────────────────────────────────────────
@@ -285,10 +285,10 @@ services:
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
   app:
     logging: *default-logging
-    # PROVISIONAL (owner decision 2026-11-12): peak 586 MiB over the 24
-    # minutes after a restart. Re-measured after a day spanning the nightly
-    # jobs, then tightened.
-    mem_limit: 1536m
+    # C1b (2026-11-14): max memory.peak 593 MiB over 24 hours of recorder
+    # history, the 00:15-01:45 parser and 02:00-05:30 nightly windows
+    # included; 1.5x is 890, rounded up to 1024.
+    mem_limit: 1024m
     # Request path. Next.js runs JavaScript on one thread; 1.5 lets GC and the
     # libuv pool burst past it while guaranteeing the rest of the request path
     # half a core even if a render loop spins.
@@ -314,12 +314,24 @@ services:
       # cgroup limit (`uv_get_constrained_memory`): measured, 2096 MiB with
       # no limit and 792 MiB under 1536m. A heap overrun then ends in
       # "FATAL ERROR: Reached heap limit" and exit 134 at about half the
-      # limit, which no OOM-kill counter records. 1024 keeps the abort
-      # below the limit with ~500 MiB for buffers, code and native memory.
+      # limit, which no OOM-kill counter records. 768 under 1024m (C1b)
+      # keeps the abort below the limit with ~256 MiB for buffers, code and
+      # native memory; the measured peak anonymous memory is 445 MiB.
       # Set here, not in .env.prod: `environment:` overrides `env_file:`,
       # and the heap must follow `mem_limit` in the same file. Change one,
       # change the other — the guard holds the pair.
-      NODE_OPTIONS: "--max-old-space-size=1024"
+      NODE_OPTIONS: "--max-old-space-size=768"
+      # #5541 — automation events emitted in the web process (a task, risk
+      # or control created through the UI or the API) reach the job queue
+      # and fire automation rules. ON by owner decision, 2026-11-14: the
+      # `VM check` `automation-rules` count that day (run 43596452819) was
+      # 0 enabled rules across 0 tenants, so turning it on woke nothing;
+      # rules tenants create from now on fire from web events. A non-secret
+      # switch, so it is set here rather than in .env.prod, and this entry
+      # overrides any value `env_file:` carries. `app` only: the worker
+      # never reads it. To turn it off, remove the line and apply.
+      # docs/deployment.md, "Automation rules from web events".
+      AUTOMATION_WEB_EVENTS_ENABLED: "1"
       # Step 6d — where the LOCAL_ONLY adjudication model lives. A
       # DEPLOYMENT value, never a tenant one: `src/env.ts` records that no
       # tenant setting reaches it, for the same SSRF reason the Jev host is
@@ -357,9 +369,13 @@ services:
   # See docs/deployment.md "Background worker".
   worker:
     logging: *default-logging
-    # PROVISIONAL, as `app`: peak 422 MiB over 24 minutes with no nightly
-    # job in them.
-    mem_limit: 1536m
+    # C1b (2026-11-14): max memory.peak 385 MiB over the same 24 hours.
+    # 1.5x is 578, so 768 would satisfy the rule; 1024 is deliberate,
+    # because that is ONE night: the Sunday 05:45 integration passport and
+    # the month-start evidence emitters are not in it, and a V8 heap abort
+    # kills a job silently (exit 134, no OOM kill). Tightened to 768 only
+    # once the recorder's history holds a Sunday and a month start.
+    mem_limit: 1024m
     # Batch-shaped (the 02:00-05:30 UTC chain and every queued job), so one
     # core and half the weight under contention: a heavy pass slows itself,
     # not the request path.
@@ -396,7 +412,7 @@ services:
     environment:
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
       # As `app`: the heap ceiling stated, sized below `mem_limit`.
-      NODE_OPTIONS: "--max-old-space-size=1024"
+      NODE_OPTIONS: "--max-old-space-size=768"
       # Step 6d — where the LOCAL_ONLY adjudication model lives. A
       # DEPLOYMENT value, never a tenant one: `src/env.ts` records that no
       # tenant setting reaches it, for the same SSRF reason the Jev host is

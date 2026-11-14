@@ -23,8 +23,8 @@ The services in `deploy/docker-compose.prod.yml`:
 | Service | Image | Role | Limits set in the compose file |
 |---|---|---|---|
 | `caddy` | `caddy:2-alpine` | TLS and reverse proxy. Publishes the only host ports, 80 and 443. | 256 MB, 1.0 CPU |
-| `app` | `ghcr.io/rodnapamet/inflect-compliance:latest` | Next.js web server. Runs `prisma migrate deploy` when it starts. | 1.5 GB, 1.5 CPU (memory provisional) |
-| `worker` | the same image | BullMQ worker and scheduler (`scripts/worker.ts`, `scripts/scheduler.ts`). | 1.5 GB, 1.0 CPU, half CPU weight (memory provisional) |
+| `app` | `ghcr.io/rodnapamet/inflect-compliance:latest` | Next.js web server. Runs `prisma migrate deploy` when it starts. | 1 GB, 1.5 CPU (memory from measured peaks, C1b) |
+| `worker` | the same image | BullMQ worker and scheduler (`scripts/worker.ts`, `scripts/scheduler.ts`). | 1 GB, 1.0 CPU, half CPU weight (memory from measured peaks, C1b) |
 | `pgbouncer` | `edoburu/pgbouncer:latest` | Transaction-mode pool between `app`/`worker` and Postgres. | 128 MB, 1.0 CPU; `DEFAULT_POOL_SIZE` 25, `MAX_DB_CONNECTIONS` 50, `MAX_CLIENT_CONN` 200 |
 | `postgres` | `postgres:16-alpine` | The database. | 2 GB, 1.5 CPU; `max_connections` is not set |
 | `redis` | `redis:7-alpine` | BullMQ job queue, rate limits, cache. AOF persistence on. | 768 MB, 1.0 CPU; `--maxmemory 256mb`, `--maxmemory-policy noeviction` |
@@ -40,10 +40,12 @@ Four more things share the machine:
   (`CONFIRM=1 deploy/apply.sh`, or the overlay's own path); a container created
   before that keeps running without one, and the `VM capacity` workflow's
   "Mem limit" column shows which. The limits of the canonical file and the two running overlays sum to
-  10,496 MiB, under the 14,848 MiB (14.5 GB) budget of host memory minus
-  1.5 GB, with about 4 GB of the budget unallocated. The basis
+  9,216 MiB, under the 14,848 MiB (14.5 GB) budget of host memory minus
+  1.5 GB, with about 5.5 GB of the budget unallocated. The basis
   for each figure, and the risk of a kill at the limit, are in
-  [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
+  [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md)
+  and, for `app`, `worker` and the scanner's re-sizing from 24 hours of
+  measured peaks, [`implementation-notes/2026-11-14-capacity-c1b.md`](implementation-notes/2026-11-14-capacity-c1b.md);
   `tests/guards/deploy-compose-canonical.test.ts` holds the budget.
 - **The observability stack** is packaged as a separate Compose project to
   run on the same VM (`infra/observability/docker-compose.observability.yml`).
@@ -54,7 +56,7 @@ Four more things share the machine:
   `docs/observability/01-deployment-topology.md`.
 - **Opt-in overlays** in `deploy/` add services to the same VM when an
   operator starts them. `docker-compose.harness-scanner.yml` (the scanner,
-  512 MB / 1.0 CPU, and its egress proxy, 256 MB / 0.5 CPU) and
+  256 MB / 1.0 CPU, and its egress proxy, 256 MB / 0.5 CPU) and
   `docker-compose.legacy-mcp-proving.yml` (256 MB / 0.5 CPU) run there and are
   counted in the budget. `docker-compose.pipelock.yml` is not enabled and
   carries no limits yet. The OrangeHRM lab overlay was retired on 2026-11-12 and

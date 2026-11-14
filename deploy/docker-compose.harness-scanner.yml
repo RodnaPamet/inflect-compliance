@@ -144,15 +144,17 @@ services:
     # The image's own default command, stated so the mount below and the
     # command cannot drift apart.
     command: ["schedule", "--config", "/etc/scanent/config.json"]
-    # Capacity budget C1 (2026-11-12): peak 155 MiB; 1.5x rounded up, with
-    # room for a larger estate's code parse. Batch-shaped, so capped at one
-    # core with half the weight under contention: the request path keeps the
-    # other. docs/implementation-notes/2026-11-12-capacity-c1.md.
+    # Capacity budget C1b (2026-11-14, owner-approved 2026-11-13): peaks
+    # 155 MiB (C0) and 134 MiB (24 hours of recorder history); 1.5x is 233,
+    # so 256. C1 had set 512 with room for a larger estate's code parse.
+    # Batch-shaped, so capped at one core with half the weight under
+    # contention: the request path keeps the other.
+    # docs/implementation-notes/2026-11-14-capacity-c1b.md.
     # scanent's own Compose file sets 1536m, for its `file` output: scoring
     # and rendering a large estate's results.json, page and PDF (its
     # docs/scanner.md, "Capacity"). With the `inflect` output alone none of
     # that runs, and the scan itself is the cost this limit was sized for.
-    mem_limit: 512m
+    mem_limit: 256m
     cpus: 1.0
     cpu_shares: 512
     pids_limit: 256
