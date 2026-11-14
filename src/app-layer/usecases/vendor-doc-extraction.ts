@@ -34,7 +34,12 @@ export const VENDOR_DOC_EXCEPTION_KIND = 'VENDOR_DOC_EXCEPTION';
 
 export const ExtractVendorDocSchema = z.object({
     documentId: z.string().min(1),
-    /** Optional target assessment to pre-fill. */
+    /**
+     * The vendor the caller addressed (the route's `:vendorId`). When given,
+     * the document must belong to it (#5318).
+     */
+    vendorId: z.string().min(1).optional(),
+    /** Optional target assessment to pre-fill. Must be the document's vendor's. */
     assessmentId: z.string().optional(),
     /** Pre-extracted text override (skips the PDF fetch — used by tests/callers). */
     text: z.string().max(500_000).optional(),
@@ -87,7 +92,28 @@ export async function extractVendorDocument(
             where: { id: input.documentId, tenantId: ctx.tenantId },
             select: { id: true, vendorId: true, fileId: true },
         });
-        if (!doc) throw notFound('Vendor document not found');
+        // Refused, never guessed (#5318). A document addressed under another
+        // vendor's URL is "not found" there, as a cross-tenant id would be.
+        if (!doc || (input.vendorId !== undefined && doc.vendorId !== input.vendorId)) {
+            throw notFound('Vendor document not found');
+        }
+        // An assessment pre-filled from this document must be the SAME
+        // vendor's: otherwise vendor A's SOC 2 report would be proposed, and
+        // on approval committed, as vendor B's answers. Checked before any
+        // model call, so a refused request extracts nothing.
+        if (input.assessmentId) {
+            const target = await db.vendorAssessment.findFirst({
+                where: { id: input.assessmentId, tenantId: ctx.tenantId },
+                select: { vendorId: true },
+            });
+            if (!target) throw notFound('Assessment not found');
+            if (target.vendorId !== doc.vendorId) {
+                throw badRequest(
+                    'This document belongs to a different vendor than the assessment. Choose a document of the assessed vendor.',
+                    { reason: 'DOCUMENT_VENDOR_MISMATCH' },
+                );
+            }
+        }
         let text = input.text ?? null;
         if (!text && doc.fileId) {
             text = await getFileRecordText(db, ctx.tenantId, doc.fileId);
@@ -161,7 +187,9 @@ export async function extractVendorDocument(
     if (input.assessmentId && e.controls.length > 0) {
         proposalsCreated = await runInTenantContext(ctx, async (db) => {
             const assessment = await db.vendorAssessment.findFirst({
-                where: { id: input.assessmentId!, tenantId: ctx.tenantId },
+                // The vendor pinned again here: this is a separate transaction
+                // from the check above.
+                where: { id: input.assessmentId!, tenantId: ctx.tenantId, vendorId: document.vendorId },
                 select: { id: true, templateId: true, templateVersionId: true },
             });
             if (!assessment) return 0;
@@ -316,7 +344,8 @@ export async function approveProposal(
         });
         if (!proposal) throw notFound('Proposal not found');
         if (!proposal.assessmentId || !proposal.questionId) {
-            throw badRequest('UNMAPPED_PROPOSAL', 'Proposal is not mapped to an assessment question');
+            // Sentence first, code in details (#5318): the page shows `message`.
+            throw badRequest('Proposal is not mapped to an assessment question', { reason: 'UNMAPPED_PROPOSAL' });
         }
         // A reviewed or closed assessment's answers are what its review
         // scored. Writing one now would change a recorded result under the

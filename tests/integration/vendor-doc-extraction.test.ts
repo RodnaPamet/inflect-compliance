@@ -209,6 +209,58 @@ describeFn('vendor-doc extraction (integration)', () => {
         expect(refs.map((r) => r.sourceRef).sort()).toEqual([`${documentId}:CC6.1`, `${documentId}:CC7.2`]);
     });
 
+    describe('a document and its assessment are one vendor\'s (#5318)', () => {
+        it('refuses an assessment of another vendor, before any extraction, and proposes nothing', async () => {
+            const otherVendorId = (
+                await prisma.vendor.create({ data: { tenantId, name: `Other vendor ${Date.now()}` } })
+            ).id;
+            const otherAssessmentId = (
+                await prisma.vendorAssessment.create({
+                    data: { tenantId, vendorId: otherVendorId, templateVersionId: apprTemplateId, requestedByUserId: userId },
+                })
+            ).id;
+            jest.mocked(extractDocument).mockClear();
+            jest
+                .mocked(extractDocument)
+                .mockResolvedValue(extractionWith([{ ref: 'CC6.1', description: '', result: 'IN_PLACE' }]));
+
+            const err = await extractVendorDocument(ctx, {
+                documentId,
+                assessmentId: otherAssessmentId,
+                text: 'SOC 2 Type II — CC6.1 access control operating effectively.',
+            }).then(() => null, (e: unknown) => e) as { status?: number; details?: unknown } | null;
+
+            expect(err?.status).toBe(400);
+            expect(err?.details).toEqual({ reason: 'DOCUMENT_VENDOR_MISMATCH' });
+            expect(extractDocument).not.toHaveBeenCalled();
+            expect(await prisma.vendorAnswerProposal.count({ where: { tenantId, assessmentId: otherAssessmentId } })).toBe(0);
+        });
+
+        it('refuses a document addressed under another vendor\'s URL as not found', async () => {
+            const otherVendorId = (
+                await prisma.vendor.create({ data: { tenantId, name: `Url vendor ${Date.now()}` } })
+            ).id;
+            await expect(
+                extractVendorDocument(ctx, { documentId, vendorId: otherVendorId, text: 'SOC 2' }),
+            ).rejects.toThrow(/Vendor document not found/);
+            // The document's own vendor is accepted.
+            await expect(
+                extractVendorDocument(ctx, { documentId, vendorId, text: 'SOC 2' }),
+            ).resolves.toMatchObject({ status: 'EXTRACTED' });
+        });
+    });
+
+    it('an unmapped proposal is refused with a sentence, the code in details (#5318)', async () => {
+        const { extractionId } = await extractVendorDocument(ctx, { documentId, text: 'SOC 2' });
+        const unmapped = await prisma.vendorAnswerProposal.create({
+            data: { tenantId, extractionId, proposedAnswerJson: { value: 'YES' }, sourceCitation: 'SOC 2 CC6.1' },
+        });
+        const err = await approveProposal(ctx, unmapped.id).then(() => null, (e: unknown) => e) as
+            { message: string; details?: unknown } | null;
+        expect(err?.message).toBe('Proposal is not mapped to an assessment question');
+        expect(err?.details).toEqual({ reason: 'UNMAPPED_PROPOSAL' });
+    });
+
     it('extract persists an extraction and writes NO assessment answer (stub AI)', async () => {
         const res = await extractVendorDocument(ctx, {
             documentId,

@@ -2011,6 +2011,8 @@ export async function executeQueuedWorkflowRun(
  * `executeQueuedWorkflowRun` needs a registered agent and a dispatch to reach.
  */
 export async function rebuildRunContext(row: {
+    /** The run's id: the rebuilt context's requestId names it. */
+    id: string;
     tenantId: string;
     startedByUserId: string | null;
     triggeredViaKeyId: string | null;
@@ -2090,7 +2092,9 @@ export async function rebuildRunContext(row: {
     return {
         // Correlates every log line and audit row of this attempt back to the
         // run, which is what an operator has when they open the page.
-        requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
+        // The run's OWN id (#5318). It was tenant + starter, which every run
+        // that person started shared, so searching by it returned all of them.
+        requestId: `agent-run-${row.id}`,
         userId: row.startedByUserId,
         tenantId: row.tenantId,
         // The principal's authority exactly as a request resolves it, custom

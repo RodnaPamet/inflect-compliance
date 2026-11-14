@@ -23,7 +23,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
 
 const EDITOR = getPermissionsForRole('EDITOR');
 
-const RUN = { tenantId: 'tenant-A', startedByUserId: 'user-1', triggeredViaKeyId: null, agentId: 'agent-1' };
+const RUN = { id: 'run-1', tenantId: 'tenant-A', startedByUserId: 'user-1', triggeredViaKeyId: null, agentId: 'agent-1' };
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -57,6 +57,16 @@ describe('the run carries the custom role a request from its principal carries',
     });
 });
 
+describe('the rebuilt context names its run (#5318)', () => {
+    it('two runs the same person started get different requestIds', async () => {
+        db.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
+        const a = await rebuildRunContext(RUN);
+        const b = await rebuildRunContext({ ...RUN, id: 'run-2' });
+        expect(a?.requestId).toBe('agent-run-run-1');
+        expect(b?.requestId).toBe('agent-run-run-2');
+    });
+});
+
 describe('a built-in role is rebuilt as a request resolves it', () => {
     it('EDITOR gets exactly what a request from it gets', async () => {
         db.tenantMembership.findFirst.mockResolvedValue({ role: 'EDITOR', customRole: null });
@@ -64,7 +74,8 @@ describe('a built-in role is rebuilt as a request resolves it', () => {
         const ctx = await rebuildRunContext(RUN);
 
         expect(ctx).toEqual({
-            requestId: 'agent-run-tenant-A-user-1',
+            // The run's own id, never tenant + starter (#5318).
+            requestId: 'agent-run-run-1',
             userId: 'user-1',
             tenantId: 'tenant-A',
             role: 'EDITOR',
