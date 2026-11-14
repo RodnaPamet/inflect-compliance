@@ -627,16 +627,6 @@ export async function readOrangeHrmRoster(
     let truncatedMidPage = false;
     /** Rows the API returned this run, before normalisation dropped any. */
     let rowsSeen = 0;
-    /**
-     * Pages actually FETCHED this run.
-     *
-     * Not derivable from `rowsSeen`, which is zero both for "no page was
-     * fetched" and for "a page came back empty" — and those take opposite
-     * exits: the second is a short page, so the roster ended. This counter is
-     * only ever read to answer "did this run read anything at all", which is
-     * the question the cursor depends on (#5577).
-     */
-    let pagesFetched = 0;
 
     const clock = deps.now ?? (() => new Date());
     const deadlineAt = deps.readDeadlineAt ?? null;
@@ -672,7 +662,6 @@ export async function readOrangeHrmRoster(
 
         const body = (await res.json()) as { data?: OrangeHrmEmployeeRow[] };
         const rows = body.data ?? [];
-        pagesFetched += 1;
 
         // Already consumed by an earlier run of this pass. Safe to compare by
         // `empNumber` ONLY because the request pins
@@ -825,37 +814,6 @@ export async function readOrangeHrmRoster(
             rowsSeen,
             normalised: employees.length,
         });
-    }
-
-    // ═══ A RUN THAT READ NOTHING HANDS BACK WHAT IT WAS GIVEN (#5577) ═══
-    //
-    // The budget is evaluated BEFORE the first page, so a slow token exchange
-    // can spend it with the loop body never entered. `offset` is then still
-    // `startOffset`, which for a resume is `cursor.offset - ORANGEHRM_PAGE_SIZE`
-    // — so the run read nothing and stored a cursor one page BEHIND the one it
-    // was handed, and each such run backed off another page. Rows at or below
-    // the high-water mark are discarded as duplicates, so the data stayed
-    // correct; what was lost was time, on exactly the throttled connection that
-    // had none to spare, deferring the completion that releases the departure
-    // reconcile.
-    //
-    // The one-page rewind itself is right — it exists to RE-READ a page, and a
-    // run that fetched no page has re-read nothing.
-    //
-    // Re-serialised from the parsed cursor rather than echoing `resumeFrom`,
-    // for two reasons. It normalises the legacy `<offset>` form to one
-    // spelling. And it is never null: `HrisSyncDeps` records that
-    // `complete: false` with no token "lands in the usecase's
-    // permanently-non-retryable arm", so echoing a first run's null
-    // `resumeFrom` would turn a throttled connection into one that can never
-    // finish a pass — a worse bug than the one being fixed. A fresh pass that
-    // reads nothing correctly resumes at `'0'`.
-    if (pagesFetched === 0) {
-        return {
-            employees,
-            complete: false,
-            resumeToken: formatResumeCursor(cursor.offset, cursor.lastEmpNumber),
-        };
     }
 
     // TRUNCATION OUTRANKS EVERYTHING. A page the budget cut short leaves rows
