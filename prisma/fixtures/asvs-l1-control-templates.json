@@ -1496,15 +1496,15 @@
         },
         {
           "title": {
-            "en": "Revoke the session server-side at logout and enforce the inactivity and absolute lifetimes"
+            "en": "Revoke the session server-side at logout, enforce its lifetimes and require fresh authentication for sensitive changes"
           },
           "description": {
-            "en": "Make logout delete the server-held session record rather than only clearing the client cookie, so a token captured earlier stops working the moment the user signs out. Configure an inactivity timeout that ends a session left untouched and an absolute lifetime that ends it regardless of activity, and apply both to the server-side record rather than to the cookie expiry, which the client controls. Attach the test record showing a logged-out token refused on replay together with the two configured values."
+            "en": "Make logout delete the server-held session record rather than only clearing the client cookie, so a token captured earlier stops working the moment the user signs out. Configure an inactivity timeout that ends a session left untouched and an absolute lifetime that ends it regardless of activity, and apply both to the server-side record rather than to the cookie expiry, which the client controls. Then list the operations that change the account itself or commit an especially sensitive transaction, such as a change of password, email address or second factor, a payment, or an export of personal data, and make each one ask for the password or a second factor again, or for a fresh confirmation, before it proceeds, because a session that was left open or taken over is otherwise enough to make the change. Decide that check on the server from when the session last authenticated rather than in the page. Attach the test record showing a logged-out token refused on replay with the two configured values, and a transcript showing one sensitive operation refused on a session that had not re-authenticated."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "Test record showing a logged-out token refused when replayed, alongside the configured inactivity and absolute lifetime values"
+            "en": "Test record showing a logged-out token refused on replay with the configured inactivity and absolute lifetime values, and a transcript showing a sensitive operation refused on a session that had not re-authenticated"
           },
           "suggestedRole": "Engineering lead",
           "steps": [
@@ -1526,6 +1526,26 @@
             {
               "text": {
                 "en": "Replay a logged-out token and record the response it received."
+              }
+            },
+            {
+              "text": {
+                "en": "List the operations that change the account or commit a sensitive transaction."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the password, a second factor or a fresh confirmation before each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide the check on the server from when the session last authenticated."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt one operation on a session that has not re-authenticated and record the refusal."
               }
             }
           ]
@@ -1613,42 +1633,6 @@
             {
               "text": {
                 "en": "Raise a ticket for any step where an earlier value still worked."
-              }
-            }
-          ]
-        },
-        {
-          "title": {
-            "en": "Enforce a fresh authentication before sensitive transactions and account changes"
-          },
-          "description": {
-            "en": "List the operations that change the account itself or commit an especially sensitive transaction, such as a change of password, email address or second factor, a payment, or an export of personal data, and make each one ask for the password or a second factor again, or for a fresh confirmation, before it proceeds. A session that was left open or taken over is otherwise enough to make the change. Decide the check on the server from when the session last authenticated rather than in the page. Attach the list together with a transcript showing one of the operations refused on a session that had not re-authenticated."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 6,
-          "evidenceHint": {
-            "en": "List of the sensitive operations that require a fresh authentication or confirmation, with a transcript showing one refused on a session that had not re-authenticated"
-          },
-          "suggestedRole": "Security engineering",
-          "steps": [
-            {
-              "text": {
-                "en": "List the operations that change the account or commit a sensitive transaction."
-              }
-            },
-            {
-              "text": {
-                "en": "Require the password, a second factor or a fresh confirmation before each one."
-              }
-            },
-            {
-              "text": {
-                "en": "Decide the check on the server from when the session last authenticated."
-              }
-            },
-            {
-              "text": {
-                "en": "Attempt one operation on a session that has not re-authenticated and record the refusal."
               }
             }
           ]
