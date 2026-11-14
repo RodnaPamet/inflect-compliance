@@ -105,9 +105,12 @@ export function parseReviewCadenceDays(markdown: string): number | null {
     }
 
     const lc = region.toLowerCase();
+    // Six-monthly BEFORE annual: `\bannually\b` matches inside
+    // `semi-annually` (the hyphen is a word boundary), so the other order
+    // read a six-month cadence as a year (#5316).
+    if (/\b(semi-?annual|bi-?annual|every six months)/.test(lc)) return 182;
     if (/\b(annual|annually|yearly|every year)\b/.test(lc)) return 365;
     if (/\bquarterly\b/.test(lc)) return 90;
-    if (/\b(semi-?annual|bi-?annual|every six months)\b/.test(lc)) return 182;
     if (/\bmonthly\b/.test(lc)) return 30;
     return null;
 }

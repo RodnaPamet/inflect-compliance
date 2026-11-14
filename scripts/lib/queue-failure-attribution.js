@@ -88,6 +88,17 @@ function failingTestFiles(logText) {
  * (#5308): `changedFiles: null` means listing the PR's files FAILED, which is
  * not the same as a PR that changes nothing. Reading it as an empty list would
  * exonerate the diff on a read that never happened.
+ *
+ * `INCOMPLETE` exists for the same reason, one layer along (#5630). The rule
+ * above was honoured only when NO failing file was found; once any was, the
+ * `logsReadable` flag was never consulted again, so two failed shards — one
+ * whose log could not be fetched, one naming a suite outside the diff — came
+ * out as `OUTSIDE_DIFF` and told the author "not this diff". The unread shard
+ * is exactly where an in-diff failure would hide.
+ *
+ * The asymmetry is deliberate: `IN_DIFF` does NOT consult the flag. Finding an
+ * in-diff failure is POSITIVE evidence and stays true however many other logs
+ * were unreadable. Only the negative verdict needs every log read.
  */
 function verdictOf({ cancelled, failingFiles, changedFiles, logsReadable }) {
     if (cancelled) return 'CANCELLED';
@@ -96,7 +107,12 @@ function verdictOf({ cancelled, failingFiles, changedFiles, logsReadable }) {
     if (changedFiles === null) return 'DIFF_UNREADABLE';
     const changed = new Set(changedFiles ?? []);
     const touched = failing.filter((f) => changed.has(f));
-    if (touched.length === 0) return 'OUTSIDE_DIFF';
+    if (touched.length === 0) {
+        // A NEGATIVE claim about a population, so it needs the whole
+        // population. "Every failing suite is outside this PR's diff" is not
+        // sayable about logs nobody could read.
+        return logsReadable === false ? 'INCOMPLETE' : 'OUTSIDE_DIFF';
+    }
     return 'IN_DIFF';
 }
 
@@ -138,6 +154,11 @@ function attributionBody(input) {
         lines.push('');
         lines.push('Failing:');
         for (const f of failingFiles.slice(0, 10)) lines.push(`- \`${f}\``);
+    } else if (verdict === 'INCOMPLETE') {
+        lines.push(`**Some failed jobs' logs could not be read, so this comparison is incomplete.** The failing ${untouched.length === 1 ? 'suite' : 'suites'} that could be read ${untouched.length === 1 ? 'is' : 'are'} outside the ${changedFiles.length} file(s) this PR changes — but an unread log is where an in-diff failure would hide, so this is **not** evidence either way about your changes.`);
+        lines.push('');
+        lines.push('Failing, read, and untouched by this PR:');
+        for (const f of untouched.slice(0, 10)) lines.push(`- \`${f}\``);
     } else if (verdict === 'OUTSIDE_DIFF') {
         lines.push(`**Every failing suite is outside this PR's diff.** The failing ${untouched.length === 1 ? 'suite is' : 'suites are'} not among the ${changedFiles.length} file(s) this PR changes, so the most likely causes are a queue-mate's changes, the base the candidate was built on, or infrastructure — not this diff.`);
         lines.push('');

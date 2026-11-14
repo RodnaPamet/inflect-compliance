@@ -81,6 +81,12 @@ describe('rq4-1 page segregation', () => {
         expect(normalizePathname('/login')).toBeNull();
     });
 
+    it('normalizePathname prefers a literal route over a dynamic sibling of the same length (#5316)', () => {
+        expect(normalizePathname('/t/acme/agents/parameter-sets')).toBe('/agents/parameter-sets');
+        expect(normalizePathname('/t/acme/agents/external-tools')).toBe('/agents/external-tools');
+        expect(normalizePathname('/t/acme/agents/agent-1')).toBe('/agents/[agentId]');
+    });
+
     it('classifyRoute returns the expected class for representative routes', () => {
         expect(classifyRoute('/t/acme/dashboard')).toBe('main');
         expect(classifyRoute('/t/acme/risks')).toBe('main');

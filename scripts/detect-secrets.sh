@@ -47,10 +47,27 @@ ALLOWLIST_MARKER='pragma: allowlist secret'
 # ─── Path-level skip globs ──────────────────────────────────────────
 # Don't scan binaries, lockfiles, the build output, or large vendored
 # dirs — they generate noise without catching real secrets.
-SKIP_PATHS=(
-    'node_modules/' '.next/' 'dist/' 'build/' 'coverage/' 'playwright-report/'
-    'test-results/' '.git/' '.husky/_/'
+# Names that may legitimately appear at ANY depth, because nothing in this
+# repository is ever genuinely called them: a nested install, and the lockfiles
+# a nested package owns (`site/package-lock.json`,
+# `packages/agent-harness-scanner/container/package-lock.json`).
+SKIP_ANY_DEPTH=(
+    'node_modules/'
     'package-lock.json' 'yarn.lock' 'pnpm-lock.yaml'
+)
+
+# Build output and fixed locations, matched ONLY at the repository root (#5631).
+#
+# These were matched mid-path, and `coverage/` is an ordinary word: it skipped
+# every tenant coverage route and page —
+# `src/app/api/t/[tenantSlug]/coverage/route.ts`,
+# `src/app/t/[tenantSlug]/(app)/coverage/*` — so a credential hard-coded into
+# one of them passed this hook AND the CI guardrail and shipped. The gate
+# reported success because it never looked. `public/`, `dist/`, `build/` and
+# `test-results/` are the same ordinary words waiting for the same accident.
+SKIP_PATHS=(
+    '.next/' 'dist/' 'build/' 'coverage/' 'playwright-report/'
+    'test-results/' '.git/' '.husky/_/'
     'prisma/migrations/' 'public/'
     # The scanner itself, the pattern source it reads, and the unit test
     # that exercises both — all contain secret-shaped strings on
@@ -69,19 +86,50 @@ SKIP_PATHS=(
     'tests/fixtures/secrets/'
 )
 
+# The repository root, so a path can be reduced to the form the skips are
+# written in. `pwd` is the fallback for a non-git checkout.
+SKIP_REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Reduce a path to REPO-RELATIVE before matching.
+#
+# This script is invoked two ways and they disagree about path shape:
+# `package.json`'s lint-staged task passes ABSOLUTE paths, while the script's
+# own listing (`git diff --cached --name-only`) is relative. The mid-path match
+# that #5631 removed made that difference invisible — and anchoring without
+# this made the pre-commit hook stop skipping its OWN fixture file, which is
+# how it was found. Normalising here means both invocations skip the same set.
+rel_path() {
+    local f="$1"
+    f="${f#./}"
+    case "$f" in
+        "$SKIP_REPO_ROOT"/*) f="${f#"$SKIP_REPO_ROOT"/}";;
+    esac
+    printf '%s' "$f"
+}
+
 is_skipped() {
-    local file="$1"
-    for skip in "${SKIP_PATHS[@]}"; do
+    local file
+    file="$(rel_path "$1")"
+    for skip in "${SKIP_ANY_DEPTH[@]}"; do
         case "$file" in
             "$skip"*|*"/$skip"*) return 0;;
         esac
     done
+    # ROOT-ANCHORED. The `*"/$skip"*` arm that used to apply here is what made
+    # `coverage/` match a source directory (#5631).
+    for skip in "${SKIP_PATHS[@]}"; do
+        case "$file" in
+            "$skip"*) return 0;;
+        esac
+    done
     # Skip non-text / binary files — `git check-attr -z binary` is the
     # most reliable check, but a cheap MIME-type sniff via `file` is
-    # plenty for our use case.
-    if [[ -f "$file" ]]; then
+    # plenty for our use case. Uses the ORIGINAL argument, not the
+    # repo-relative form: only the skip patterns needed normalising, and a
+    # relative path is not resolvable from an arbitrary cwd.
+    if [[ -f "$1" ]]; then
         local mime
-        mime=$(file --mime-type --brief "$file" 2>/dev/null || echo "")
+        mime=$(file --mime-type --brief "$1" 2>/dev/null || echo "")
         case "$mime" in
             text/*|application/json|application/javascript|application/x-shellscript|application/xml|inode/x-empty|"")
                 return 1;;

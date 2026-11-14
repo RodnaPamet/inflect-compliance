@@ -116,6 +116,33 @@ describe.each(ROUTES)('%s', (label, route) => {
         );
     });
 
+    it('builds the emailed link on APP_URL, never on a spoofed X-Forwarded-Host', async () => {
+        const transport = new StubEmailProvider();
+        setEmailProvider(transport);
+        const original = process.env.APP_URL;
+        process.env.APP_URL = 'https://inflect.example.io/';
+        try {
+            const req = new NextRequest(`https://app.example.io/api/t/acme/admin/${path}`, {
+                method: 'POST',
+                headers: new Headers({
+                    'content-type': 'application/json',
+                    'x-forwarded-host': 'evil.example',
+                    'x-forwarded-proto': 'https',
+                }),
+                body: JSON.stringify({ email: 'new.person@example.com', role: 'EDITOR' }),
+            });
+            const res = await route(req, routeArgs);
+            expect(res.status).toBe(201);
+        } finally {
+            if (original === undefined) delete process.env.APP_URL;
+            else process.env.APP_URL = original;
+        }
+        const [msg] = transport.sentMessages;
+        expect(msg.text).toContain('https://inflect.example.io/invite/tok-abc');
+        expect(msg.text).not.toContain('evil.example');
+        expect(msg.html ?? '').not.toContain('evil.example');
+    });
+
     it('answers emailSent: false when no mailer is configured, and still returns the link', async () => {
         // A self-hosted deployment with no SMTP_HOST: the console sink.
         setEmailProvider(new ConsoleEmailProvider());

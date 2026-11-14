@@ -11,6 +11,7 @@ import {
     filterFieldsForEvent,
 } from '@/lib/automation/event-labels';
 import { AUTOMATION_EVENT_NAMES } from '@/app-layer/automation/events';
+import { RiskStatus } from '@prisma/client';
 
 describe('event-labels', () => {
     it('has a label entry for every catalog event', () => {
@@ -40,5 +41,12 @@ describe('event-labels', () => {
         const sev = filterFieldsForEvent('RISK_CREATED').find((f) => f.field === 'severity');
         expect(sev?.type).toBe('enum');
         expect(sev?.options?.length).toBeGreaterThan(0);
+    });
+
+    it('a risk status picker offers every RiskStatus, MITIGATED included (#5316)', () => {
+        for (const field of ['toStatus', 'fromStatus']) {
+            const def = filterFieldsForEvent('RISK_STATUS_CHANGED').find((f) => f.field === field);
+            expect(def?.options?.map((o) => o.value).sort()).toEqual(Object.values(RiskStatus).sort());
+        }
     });
 });

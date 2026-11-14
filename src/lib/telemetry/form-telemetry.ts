@@ -17,8 +17,10 @@
  * Events are dispatched to a single global sink that an app can wire
  * to Sentry breadcrumbs, PostHog, a server-log endpoint, etc. — via
  * `registerFormTelemetrySink(handler)` at app boot. When no sink is
- * registered the events are a no-op in production; in development
- * they're forwarded to `console.debug` for local visibility.
+ * registered the events are a no-op in every environment — nothing is
+ * written to the console. For local visibility, set
+ * `window.__INFLECT_FORM_TELEMETRY__` to a function; it receives every
+ * event whether or not a sink is registered.
  *
  * Zero hard dependencies on Sentry / PostHog / any specific analytics
  * library. The sink pattern keeps the primitives library-safe.

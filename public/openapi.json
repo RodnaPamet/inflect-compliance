@@ -2906,7 +2906,12 @@
           },
           "severity": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
           },
           "type": {
             "type": "string",
@@ -2991,7 +2996,13 @@
         "type": "object",
         "properties": {
           "severity": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
           },
           "type": {
             "type": "string",

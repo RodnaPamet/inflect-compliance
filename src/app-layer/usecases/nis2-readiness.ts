@@ -28,6 +28,7 @@
  *
  * NOT a legal compliance determination — a self-assessment maturity aid.
  */
+import type { FindingSeverity } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanWrite } from '../policies/common';
@@ -354,7 +355,9 @@ export async function materializeNis2Gaps(
             continue; // OPEN already — idempotent, no dup
         }
         const finding = await createFinding(ctx, {
-            severity: g.criticality, // FindingSeverity shares LOW/MEDIUM/HIGH/CRITICAL
+            // FindingSeverity shares LOW/MEDIUM/HIGH/CRITICAL; the question bank's
+            // value is a string, so it is named as the enum it already holds.
+            severity: g.criticality as FindingSeverity,
             type: 'NONCONFORMITY',
             title: plain,
             description:

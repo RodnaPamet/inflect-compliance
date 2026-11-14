@@ -271,41 +271,186 @@ async function retrieveLiveSubscription(
 const ENDED_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set(['canceled', 'incomplete_expired']);
 
 /**
+ * Which account state a write may overwrite.
+ *
+ * `UNCONDITIONAL` is a completed checkout's: it sets a new subscription over
+ * whatever is stored. `STORED_SUBSCRIPTION_UNCHANGED` is every other event's:
+ * the write lands only while `stripeSubscriptionId` still holds the value
+ * read before the Stripe round trip (null included), so a checkout that
+ * commits during the re-fetch is not overwritten by an older event (#5316).
+ */
+type WriteCondition =
+    | { kind: 'UNCONDITIONAL' }
+    | { kind: 'STORED_SUBSCRIPTION_UNCHANGED'; storedSubscriptionId: string | null };
+
+/**
+ * `APPLIED` — the live state was written.
+ * `ENDED_WITH_NO_STORED_SUBSCRIPTION` — the subscription has ended and the
+ *   account stores none, so there was nothing to end; nothing written.
+ * `SUPERSEDED` — the stored subscription changed during the re-fetch; the
+ *   conditional write matched no row and nothing was written.
+ */
+type LiveApplyOutcome = 'APPLIED' | 'ENDED_WITH_NO_STORED_SUBSCRIPTION' | 'SUPERSEDED';
+
+/**
  * Re-fetch the subscription an event names and apply Stripe's current state
  * to the customer's billing account. A subscription that has ended, or that
  * Stripe no longer has, is applied as a deletion: the same write the
- * `customer.subscription.deleted` branch made before #5316.
+ * `customer.subscription.deleted` branch made before #5316 — except to an
+ * account that stores no subscription, which it leaves alone. Such an
+ * account either never subscribed or already had the deletion applied, and
+ * its plan may be one an operator set with `changeTenantPlan`, which the
+ * deletion would reset to FREE (owner decision, 2026-11-14).
  */
-async function applyLiveSubscription(customerId: string, subscriptionId: string): Promise<void> {
+async function applyLiveSubscription(
+    customerId: string,
+    subscriptionId: string,
+    condition: WriteCondition,
+): Promise<LiveApplyOutcome> {
     const sub = await retrieveLiveSubscription(subscriptionId);
+    const ended = sub === null || ENDED_SUBSCRIPTION_STATUSES.has(sub.status as string);
 
-    if (sub === null || ENDED_SUBSCRIPTION_STATUSES.has(sub.status as string)) {
-        await db.billingAccount.update({
-            where: { stripeCustomerId: customerId },
-            data: {
-                status: 'CANCELED',
-                // The subscription is gone, so is what it paid for (#5082).
-                plan: 'FREE',
-                stripeSubscriptionId: null,
-            },
-        });
-        return;
+    if (
+        ended &&
+        condition.kind === 'STORED_SUBSCRIPTION_UNCHANGED' &&
+        condition.storedSubscriptionId === null
+    ) {
+        return 'ENDED_WITH_NO_STORED_SUBSCRIPTION';
     }
 
-    await db.billingAccount.update({
-        where: { stripeCustomerId: customerId },
+    const data =
+        sub === null || ended
+            ? {
+                  status: 'CANCELED' as const,
+                  // The subscription is gone, so is what it paid for (#5082).
+                  plan: 'FREE' as const,
+                  stripeSubscriptionId: null,
+              }
+            : {
+                  stripeSubscriptionId: subscriptionId,
+                  plan: planForSubscription(sub),
+                  status: mapStripeStatus(sub.status as string),
+                  currentPeriodEnd: getSubscriptionPeriodEnd(sub),
+                  trialEndsAt: getSubscriptionTrialEnd(sub),
+              };
+
+    if (condition.kind === 'UNCONDITIONAL') {
+        await db.billingAccount.update({ where: { stripeCustomerId: customerId }, data });
+        return 'APPLIED';
+    }
+
+    const { count } = await db.billingAccount.updateMany({
+        where: { stripeCustomerId: customerId, stripeSubscriptionId: condition.storedSubscriptionId },
+        data,
+    });
+    return count === 0 ? 'SUPERSEDED' : 'APPLIED';
+}
+
+// ─── Which subscription an event is about ───
+
+/** A Stripe reference: an id, or an expanded object carrying one. */
+function idOf(ref: unknown): string | null {
+    if (typeof ref === 'string') return ref || null;
+    if (typeof ref === 'object' && ref !== null) {
+        const id = (ref as { id?: unknown }).id;
+        if (typeof id === 'string' && id) return id;
+    }
+    return null;
+}
+
+/**
+ * The subscription an invoice names, or `null` when it names none (a one-off
+ * invoice). The pinned SDK's types expose only
+ * `parent.subscription_details.subscription` (API versions from 2025-03-31);
+ * an endpoint on an older API version sends the top-level
+ * `invoice.subscription`. Either is a string or an expanded object with `id`.
+ */
+function invoiceSubscriptionId(invoice: Record<string, unknown>): string | null {
+    const parent = invoice.parent;
+    if (typeof parent === 'object' && parent !== null) {
+        const details = (parent as { subscription_details?: unknown }).subscription_details;
+        if (typeof details === 'object' && details !== null) {
+            const fromParent = idOf((details as { subscription?: unknown }).subscription);
+            if (fromParent) return fromParent;
+        }
+    }
+    return idOf(invoice.subscription);
+}
+
+async function recordBillingEvent(tenantId: string, event: Stripe.Event): Promise<void> {
+    await db.billingEvent.create({
         data: {
-            stripeSubscriptionId: subscriptionId,
-            plan: planForSubscription(sub),
-            status: mapStripeStatus(sub.status as string),
-            currentPeriodEnd: getSubscriptionPeriodEnd(sub),
-            trialEndsAt: getSubscriptionTrialEnd(sub),
+            tenantId,
+            type: event.type,
+            stripeEventId: event.id,
+            payloadJson: JSON.parse(JSON.stringify(event.data.object)),
         },
     });
 }
 
+/**
+ * Whether an event may move the account to a subscription other than the one
+ * it stores. Only a completed checkout sets a new subscription; every other
+ * event is applied only when it is about the stored one (#5316).
+ */
+type SubscriptionScope = 'SETS_SUBSCRIPTION' | 'STORED_SUBSCRIPTION_ONLY';
+
+/**
+ * Apply the live state of the subscription an event names, then record the
+ * event. The `BillingEvent` row is written only after the account write
+ * succeeds, so an event whose write fails is not recorded and Stripe's
+ * re-delivery is processed rather than skipped as a duplicate.
+ */
+async function applySubscriptionEvent(
+    event: Stripe.Event,
+    customerId: string,
+    subscriptionId: string,
+    scope: SubscriptionScope,
+): Promise<void> {
+    const billingAccount = await db.billingAccount.findUnique({
+        where: { stripeCustomerId: customerId },
+    });
+    if (!billingAccount) return;
+
+    const logFields = {
+        component: 'billing',
+        eventId: event.id,
+        eventType: event.type,
+        tenantId: billingAccount.tenantId,
+    };
+    const stored = billingAccount.stripeSubscriptionId ?? null;
+    if (scope === 'STORED_SUBSCRIPTION_ONLY' && stored !== null && stored !== subscriptionId) {
+        // An event about a replaced subscription. Recorded so Stripe does not
+        // deliver it for ever; the account is left as it is.
+        logger.info('Stripe event concerned a non-current subscription; ignored', logFields);
+        await recordBillingEvent(billingAccount.tenantId, event);
+        return;
+    }
+
+    const outcome = await applyLiveSubscription(
+        customerId,
+        subscriptionId,
+        scope === 'SETS_SUBSCRIPTION'
+            ? { kind: 'UNCONDITIONAL' }
+            : { kind: 'STORED_SUBSCRIPTION_UNCHANGED', storedSubscriptionId: stored },
+    );
+    if (outcome === 'ENDED_WITH_NO_STORED_SUBSCRIPTION') {
+        logger.info('Stripe event: the subscription has ended and the account stores no subscription; nothing changed', logFields);
+    } else if (outcome === 'SUPERSEDED') {
+        logger.info('Stripe event superseded: the stored subscription changed during the re-fetch; nothing changed', logFields);
+    }
+    // Recorded in every outcome. A superseded event lost to a newer write
+    // for this customer; its re-delivery would find that newer state and
+    // change nothing either.
+    await recordBillingEvent(billingAccount.tenantId, event);
+}
+
 // ─── Event processor (source of truth for billing state) ───
 
+/**
+ * Apply one verified Stripe event. Any error propagates: the webhook route
+ * answers non-2xx and Stripe delivers the event again.
+ */
 export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
     // Idempotency: skip if already processed
     const existingEvent = await db.billingEvent.findUnique({
@@ -318,26 +463,12 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
     switch (event.type) {
         case 'checkout.session.completed': {
-            const session = event.data.object as Stripe.Checkout.Session;
-            const customerId = session.customer as string;
-            const subscriptionId = session.subscription as string;
+            const session = event.data.object as unknown as Record<string, unknown>;
+            const customerId = idOf(session.customer);
+            const subscriptionId = idOf(session.subscription);
             if (!customerId || !subscriptionId) break;
 
-            const billingAccount = await db.billingAccount.findUnique({
-                where: { stripeCustomerId: customerId },
-            });
-            if (!billingAccount) break;
-
-            await applyLiveSubscription(customerId, subscriptionId);
-
-            await db.billingEvent.create({
-                data: {
-                    tenantId: billingAccount.tenantId,
-                    type: event.type,
-                    stripeEventId: event.id,
-                    payloadJson: JSON.parse(JSON.stringify(event.data.object)),
-                },
-            });
+            await applySubscriptionEvent(event, customerId, subscriptionId, 'SETS_SUBSCRIPTION');
             break;
         }
 
@@ -348,82 +479,38 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
         case 'customer.subscription.updated':
         case 'customer.subscription.deleted': {
             const eventSub = event.data.object as unknown as Record<string, unknown>;
-            const customerId = eventSub.customer as string;
-            const subscriptionId = eventSub.id as string;
+            const customerId = idOf(eventSub.customer);
+            const subscriptionId = idOf(eventSub.id);
             if (!customerId || !subscriptionId) break;
 
-            const billingAccount = await db.billingAccount.findUnique({
-                where: { stripeCustomerId: customerId },
-            });
-            if (!billingAccount) break;
-
-            await applyLiveSubscription(customerId, subscriptionId);
-
-            await db.billingEvent.create({
-                data: {
-                    tenantId: billingAccount.tenantId,
-                    type: event.type,
-                    stripeEventId: event.id,
-                    payloadJson: JSON.parse(JSON.stringify(event.data.object)),
-                },
-            });
+            await applySubscriptionEvent(event, customerId, subscriptionId, 'STORED_SUBSCRIPTION_ONLY');
             break;
         }
 
-        case 'invoice.payment_failed': {
-            const invoice = event.data.object as unknown as Record<string, unknown>;
-            const customerId = (invoice.customer ?? invoice.customer_id) as string;
-            if (!customerId) break;
-
-            const billingAccount = await db.billingAccount.findUnique({
-                where: { stripeCustomerId: customerId },
-            });
-            if (!billingAccount) break;
-
-            // Mark account as PAST_DUE on payment failure
-            await db.billingAccount.update({
-                where: { stripeCustomerId: customerId },
-                data: { status: 'PAST_DUE' },
-            });
-
-            await db.billingEvent.create({
-                data: {
-                    tenantId: billingAccount.tenantId,
-                    type: event.type,
-                    stripeEventId: event.id,
-                    payloadJson: JSON.parse(JSON.stringify(event.data.object)),
-                },
-            });
-            logger.warn('Payment failed', { component: 'billing', stripeCustomerId: customerId, tenantId: billingAccount.tenantId });
-            break;
-        }
-
+        // An invoice event's type is not the subscription's state: a late
+        // `payment_failed` would set PAST_DUE on a subscription since paid or
+        // cancelled. The invoice names the subscription, and its live state
+        // is applied like any subscription event's (#5316).
+        case 'invoice.payment_failed':
         case 'invoice.payment_succeeded': {
             const invoice = event.data.object as unknown as Record<string, unknown>;
-            const customerId = (invoice.customer ?? invoice.customer_id) as string;
+            const customerId = idOf(invoice.customer ?? invoice.customer_id);
             if (!customerId) break;
 
-            const billingAccount = await db.billingAccount.findUnique({
-                where: { stripeCustomerId: customerId },
-            });
-            if (!billingAccount) break;
-
-            // Re-activate if was PAST_DUE
-            if (billingAccount.status === 'PAST_DUE') {
-                await db.billingAccount.update({
-                    where: { stripeCustomerId: customerId },
-                    data: { status: 'ACTIVE' },
+            const subscriptionId = invoiceSubscriptionId(invoice);
+            if (!subscriptionId) {
+                logger.debug('Invoice names no subscription; nothing to apply', {
+                    component: 'billing',
+                    eventId: event.id,
+                    eventType: event.type,
                 });
+                break;
             }
 
-            await db.billingEvent.create({
-                data: {
-                    tenantId: billingAccount.tenantId,
-                    type: event.type,
-                    stripeEventId: event.id,
-                    payloadJson: JSON.parse(JSON.stringify(event.data.object)),
-                },
-            });
+            if (event.type === 'invoice.payment_failed') {
+                logger.warn('Payment failed', { component: 'billing', eventId: event.id, stripeCustomerId: customerId });
+            }
+            await applySubscriptionEvent(event, customerId, subscriptionId, 'STORED_SUBSCRIPTION_ONLY');
             break;
         }
 
