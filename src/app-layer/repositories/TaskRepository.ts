@@ -7,13 +7,7 @@ import { TERMINAL_TASK_STATUSES, REVIEW_TASK_STATUS, isTerminalStatus } from '..
 import { badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
-
-/**
- * Cap on the Deleted view's flat (uncursored) read. Matches the other
- * deleted-list surfaces — the view is a recovery tool, not a browsable
- * archive, so the most recent page is what matters.
- */
-const DELETED_LIST_CAP = 200;
+import { TASK_DELETED_LIST_CAP as DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
 
 /**
  * The set of valid `TaskSource` enum members, materialised once from
@@ -278,7 +272,11 @@ export class TaskRepository {
             withDeleted({
                 where,
                 orderBy: { deletedAt: 'desc' as const },
-                take: DELETED_LIST_CAP,
+                // One past the cap, so "exactly the cap" and "more than the
+                // cap" read differently and the page can say the list is
+                // incomplete (#5303). It used to read exactly the cap, and the
+                // route reported `truncated: false` whatever came back.
+                take: DELETED_LIST_CAP + 1,
                 // The live list's shape plus the two audit columns the
                 // Deleted view renders. Kept out of `taskListSelect`
                 // itself so the live list doesn't ship two always-null
@@ -290,7 +288,9 @@ export class TaskRepository {
                 },
             }),
         );
-        return TaskRepository.attachLinkedControls(db, ctx, rows);
+        const truncated = rows.length > DELETED_LIST_CAP;
+        const shown = truncated ? rows.slice(0, DELETED_LIST_CAP) : rows;
+        return { rows: await TaskRepository.attachLinkedControls(db, ctx, shown), truncated };
     }
 
     /**

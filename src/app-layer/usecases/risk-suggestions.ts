@@ -645,6 +645,16 @@ export async function dismissSession(ctx: RequestContext, sessionId: string) {
         });
 
         if (!session) throw notFound('Session not found');
+        // A decided session stays decided (#5303), as `applySession` holds it.
+        // Dismissing an APPLIED one would relabel risks that were created as
+        // rejected, and write an audit row and an Art 14 outcome saying the
+        // human turned down suggestions they in fact accepted.
+        if (session.status === 'APPLIED') {
+            throw forbidden('Session has already been applied');
+        }
+        if (session.status === 'DISMISSED') {
+            throw forbidden('Session has already been dismissed');
+        }
 
         const updated = await db.riskSuggestionSession.update({
             where: { id: session.id },

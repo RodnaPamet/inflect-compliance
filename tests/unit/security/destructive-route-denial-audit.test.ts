@@ -238,6 +238,15 @@ jest.mock('@/app-layer/usecases/automation-rules', () => ({
     updateAutomationRule: (...a: unknown[]) => mockUpdateAutomationRule(...a),
     toggleAutomationRule: (...a: unknown[]) => mockToggleAutomationRule(...a),
     archiveAutomationRule: (...a: unknown[]) => mockArchiveAutomationRule(...a),
+    // The collection route (#5303): its GET imports the list.
+    listAutomationRules: jest.fn(),
+    createAutomationRule: (...a: unknown[]) => mockCreateAutomationRule(...a),
+}));
+const mockCreateAutomationRule = jest.fn();
+const mockCreateRuleFromTemplate = jest.fn();
+jest.mock('@/app-layer/usecases/automation-templates', () => ({
+    listAutomationTemplates: jest.fn(),
+    createRuleFromTemplate: (...a: unknown[]) => mockCreateRuleFromTemplate(...a),
 }));
 
 const mockRemoveBundleItem = jest.fn();
@@ -300,6 +309,8 @@ import {
     PATCH as automationRulePatch,
     DELETE as automationRuleArchive,
 } from '@/app/api/t/[tenantSlug]/automation/rules/[id]/route';
+import { POST as automationRuleCreate } from '@/app/api/t/[tenantSlug]/automation/rules/route';
+import { POST as automationTemplateUse } from '@/app/api/t/[tenantSlug]/automation/templates/route';
 import {
     POST as vendorBundleItemAdd,
     DELETE as vendorBundleItemRemove,
@@ -1533,6 +1544,33 @@ describe('the body-reading gated handlers authorize BEFORE they parse', () => {
             deniedRole: 'EDITOR',
             allowedRole: 'ADMIN',
         },
+        // #5303 — creating a rule, directly or from a template, takes the key
+        // every write on rules/[id] takes. Ungated, a role refused disabling a
+        // rule could still create one, and a refused create left no row.
+        {
+            name: 'POST /automation/rules',
+            handler: asHandler(automationRuleCreate),
+            path: '/api/t/acme/automation/rules',
+            params: { tenantSlug: 'acme' },
+            method: 'POST',
+            key: 'admin.manage',
+            usecase: mockCreateAutomationRule,
+            invalidBody: { name: 42 },
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
+        {
+            name: 'POST /automation/templates',
+            handler: asHandler(automationTemplateUse),
+            path: '/api/t/acme/automation/templates',
+            params: { tenantSlug: 'acme' },
+            method: 'POST',
+            key: 'admin.manage',
+            usecase: mockCreateRuleFromTemplate,
+            invalidBody: { templateId: '' },
+            deniedRole: 'EDITOR',
+            allowedRole: 'ADMIN',
+        },
         {
             name: 'POST /vendors/[vendorId]/bundles/[bundleId]',
             handler: asHandler(vendorBundleItemAdd),
@@ -1621,6 +1659,23 @@ describe('the body-reading gated handlers authorize BEFORE they parse', () => {
             expect.objectContaining({ tenantId: 'tenant-1' }),
             'ar-1',
             'DISABLED',
+        );
+        expect(denialEntries()).toEqual([]);
+    });
+
+    it('an ADMIN still creates a rule from a template (#5303)', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeRequestContext('ADMIN'));
+        mockCreateRuleFromTemplate.mockResolvedValue({ id: 'ar-2' });
+
+        const res = await asHandler(automationTemplateUse)(
+            makeReq('/api/t/acme/automation/templates', { templateId: 'tpl-1' }, 'POST'),
+            { params: { tenantSlug: 'acme' } },
+        );
+
+        expect(res.status).toBe(201);
+        expect(mockCreateRuleFromTemplate).toHaveBeenCalledWith(
+            expect.objectContaining({ tenantId: 'tenant-1' }),
+            'tpl-1',
         );
         expect(denialEntries()).toEqual([]);
     });

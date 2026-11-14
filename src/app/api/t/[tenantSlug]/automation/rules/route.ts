@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getTenantCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { withValidatedBody } from '@/lib/validation/route';
+import { parseJsonBody } from '@/lib/validation/route';
+import { requirePermission } from '@/lib/security/permission-middleware';
 import { jsonResponse } from '@/lib/api-response';
 import {
     listAutomationRules,
@@ -36,12 +37,20 @@ export const GET = withApiErrorHandling(
     },
 );
 
+/**
+ * Creating a rule takes `admin.manage`, as editing, disabling and archiving
+ * one does (`rules/[id]`, #2117), and `assertCanManageAutomation` still reads
+ * the coarse admin tier behind it (#5303). Ungated here, a custom role on an
+ * ADMIN base with `admin.manage` switched off could create an enabled rule it
+ * was then refused turning off, and a refused create wrote no AUTHZ_DENIED
+ * row. The body is parsed inside the handler, after authorization, because
+ * `withValidatedBody` and `requirePermission` both claim the third argument.
+ */
 export const POST = withApiErrorHandling(
-    withValidatedBody(
-        CreateAutomationRuleSchema,
-        async (req, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }, body) => {
-            const params = await paramsPromise;
-            const ctx = await getTenantCtx(params, req);
+    requirePermission<{ tenantSlug: string }>(
+        'admin.manage',
+        async (req, _routeArgs, ctx) => {
+            const body = await parseJsonBody(req, CreateAutomationRuleSchema);
             const rule = await createAutomationRule(ctx, {
                 name: body.name,
                 description: body.description ?? null,

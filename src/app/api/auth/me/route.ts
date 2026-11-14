@@ -9,6 +9,16 @@ export const GET = withApiErrorHandling(async () => {
         return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // The tenant reported is one this SESSION may reach (#5303): a session
+    // opened by a workspace's single sign-on is scoped to that workspace
+    // (`src/lib/auth/sso-session.ts`), a workspace the Entra group gate
+    // refused at sign-in stays refused for the session
+    // (`src/lib/auth/entra-gate-scope.ts`), and a soft-deleted workspace is
+    // nobody's — the rules the membership claims and the DB-backed
+    // workspace gates apply.
+    const ssoTenantId = session.user.ssoTenantId;
+    const entraDenied = session.user.entraGateDeniedTenantIds ?? [];
+
     const user = await prisma.user.findUnique({
         where: { id: session.user.id },
         select: {
@@ -16,7 +26,12 @@ export const GET = withApiErrorHandling(async () => {
             email: true,
             name: true,
             tenantMemberships: {
-                where: { status: 'ACTIVE' },
+                where: {
+                    status: 'ACTIVE',
+                    tenant: { deletedAt: null },
+                    ...(ssoTenantId != null ? { tenantId: ssoTenantId } : {}),
+                    ...(entraDenied.length > 0 ? { NOT: { tenantId: { in: entraDenied } } } : {}),
+                },
                 orderBy: { createdAt: 'asc' },
                 take: 1,
                 select: {

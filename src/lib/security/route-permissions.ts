@@ -1693,6 +1693,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'assert, so an EDITOR passed the middleware and was refused deeper ' +
             'where nothing writes an audit row. Not an access change.',
     },
+    {
+        path: new RegExp(`^${T}\\/tasks\\/[^/]+\\/restore$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Restoring a soft-deleted task. Previously gated tasks.edit while ' +
+            'restoreTask reaches restoreEntity\'s assertCanAdmin, so an EDITOR ' +
+            'passed the route and was refused deeper with no audit row ' +
+            '(#5303). admin.manage is the key the task DELETE takes and the ' +
+            'asset / risk / policy restores take. Not an access change for a ' +
+            'built-in role.',
+    },
 
     // ── Destructive register verbs, second tranche (#2117) ──────────
     // Same defect, the single-entity half of the population: a correct
@@ -1858,6 +1870,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'files to close. assertCanManageAutomation reads ' +
             'ctx.permissions.canAdmin behind every one of them. GET is a ' +
             'canRead-tier read and stays at the usecase layer.',
+    },
+    {
+        path: new RegExp(`^${T}\\/automation\\/(rules|templates)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Creating an automation rule, directly or from a template, takes ' +
+            'the key every write on rules/[id] takes (#5303): a role that ' +
+            'could create a standing side-effect producer it was refused ' +
+            'disabling or archiving is the gap this closes. ' +
+            'assertCanManageAutomation reads ctx.permissions.canAdmin behind ' +
+            'both. GET on either stays at the usecase layer.',
     },
     {
         path: new RegExp(`^${T}\\/vendors\\/[^/]+\\/bundles\\/[^/]+$`),
