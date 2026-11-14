@@ -49,7 +49,9 @@ export function VendorTemplatesIndexClient() {
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
-    const { permissions } = useTenantContext();
+    // Creating a template ends in `assertCanManageVendorAssessmentTemplates`,
+    // which reads `vendors.edit`, not the coarse `canWrite` tier (#5313).
+    const canAuthor = useTenantContext().appPermissions.vendors.edit;
     const t = useTranslations('admin');
 
     const [items, setItems] = useState<TemplateRow[] | null>(null);
@@ -133,7 +135,7 @@ export function VendorTemplatesIndexClient() {
                 </p>
             </header>
 
-            {permissions.canWrite && (
+            {canAuthor && (
                 <div className={cardVariants({ density: 'compact' })}>
                     <Heading level={3} className="mb-3">
                         {t('vendorTemplates.createHeading')}

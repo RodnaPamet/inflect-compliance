@@ -89,7 +89,7 @@ type Answer = { status: number; body: unknown } | Promise<{ status: number; body
 interface Call { url: string; method: string; body: unknown; contentType: string | null }
 
 let calls: Call[] = [];
-let provider = 'legacy-mcp';
+let provider: string | null | undefined = 'legacy-mcp';
 let standingAnswer: Answer;
 let pullAnswer: Answer;
 let reconcileAnswer: Answer;
@@ -140,9 +140,6 @@ beforeEach(() => {
             const { status, body } = await a;
             return { ok: status >= 200 && status < 300, status, json: async () => body };
         };
-        if (url === '/api/t/acme/admin/integrations') {
-            return reply({ status: 200, body: [{ id: 'conn_1', provider }] });
-        }
         if (url.startsWith('/api/t/acme/admin/legacy-access/snapshot')) return reply(standingAnswer);
         if (url === '/api/t/acme/admin/legacy-access/pull') return reply(pullAnswer);
         if (url === '/api/t/acme/admin/legacy-access/reconcile') return reply(reconcileAnswer);
@@ -168,6 +165,7 @@ function renderCard(runs: LegacyExecutionRow[] = [], onReloadRuns = jest.fn()) {
     const view = render(
         <LegacyAccessRunsCard
             connectionId="conn_1"
+            provider={provider}
             runs={runs}
             runsLoading={false}
             runsError={false}
@@ -486,9 +484,11 @@ describe('scope and copy', () => {
     it('renders nothing, and reads nothing, for a connection that is not a legacy one', async () => {
         provider = 'entra-id';
         const { container } = renderCard();
-        await waitFor(() => expect(calls.some((c) => c.url === '/api/t/acme/admin/integrations')).toBe(true));
-        await waitFor(() => expect(container).toBeEmptyDOMElement());
-        expect(standingReads()).toHaveLength(0);
+        await new Promise((r) => setTimeout(r, 20));
+        expect(container).toBeEmptyDOMElement();
+        // #5313 — the provider is the page's, so the card sends nothing at all:
+        // no standing read, and no download of the connection list to learn it.
+        expect(calls).toEqual([]);
     });
 
     it('every reason code has a sentence in BOTH catalogues', () => {

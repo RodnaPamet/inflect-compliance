@@ -68,6 +68,7 @@ function makeData(): PortfolioData {
         canSetMaturity: false,
         initiatives: { rows: [], inFlight: 0, atRisk: 0 },
         canManageInitiatives: false,
+        canDrillDown: true,
         summary: {
             organizationId: 'org-1',
             organizationSlug: 'acme-org',

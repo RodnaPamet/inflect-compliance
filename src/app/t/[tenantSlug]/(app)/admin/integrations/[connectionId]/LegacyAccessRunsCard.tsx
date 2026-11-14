@@ -33,11 +33,12 @@
  * "Match to people" sends ITS id, so what this card calls matched is what a
  * campaign will find matched. Statistics only: counts, a status, a date.
  *
- * Both routes, the standing read and the connection list that says whether this
- * is a legacy connection take `admin.manage`. A viewer without it is shown no
- * card and sends no request, as the page's owner card is gated at its mount:
- * every request it could make would be refused, and each refusal writes an
- * AUTHZ_DENIED row for nothing more than a visit.
+ * The standing read takes `admin.manage`. A viewer without it is shown no card
+ * and sends no request, as the page's owner card is gated at its mount: every
+ * request it could make would be refused, and each refusal writes an
+ * AUTHZ_DENIED row for nothing more than a visit. Whether this is a legacy
+ * connection comes from the provider the page already read (#5313), not from
+ * a second download of the whole connection list.
  */
 
 import Link from 'next/link';
@@ -58,7 +59,7 @@ import { AppIcon } from '@/components/icons/AppIcon';
 import type { LegacySnapshotStanding } from '@/app-layer/usecases/legacy-access-standing';
 import type { ReconcileRefusal } from '@/app-layer/usecases/legacy-reconcile';
 
-import { useIsLegacyConnection } from './useIsLegacyConnection';
+import { isLegacyConnection } from './legacy-connection';
 
 export const PULL_KEY = 'legacy-mcp.pull';
 export const RECONCILE_KEY = 'legacy-mcp.reconcile';
@@ -142,6 +143,11 @@ type Notice = { variant: 'info' | 'error'; text: string };
 
 export interface LegacyAccessRunsCardProps {
     connectionId: string;
+    /**
+     * The connection's provider, from the page's own read of the connection
+     * (#5313) — `undefined` until it has answered, `null` when it failed.
+     */
+    provider: string | null | undefined;
     /** The connection's executions, as the page loaded them for Check runs. */
     runs: readonly LegacyExecutionRow[];
     runsLoading: boolean;
@@ -152,6 +158,7 @@ export interface LegacyAccessRunsCardProps {
 
 export function LegacyAccessRunsCard({
     connectionId,
+    provider,
     runs,
     runsLoading,
     runsError,
@@ -161,11 +168,9 @@ export function LegacyAccessRunsCard({
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const canManage = usePermissions().admin.manage;
-    // No list request without the key it takes (see the module docblock).
-    const applies = useIsLegacyConnection(connectionId, canManage);
     // Shown only to a viewer holding admin.manage, on a connection known to be
-    // a legacy one or one the list could not classify (`null`).
-    const shown = canManage && applies !== undefined && applies !== false;
+    // a legacy one.
+    const shown = canManage && isLegacyConnection(provider);
 
     const [standing, setStanding] = useState<LegacySnapshotStanding | null>(null);
     const [standingLoading, setStandingLoading] = useState(true);

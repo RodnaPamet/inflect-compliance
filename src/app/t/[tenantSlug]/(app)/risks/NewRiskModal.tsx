@@ -33,6 +33,7 @@
  */
 
 import useSWR from 'swr';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useToast } from '@/components/ui/hooks';
 import { useSWRConfig } from 'swr';
@@ -165,7 +166,12 @@ export function NewRiskModal({
         open ? '/api/risk-templates' : null,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) return [];
+            if (!res.ok) {
+                // The empty fallback carries no status for the SWR 401 seam
+                // to read, so a lapsed session is reported here (#5313).
+                noteUnauthorized(res.status, url);
+                return [];
+            }
             const data = await res.json();
             return Array.isArray(data) ? data : [];
         },

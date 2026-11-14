@@ -96,7 +96,7 @@ afterEach(() => {
 describe('removing a widget', () => {
     async function removeFirst() {
         const user = userEvent.setup();
-        render(<PortfolioDashboard initialWidgets={[widget('w1', 'Coverage'), widget('w2', 'Risks')] as never} data={data} canEdit />);
+        render(<PortfolioDashboard initialWidgets={[widget('w1', 'Coverage'), widget('w2', 'Risks')] as never} data={data} canEdit canManageTenants />);
         await user.click(screen.getByRole('button', { name: EN.dashboard.editDashboard }));
         await user.click(screen.getByTestId('dashboard-delete-widget-w1'));
     }
@@ -134,7 +134,7 @@ describe('removing a widget', () => {
 });
 
 it('tells an editor what to click when the dashboard is empty', () => {
-    render(<PortfolioDashboard initialWidgets={[]} data={data} canEdit />);
+    render(<PortfolioDashboard initialWidgets={[]} data={data} canEdit canManageTenants />);
     const empty = screen.getByTestId('dashboard-empty-state');
     expect(empty).toHaveTextContent(EN.dashboard.emptyAdmin);
     expect(empty.textContent ?? '').not.toMatch(/npm run|backfill/);

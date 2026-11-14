@@ -30,6 +30,7 @@
  */
 
 import useSWR from 'swr';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Combobox, type ComboboxOption } from "./combobox";
@@ -137,6 +138,9 @@ export function useTenantMembers(
             const res = await fetch(url);
             if (!res.ok) {
                 // Fallback: empty roster rather than crashing the picker.
+                // The empty list carries no status for the SWR 401 seam to
+                // read, so a lapsed session is reported here (#5313).
+                noteUnauthorized(res.status, url);
                 return [];
             }
             const data: Array<{

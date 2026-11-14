@@ -8,7 +8,7 @@
  * keeps an Admin from filling in fields the server will not save, and says
  * why. It leaves the rest of the form, and the switches, theirs.
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as React from 'react';
 
 jest.mock('next/navigation', () => ({
@@ -124,5 +124,34 @@ describe('the SSO form names its fields', () => {
         expect(field(SSO.certificate).id).toBe('sso-saml-certificate');
         expect(field(SSO.nameIdFormat).id).toBe('sso-saml-nameid');
         expect(field(SSO.acsUrl).id).toBe('sso-saml-acs-url');
+    });
+});
+
+// #5313 — a save sends back the stored config keys the form does not render.
+// Dropping them read as a trust change: an Admin was refused every save, and
+// an Owner's save removed an OIDC `discoveryUrl` and every identity link.
+describe('a save keeps the config keys the form does not show', () => {
+    it('sends a stored discoveryUrl back unchanged, beside the fields the form renders', async () => {
+        const provider = {
+            ...OIDC_PROVIDER,
+            configJson: { ...OIDC_PROVIDER.configJson, discoveryUrl: 'https://acme.okta.example/.well-known/openid-configuration', _jit: { allowJitProvisioning: false } },
+        };
+        const posts: Array<Record<string, unknown>> = [];
+        global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                posts.push(JSON.parse(String(init.body)));
+                return { ok: true, json: async () => ({}) };
+            }
+            return { ok: true, json: async () => [provider] };
+        }) as unknown as typeof fetch;
+        render(<SsoAdminPage />);
+        await screen.findByText(/Only an Owner can change the identity provider/);
+        fireEvent.click(document.getElementById('sso-save-btn') as HTMLElement);
+        await waitFor(() => expect(posts).toHaveLength(1));
+        const config = posts[0].config as Record<string, unknown>;
+        expect(config.discoveryUrl).toBe('https://acme.okta.example/.well-known/openid-configuration');
+        expect(config.issuer).toBe('https://acme.okta.example');
+        // The server's own JIT record is not echoed into the IdP config.
+        expect(config._jit).toBeUndefined();
     });
 });

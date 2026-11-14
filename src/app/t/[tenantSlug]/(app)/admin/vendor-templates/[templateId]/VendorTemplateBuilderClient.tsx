@@ -198,7 +198,11 @@ export function VendorTemplateBuilderClient({
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const router = useRouter();
-    const { permissions } = useTenantContext();
+    // Every write route this page calls ends in
+    // `assertCanManageVendorAssessmentTemplates`, which reads the granular
+    // `vendors.edit` key — not the coarse `canWrite` tier, which a custom role
+    // can contradict in either direction (#5313).
+    const canAuthor = useTenantContext().appPermissions.vendors.edit;
     const t = useTranslations('admin');
     const triggerUndoToast = useToastWithUndo();
 
@@ -251,8 +255,8 @@ export function VendorTemplateBuilderClient({
     }, [refresh]);
 
     const editable = useMemo(
-        () => permissions.canWrite && tree && !tree.isPublished,
-        [permissions.canWrite, tree],
+        () => canAuthor && tree && !tree.isPublished,
+        [canAuthor, tree],
     );
     const questionCount = sections.reduce((n, s) => n + s.questions.length, 0);
 
@@ -377,7 +381,7 @@ export function VendorTemplateBuilderClient({
     }
 
     async function publish() {
-        if (!tree || tree.isPublished || !permissions.canWrite) return;
+        if (!tree || tree.isPublished || !canAuthor) return;
         setPublishing(true);
         setError(null);
         try {
@@ -620,7 +624,7 @@ export function VendorTemplateBuilderClient({
                             {saving ? t('templateBuilder.saving') : t('templateBuilder.saveOrder')}
                         </Button>
                     )}
-                    {permissions.canWrite &&
+                    {canAuthor &&
                         !tree.isPublished &&
                         questionCount > 0 && (
                             <Button
@@ -651,7 +655,7 @@ export function VendorTemplateBuilderClient({
                     <p className="text-xs text-content-muted mt-1">
                         {t('templateBuilder.publishedDesc')}
                     </p>
-                    {permissions.canWrite && (
+                    {canAuthor && (
                         <Button
                             variant="primary"
                             size="sm"

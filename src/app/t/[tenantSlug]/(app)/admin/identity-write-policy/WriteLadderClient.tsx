@@ -27,11 +27,16 @@
  *    asymmetry is deliberate, not an oversight.
  *
  * 3. **Say when the rung is above what the runtime will honour.** The ladder is
- *    a statement of intent stored on the tenant; the leaver pass enforces its own
- *    clamp and refuses anything above it, and the joiner has no implementation at
- *    all. The leaver is settable here; the joiner is not, since 2026-09-01 and both would then do nothing. A
- *    control that accepts a value the system ignores, silently, is worse than one
- *    that refuses.
+ *    a statement of intent stored on the tenant; each pass enforces its own
+ *    clamp (`LEAVER_MAX_MODE`, `JOINER_MAX_MODE`) and refuses anything above it.
+ *    Both directions are implemented (`DIRECTION_IMPLEMENTED` is true for each)
+ *    and both are settable here, up to `AUTOMATIC`: an Owner can widen the
+ *    leaver until it DISABLES accounts in the customer's directory, and the
+ *    joiner until it CREATES them (Entra, with the connection's own grants).
+ *    Both clamps sit at `AUTOMATIC`, so no rung the ladder can reach is above
+ *    either today; each clamp is kept as the brake, and the page shows the
+ *    clamp notice only once one is lowered. A control that accepts a value the
+ *    system ignores, silently, is worse than one that refuses.
  *
  * The page offers only the NEXT rung, never a jump. The usecase already refuses
  * skips and enforces the seven-day minimum — this surfaces those rules rather

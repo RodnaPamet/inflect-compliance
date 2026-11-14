@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
@@ -125,7 +126,7 @@ export function RiskTreatmentPlanCard({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch treatment plans');
+            if (!res.ok) throw new ApiClientError('Failed to fetch treatment plans', 'fetch_failed', res.status);
             return res.json();
         },
     );
@@ -257,7 +258,7 @@ function ActivePlanBlock({
         `${apiBase}/${planId}`,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch plan detail');
+            if (!res.ok) throw new ApiClientError('Failed to fetch plan detail', 'fetch_failed', res.status);
             return res.json();
         },
     );
