@@ -201,7 +201,23 @@ describe('erasure pseudonymizes the audit trail, it does not delete it', () => {
         // that hand-rolled `UPDATE "AuditLog" SET "userId" = NULL` to dodge
         // the `updateMany` above reddens here, and C6 proves that mutation is
         // still caught by the oracle itself.
-        const rawOps = run.ops.filter((op) => op.table === '$raw');
+        //
+        // SINCE #5595 the raw statements are two groups, split by POSITION:
+        // before the first audit-table call is the up-front `planErasure`
+        // read, which must be SELECTs only (it reads the catalog, so it names
+        // "User" and pg_* tables); after it is the erasure record's append,
+        // graded exactly as before.
+        const firstAuditOp = run.ops.findIndex((op) => op.table === 'auditLog');
+        expect(firstAuditOp).toBeGreaterThan(0);
+        const planSql = run.ops
+            .slice(0, firstAuditOp)
+            .filter((op) => op.table === '$raw')
+            .map((op) => (Array.isArray(op.args) && typeof op.args[0] === 'string' ? op.args[0] : ''));
+        expect(planSql.some((sql) => sql.includes('pg_constraint'))).toBe(true);
+        expect(planSql.filter((sql) => !/^\s*SELECT\b/i.test(sql))).toEqual([]);
+        expect(planSql.filter((sql) => /\b(update|delete|insert|truncate|alter|drop)\b/i.test(sql))).toEqual([]);
+
+        const rawOps = run.ops.slice(firstAuditOp).filter((op) => op.table === '$raw');
         expect(rawOps.length).toBeGreaterThan(0);
         for (const op of rawOps) {
             const sql = JSON.stringify(op.args);

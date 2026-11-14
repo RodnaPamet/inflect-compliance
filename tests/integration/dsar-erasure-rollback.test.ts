@@ -87,13 +87,28 @@
  * state this issue exists to rule out. A future edit that moves that
  * `updateMany` off `tx` for any reason is the thing to fear, and it is
  * now the thing this file catches.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * SINCE #5595: THE ORDINARY CASE NEVER REACHES THE ROLLBACK
+ * ═══════════════════════════════════════════════════════════════════
+ *
+ * `eraseUser` now runs `planErasure` inside its transaction first and
+ * refuses with `ErasureBlockedError` before writing anything when a
+ * blocker exists (owner decision 2026-11-14). A membership present from
+ * the start is therefore refused UP FRONT, and the rollback is reached
+ * only when the blocking row commits AFTER the plan read it — which is
+ * exactly the window the RESTRICT FK still guards. So the rollback half
+ * of this file now drives that window for real: a client wrapper commits
+ * the membership from OUTSIDE the transaction just before the
+ * pseudonymization, the plan has already said "clear", and the delete is
+ * refused by the FK. Mutation 3 above is caught there.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
-import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
+import { eraseUser, type ErasureDb } from '@/app-layer/jobs/dsar-erasure';
 import { ERASURE_EXECUTED_ACTION } from '@/lib/audit/erasure-record';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
@@ -107,11 +122,14 @@ const globalPrisma = new PrismaClient({
 
 const SUFFIX = randomUUID().slice(0, 8);
 const TENANT = `t-erase-${SUFFIX}`;
-/** Blocked by a real RESTRICT referent. */
+/** Blocked by a real RESTRICT referent present before the erasure starts. */
 const USER_BLOCKED = `u-erase-blocked-${SUFFIX}`;
+/** Blocked by a RESTRICT referent committed AFTER the up-front plan read. */
+const USER_LATE = `u-erase-late-${SUFFIX}`;
 /** The control: identical shape, no referent. */
 const USER_FREE = `u-erase-free-${SUFFIX}`;
 const AUDIT_BLOCKED = `a-erase-blocked-${SUFFIX}`;
+const AUDIT_LATE = `a-erase-late-${SUFFIX}`;
 const AUDIT_FREE = `a-erase-free-${SUFFIX}`;
 
 async function mkUser(id: string) {
@@ -162,13 +180,54 @@ async function erasureRecordIds(): Promise<string[]> {
     return rows.map((r) => r.id);
 }
 
+/**
+ * A client whose transaction commits a blocking `TenantMembership` for
+ * `USER_LATE` from OUTSIDE the transaction, immediately before the
+ * pseudonymization's opening read — after `planErasure` read the subject clear.
+ * Everything else is the real Prisma transaction client, unchanged.
+ */
+function lateBlockerDb(): ErasureDb {
+    const withLateBlocker = (tx: ErasureDb): ErasureDb =>
+        new Proxy(tx, {
+            get(target, prop) {
+                const value = Reflect.get(target, prop);
+                if (prop !== 'auditLog') {
+                    return typeof value === 'function' ? value.bind(target) : value;
+                }
+                // Only the READ that opens the pseudonymization is wrapped —
+                // it runs after the plan and before every write. Every other
+                // delegate method passes through to the real one untouched.
+                return new Proxy(value as object, {
+                    get(delegate, method) {
+                        const real = Reflect.get(delegate, method);
+                        if (method !== 'findMany' || typeof real !== 'function') {
+                            return typeof real === 'function' ? real.bind(delegate) : real;
+                        }
+                        return async (...args: unknown[]) => {
+                            await globalPrisma.tenantMembership.create({
+                                data: { tenantId: TENANT, userId: USER_LATE, role: 'ADMIN', status: 'ACTIVE' },
+                            });
+                            return real.apply(delegate, args);
+                        };
+                    },
+                });
+            },
+        });
+    return {
+        $transaction: <T>(fn: (tx: ErasureDb) => Promise<T>) =>
+            globalPrisma.$transaction((tx) => fn(withLateBlocker(tx as unknown as ErasureDb))),
+    } as unknown as ErasureDb;
+}
+
 describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', () => {
     beforeAll(async () => {
         await globalPrisma.$connect();
         await globalPrisma.tenant.create({ data: { id: TENANT, name: TENANT, slug: TENANT } });
         await mkUser(USER_BLOCKED);
+        await mkUser(USER_LATE);
         await mkUser(USER_FREE);
         await mkAuditRow(AUDIT_BLOCKED, USER_BLOCKED);
+        await mkAuditRow(AUDIT_LATE, USER_LATE);
         await mkAuditRow(AUDIT_FREE, USER_FREE);
 
         // THE BLOCKER, and it is a real constraint rather than a stub.
@@ -197,7 +256,7 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
             await deleteAuditRowsForTenants(globalPrisma, TENANT);
             await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: TENANT } });
             await globalPrisma.tenant.deleteMany({ where: { id: TENANT } });
-            await globalPrisma.user.deleteMany({ where: { id: { in: [USER_BLOCKED, USER_FREE] } } });
+            await globalPrisma.user.deleteMany({ where: { id: { in: [USER_BLOCKED, USER_LATE, USER_FREE] } } });
         }
         await globalPrisma.$disconnect();
     });
@@ -207,11 +266,32 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
         // that were never written, or were written somewhere this connection
         // cannot see.
         await expect(attributionOf(AUDIT_BLOCKED)).resolves.toBe(USER_BLOCKED);
+        await expect(attributionOf(AUDIT_LATE)).resolves.toBe(USER_LATE);
         await expect(attributionOf(AUDIT_FREE)).resolves.toBe(USER_FREE);
     });
 
-    it('refuses the erasure when a real RESTRICT reference exists', async () => {
-        await expect(eraseUser(USER_BLOCKED)).rejects.toThrow(/refused by a reference/i);
+    it('refuses UP FRONT when the RESTRICT reference exists before the erasure starts (#5595)', async () => {
+        await expect(eraseUser(USER_BLOCKED)).rejects.toMatchObject({
+            name: 'ErasureBlockedError',
+            blockers: [
+                expect.objectContaining({
+                    table: 'TenantMembership',
+                    column: 'userId',
+                    effect: 'BLOCKS_DELETE',
+                    reason: 'RESTRICT_REFERENCE',
+                }),
+            ],
+        });
+        // Up front means nothing was attempted, not attempted and undone.
+        await expect(attributionOf(AUDIT_BLOCKED)).resolves.toBe(USER_BLOCKED);
+    });
+
+    it('refuses the erasure when a real RESTRICT reference commits after the plan', async () => {
+        await expect(eraseUser(USER_LATE, { db: lateBlockerDb() })).rejects.toThrow(/refused by a reference/i);
+        // The wrapper really did commit the blocker, from outside the
+        // transaction — otherwise this refusal would be about something else.
+        const late = await globalPrisma.tenantMembership.count({ where: { tenantId: TENANT, userId: USER_LATE } });
+        expect(late).toBe(1);
     });
 
     it('leaves the audit attribution INTACT after the refusal — the rollback', async () => {
@@ -219,7 +299,7 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
         // ran inside the transaction and was undone by it; had it committed,
         // no statement could put this value back, because the trigger permits
         // value → NULL and nothing else.
-        await expect(attributionOf(AUDIT_BLOCKED)).resolves.toBe(USER_BLOCKED);
+        await expect(attributionOf(AUDIT_LATE)).resolves.toBe(USER_LATE);
     });
 
     it('leaves NO erasure record behind either — it is INSIDE the transaction (#2682)', async () => {
@@ -241,9 +321,9 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
         await expect(erasureRecordIds()).resolves.toEqual([]);
     });
 
-    it('leaves the subject in place after the refusal', async () => {
-        const user = await globalPrisma.user.findUnique({ where: { id: USER_BLOCKED } });
-        expect(user).not.toBeNull();
+    it('leaves the subject in place after either refusal', async () => {
+        await expect(globalPrisma.user.findUnique({ where: { id: USER_BLOCKED } })).resolves.not.toBeNull();
+        await expect(globalPrisma.user.findUnique({ where: { id: USER_LATE } })).resolves.not.toBeNull();
     });
 
     it('POSITIVE CONTROL — with no blocking reference, the same erasure succeeds and DOES null the attribution', async () => {
