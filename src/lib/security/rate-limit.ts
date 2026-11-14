@@ -474,10 +474,15 @@ export interface ProgressiveRateLimitPolicy {
  *   attempts 5-9  → 30s delay (significant friction)
  *   attempt 10+   → 15 min lockout (attack territory)
  *
- * Window is 1 hour: a legitimate user who typed their password
- * wrong ten times in a day isn't locked out in perpetuity; an
- * attacker who managed to sustain 10 failures/hour stays locked
- * for the full window.
+ * Failures are counted over a 1-hour window, so ten wrong passwords
+ * spread over a day never lock anyone out. The lockout itself lasts
+ * `lockoutMs` (15 minutes) from the last failure, NOT the rest of the
+ * window: the first attempt after it ends finds the counter RESET to
+ * zero (`evaluateProgressiveRateLimit`). So this policy alone admits
+ * about 10 guesses per 15 minutes per identifier, roughly 40 an hour —
+ * size brute-force exposure from that figure, not from 10/hour
+ * (#5306). The per-email credential limiter
+ * (`src/lib/auth/credential-rate-limit.ts`) bounds the same path too.
  */
 export const LOGIN_PROGRESSIVE_POLICY: ProgressiveRateLimitPolicy = {
     tiers: [

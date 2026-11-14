@@ -40,6 +40,12 @@ interface GraphMemberOfPage {
  *
  * Returns `[]` on any non-OK response or transport error — a Graph outage must
  * never block sign-in; the caller treats an empty list as "no groups resolved".
+ * That holds on EVERY page, not only the first: a failure on page 2 returns
+ * `[]`, never the groups read before it, and so does running out of pages with
+ * a `nextLink` still to follow. A partial list resolves a role from the groups
+ * that happened to arrive, so the sync could rewrite an ADMIN membership to
+ * EDITOR on it, or pass the group gate on it (#5306); "no groups resolved"
+ * changes no role.
  */
 export async function fetchUserGroupsFromGraph(
     accessToken: string,
@@ -59,9 +65,9 @@ export async function fetchUserGroupsFromGraph(
                 headers: graphHeaders(accessToken, { Accept: 'application/json' }),
             });
         } catch {
-            return out;
+            return [];
         }
-        if (!res.ok) return out;
+        if (!res.ok) return [];
         const page = (await res.json()) as GraphMemberOfPage;
         for (const item of page.value ?? []) {
             if (item.id && !seen.has(item.id)) {
@@ -71,6 +77,8 @@ export async function fetchUserGroupsFromGraph(
         }
         url = page['@odata.nextLink'];
     }
+    // Stopped at `maxPages` with more to read: the list is incomplete.
+    if (url) return [];
     return out;
 }
 
