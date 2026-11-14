@@ -37,6 +37,7 @@
 import { z } from 'zod';
 
 import { badRequest } from '@/lib/errors/types';
+import { logger } from '@/lib/observability/logger';
 import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import { proposalKindNoun } from '@/lib/agentic/proposal-labels';
 
@@ -65,7 +66,9 @@ import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-r
 import {
     createAgentProposal,
     parseProposalPayload,
+    prepareAgentProposal,
     type AgentProposalKind,
+    type PreparedAgentProposal,
 } from '@/app-layer/usecases/agent-proposals';
 
 import {
@@ -344,10 +347,15 @@ export async function runProposeTool(
     // 1. The one gate: exposure → the `mcp:propose` capability → the domain
     //    scope → the PRINCIPAL's create permission (the same `assertPermission`
     //    the human create route runs). Exactly one audit row on refusal.
-    await authorizeToolCall(
+    //
+    //    The policy card's budgets are NOT spent here (#5304): `charge` spends
+    //    them once every item has passed its schema and the content guards, so
+    //    a batch refused by its own content is not charged an action.
+    const charge = await authorizeToolCall(
         inv,
         { ...tool, capability: 'propose', capabilityClass: 'propose' },
         rawArgs,
+        { deferCharge: true },
     );
 
     // 2. Validate the envelope.
@@ -361,11 +369,14 @@ export async function runProposeTool(
     //    throws. An item the agentic output guard quarantines is written as a
     //    terminal QUARANTINED row and never enters the review queue.
     //
-    //    EVERY item is checked against its schema FIRST (#5304). The loop below
-    //    writes as it goes, so a malformed third item used to fail the call
-    //    after the first two were already PENDING; the agent saw a failure with
-    //    no ids and resent all three, and reviewers got the first two twice. A
-    //    batch with an item its schema refuses now queues nothing.
+    //    ALL OR NOTHING (#5304). The loop used to write as it went, so a third
+    //    item that failed its schema or a content guard failed the call after
+    //    the first two were already PENDING; the agent saw a failure with no
+    //    ids and resent all three, and reviewers got the first two twice. So
+    //    every item is checked against its schema, then PREPARED (sanitised and
+    //    guarded, once each, with the guards' own audit rows), before any is
+    //    written, and a batch with an item refused at either step queues
+    //    nothing and is not charged.
     const items = parsed.data.items;
     items.forEach((item, index) => {
         try {
@@ -377,25 +388,54 @@ export async function runProposeTool(
             );
         }
     });
+    const prepared: PreparedAgentProposal[] = [];
+    try {
+        for (const item of items) {
+            prepared.push(
+                await prepareAgentProposal(ctx, {
+                    kind: tool.kind,
+                    payload: item,
+                    rationale: parsed.data.rationale ?? null,
+                    // The version that ALLOWED this call, taken from the invocation the
+                    // gate above authorized — not re-read from the card here. A re-read
+                    // would answer "what is in force now", which is a different claim
+                    // and is not what this proposal executed under; between the gate and
+                    // this line an operator can have edited the card.
+                    policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
+                    // The step that produced it, when a step did. Every item in this
+                    // loop shares one origin — they came from one `buildItems` on one
+                    // step — so a run's step can legitimately own several proposals,
+                    // which is precisely why `stepSeq` carries no unique constraint.
+                    origin,
+                }),
+            );
+        }
+    } catch (err) {
+        // The refusal stands, and nothing joins the review queue. An earlier
+        // item the output guard QUARANTINED is still written, as it was before
+        // the batch became all-or-nothing: that row, its audit entry, the bell
+        // and the breaker count are the evidence of an injection attempt, and
+        // they never reach a reviewer, so they cannot be reviewed twice.
+        for (const evidence of prepared.filter((p) => p.quarantined)) {
+            await createAgentProposal(ctx, evidence).catch((writeErr: unknown) => {
+                logger.warn('a quarantined proposal from a refused batch was not recorded', {
+                    component: 'mcp-propose',
+                    tool: tool.name,
+                    error: writeErr instanceof Error ? writeErr.message : 'non-Error thrown',
+                });
+            });
+        }
+        throw err;
+    }
+
+    // Every item passed: spend the policy card's budgets now. This can still
+    // refuse (the daily budget), so it runs before anything is written.
+    await charge();
+
     const queued: string[] = [];
     const quarantined: string[] = [];
-    for (const item of items) {
-        const proposal = await createAgentProposal(ctx, {
-            kind: tool.kind,
-            payload: item,
-            rationale: parsed.data.rationale ?? null,
-            // The version that ALLOWED this call, taken from the invocation the
-            // gate above authorized — not re-read from the card here. A re-read
-            // would answer "what is in force now", which is a different claim
-            // and is not what this proposal executed under; between the gate and
-            // this line an operator can have edited the card.
-            policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
-            // The step that produced it, when a step did. Every item in this
-            // loop shares one origin — they came from one `buildItems` on one
-            // step — so a run's step can legitimately own several proposals,
-            // which is precisely why `stepSeq` carries no unique constraint.
-            origin,
-        });
+    for (const item of prepared) {
+        const proposal = await createAgentProposal(ctx, item);
         (proposal.status === 'QUARANTINED' ? quarantined : queued).push(proposal.id);
     }
 

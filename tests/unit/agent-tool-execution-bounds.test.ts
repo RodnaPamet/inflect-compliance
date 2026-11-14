@@ -187,6 +187,72 @@ describe('runBoundedTool — the deadline', () => {
         });
         expect(timers.pending()).toBe(0);
     });
+
+    it('bounds the tool and not the executor\'s clean-up: a result captured in time survives a slow clean-up (#5304)', async () => {
+        const timers = makeTimers();
+        let releaseCleanup!: () => void;
+        let cleaningUp!: () => void;
+        const cleanupStarted = new Promise<void>((r) => (cleaningUp = r));
+        let cleanedUp = false;
+        const exec: ToolExecutor = async (_file, _args, options) => {
+            const result = { error: null, stdout: 'kept', stderr: '' };
+            options.onResultCaptured?.(result);
+            // A clean-up that outlasts the deadline (a sandbox deletion
+            // polling for an ACCEPTED delete to settle).
+            await new Promise<void>((resolve) => {
+                releaseCleanup = resolve;
+                cleaningUp();
+            });
+            cleanedUp = true;
+            return result;
+        };
+        const pending = runBoundedTool({ tool: 'cleans-up', file: 'x', timeoutMs: 1_000, deps: { exec, timers } });
+
+        await cleanupStarted;
+        timers.fire();
+        let settled = false;
+        void pending.then(
+            () => (settled = true),
+            () => (settled = true),
+        );
+        for (let i = 0; i < 8; i++) await Promise.resolve();
+        // Still waiting for the clean-up: the caller does not get the result
+        // while the executor is still working.
+        expect(settled).toBe(false);
+
+        releaseCleanup();
+        const result = await pending;
+        expect(result.stdout).toBe('kept');
+        expect(cleanedUp).toBe(true);
+    });
+
+    it('a clean-up that fails after the result was captured does not discard the result', async () => {
+        const timers = makeTimers();
+        const exec: ToolExecutor = async (_file, _args, options) => {
+            options.onResultCaptured?.({ error: null, stdout: 'still here', stderr: '' });
+            throw new Error('clean-up exploded');
+        };
+        const result = await runBoundedTool({ tool: 'x', file: 'x', deps: { exec, timers } });
+        expect(result.stdout).toBe('still here');
+    });
+
+    it('a result reported after the deadline fired does not count', async () => {
+        const timers = makeTimers();
+        let report!: () => void;
+        const exec: ToolExecutor = (_file, _args, options) =>
+            new Promise<RawExecResult>((resolve) => {
+                report = () => {
+                    const result = { error: null, stdout: 'late', stderr: '' };
+                    options.onResultCaptured?.(result);
+                    resolve(result);
+                };
+            });
+        const pending = runBoundedTool({ tool: 'x', file: 'x', timeoutMs: 1_000, deps: { exec, timers } });
+        const assertion = expect(pending).rejects.toThrow(ToolExecutionTimeoutError);
+        timers.fire();
+        report();
+        await assertion;
+    });
 });
 
 // ─── The output cap ─────────────────────────────────────────────────

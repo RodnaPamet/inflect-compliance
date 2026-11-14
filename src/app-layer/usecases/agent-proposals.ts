@@ -718,14 +718,70 @@ export function parseProposalPayload(
 }
 
 /**
- * Create a PENDING proposal from an agent. Validates the payload against the
- * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
- * row. Does NOT create the real entity. Attributed to the API key.
+ * Everything `createAgentProposal` decides about one item BEFORE it writes:
+ * the payload parsed and sanitised, both content guards run (their audit rows
+ * written as ever) and their verdicts applied. Held by `PreparedAgentProposal`.
  */
-export async function createAgentProposal(
+interface PreparedProposalState {
+    readonly tenantId: string;
+    readonly input: ProposeInput;
+    readonly operation: AgentProposalOperation;
+    readonly targetEntityId: string | null;
+    readonly sanitized: unknown;
+    readonly rationale: string | null;
+    readonly guard: AgentProposalGuardResult;
+}
+
+/**
+ * One item checked and guarded, not yet written (#5304).
+ *
+ * A BATCH prepares every item before it queues any, so a content-guard refusal
+ * on its third item no longer leaves the first two PENDING: the agent saw a
+ * failed call with no ids, resent all three, and reviewers got the first two
+ * twice. Each item is still guarded exactly once, here, so no guard audit row
+ * is written twice.
+ *
+ * Opaque, and issued only by `prepareAgentProposal`: `createAgentProposal`
+ * accepts one only if this module issued it (the `ISSUED` map, not the shape),
+ * and only once. An object that merely looks prepared is not a way around the
+ * guards.
+ */
+export interface PreparedAgentProposal {
+    readonly kind: AgentProposalKind;
+    /** The agentic output guard quarantined it: it will be written QUARANTINED. */
+    readonly quarantined: boolean;
+}
+
+const ISSUED = new WeakMap<object, { readonly state: PreparedProposalState; written: boolean }>();
+
+function isPreparedAgentProposal(
+    value: ProposeInput | PreparedAgentProposal,
+): value is PreparedAgentProposal {
+    return ISSUED.has(value);
+}
+
+/**
+ * Validate, sanitise and guard one proposal without writing it (#5304). Throws
+ * exactly what `createAgentProposal` would throw for the same input, before any
+ * row is written. Pass the result to `createAgentProposal` to write it.
+ */
+export async function prepareAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
-): Promise<ProposalResult> {
+): Promise<PreparedAgentProposal> {
+    const state = await prepareProposalState(ctx, input);
+    const handle: PreparedAgentProposal = {
+        kind: state.input.kind,
+        quarantined: state.guard.quarantined,
+    };
+    ISSUED.set(handle, { state, written: false });
+    return handle;
+}
+
+async function prepareProposalState(
+    ctx: RequestContext,
+    input: ProposeInput,
+): Promise<PreparedProposalState> {
     // ═══ PROCESS_MAP: THE BRAKE, THEN CREATE-ONLY (#5053) ═══
     //
     // At the VERY TOP, before the operation is resolved: an UPDATE-shaped
@@ -857,6 +913,35 @@ export async function createAgentProposal(
             });
         }
     }
+
+    return { tenantId: ctx.tenantId, input, operation, targetEntityId, sanitized, rationale, guard };
+}
+
+/**
+ * Create a PENDING proposal from an agent. Validates the payload against the
+ * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
+ * row. Does NOT create the real entity. Attributed to the API key.
+ *
+ * Takes either the input, or an item `prepareAgentProposal` already checked
+ * and guarded (a batch prepares every item before it queues any, #5304). A
+ * prepared item is written once: a second write of the same one is refused.
+ */
+export async function createAgentProposal(
+    ctx: RequestContext,
+    request: ProposeInput | PreparedAgentProposal,
+): Promise<ProposalResult> {
+    let state: PreparedProposalState;
+    if (isPreparedAgentProposal(request)) {
+        const issued = ISSUED.get(request);
+        if (!issued || issued.written || issued.state.tenantId !== ctx.tenantId) {
+            throw badRequest('A prepared proposal is written once, in the tenant that prepared it.');
+        }
+        issued.written = true;
+        state = issued.state;
+    } else {
+        state = await prepareProposalState(ctx, request);
+    }
+    const { input, operation, targetEntityId, sanitized, rationale, guard } = state;
 
     // 2d. HOW MANY HUMANS WILL HAVE TO SIGN THIS — resolved once, here, and
     // PINNED onto the row. The composition (strictest of the pinned card rung,
