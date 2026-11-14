@@ -58,7 +58,9 @@ export interface TaskChecklistBackfillResult {
 
 export async function backfillTemplateTaskChecklists(
     prisma: PrismaClient,
+    options: { batchSize?: number } = {},
 ): Promise<TaskChecklistBackfillResult> {
+    const batchSize = options.batchSize ?? BATCH_SIZE;
     const result: TaskChecklistBackfillResult = { scanned: 0, filled: 0, noSteps: 0, raced: 0 };
     let cursor: string | undefined;
 
@@ -69,11 +71,15 @@ export async function backfillTemplateTaskChecklists(
                 checklistJson: { equals: Prisma.DbNull },
                 deletedAt: null,
                 status: { notIn: [...TERMINAL_TASK_STATUSES] },
+                // `id > cursor`, not Prisma's `cursor` + `skip: 1`: the last
+                // row of a batch has usually just been filled, so it no longer
+                // matches this filter, and `skip: 1` then skipped the first
+                // candidate AFTER it instead — one task per batch (#5314).
+                ...(cursor ? { id: { gt: cursor } } : {}),
             },
             select: { id: true, tenantId: true, templateTaskId: true },
             orderBy: { id: 'asc' },
-            take: BATCH_SIZE,
-            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+            take: batchSize,
         });
         if (tasks.length === 0) break;
         cursor = tasks[tasks.length - 1].id;
@@ -104,7 +110,7 @@ export async function backfillTemplateTaskChecklists(
             else result.raced++;
         }
 
-        if (tasks.length < BATCH_SIZE) break;
+        if (tasks.length < batchSize) break;
     }
 
     return result;

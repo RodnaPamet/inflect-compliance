@@ -95,6 +95,20 @@ describe('two-tenant isolation', () => {
         expect(theirs.map((v) => v.id)).toEqual([seeded[T2].verdictId]);
     });
 
+    it('an app_user session with no tenant bound reads nothing', async () => {
+        // The bypass used to key on an UNSET tenant GUC rather than the role,
+        // so this session — which every other table returns zero rows to —
+        // read every tenant's verdicts (#5314). Both spellings of "unset".
+        const unbound = await prisma.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe(`SET LOCAL ROLE app_user`);
+            return tx.legacyMatchVerdict.count({});
+        });
+        expect(unbound).toBe(0);
+        expect(await asTenant('', (tx) => tx.legacyMatchVerdict.count({}))).toBe(0);
+        // The denominator: the rows exist.
+        expect(await prisma.legacyMatchVerdict.count({ where: { tenantId: { in: [T1, T2] } } })).toBeGreaterThanOrEqual(2);
+    });
+
     it('a cross-tenant read by id returns nothing', async () => {
         const row = await asTenant(T1, (tx) =>
             tx.legacyMatchVerdict.findFirst({ where: { id: seeded[T2].verdictId } })

@@ -357,9 +357,10 @@ model Tenant {
 // Hub-and-spoke organization layer (Epic O-1).
 //
 // An Organization is the parent of N tenants (typical: 100 solution-
-// owner tenants per CISO portfolio). Org-level members come in two
-// roles: ORG_ADMIN (CISO-class — gets auto-provisioned AUDITOR
-// membership in every child tenant via the Epic O-2 service) and
+// owner tenants per CISO portfolio). Org-level members come in three
+// roles: ORG_OWNER and ORG_ADMIN (the admin tier — CISO-class; each
+// gets an auto-provisioned ADMIN membership, i.e. full tenant
+// administration, in every child tenant via the Epic O-2 service) and
 // ORG_READER (portfolio-only, no per-tenant access).
 //
 // Slug is unique across the whole system, parallel to Tenant.slug.
@@ -407,12 +408,13 @@ model Organization {
 
 // Per-user, per-org role assignment.
 //
-// Two roles in the OrgRole enum: ORG_ADMIN, ORG_READER. ADMIN
-// becoming a member triggers the Epic O-2 auto-provisioning service
-// which creates an AUDITOR `TenantMembership` in every child tenant
-// (idempotent — skips users who already have a manual membership).
+// Three roles in the OrgRole enum: ORG_OWNER, ORG_ADMIN, ORG_READER.
+// An admin-tier member (ORG_OWNER or ORG_ADMIN) triggers the Epic O-2
+// auto-provisioning service, which creates an ADMIN `TenantMembership`
+// in every child tenant (idempotent — skips users who already have a
+// manual membership).
 //
-// Removing an ORG_ADMIN triggers the deprovisioning service which
+// Removing an admin-tier member triggers the deprovisioning service which
 // deletes only auto-created memberships (the ones with
 // `provisionedByOrgId` matching this org); manually-granted
 // memberships are preserved.

@@ -168,8 +168,11 @@ model BusinessImpactAnalysis {
   /// node.
   ///
   /// `processMapId` keeps a real FK so tenant isolation still fails on
-  /// referential integrity rather than on RLS alone, and deleting a map still
-  /// clears both columns.
+  /// referential integrity rather than on RLS alone. Deleting a map nulls
+  /// `processMapId` ONLY: a column-scoped SET NULL cannot name a column outside
+  /// the key (42P10), so `processNodeKey` is left behind as an inert string.
+  /// "Unlinked" therefore means `processMapId IS NULL`, never a test on
+  /// `processNodeKey` alone — every read resolves a node by the pair.
   processMapId    String?
   processNodeKey  String?
   name          String

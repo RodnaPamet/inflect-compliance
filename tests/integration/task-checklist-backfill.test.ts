@@ -109,6 +109,28 @@ describeFn('backfillTemplateTaskChecklists (integration)', () => {
         }
     });
 
+    it('fills every candidate across batch boundaries, including the one after a filled cursor row', async () => {
+        // Adjacent ids under this run's unique tag, so no other suite's row
+        // sorts between them. With one row per batch, each batch's last row is
+        // filled, which used to make the next read's `skip: 1` jump the
+        // following candidate (#5314).
+        const ids = ['a', 'b', 'c'].map((s) => `${TAG}-page-${s}`);
+        for (const id of ids) {
+            await prisma.task.create({
+                data: { id, tenantId: TENANT_ID, title: id, createdByUserId: userId, templateTaskId: tmplTask.withSteps },
+            });
+        }
+        await backfillTemplateTaskChecklists(prisma, { batchSize: 1 });
+        const rows = await prisma.task.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, checklistJson: true },
+            orderBy: { id: 'asc' },
+        });
+        expect(rows.map((r) => ({ id: r.id, filled: Array.isArray(r.checklistJson) }))).toEqual(
+            ids.map((id) => ({ id, filled: true })),
+        );
+    });
+
     it('fills nothing on a second run, and keeps the ids it gave the first time', async () => {
         const before = await checklistOf('fill');
         await backfillTemplateTaskChecklists(prisma);

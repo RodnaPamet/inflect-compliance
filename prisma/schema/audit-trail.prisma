@@ -94,7 +94,7 @@ model AuditLog {
 //   ORG_ADMIN_DEPROVISIONED_FROM_TENANTS — fan-in summary
 //
 // Provisioning fan-out is summarized as ONE org audit row carrying
-// `{ tenantCount, tenantIds[], role: 'AUDITOR' }` in detailsJson.
+// `{ trigger, tenantCount, tenantIds[], role: 'ADMIN' }` in detailsJson.
 // Per-tenant rows still land in AuditLog (existing behaviour) so
 // each tenant's own ledger remains complete.
 
