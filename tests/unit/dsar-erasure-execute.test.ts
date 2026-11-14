@@ -30,7 +30,8 @@
  * So these are behavioural tests with FAILING fakes, not a second reading of
  * the source.
  */
-import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
+import { ErasureBlockedError, eraseUser } from '@/app-layer/jobs/dsar-erasure';
+import { ConflictError } from '@/lib/errors/types';
 import { ERASURE_EXECUTED_ACTION } from '@/lib/audit/erasure-record';
 import { runInGlobalContext } from '@/lib/db-context';
 
@@ -74,6 +75,12 @@ function makeFakeDb(
          * name fewer rows than were actually pseudonymized.
          */
         rowsCommittedMidTransaction?: number;
+        /**
+         * The User-referencing FKs the up-front `planErasure` (#5595) reads
+         * from the catalog, with this subject's row count for each. Empty by
+         * default: a catalog with nothing to block.
+         */
+        fks?: Array<{ table_name: string; column_name: string; confdeltype: string; rows: number }>;
     } = {},
 ): FakeDb {
     const {
@@ -81,6 +88,7 @@ function makeFakeDb(
         auditRows = 3,
         deleteError,
         rowsCommittedMidTransaction = 0,
+        fks = [],
     } = options;
     const updatedRows = auditRows + rowsCommittedMidTransaction;
 
@@ -144,8 +152,21 @@ function makeFakeDb(
         // issues raw SQL against "AuditLog" — recorded here so the ordering
         // assertions can see it, and answered with the shapes that writer
         // expects (an array for the chain-tip read, a row count otherwise).
+        //
+        // Since #5595 it also answers the up-front `planErasure` reads: the
+        // session (unconstrained), the subject's visibility, the FK catalog
+        // (`fks`) and each reference's count. Recognised by their own text
+        // so that the writer's chain-tip read still gets `[]`.
         async $queryRawUnsafe(sql: string, ...values: unknown[]) {
             calls.push(`$raw:$queryRawUnsafe:${JSON.stringify([sql, ...values])}`);
+            if (sql.includes('current_user')) return [{ role: 'postgres', tenant: null }];
+            if (sql.includes('FROM "User" WHERE')) return [{ n: subjectVisible ? 1 : 0 }];
+            if (sql.includes('pg_constraint')) return fks.map(({ rows: _rows, ...fk }) => fk);
+            const counted = /count\(\*\)::bigint AS n FROM "([^"]+)" WHERE "([^"]+)"/.exec(sql);
+            if (counted) {
+                const fk = fks.find((f) => f.table_name === counted[1] && f.column_name === counted[2]);
+                return [{ n: fk?.rows ?? 0 }];
+            }
             return [] as unknown[];
         },
         async $executeRawUnsafe(sql: string, ...values: unknown[]) {
@@ -200,6 +221,14 @@ describe('eraseUser — the cascade', () => {
         // block repeats per tenant — the chain is per-tenant and one record
         // in one tenant would leave the other's verifier still reporting
         // tampering.
+        // #5595 — the up-front plan reads come first, before any write: the
+        // session, the subject's visibility, the FK catalog (empty here, so
+        // no per-reference counts follow).
+        const PLAN_READS = [
+            '$raw:$queryRawUnsafe',     // session role / app.tenant_id
+            '$raw:$queryRawUnsafe',     // the subject's own row
+            '$raw:$queryRawUnsafe',     // every FK into "User"
+        ];
         const RAW_APPEND = [
             '$raw:$executeRawUnsafe',   // pg_advisory_xact_lock for this tenant
             '$raw:$queryRawUnsafe',     // chain tip
@@ -208,6 +237,7 @@ describe('eraseUser — the cascade', () => {
         expect(fake.calls.map((c) => c.split(':').slice(0, 2).join(':'))).toEqual([
             '$transaction',
             'user:findUnique',
+            ...PLAN_READS,
             'auditLog:findMany',
             'auditLog:updateMany',
             ...RAW_APPEND,
@@ -357,6 +387,75 @@ describe('eraseUser — the refusals', () => {
         const boom = Object.assign(new Error('connection terminated'), { code: 'P1017' });
         const fake = makeFakeDb({ deleteError: boom });
         await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toThrow(/connection terminated/);
+    });
+});
+
+describe('eraseUser — refuses UP FRONT when the plan has blockers (#5595)', () => {
+    // Owner decision 2026-11-14. A subject named by an immutable audit table
+    // (or any other refusing reference) is refused BEFORE the first write —
+    // not pseudonymized and then rolled back when the delete fails.
+    const NO_WRITES = (calls: string[]) =>
+        calls.filter(
+            (c) => c.startsWith('auditLog:') || c === 'user:delete' || c.startsWith('$raw:$executeRawUnsafe'),
+        );
+
+    it('refuses a subject the org audit trail names, with a typed error and nothing written', async () => {
+        const fake = makeFakeDb({
+            fks: [{ table_name: 'OrgAuditLog', column_name: 'targetUserId', confdeltype: 'r', rows: 2 }],
+        });
+        const error = await eraseUser(SUBJECT, { db: fake.db }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ErasureBlockedError);
+        expect(error).toBeInstanceOf(ConflictError);
+        expect((error as ErasureBlockedError).blockers).toEqual([
+            expect.objectContaining({
+                table: 'OrgAuditLog',
+                column: 'targetUserId',
+                rows: 2,
+                effect: 'BLOCKS_DELETE',
+                reason: 'IMMUTABLE_AUDIT_TRAIL',
+            }),
+        ]);
+        expect(NO_WRITES(fake.calls)).toEqual([]);
+        expect(fake.committed).toEqual({ auditRowsNulled: 0, userDeleted: false });
+    });
+
+    it('refuses on a STALE SET NULL edge too — the database it is planning against may predate the migration', async () => {
+        // The #5595 defect itself: SET NULL into an immutable or stamped
+        // record was counted as non-blocking, and the delete then failed
+        // part-way on the trigger or the CHECK.
+        const fake = makeFakeDb({
+            fks: [{ table_name: 'ControlException', column_name: 'approvedByUserId', confdeltype: 'n', rows: 1 }],
+        });
+        await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toMatchObject({
+            name: 'ErasureBlockedError',
+            blockers: [expect.objectContaining({ onDelete: 'SET NULL', reason: 'STAMPED_DECISION_ACTOR' })],
+        });
+        expect(NO_WRITES(fake.calls)).toEqual([]);
+    });
+
+    it('refuses any other RESTRICT reference up front as well, named as such', async () => {
+        const fake = makeFakeDb({
+            fks: [{ table_name: 'TenantMembership', column_name: 'userId', confdeltype: 'r', rows: 1 }],
+        });
+        await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toMatchObject({
+            name: 'ErasureBlockedError',
+            blockers: [expect.objectContaining({ table: 'TenantMembership', reason: 'RESTRICT_REFERENCE' })],
+        });
+        expect(NO_WRITES(fake.calls)).toEqual([]);
+    });
+
+    it('POSITIVE CONTROL — references that do not refuse (CASCADE, AuditLog SET NULL, an immutable one with no rows) let it run', async () => {
+        const fake = makeFakeDb({
+            fks: [
+                { table_name: 'AuditLog', column_name: 'userId', confdeltype: 'n', rows: 3 },
+                { table_name: 'Session', column_name: 'userId', confdeltype: 'c', rows: 2 },
+                { table_name: 'OrgAuditLog', column_name: 'actorUserId', confdeltype: 'r', rows: 0 },
+            ],
+        });
+        const receipt = await eraseUser(SUBJECT, { db: fake.db });
+        expect(receipt.userDeleted).toBe(true);
+        expect(fake.committed).toEqual({ auditRowsNulled: 3, userDeleted: true });
     });
 });
 

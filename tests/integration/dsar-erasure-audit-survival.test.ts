@@ -476,7 +476,16 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
         // header: presence-grading and "route the record through the one
         // sanctioned AuditLog writer" cannot both hold, so the teeth move
         // from counting raw calls to reading them.
-        const rawOps = recordedOps.filter((op) => op.table === RAW_TABLE);
+        //
+        // SINCE #5595 the raw statements come in two groups, split by
+        // POSITION: everything before the first `auditLog` delegate call is
+        // the up-front `planErasure` read (catalog + per-reference counts,
+        // across every table that references "User"); everything after is the
+        // erasure record's append. The plan's group is graded in the next
+        // test, as read-only; this one keeps its exact claim about the append.
+        const firstAuditOp = recordedOps.findIndex((op) => op.table === 'auditLog');
+        expect(firstAuditOp).toBeGreaterThan(0);
+        const rawOps = recordedOps.slice(firstAuditOp).filter((op) => op.table === RAW_TABLE);
 
         // Non-vacuous first: an empty selection satisfies every `for` below.
         // Three statements per tenant — advisory lock, chain tip, INSERT —
@@ -505,6 +514,25 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
         // these statements really is the audit INSERT, so the loop graded a
         // population that contains the thing it is about.
         expect(rawOps.some((op) => String(op.args[0]).includes('INSERT INTO "AuditLog"'))).toBe(true);
+    });
+
+    it('TABLE SURFACE — the up-front plan (#5595) is READ-ONLY and runs before any write', () => {
+        const firstAuditOp = recordedOps.findIndex((op) => op.table === 'auditLog');
+        const before = recordedOps.slice(0, firstAuditOp);
+
+        // Nothing but raw reads and the subject's own visibility control sits
+        // in front of the first audit-table call.
+        expect([...new Set(before.map((op) => `${op.table}.${op.method}`))].sort()).toEqual(
+            [`${RAW_TABLE}.$queryRawUnsafe`, 'user.findUnique'].sort(),
+        );
+
+        const planSql = before
+            .filter((op) => op.table === RAW_TABLE)
+            .map((op) => (typeof op.args[0] === 'string' ? (op.args[0] as string) : ''));
+        // Non-vacuous: the plan really read the catalog.
+        expect(planSql.some((sql) => sql.includes('pg_constraint'))).toBe(true);
+        expect(planSql.filter((sql) => !/^\s*SELECT\b/i.test(sql))).toEqual([]);
+        expect(planSql.filter((sql) => /\b(update|delete|insert|truncate|alter|drop)\b/i.test(sql))).toEqual([]);
     });
 
     it('TABLE 1 of 2 — auditLog is PSEUDONYMIZED: every row survives, none deleted, one APPENDED', () => {
