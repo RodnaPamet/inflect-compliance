@@ -687,6 +687,37 @@ async function assertUpdateTargetIsDiffable(
 }
 
 /**
+ * Step 1 of `createAgentProposal`: the payload parsed against the schema its
+ * kind and operation take, or a `badRequest` naming the kind. Exported so a
+ * caller queueing a BATCH can check every item before it queues any (#5304):
+ * `runProposeTool` used to find a malformed third item only after the first two
+ * were PENDING, and the agent, seeing a failed call with no ids, resent all
+ * three. `createAgentProposal` still runs this itself for every item; the
+ * batch's early pass refuses nothing this would not.
+ */
+export function parseProposalPayload(
+    kind: AgentProposalKind,
+    operation: AgentProposalOperation,
+    payload: unknown,
+): unknown {
+    const schema =
+        kind === 'EXTERNAL_WRITE'
+            ? ExternalWriteProposalPayloadSchema
+            : kind === 'PROCESS_MAP'
+              ? ProposedProcessMapSchema
+              : operation === 'UPDATE'
+                ? UPDATE_SCHEMA_BY_KIND[kind as UpdatableProposalKind]
+                : SCHEMA_BY_KIND[kind];
+    if (!schema) throw badRequest(`Unknown proposal kind: ${kind}`);
+
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) {
+        throw badRequest(`Proposed ${kind} is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+}
+
+/**
  * Create a PENDING proposal from an agent. Validates the payload against the
  * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
  * row. Does NOT create the real entity. Attributed to the API key.
@@ -758,23 +789,10 @@ export async function createAgentProposal(
     //
     // PROCESS_MAP validates against its own strict shape, for the same reason:
     // a whole map is not one of our create bodies (#5053).
-    const schema =
-        input.kind === 'EXTERNAL_WRITE'
-            ? ExternalWriteProposalPayloadSchema
-            : input.kind === 'PROCESS_MAP'
-              ? ProposedProcessMapSchema
-              : operation === 'UPDATE'
-                ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
-                : SCHEMA_BY_KIND[input.kind];
-    if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
-
-    const parsed = schema.safeParse(input.payload);
-    if (!parsed.success) {
-        throw badRequest(`Proposed ${input.kind} is invalid: ${parsed.error.message}`);
-    }
+    const payload = parseProposalPayload(input.kind, operation, input.payload);
 
     // 2. Sanitise ALL proposed free text at the boundary (Epic D).
-    let sanitized = sanitizeDeep(parsed.data);
+    let sanitized = sanitizeDeep(payload);
     if (input.kind === 'PROCESS_MAP') {
         // Re-parsed AFTER sanitising, because sanitising can empty a label
         // (`<b></b>`), and then stored in CANONICAL form: step keys re-minted

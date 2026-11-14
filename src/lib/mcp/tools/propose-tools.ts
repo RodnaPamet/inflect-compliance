@@ -64,6 +64,7 @@ type ProposeResultBody = { [K in (typeof PROPOSE_RESULT_FIELDS)[number]]: number
 import { PROCESS_MAP_PROPOSALS_IMPLEMENTED } from '@/lib/agentic/proposal-kind-rollout';
 import {
     createAgentProposal,
+    parseProposalPayload,
     type AgentProposalKind,
 } from '@/app-layer/usecases/agent-proposals';
 
@@ -359,9 +360,26 @@ export async function runProposeTool(
     //    against the create-schema + sanitises + GUARDS + audits). Malformed →
     //    throws. An item the agentic output guard quarantines is written as a
     //    terminal QUARANTINED row and never enters the review queue.
+    //
+    //    EVERY item is checked against its schema FIRST (#5304). The loop below
+    //    writes as it goes, so a malformed third item used to fail the call
+    //    after the first two were already PENDING; the agent saw a failure with
+    //    no ids and resent all three, and reviewers got the first two twice. A
+    //    batch with an item its schema refuses now queues nothing.
+    const items = parsed.data.items;
+    items.forEach((item, index) => {
+        try {
+            parseProposalPayload(tool.kind, 'CREATE', item);
+        } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            throw badRequest(
+                `Item ${index + 1} of ${items.length} for "${name}" is invalid, so none of the ${items.length} was proposed: ${reason}`,
+            );
+        }
+    });
     const queued: string[] = [];
     const quarantined: string[] = [];
-    for (const item of parsed.data.items) {
+    for (const item of items) {
         const proposal = await createAgentProposal(ctx, {
             kind: tool.kind,
             payload: item,

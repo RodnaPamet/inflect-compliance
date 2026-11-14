@@ -367,7 +367,31 @@ export function parseOwnershipAttribution(raw: unknown): SkillOutputParse<Owners
             if (a.grade !== derived) issues.push(`the signals grade this proposal ${derived}, not ${a.grade}`);
         }
     } else if (a.status === 'AMBIGUOUS') {
-        if (people.size < 2) issues.push('a tie reports at least two people, each named by a deciding signal');
+        // A tie is TWO OR MORE people sharing the strongest rank among those
+        // who have not left. Counting people alone accepted an identity owner
+        // beside a deployment owner as a tie, when the skill's own rule makes
+        // the first the proposal (#5304). A departed person is never in a tie
+        // (they are never proposed), and one named at least as strongly as the
+        // tied rank makes the answer an orphan, as it does a suggestion.
+        const remaining = [...people.values()].filter((p) => p.active !== false);
+        const top = remaining.length > 0 ? Math.min(...remaining.map((p) => p.rank)) : null;
+        const tied = top === null ? 0 : remaining.filter((p) => p.rank === top).length;
+        if (people.size < 2) {
+            issues.push('a tie reports at least two people, each named by a deciding signal');
+        } else if (tied < 2) {
+            issues.push(
+                tied === 1
+                    ? 'the signals name one strongest person who has not left: that is SUGGESTED, not AMBIGUOUS'
+                    : 'a tie needs at least two people who have not left: a person whose membership is not active is an orphan, UNMATCHED',
+            );
+        }
+        if (top !== null) {
+            for (const [ref, p] of people) {
+                if (p.active === false && p.rank <= top) {
+                    issues.push(`${ref}, named at least as strongly as the tie, has left: an orphan is UNMATCHED, not a tie`);
+                }
+            }
+        }
     } else if (a.reason === 'NO_OWNER_SIGNAL') {
         if (people.size > 0) issues.push('a signal names a person, so there is an owner signal');
     } else if (![...people.values()].some((p) => p.active === false)) {

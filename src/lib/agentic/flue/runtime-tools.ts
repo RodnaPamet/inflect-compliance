@@ -68,11 +68,14 @@ export const FLUE_RUNTIME_TOOLS: readonly FlueRuntimeTool[] = [
         name: 'task',
         appearsWhen: 'always',
         boundedBy:
-            'Delegates to a subagent. No subagent is declared, so it has no valid '
-            + '`agent` value and the runtime\'s own system prompt tells the model not to '
-            + 'call it. Reach becomes real with #3473, whose invariant is that a '
-            + "subagent's tools are a subset of the parent's already-intersected set — "
-            + 'so this entry is where that work has to be measured against.',
+            'Delegates part of the run to one of four declared specialists '
+            + '(risk_analyst, evidence_assessor, vendor_reviewer, policy_drafter). '
+            + 'Delegation is live. Each specialist gets only the intersection of the '
+            + "tools and skills it declares with this run's already-resolved set, so it "
+            + 'can use a tool the run itself holds (draft_policy included, when granted) '
+            + 'and never one the run does not. It cannot delegate further (depth 1), '
+            + 'and the number of delegations per model turn is capped by the '
+            + "workspace's setting within its organization's ceiling.",
     },
     {
         name: 'activate_skill',

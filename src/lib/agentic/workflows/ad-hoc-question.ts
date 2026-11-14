@@ -66,10 +66,18 @@
  * requires definition files to be pure data with no usecase imports.
  *
  * So the cap LIVES here as a plain number, because the definition and the
- * usecase must agree on one value, and the ENFORCEMENT lives in the usecase
+ * usecase must agree on one value, and the SANITISATION lives in the usecase
  * where `sanitizePlainText` can be reached. A cap declared in two places
  * eventually disagrees, and the half that is wrong is whichever one nobody
  * tested.
+ *
+ * The CAP is also enforced HERE, at admission, through `validateInput`
+ * (#5304). The usecase is the Ask page's door, and it is not the only one: the
+ * generic start route (`POST /agent-runs`) admits this key too, and before this
+ * a 50 KB "question" posted there reached the model uncapped, which is the
+ * context and cost lever the cap exists to close. `validateInput` runs in
+ * `startWorkflowRun` for every caller, before the run row, and needs nothing
+ * a client bundle cannot carry — a type check and a length.
  */
 import type { WorkflowContext, WorkflowDefinition } from '../workflow-types';
 import { requiredString } from './required-input';
@@ -98,6 +106,21 @@ export const adHocQuestionWorkflow: WorkflowDefinition = {
      * runs for an input nothing consumes.
      */
     requiredInput: ['question'],
+    /**
+     * The cap, for EVERY door into this workflow (#5304) — see the header.
+     * Measured on the raw value, as `readAdHocQuestion` measures it, so the
+     * Ask page's sanitised question (never longer than the raw one) always
+     * passes and a question posted to the generic start route is held to the
+     * same limit.
+     */
+    validateInput: (input) => {
+        const question = input['question'];
+        if (typeof question !== 'string') return 'question must be text';
+        if (question.length > AD_HOC_QUESTION_MAX_CHARS) {
+            return `question is ${question.length} characters; the limit is ${AD_HOC_QUESTION_MAX_CHARS}`;
+        }
+        return null;
+    },
 
     key: 'ad-hoc-question',
     name: 'Ad-hoc question',

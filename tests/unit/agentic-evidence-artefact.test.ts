@@ -7,9 +7,11 @@
  * which means the period arithmetic cannot consult a clock and the digest cannot
  * depend on the order a database happened to return rows in.
  */
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 
 import { LEGACY_KEY_FAMILY_URNS } from '@/app-layer/domain/framework-representation';
+import { canonicalJson } from '@/lib/canonical-json';
 import {
     AGENTIC_ARTEFACT_KINDS,
     ARTEFACT_KIND_DECISIONS,
@@ -494,6 +496,44 @@ describe('a harness month is COMPLETE only when every scanner\'s LATEST scan is 
         expect(harnessArtefactEvidenceStatus('COMPLETE')).toBe('APPROVED');
         expect(harnessArtefactEvidenceStatus('INCOMPLETE')).toBe('NEEDS_REVIEW');
         expect(harnessArtefactEvidenceStatus('NO_SCAN')).toBe('NEEDS_REVIEW');
+    });
+});
+
+describe('the body tells the assessor how to re-derive its digest (#5304)', () => {
+    // The receipt and decision bodies used to say the digest was "SHA-256 over
+    // the sorted record ids". It has covered every rendered field since the
+    // digest moved to the facts, so an assessor following the body could never
+    // reproduce the figure. The recipe below is the one the body now states,
+    // spelt out independently of the module so a drift in either fails here.
+    const period = monthlyPeriod(new Date('2026-08-14T09:00:00.000Z'));
+    const facts = [rf('b'), rf('a', { verified: false, auditLogId: null })];
+    const stated =
+        'Population digest (SHA-256 over the canonical JSON of the kind, the period start ' +
+        '(ISO 8601) and the sorted canonical JSON of each record\'s fact: its id and every ' +
+        'field this body counts): ';
+
+    it('states the recipe the digest is computed by, and the recipe reproduces it', () => {
+        const digest = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, period.start, facts);
+        const rederived = createHash('sha256')
+            .update(
+                canonicalJson({
+                    kind: ARTEFACT_KIND_RECEIPTS,
+                    periodStart: period.start.toISOString(),
+                    facts: facts.map((f) => canonicalJson({ ...f })).sort(),
+                }),
+                'utf8',
+            )
+            .digest('hex');
+        expect(rederived).toBe(digest);
+
+        const lines = buildReceiptArtefact(period, facts, digest).content.split('\n');
+        expect(lines).toContain(`${stated}${digest}`);
+    });
+
+    it('states it on the decision body too', () => {
+        const digest = sourcePopulationDigest(ARTEFACT_KIND_DECISIONS, period.start, []);
+        const lines = buildDecisionArtefact(period, [], digest).content.split('\n');
+        expect(lines).toContain(`${stated}${digest}`);
     });
 });
 
