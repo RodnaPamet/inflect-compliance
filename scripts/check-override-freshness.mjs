@@ -583,6 +583,25 @@ if (process.argv.includes('--self-test')) {
         ['dist-tag has no derivable floor', floorOf('latest'), null],
         ['bare upper bound has no floor', floorOf('<2.0.0'), null],
         ['empty spec has no floor', floorOf(''), null],
+
+        // THE DENOMINATOR. The cases above prove `floorOf` handles each shape
+        // in isolation; this proves no REAL override lands on the
+        // unanalysable path, which is the claim the fix actually makes —
+        // "20 of 25 were checked, now 25 of 25". Reads package.json, so a new
+        // override in a shape nobody taught it fails here rather than
+        // appearing as a quiet coverage gap in a weekly report.
+        //
+        // It also names the offenders: reverting the `pin` branch makes this
+        // print `sharp=0.35.5` and the three other pins, which is the finding
+        // stated by the test rather than by a comment.
+        [
+            'every literal override yields a derivable floor',
+            versionForcingOverrides().filter((o) => {
+                const f = floorOf(o.spec);
+                return !f || !parse(f);
+            }).map((o) => `${o.key}=${o.spec}`).join(' ') || 'none',
+            'none',
+        ],
     ];
     const failed = checks.filter(([, actual, expected]) => actual !== expected);
     for (const [label, actual, expected] of failed) {
