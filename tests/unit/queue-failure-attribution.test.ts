@@ -17,6 +17,9 @@
  * silent change to what somebody reads while being told their PR failed.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
     attributionBody,
     failingTestFiles,
@@ -108,6 +111,22 @@ describe('verdictOf', () => {
         // absence of evidence as evidence of innocence.
         expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: [], logsReadable: false })).toBe('UNREADABLE');
         expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: [], logsReadable: true })).toBe('NO_FAIL_LINE');
+    });
+
+    it('never says OUTSIDE_DIFF when the PR\'s files could not be listed (#5308)', () => {
+        // The workflow passes `changedFiles: null` when pulls.listFiles throws.
+        // An empty list there would read as "none of the failing suites is in
+        // the 0 file(s) this PR changes" — an exoneration built on a read that
+        // failed.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/integration/bowtie-api.test.ts'],
+            changedFiles: null,
+            logsReadable: true,
+        })).toBe('DIFF_UNREADABLE');
+        // Cancellation and the log verdicts still take precedence.
+        expect(verdictOf({ cancelled: true, failingFiles: ['tests/a.test.ts'], changedFiles: null, logsReadable: true })).toBe('CANCELLED');
+        expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: null, logsReadable: false })).toBe('UNREADABLE');
     });
 
     it('says OUTSIDE_DIFF only when NO failing suite is in the diff', () => {
@@ -208,6 +227,20 @@ describe('attributionBody', () => {
         expect(noFail).toContain('an OOM (exit 134), a setup step, or an infrastructure error');
     });
 
+    it('says no comparison was possible when the PR\'s files could not be listed (#5308)', () => {
+        const body = attributionBody({
+            ...base,
+            failingFiles: ['tests/integration/bowtie-api.test.ts'],
+            changedFiles: null,
+        });
+        expect(body).toContain("**This PR's changed files could not be listed**, so no comparison against your diff was possible.");
+        expect(body).toContain('This is not evidence either way about your changes.');
+        expect(body).toContain('- `tests/integration/bowtie-api.test.ts`');
+        expect(body).not.toContain('outside this PR');
+        expect(body).not.toContain('file(s) this PR changes');
+        expect(body).not.toContain('not this diff');
+    });
+
     it('reports jobs still running, because a candidate can be ejected before its siblings finish', () => {
         const body = attributionBody({
             ...base,
@@ -231,6 +264,17 @@ describe('attributionBody', () => {
         const body = attributionBody({ ...base, failingFiles: many, changedFiles: [] });
         expect(body).toContain('- `tests/f9.test.ts`');
         expect(body).not.toContain('- `tests/f10.test.ts`');
+    });
+});
+
+describe('the workflow hands a failed file listing over as null (#5308)', () => {
+    it('starts changedFiles at null, so a pulls.listFiles throw cannot read as an empty diff', () => {
+        const yml = fs.readFileSync(
+            path.resolve(__dirname, '../../.github/workflows/queue-failure-attribution.yml'),
+            'utf8',
+        );
+        expect(yml).toContain('let changedFiles = null;');
+        expect(yml).not.toContain('let changedFiles = [];');
     });
 });
 

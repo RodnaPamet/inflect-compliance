@@ -83,11 +83,17 @@ function failingTestFiles(logText) {
  * means the logs were read and contained no assertion failure — an OOM, a setup
  * step, an infrastructure error. Collapsing them would report an absence of
  * evidence as evidence of innocence.
+ *
+ * `DIFF_UNREADABLE` is the same rule on the other side of the comparison
+ * (#5308): `changedFiles: null` means listing the PR's files FAILED, which is
+ * not the same as a PR that changes nothing. Reading it as an empty list would
+ * exonerate the diff on a read that never happened.
  */
 function verdictOf({ cancelled, failingFiles, changedFiles, logsReadable }) {
     if (cancelled) return 'CANCELLED';
     const failing = failingFiles ?? [];
     if (failing.length === 0) return logsReadable === false ? 'UNREADABLE' : 'NO_FAIL_LINE';
+    if (changedFiles === null) return 'DIFF_UNREADABLE';
     const changed = new Set(changedFiles ?? []);
     const touched = failing.filter((f) => changed.has(f));
     if (touched.length === 0) return 'OUTSIDE_DIFF';
@@ -108,7 +114,9 @@ function attributionBody(input) {
         stillRunningCount = 0,
     } = input;
 
-    const changedSet = new Set(changedFiles);
+    // `changedFiles: null` (the listing failed) is kept distinct from `[]` for
+    // the verdict; for the set arithmetic below either means "nothing known".
+    const changedSet = new Set(changedFiles ?? []);
     const touched = failingFiles.filter((f) => changedSet.has(f));
     const untouched = failingFiles.filter((f) => !changedSet.has(f));
     const verdict = verdictOf({ cancelled: conclusion === 'cancelled', failingFiles, changedFiles, logsReadable });
@@ -125,6 +133,11 @@ function attributionBody(input) {
         lines.push('**No `FAIL <path>` line was found in the failed jobs\' logs**, so this was probably not an assertion failure — an OOM (exit 134), a setup step, or an infrastructure error. The failing jobs are listed below; their logs are the next place to look.');
     } else if (verdict === 'UNREADABLE') {
         lines.push('**The failed jobs\' logs could not be read**, so no comparison against your diff was possible. This is not evidence either way about your changes.');
+    } else if (verdict === 'DIFF_UNREADABLE') {
+        lines.push('**This PR\'s changed files could not be listed**, so no comparison against your diff was possible. This is not evidence either way about your changes.');
+        lines.push('');
+        lines.push('Failing:');
+        for (const f of failingFiles.slice(0, 10)) lines.push(`- \`${f}\``);
     } else if (verdict === 'OUTSIDE_DIFF') {
         lines.push(`**Every failing suite is outside this PR's diff.** The failing ${untouched.length === 1 ? 'suite is' : 'suites are'} not among the ${changedFiles.length} file(s) this PR changes, so the most likely causes are a queue-mate's changes, the base the candidate was built on, or infrastructure — not this diff.`);
         lines.push('');

@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: inflect_compliance
     # Postgres is only directly accessible on port 5434 (for migrations).
     # Application traffic goes through PgBouncer on port 5433.
+    # 5434 is ALSO the test stack's port (docker-compose.test.yml), so
+    # the two cannot run at once (#5308).
     ports:
       - '5434:5432'
     volumes:

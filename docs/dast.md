@@ -25,8 +25,8 @@ requests**. Those need the **Full (active) scan**, ZAP's destructive
 sibling, which fuzzes inputs + submits forms. That now runs as a
 **separate WEEKLY workflow** (`.github/workflows/dast-full.yml`,
 `zaproxy/action-full-scan`, Sundays 05:00 UTC + dispatch) — authenticated
-as OWNER, non-blocking for Medium-and-below during roll-in (a HIGH
-still fails it), SARIF category `zap-full`. It is
+as OWNER, blocking since 2026-10-12 (any un-allowlisted alert fails it,
+and a HIGH fails it even when allowlisted), SARIF category `zap-full`. It is
 SAFE because it only ever targets the **ephemeral CI app** (fresh seeded
 Postgres, no real data, no SMTP, rate-limiting off) — never a real env.
 
@@ -157,10 +157,14 @@ exit code 3 ("could not scan the target") regardless of `fail_action`,
 so `continue-on-error` was also masking a scan that never ran as a green
 nightly. A green run now means a scan actually happened.
 
-**Weekly full scan — deferred for Medium and below until 2026-10-11**,
-because the active scan's findings baseline is younger (11 runs, 2 lost
-to boot/runner flake). A High is *not* deferred: the same HIGH+ step
-runs there today.
+**Weekly full scan — BLOCKING since 2026-10-12** (`fail_action: true`,
+no `continue-on-error`), with the same two gates as the baseline. It was
+deferred for Medium and below until 2026-10-11, because the active
+scan's findings baseline was younger; the guardrail failed the day after
+that deadline, and the six Sunday runs before it showed the ZAP Full
+Scan step itself succeeding (the allowlist held), so the flip was made.
+A red Sunday run is therefore not advisory: triage it — fix the app, or
+add a reasoned `.zap/rules.tsv` entry. A High was never deferred.
 
 **How a deferral works.** A non-blocking scan must carry a
 machine-readable marker in its workflow file:
@@ -202,6 +206,7 @@ blocking scan.
 4. ✅ **Baseline blocking** — flipped 2026-08-29 on evidence of a
    stable allowlist (0 un-allowlisted alerts, 0 HIGH+ across all four
    roles), with the sunset check rebuilt to compare against the clock.
-5. ⏳ **Flip the weekly Full scan to blocking** on its
-   `DAST-NON-BLOCKING-UNTIL: 2026-10-11` marker, once the active scan's
-   findings are triaged against the shared allowlist.
+5. ✅ **Weekly Full scan blocking** — flipped 2026-10-12, when its
+   `DAST-NON-BLOCKING-UNTIL: 2026-10-11` marker expired and the six
+   preceding Sunday runs showed the shared allowlist holding for the
+   active scan.

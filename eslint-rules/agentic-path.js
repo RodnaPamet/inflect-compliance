@@ -89,6 +89,11 @@ const AGENTIC_PATH_GLOBS_LIVE = [
     'src/app-layer/usecases/agent-*.ts',
     'src/app-layer/usecases/workflow-*.ts',
     'src/app-layer/services/agent-*.ts',
+    // Was anticipatory until #5308, by which time ten agent jobs existed under
+    // it (agent-run-execute, agent-invoke-dispatch, the proposal expiry …). On
+    // the anticipatory list only its DIRECTORY was pinned, so a typo in the
+    // prefix would have matched none of them and nothing would have said so.
+    'src/app-layer/jobs/agent-*.ts',
     'src/app-layer/repositories/Agent*.ts',
     // Step 6b. This path ingests attacker-shaped data from OPERATOR-HOSTED legacy
     // servers: the adjudication state carries display names pulled through an MCP
@@ -101,24 +106,25 @@ const AGENTIC_PATH_GLOBS_LIVE = [
 ];
 
 /**
- * Globs for the parts of the path that DO NOT exist yet, and must land in scope
+ * Globs for the parts of the path that have no file yet, and must land in scope
  * on the day they do.
  *
  * A scope written as the files that exist today covers none of tomorrow's, and
- * goes green while doing it — two other branches are adding agentic code as
- * this lands. Each entry names a layer this subsystem already occupies
- * elsewhere: it has usecases and services, so it will have jobs and
- * repositories, and the first `agent-*` job must be checked by its first
+ * goes green while doing it. Each entry names a layer this subsystem already
+ * occupies elsewhere: `agent-*` has usecases, services, jobs and repositories,
+ * so `workflow-*` may gain services, jobs and repositories (`Workflow*`), and
+ * the first one must be checked by its first
  * commit rather than by whoever notices.
  *
- * Matching nothing is CORRECT here and the guard expects it. What the guard
- * does check is that the directory each one lives in is real — an anticipatory
- * glob with a typo'd directory would sit here forever, matching nothing for a
- * reason nobody intended.
+ * Matching nothing is CORRECT here, and the guard asserts it: the day a glob
+ * matches a real file it belongs in AGENTIC_PATH_GLOBS_LIVE, where "matches at
+ * least one file" is pinned. What the guard checks for these is that the
+ * directory each one lives in is real — an anticipatory glob with a typo'd
+ * directory would sit here forever, matching nothing for a reason nobody
+ * intended.
  */
 const AGENTIC_PATH_GLOBS_ANTICIPATORY = [
     'src/app-layer/services/workflow-*.ts',
-    'src/app-layer/jobs/agent-*.ts',
     'src/app-layer/jobs/workflow-*.ts',
     'src/app-layer/repositories/Workflow*.ts',
 ];

@@ -27,7 +27,11 @@
 #    chore/refactor/test/docs: → no release (unless grouped)
 #
 #  This workflow is SEPARATE from deploy — a release does not
-#  trigger a deployment. Deploy is triggered by CI completion.
+#  trigger a deployment. The deploy is `ghcr-publish.yml`, which runs on
+#  every push to main in parallel with CI and does not wait for or read
+#  CI's verdict: Watchtower on the VM rolls the published `:latest`
+#  image whatever CI concludes, so a red CI run on main does NOT hold
+#  back production.
 # ───────────────────────────────────────────────────────────────
 name: Release
 
@@ -90,19 +94,16 @@ jobs:
           exit 1
 
       # ── Release identity ──────────────────────────────────────────
-      #  @semantic-release/git pushes the `chore(release)` commit
-      #  (CHANGELOG.md · package.json · package-lock.json ·
-      #  infra/helm/inflect/Chart.yaml) DIRECTLY to `main`.
+      #  @semantic-release/git pushes the `chore(release)` commit (the
+      #  `assets` listed in .releaserc.json: CHANGELOG.md, package.json and
+      #  friends) DIRECTLY to `main`.
       #
       #  `secrets.GITHUB_TOKEN` cannot do that once `main` carries a
       #  ruleset with required status checks: the freshly-pushed release
       #  commit has no passing checks yet, so the push is declined —
       #  `GH006: Protected branch update failed`. Releases then freeze
       #  SILENTLY. This repo lost three merges to exactly that on
-      #  2026-06-29, and the failure is worse than a stale version
-      #  number: once Chart.yaml stops being synced, the structural guard
-      #  at tests/guards/helm-chart-foundation.test.ts fails on EVERY
-      #  subsequent PR.
+      #  2026-06-29.
       #
       #  GitHub Actions is not an installable app, so it cannot be named
       #  in a ruleset's bypass list (the API rejects it outright). A
