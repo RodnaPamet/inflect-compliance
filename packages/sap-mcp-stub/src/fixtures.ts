@@ -194,10 +194,12 @@ export interface BillingDocument {
 /**
  * THE CREATOR IS ON THE ITEM, THE CUSTOMER ON THE HEADER. The question
  * "did this user bill this customer?" cannot be answered from either level
- * alone, and a tool that reads only the header will answer about whoever
- * created the DOCUMENT rather than the line. This document's header creator is
- * deliberately a different user from its item creator, so a header-only
- * implementation returns a confident wrong answer instead of an empty one.
+ * alone. The document carries no header creator: its two items were created
+ * by two DIFFERENT users, so an implementation that takes one creator for the
+ * whole document (the first item's, say) is right about one of them and
+ * returns a confident `false` for the other, instead of an empty answer. What
+ * the row proves is that every item's creator is asked, which the boundary
+ * test holds for both.
  */
 export const BILLING_DOCUMENTS: readonly BillingDocument[] = [
     {

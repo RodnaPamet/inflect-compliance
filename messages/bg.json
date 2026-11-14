@@ -229,6 +229,7 @@
       "movementLegendHint": "по-дебела линия + ×N, когато няколко риска споделят пътя",
       "noData": "Няма данни",
       "noDataAvailable": "Няма налични данни",
+      "noDataForRange": "Няма данни за този период",
       "chartLoading": "Зареждане на диаграма",
       "heatmapLoading": "Зареждане на топлинна карта",
       "riskScore": "Оценка на риска",
@@ -247,7 +248,9 @@
       "lossExceedanceAria": "Крива на превишаване на загубите",
       "lossBucketsAria": "Интервали на загубите",
       "rangeAria": "{label}: {start} → {end}",
-      "pointAria": "{label}: {value}"
+      "pointAria": "{label}: {value}",
+      "scaleAria": "{label}: от {min} до {max}",
+      "scaleAriaUnlabelled": "Скала: от {min} до {max}"
     },
     "sections": {
       "accessReviews": "Прегледи на достъпа",
@@ -13928,7 +13931,8 @@
     "moreEvents": "+{count} още",
     "dayCellAria": "{date} — {count, plural, one {# събитие} other {# събития}}{summary}",
     "dayCellCategorySummaryItem": "{count} {category}",
-    "eventCount": "{count, plural, one {# събитие} other {# събития}}"
+    "eventCount": "{count, plural, one {# събитие} other {# събития}}",
+    "heatmapLegendLabel": "Активност"
   },
   "coverage": {
     "crumbDashboard": "Табло",

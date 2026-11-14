@@ -17,6 +17,8 @@
  */
 import {
     callsWithin,
+    isClaudeAgentSdkModule,
+    isLangChainModule,
     type Binding,
     type CallExpr,
     type Expr,
@@ -580,6 +582,31 @@ function indentations(src: string): number[] {
     return out;
 }
 
+/**
+ * Which family a star-imported module is of: every LangChain or LangGraph
+ * module is one family, every Agent SDK module another, and any other module
+ * is a family of its own, because nothing says what it exports.
+ */
+function starFamily(module: string): string {
+    if (isLangChainModule(module)) return 'langchain';
+    if (isClaudeAgentSdkModule(module)) return 'claude-agent-sdk';
+    return `module:${module}`;
+}
+
+/**
+ * Python's builtin functions and types: a call to one is not a star import's,
+ * however mixed the file's star imports are.
+ */
+const PYTHON_BUILTINS: ReadonlySet<string> = new Set([
+    'abs', 'aiter', 'all', 'anext', 'any', 'ascii', 'bin', 'bool', 'breakpoint', 'bytearray', 'bytes',
+    'callable', 'chr', 'classmethod', 'complex', 'delattr', 'dict', 'dir', 'divmod', 'enumerate',
+    'filter', 'float', 'format', 'frozenset', 'getattr', 'globals', 'hasattr', 'hash', 'help', 'hex',
+    'id', 'input', 'int', 'isinstance', 'issubclass', 'iter', 'len', 'list', 'locals', 'map', 'max',
+    'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord', 'pow', 'print', 'property', 'range',
+    'repr', 'reversed', 'round', 'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str', 'sum',
+    'super', 'tuple', 'type', 'vars', 'zip',
+]);
+
 /** Read one file's imports, bindings, tool declarations and calls. Throws `PythonReadError`. */
 export function readPython(src: string): FileFacts {
     const toks = tokenizePython(src);
@@ -590,6 +617,7 @@ export function readPython(src: string): FileFacts {
     const functions = new Map<string, FunctionDefinition>();
     const calls: { call: CallExpr; boundTo: string | null; within: string | null }[] = [];
     const starModules: string[] = [];
+    const classes = new Set<string>();
     let decorators: { expr: Expr; line: number }[] = [];
     /**
      * The `def`s and classes a statement is written in, innermost last, each
@@ -748,7 +776,10 @@ export function readPython(src: string): FileFacts {
                 });
                 if (isTool) toolDeclarations.set(nameTok.v, { line: nameTok.line, toolName: nameTok.v });
             }
-            if (nameTok?.t === 'name') blocks.push({ indent, name: nameTok.v, kind: 'class' });
+            if (nameTok?.t === 'name') {
+                classes.add(nameTok.v);
+                blocks.push({ indent, name: nameTok.v, kind: 'class' });
+            }
             continue;
         }
         if ((first.t === 'name' && first.v === 'for') || (isAsync && head?.t === 'name' && head.v === 'for')) {
@@ -835,17 +866,27 @@ export function readPython(src: string): FileFacts {
         scan(lineToks);
     }
 
-    // A name `from langchain_x import *` could have bound is qualified against
-    // the first such module: membership is by family and name, so which of
-    // several star modules it came from does not change what it is.
+    // A name only a star import could have bound (#5312). When every star
+    // module is of ONE family it is qualified against the first of them:
+    // membership is by family and name, so which of several LangChain modules
+    // it came from does not change what it is. When the star modules are of
+    // more than one family (LangChain and the Agent SDK, or a framework and a
+    // module of the file's own), which one bound it cannot be told, and picking
+    // the first either misses an agent or invents one. Such a call is left
+    // unqualified and reported, so the source says UNPARSEABLE rather than
+    // COMPLETE. A name the file defines itself (`def`, `class`) is never a
+    // star import's, and neither is a builtin.
+    const ambiguousCalls: number[] = [];
     if (starModules.length > 0) {
+        const families = new Set(starModules.map(starFamily));
         for (const c of calls) {
             const fn = c.call.fn;
-            if (fn.k === 'ref' && !imports.has(fn.name) && !bindings.has(fn.name) && !toolDeclarations.has(fn.name)) {
-                imports.set(fn.name, { module: starModules[0], path: [fn.name] });
-            }
+            if (fn.k !== 'ref' || imports.has(fn.name) || bindings.has(fn.name) || toolDeclarations.has(fn.name)) continue;
+            if (functions.has(fn.name) || classes.has(fn.name) || PYTHON_BUILTINS.has(fn.name)) continue;
+            if (families.size === 1) imports.set(fn.name, { module: starModules[0], path: [fn.name] });
+            else ambiguousCalls.push(fn.line);
         }
     }
 
-    return { language: 'python', imports, modules, bindings, toolDeclarations, functions, calls };
+    return { language: 'python', imports, modules, bindings, toolDeclarations, functions, calls, ambiguousCalls };
 }

@@ -1387,5 +1387,9 @@ export function recognizeAgents(
 ): FileDetection {
     const recognizer = new Recognizer(facts, file.label, file.path, options);
     const agents = recognizer.agents();
-    return { agents, unresolved: dedupe(recognizer.unresolved, (u) => `${u.line}`) };
+    // A call a mixed set of star imports leaves unattributable (#5312) is
+    // unresolved whether or not it would have been an agent: that is what
+    // cannot be told.
+    const ambiguous = (facts.ambiguousCalls ?? []).map((line) => recognizer.at(line));
+    return { agents, unresolved: dedupe([...recognizer.unresolved, ...ambiguous], (u) => `${u.line}`) };
 }

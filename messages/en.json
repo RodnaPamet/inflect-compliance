@@ -229,6 +229,7 @@
       "movementLegendHint": "thicker line + ×N where multiple risks share the path",
       "noData": "No data",
       "noDataAvailable": "No data available",
+      "noDataForRange": "No data for this range",
       "chartLoading": "Chart loading",
       "heatmapLoading": "Heatmap loading",
       "riskScore": "Risk score",
@@ -247,7 +248,9 @@
       "lossExceedanceAria": "Loss exceedance curve",
       "lossBucketsAria": "Loss buckets",
       "rangeAria": "{label}: {start} → {end}",
-      "pointAria": "{label}: {value}"
+      "pointAria": "{label}: {value}",
+      "scaleAria": "{label}: {min} to {max}",
+      "scaleAriaUnlabelled": "Scale: {min} to {max}"
     },
     "sections": {
       "accessReviews": "Access reviews",
@@ -13928,7 +13931,8 @@
     "moreEvents": "+{count} more",
     "dayCellAria": "{date} — {count, plural, one {# event} other {# events}}{summary}",
     "dayCellCategorySummaryItem": "{count} {category}",
-    "eventCount": "{count, plural, one {# event} other {# events}}"
+    "eventCount": "{count, plural, one {# event} other {# events}}",
+    "heatmapLegendLabel": "Activity"
   },
   "coverage": {
     "crumbDashboard": "Dashboard",

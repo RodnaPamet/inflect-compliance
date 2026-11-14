@@ -244,27 +244,40 @@ export function verdictsFor(facts: PolicyFacts, opts: { readonly loaded?: boolea
         actually loaded. A policy that declares `enforce` on every endpoint and
         is NOT the loaded revision is a policy in a drawer: the sandbox is
         running under something else. So when the loaded version does not match
-        the declared one, nothing below is met — the facts describe a document
-        rather than the thing in force, which is the distinction the phase-3
-        skill is built around.
+        the declared one, the facts describe a document rather than the thing in
+        force, which is the distinction the phase-3 skill is built around.
 
         `loaded` is undefined when the status could not be read. Undefined is
         NOT treated as loaded: the same rule as everywhere else here, that only
         an affirmative observation raises a verdict.
+
+        UNANSWERED, NEVER AN UNEVIDENCED "NO" (#5312). A criterion reported twice
+        is judged on its worse answer, so a `met: false` this source cannot
+        evidence would outvote a source that evidences the criterion. A verdict
+        is therefore raised only when this source can point at what it read: a
+        LOADED policy with at least one endpoint answers the two network
+        criteria either way (the zero enforcement value is the permissive mode
+        the runtime applies, so a non-enforcing endpoint in force is evidence of
+        a "no"), with the policy digest as the pointer. A policy not loaded, a
+        status that could not be read, or a policy with no endpoint answers
+        nothing. `H3.payloads_guarded` is answered only when met: a stage whose
+        `on_error` is absent is probably fail-closed and is not counted as
+        guarding, which is a reason to withhold a "yes", not to assert a "no".
     */
-    const inForce = opts.loaded === true;
-    const allEnforce = inForce && facts.endpoints > 0 && facts.enforcement.every((w) => w === 'enforce');
     const pointer = `openshell-policy:${facts.digest}`;
     const verdict = (criterion: string, met: boolean): CriterionVerdict =>
-        ({ criterion, met, evidence: met ? pointer : null }) as CriterionVerdict;
-    return [
-        verdict('H3.egress_enforced', allEnforce),
-        verdict('H2.tools_allowlisted', allEnforce && facts.everyEndpointHasHost),
-        verdict('H3.payloads_guarded', inForce && facts.payloadsInspected),
-        // Only an estate that opted in to reading providers can evidence this;
-        // without the opt-in there is no profile to read, so it stays false.
-        verdict('H2.credential_bound', opts.credentialBound === true),
-    ];
+        ({ criterion, met, evidence: pointer }) as CriterionVerdict;
+    const out: CriterionVerdict[] = [];
+    if (opts.loaded === true && facts.endpoints > 0) {
+        const allEnforce = facts.enforcement.every((w) => w === 'enforce');
+        out.push(verdict('H3.egress_enforced', allEnforce));
+        out.push(verdict('H2.tools_allowlisted', allEnforce && facts.everyEndpointHasHost));
+        if (facts.payloadsInspected) out.push(verdict('H3.payloads_guarded', true));
+    }
+    // Only an estate that opted in to reading providers can answer this, and
+    // only when it could read what scopes them; otherwise it is unanswered.
+    if (opts.credentialBound !== undefined) out.push(verdict('H2.credential_bound', opts.credentialBound));
+    return out;
 }
 
 /**
@@ -412,7 +425,9 @@ async function observe(
     // Both provider calls sit behind the one opt-in: the listing because it is
     // secret-bearing in shape, the profile because it needs a second scope.
     let credentials: ObservedCredential[] = [];
-    let credentialBound = false;
+    // undefined is UNANSWERED (#5312): not read, nothing attached, or a
+    // provider whose profile could not be read and none seen unscoped.
+    let credentialBound: boolean | undefined;
     if (readProviders) {
         const { providers } = await ctx.openshell.listSandboxProviders(target, id);
         credentials = providers.map((p) => credentialOf(p, id)).filter((c): c is ObservedCredential => c !== null);
@@ -420,13 +435,18 @@ async function observe(
             .map((p) => (p !== null && typeof p === 'object' ? (p as Record<string, unknown>).type : null))
             .filter((v): v is string => isPlainId(v));
         // Bound only when EVERY attached provider's profile scopes it. One
-        // unscoped credential is one the agent can point anywhere.
-        credentialBound = types.length > 0 && types.length === providers.length;
+        // unscoped credential is one the agent can point anywhere, and is a
+        // "no" whatever else is unreadable. A provider with no plain type, or a
+        // profile that did not come back, is one this source could not judge.
+        let unscoped = false;
+        let unjudged = types.length !== providers.length;
         for (const type of types) {
-            if (!profileBindsCredential(await ctx.openshell.getProviderProfile(target, type))) {
-                credentialBound = false;
-            }
+            const profile = await ctx.openshell.getProviderProfile(target, type);
+            if (profile === null || typeof profile !== 'object') unjudged = true;
+            else if (!profileBindsCredential(profile)) unscoped = true;
         }
+        if (unscoped) credentialBound = false;
+        else if (providers.length > 0 && !unjudged) credentialBound = true;
     }
 
     return {
