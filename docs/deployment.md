@@ -535,7 +535,7 @@ Every service in the canonical file and in the two overlays above declares
 `mem_limit` and `cpus` — the service-level keys plain `docker compose` honours,
 not `deploy.resources`, which is for swarm. The memory limits together stay at
 or under 14.5 GB (host memory minus 1.5 GB), and the batch-shaped services
-(`clamav`, `worker`, `harness-scanner`, `tei-embed`) are capped at one CPU with half the CPU
+(`clamav`, `worker`, `harness-scanner`) are capped at one CPU with half the CPU
 weight, so the request path keeps a core. `tests/guards/deploy-compose-canonical.test.ts`
 holds all of it. The figures, their basis and the risk of an out-of-memory kill
 are in [`implementation-notes/2026-11-12-capacity-c1.md`](implementation-notes/2026-11-12-capacity-c1.md);
@@ -558,28 +558,57 @@ until it is recreated.
 
 ### `tei-embed`: the in-deployment embedding service
 
-`tei-embed` is the canonical file's ninth service (Retriever Phase 1.1,
-2026-11-15): Hugging Face Text Embeddings Inference on CPU, serving
-`intfloat/multilingual-e5-small` (384 dimensions), the embedder D-L4-3 chose.
-It is the backend of the embedding seam in `src/lib/ai/embeddings/`.
+`tei-embed` is Hugging Face Text Embeddings Inference on CPU, serving
+`intfloat/multilingual-e5-small` (384 dimensions), the embedder D-L4-3 chose,
+as the backend of the embedding seam in `src/lib/ai/embeddings/` (Retriever
+Phase 1.1). The production VM runs **a patched copy of the upstream image,
+never the upstream image itself** (owner decision, 2026-11-15; D-L4-11 in
+`docs/ai-architecture-roadmap.md`).
+
+**The image.** `deploy/tei-embed/Dockerfile` is the upstream CPU release by tag
+and digest (`text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c…c78d`, the one
+the D-L4-3 benchmark ran) plus `apt-get update && apt-get -y upgrade` and a
+cleaned apt cache, and nothing else: no entrypoint, environment or file of
+ours. Two workflows build it, with the same smoke test
+(`deploy/tei-embed/smoke.sh`: the production limits and hardening, the pinned
+model fetched, one embed answered with 384 dimensions) and the same blocking
+Trivy gate (CRITICAL,HIGH, fixed only, `.trivyignore`):
+
+| | `ci.yml` → `TEI image` | `tei-embed-image.yml` → `TEI image` |
+| --- | --- | --- |
+| Runs | on every pull request and push that touches `deploy/tei-embed/`, the publish workflow, `.trivyignore` or `ci.yml` | every Monday at 07:23 UTC, and on dispatch, from `main` only |
+| Publishes | nothing | `ghcr.io/rodnapamet/tei-embed:<upstream>-<date>-<commit>`, after the gate, and prints the digest to pin |
+| Also reports | — | a newer upstream `cpu-x.y.z` release, if any; the pinned image's findings under the same gate |
+
+Dependabot proposes a new upstream release as a change to the `FROM` line, on
+Mondays.
+
+**The service and its pin.** The service enters the canonical Compose file in
+a pull request that pins a digest the publish workflow printed, as the scanner
+overlay pins its image; the pin moves by pull request, never by a tag. Its
+definition:
 
 | | |
 | --- | --- |
-| Image | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c…c78d`, by tag and digest |
+| Image | `ghcr.io/rodnapamet/tei-embed@sha256:<published digest>` |
 | Model | `--model-id intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3` |
-| Weights | fetched from the Hugging Face Hub on the first start into the `tei-embed-data` volume (465 MiB: `onnx/model.onnx`, the tokenizer and configs), read from the volume on every later start |
+| Weights | fetched from the Hugging Face Hub on the first start into the `tei-embed-data` volume (465 MiB: `onnx/model.onnx`, the tokenizer and configs), read from the volume on every later start, with no network needed |
 | Network | the project's default network, `http://tei-embed:8080`; no published port, no Caddy site |
 | Limits | `mem_limit: 2560m`, `cpus: 1.0`, `cpu_shares: 512` (batch-shaped) |
 | Hardening | read-only root, `/tmp` on tmpfs, every capability dropped, `no-new-privileges`, `pids_limit: 256` |
 | Secrets | none: no `env_file`, no `environment`, nothing interpolated |
-| Updates | not Watchtower's: a new image or model revision is a change to this file |
+| Updates | not Watchtower's |
 
-**It reaches the VM like any structural change**: the `VM apply` workflow's
+`tests/guards/tei-embed-image.test.ts` refuses the upstream image in any
+deploy Compose file and a `tei-embed` service that runs anything but
+`ghcr.io/rodnapamet/tei-embed` by digest.
+
+**Reaching the VM** is like any structural change: the `VM apply` workflow's
 `apply` action after its preflight, or `CONFIRM=1 deploy/apply.sh` from a
-signed-in session. `up -d` pulls the image (228 MiB compressed) and starts the
-container. The first start then needs outbound HTTPS to `huggingface.co` and
-its download host for about 465 MiB, and is healthy within seconds of the
-download finishing. A recreate on the populated volume does not reach the Hub.
+signed-in session. The image is in the repository's GHCR package, which the
+VM's `docker login ghcr.io` reads as it reads the application image. The first start
+needs outbound HTTPS to `huggingface.co` and its download host for about
+465 MiB.
 
 **Running it does not switch anything on.** The app dials it only while
 `.env.prod` sets all of:
@@ -592,10 +621,10 @@ AI_EMBED_LOCAL_QUERY_PREFIX="query: "
 AI_EMBED_LOCAL_PASSAGE_PREFIX="passage: "
 ```
 
-With them unset, as shipped, the seam's factory refuses by name and nothing
-calls the service. `AI_EMBED_LOCAL_MODEL` must equal `--model-id` exactly: the
-client refuses an answer whose `model` field names another model. The base URL
-is operator configuration, never tenant-writable, and the client dials only
+With them unset, the seam's factory refuses by name and nothing calls the
+service. `AI_EMBED_LOCAL_MODEL` must equal `--model-id` exactly: the client
+refuses an answer whose `model` field names another model. The base URL is
+operator configuration, never tenant-writable, and the client dials only
 addresses inside the deployment (`src/lib/ai/in-deployment-service.ts`).
 
 **Removing it** is not a revert alone: `up -d` does not remove a service that
@@ -603,7 +632,7 @@ has left the file. After restoring the previous compose file, remove the
 container (`docker compose … rm --stop tei-embed`, or `up -d --remove-orphans`)
 and, if the weights should go too, the `inflect_tei-embed-data` volume.
 
-The figures behind the limit and the record of the pins are in
+The measurements behind the limit and the record of the pins are in
 [`implementation-notes/2026-11-15-retriever-tei-embed.md`](implementation-notes/2026-11-15-retriever-tei-embed.md).
 
 ### `deploy/.env.prod.example` describes a different deployment

@@ -249,6 +249,27 @@ updates:
           - minor
           - patch
 
+  # ── tei-embed's image (Retriever 1.1; D-L4-11) ──
+  # deploy/tei-embed/Dockerfile pins upstream TEI's CPU image by tag and digest.
+  # Weekly on Mondays, so an upstream release proposes the
+  # FROM move as a pull request; ci.yml's `TEI image` job builds, smokes and
+  # gates it there. Moving the FROM also moves the benchmark's TEI_CPU_IMAGE
+  # (tests/guards/tei-embed-image.test.ts holds the two equal), and a new
+  # engine version is reviewed against the D-L4-3 record before it merges.
+  # Debian's fixes do not wait for this: tei-embed-image.yml rebuilds weekly.
+  - package-ecosystem: docker
+    directory: /deploy/tei-embed
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 1
+    reviewers:
+      - h0mele55
+    labels:
+      - dependencies
+      - automated
   # ── npm, docs site (weekly) ──
   # site/ holds the two docs sites (Starlight + Astro) with their own lockfile,
   # kept apart from the application's tree (docs/docs-site.md). Starlight is

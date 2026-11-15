@@ -1,0 +1,209 @@
+#
+# tei-embed's image: built, smoke-tested, scanned, then published.
+#
+# WHY THERE IS AN IMAGE OF OURS AT ALL. Retriever Phase 1.1 runs Hugging Face
+# Text Embeddings Inference on the production VM. The upstream CPU image carries
+# Debian packages with fixes available, which the repository's Trivy gate blocks
+# on, so the owner decided (2026-11-15, option B on #5687) that the VM runs a
+# patched copy: deploy/tei-embed/Dockerfile, the upstream digest plus
+# `apt-get upgrade`. The VM builds nothing, so the copy has to come from a
+# registry; this workflow puts it in the repository's GHCR package.
+#
+# THE SHAPE THE HARNESS SCANNER'S IMAGE HAD (scanner-image.yml, #3790; retired
+# with the in-repo scanner in #5684), and for its reasons:
+#   - BUILD -> SMOKE -> SCAN -> PUSH on one runner. A scan after the push gates
+#     nothing. The smoke test and the gate are the ones ci.yml's `TEI image` job
+#     runs on every change to deploy/tei-embed/.
+#   - Referenced by DIGEST. A new build changes nothing on the VM until a pull
+#     request pins its digest in deploy/docker-compose.prod.yml, and applying it
+#     is a separate, approved act (`VM apply`). There is no `:latest`.
+#
+# THE CADENCE (decision D-L4-11, docs/ai-architecture-roadmap.md, following the
+# owner's decision of 2026-11-15): rebuilt every Monday, so Debian's fixes reach
+# a published image within a week of release, and on dispatch after each
+# upstream TEI release moves the Dockerfile's FROM (Dependabot watches it, on
+# Mondays). Each scheduled run also reports whether a
+# newer upstream CPU release exists, and what the image the Compose file pins
+# today would score under the same gate, so a re-pin is a decision made on a
+# number.
+#
+# `tests/guardrails/publish-scans-before-push.test.ts` names this job as a push
+# site and requires a blocking Trivy step above every step that can reach a
+# registry; `tests/guards/tei-embed-image.test.ts` holds the rest.
+#
+name: TEI image
+
+on:
+    workflow_dispatch:
+    schedule:
+        # Mondays 07:23 UTC: after the 02:00-05:30 nightly window and clear of
+        # the 05:00 and 06:00 Monday jobs.
+        - cron: '23 7 * * 1'
+
+concurrency:
+    group: tei-embed-image-${{ github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    packages: write
+
+env:
+    REGISTRY: ghcr.io
+    IMAGE_NAME: rodnapamet/tei-embed
+    # Registry-less on purpose, as ghcr-publish.yml's SCAN_REF: a `ghcr.io/...` ref lets
+    # a typo scan an image pulled from the registry instead of the one built.
+    SCAN_REF: tei-embed:publish-${{ github.sha }}
+
+jobs:
+    build-scan-push:
+        # Only main publishes. A dispatch from another branch would put an image
+        # built from unreviewed files into the package somebody later pins from.
+        if: github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v4
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # Loaded into this runner's daemon and nowhere else; the registry
+            # does not see it until the push step, downstream of the gate.
+            # `pull: true` re-reads the FROM digest; `no-cache` re-runs the
+            # upgrade, which is the point of a weekly build.
+            - name: Build the tei-embed image (load locally, NO push)
+              uses: docker/build-push-action@v7
+              with:
+                  context: deploy/tei-embed
+                  file: deploy/tei-embed/Dockerfile
+                  push: false
+                  load: true
+                  pull: true
+                  no-cache: true
+                  tags: ${{ env.SCAN_REF }}
+                  platforms: linux/amd64
+
+            - name: Smoke-test the tei-embed image
+              run: deploy/tei-embed/smoke.sh "${SCAN_REF}"
+
+            # The same gate as ci.yml's `TEI image` job and the application
+            # image's: CRITICAL,HIGH, blocking, fixed
+            # vulnerabilities only, with the repository's narrow exemptions.
+            - name: "Gate: Trivy scan of the tei-embed image (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.SCAN_REF }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  timeout: "15m"
+
+            # PUSH THE BYTES TRIVY SAW, by tagging the local image, never by a
+            # second build. The tag names the upstream release, the build date
+            # and the commit; the digest is what a pull request pins.
+            - name: Push the scanned image
+              id: push
+              run: |
+                  set -euo pipefail
+                  UPSTREAM=$(sed -n 's#^FROM [^:]*:\(cpu-[0-9.]*\)@.*#\1#p' deploy/tei-embed/Dockerfile)
+                  if [ -z "${UPSTREAM:-}" ]; then
+                      echo "::error::could not read the upstream tag from the Dockerfile's FROM"
+                      exit 1
+                  fi
+                  TARGET="${REGISTRY}/${IMAGE_NAME}:${UPSTREAM}-$(date -u +%Y%m%d)-${GITHUB_SHA::9}"
+
+                  docker image inspect "${SCAN_REF}" > /dev/null
+                  docker tag "${SCAN_REF}" "${TARGET}"
+                  docker push "${TARGET}"
+
+                  DIGEST=$(docker image inspect "${TARGET}" \
+                      --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+                      | grep "^${REGISTRY}/${IMAGE_NAME}@" | head -1 | cut -d@ -f2)
+                  if [ -z "${DIGEST:-}" ]; then
+                      echo "::error::pushed ${TARGET} but could not read its manifest digest"
+                      exit 1
+                  fi
+                  echo "upstream=${UPSTREAM}" >> "$GITHUB_OUTPUT"
+                  echo "tag=${TARGET}" >> "$GITHUB_OUTPUT"
+                  echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+            - name: Report the digest to pin
+              run: |
+                  {
+                    echo '### tei-embed image published'
+                    echo
+                    echo '| field | value |'
+                    echo '| --- | --- |'
+                    echo "| commit | \`${GITHUB_SHA}\` |"
+                    echo "| upstream | \`${{ steps.push.outputs.upstream }}\` |"
+                    echo "| tag | \`${{ steps.push.outputs.tag }}\` |"
+                    echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+                    echo
+                    echo 'Pin the canonical Compose file to:'
+                    echo
+                    echo '```yaml'
+                    echo "    image: ${REGISTRY}/${IMAGE_NAME}@${{ steps.push.outputs.digest }}"
+                    echo '```'
+                    echo
+                    echo 'Nothing is deployed by this workflow.'
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+            # REPORT ONLY, after the push: is there a newer upstream CPU release
+            # than the FROM line names? The registry's tag list is public.
+            - name: Report a newer upstream release, if any
+              run: |
+                  set -euo pipefail
+                  CURRENT="${{ steps.push.outputs.upstream }}"
+                  TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:huggingface/text-embeddings-inference:pull" \
+                      | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["token"])')
+                  NEWEST=$(curl -fsS -H "Authorization: Bearer ${TOKEN}" \
+                      "https://ghcr.io/v2/huggingface/text-embeddings-inference/tags/list?n=10000" \
+                      | python3 -I -c '
+                  import json, re, sys
+                  tags = json.load(sys.stdin).get("tags") or []
+                  rel = [t for t in tags if re.fullmatch(r"cpu-\d+\.\d+\.\d+", t)]
+                  print(max(rel, key=lambda t: tuple(int(x) for x in t[4:].split("."))) if rel else "")
+                  ')
+                  if [ -n "${NEWEST}" ] && [ "${NEWEST}" != "${CURRENT}" ]; then
+                      echo "::warning::upstream TEI ${NEWEST} is newer than the Dockerfile's ${CURRENT}: move the FROM line (digest and benchmark pin) in a pull request"
+                      echo "| newer upstream | \`${NEWEST}\` (the Dockerfile names \`${CURRENT}\`) |" >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      echo "| newer upstream | none (\`${CURRENT}\` is the newest \`cpu-x.y.z\`) |" >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+            - name: Find the image the Compose file pins today
+              id: pinned
+              run: |
+                  REF=$(grep -oE "${REGISTRY}/${IMAGE_NAME}@sha256:[0-9a-f]{64}" deploy/docker-compose.prod.yml | head -1 || true)
+                  echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+                  if [ -z "${REF}" ]; then echo "The canonical Compose file pins no ${IMAGE_NAME} image."; fi
+
+            # REPORT ONLY: the pinned image under the same gate's settings. A
+            # finding here that the new build does not have is the reason to
+            # pin the new digest.
+            - name: "Report: Trivy scan of the pinned tei-embed image"
+              if: steps.pinned.outputs.ref != ''
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ steps.pinned.outputs.ref }}
+                  format: "table"
+                  exit-code: "0"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  timeout: "15m"
+                  skip-setup-trivy: true

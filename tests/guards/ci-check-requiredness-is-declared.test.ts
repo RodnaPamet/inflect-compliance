@@ -175,6 +175,13 @@ const CHECK_REQUIREDNESS: Readonly<Record<string, { required: boolean; why: stri
     },
     // REMOVED 2026-11-15: `scanner-image`. The in-repo harness scanner and its
     // container were deleted (scanent #26); the scanner is scanent's image.
+    'tei-embed-image': {
+        required: false,
+        why: 'Builds tei-embed\'s patched TEI image from `deploy/tei-embed/`, behind its own path '
+            + 'filter, so it is absent from every pull request that does not touch that directory. '
+            + 'Requiring a context that is usually absent would make it score as zero failures. Its '
+            + 'verdict is about an image the VM runs only once a later pull request pins its digest.',
+    },
 };
 
 describe('every ci.yml job declares whether it is a required check', () => {

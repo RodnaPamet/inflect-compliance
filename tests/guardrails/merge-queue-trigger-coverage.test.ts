@@ -185,6 +185,9 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     // REMOVED 2026-11-15: `scanner-image`, the third job #4623 added here. The
     // in-repo harness scanner, its container and the job were deleted
     // (scanent #26); the scanner is scanent's own image now.
+    'tei-embed-image': 'Skipped with `docker` and `trivy`, per the job\'s own comment: it ' +
+        'already ran on the pull request. Its build context is deploy/tei-embed/ alone, so a merge ' +
+        'collision with another diff cannot change the image it builds or the findings Trivy reports.',
     // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
     // estate, and a stale entry here is not inert — the sibling "no entry names
     // a job that no longer exists" check reads this map as the authority on

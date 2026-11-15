@@ -1,4 +1,4 @@
-# 2026-11-15 — Retriever 1.1: the `tei-embed` service
+# 2026-11-15 — Retriever 1.1a: the `tei-embed` image, and the service it serves
 
 **Commit:** see the `claude/retriever-phase-1` branch (`feat(deploy): tei-embed …`).
 
@@ -7,12 +7,28 @@
 Retriever Phase 1's seam (1.2–1.5: `src/lib/ai/embeddings/`, the
 `AI_EMBED_LOCAL_*` variables, the residency routing, the in-deployment dial,
 the metric) was already on `main`. The one open item was 1.1, the service
-behind it, so this change is a Compose service and nothing in the app:
+behind it. The upstream image fails the repository's Trivy bar (below), so the
+owner decided (2026-11-15, option B on #5687) that the VM runs a patched copy
+built here, and 1.1 became two steps, the two the harness scanner's image
+took (#3790, #3793) before #5684 retired it:
+
+- **1.1a, this change:** `deploy/tei-embed/Dockerfile` (the upstream digest
+  plus `apt-get upgrade`), ci.yml's `TEI image` job (build, smoke, Trivy gate
+  on every change to that directory) and `tei-embed-image.yml` (the same,
+  then a push to `ghcr.io/rodnapamet/tei-embed`, weekly and on dispatch from
+  `main`). No Compose file changes.
+- **1.1b, the pin:** the `tei-embed` service enters the canonical Compose file
+  pinned to a digest that workflow published, as the scanner overlay did in
+  #3793 after #3790's workflow had published (and re-pinned in #5493). A
+  dispatch needs the workflow on `main`, so the digest cannot exist in the
+  pull request that adds the workflow.
+
+The service 1.1b adds, as measured here:
 
 ```
 app / worker ──(only while .env.prod sets AI_EMBED_LOCAL_*)──► http://tei-embed:8080/v1/embeddings
                                                                  │
-                         TEI cpu-1.9.4 (ONNX Runtime, 1.0 CPU, 2,560 MiB, read-only root)
+          ghcr.io/rodnapamet/tei-embed (TEI cpu-1.9.4, upgraded; ONNX Runtime, 1.0 CPU, 2,560 MiB, read-only root)
                                                                  │
                                        tei-embed-data volume ◄── huggingface.co, first start only
                                        (onnx/model.onnx + tokenizer, 465 MiB, commit 614241f6)
@@ -28,8 +44,8 @@ as the deployment's own service.
 
 | What | Pin | Read |
 | --- | --- | --- |
-| Image | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d` | GHCR, 2026-11-15: `cpu-1.9.4` and `cpu-1.9` both resolve to this index digest, the one the 2026-11-13 benchmark ran (`TEI_CPU_IMAGE`); no later release tag exists. amd64 manifest `sha256:8419f533…5726`, 13 layers, 228 MiB compressed |
-| Model | `intfloat/multilingual-e5-small` at `614241f622f53c4eeff9890bdc4f31cfecc418b3` | the Hub's `main` on 2026-11-15, last modified 2026-04-02, before the benchmark resolved `main` on 2026-11-13, so the commit it measured. Pinned in `scripts/retriever-benchmark/candidates.ts` too, and the compose guard holds the two equal |
+| Upstream image (the Dockerfile's FROM) | `ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d` | GHCR, 2026-11-15: `cpu-1.9.4` and `cpu-1.9` both resolve to this index digest, the one the 2026-11-13 benchmark ran (`TEI_CPU_IMAGE`); no later release tag exists. amd64 manifest `sha256:8419f533…5726`, 13 layers, 228 MiB compressed |
+| Model | `intfloat/multilingual-e5-small` at `614241f622f53c4eeff9890bdc4f31cfecc418b3` | the Hub's `main` on 2026-11-15, last modified 2026-04-02, before the benchmark resolved `main` on 2026-11-13, so the commit it measured. Pinned in `scripts/retriever-benchmark/candidates.ts` too; `tests/guards/tei-embed-image.test.ts` holds the smoke test's pin equal to it, and 1.1b's compose guard will hold the service's |
 | Reranker (for Phase 2) | `BAAI/bge-reranker-base` at `2cfc18c9415c912f9d8155881c133215df768a70` | the Hub's `main`, last modified 2024-06-24; pinned in the benchmark candidates only |
 
 **Licence (0.1b).** Neither model's Hub repository carries a licence file:
@@ -89,7 +105,7 @@ healthy in 7 s and answered `/v1/embeddings` (run 43702239517).
 
 ## The Trivy result
 
-`aquasecurity/trivy-action@v0.36.0` on the pinned image, CRITICAL and HIGH:
+`aquasecurity/trivy-action@v0.36.0` on the upstream image, CRITICAL and HIGH:
 
 | | fixed upstream | fix deferred / will not fix / affected |
 | --- | ---: | ---: |
@@ -103,21 +119,45 @@ findings, every one a Debian 12.15 package of the base layer**: `perl-base`
 (CVE-2026-109518), `libpcre2-8-0` (four), and `openssl` / `libssl3` /
 `libssl-dev` (CVE-2026-84782, DTLS). Trivy found no language-package finding:
 TEI is one Rust binary plus ONNX Runtime. The repository's Trivy gate covers the
-images this repository builds (the application and the scanner); no
+images this repository builds (the application and, until #5684, the
+scanner); no
 third-party runtime image has been Trivy-gated, and G5 asks a digest of it.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `deploy/docker-compose.prod.yml` | the `tei-embed` service and its volume |
-| `tests/guards/deploy-compose-canonical.test.ts` | nine services, `tei-embed` batch-shaped and in the budget, and its own block: digest and revision equal to the benchmark's, batch size at least the seam's, no port, no Caddy site, no secrets, not Watchtower's, named volume, hardening, healthcheck, nothing depends on it |
+| `deploy/tei-embed/Dockerfile` | the upstream digest plus `apt-get upgrade`, and nothing else |
+| `deploy/tei-embed/smoke.sh` | starts an image as production runs it (limits, hardening, pinned model) and requires a healthy container and a 384-dimension answer |
+| `.github/workflows/tei-embed-image.yml` | build, smoke, gate, push by digest; weekly and on dispatch, `main` only; reports a newer upstream release and the pinned image's findings |
+| `.github/workflows/ci.yml` | the `TEI image` job and its `tei_embed` path filter |
+| `.github/dependabot.yml` | the `FROM` line watched weekly, on Mondays |
+| `tests/guards/tei-embed-image.test.ts` | the Dockerfile's instruction set and FROM, the smoke test's model and hardening, the publish workflow's triggers, permissions and order, one gate in both places, and no upstream TEI image in any deploy Compose file |
+| `tests/guardrails/security-gate-strictness.test.ts`, `publish-scans-before-push.test.ts`, `ci-check-requiredness-is-declared.test.ts`, `merge-queue-trigger-coverage.test.ts`, `ci-checks-unreachable-before-merge.json` (+ its key-order pin) | the new gate, push site and job registered where every image gate and CI job is |
 | `scripts/retriever-benchmark/candidates.ts` | the chosen embedder's and reranker's revisions pinned |
-| `docs/ai-architecture/nemotron-retriever.md` | 0.1b, 0.6 and 1.1 ticked; current state |
-| `docs/ai-architecture-roadmap.md` | the Embeddings capacity line measured, the arithmetic recomputed, current state and board rows |
-| `docs/deployment.md` | the service, how it reaches the VM, how the app is pointed at it, how to remove it |
+| `docs/ai-architecture-roadmap.md` | D-L4-11 (the image's source and cadence); the Embeddings capacity line measured, the arithmetic recomputed, current state and board rows |
+| `docs/ai-architecture/nemotron-retriever.md` | 0.1b and 0.6 ticked; 1.1 split into 1.1a (done) and 1.1b (the pin) |
+| `docs/deployment.md` | the image, its two workflows, the service 1.1b adds, how the app is pointed at it, how to remove it |
 
 ## Decisions
+
+- **The VM runs our image, never the upstream one** (owner, 2026-11-15). The
+  upstream digest stays the FROM, so the engine is the one the benchmark ran;
+  only Debian's packages move.
+- **Two pull requests, the scanner's way.** A digest exists only after the
+  workflow on `main` publishes, so the service cannot be in the change that
+  adds the workflow without naming the unpatched image or none. The guard
+  refuses the first everywhere; the second waits for 1.1b.
+- **The CI job is path-filtered, unlike the scanner's was.** The scanner image held
+  application modules, so its job runs on every pull request; this image's
+  build context is `deploy/tei-embed/` alone, which is the retired Laya
+  image's argument for its filter. New Debian fixes are the weekly
+  rebuild's to find.
+- **Weekly, and published.** A weekly build that only scanned would find fixes
+  and leave nothing to pin. Each build is tagged
+  `<upstream>-<date>-<commit>`, and the pin moves by pull request when a new
+  build clears a finding the pinned one has (the run reports both) or after
+  an upstream release.
 
 - **The limit is 2,560 MiB, not the 1 GB estimate.** 1.5 times the highest
   measured `memory.peak` (1,664), rounded up to a multiple of 256, as C1b set
@@ -128,13 +168,13 @@ third-party runtime image has been Trivy-gated, and G5 asks a digest of it.
 - **The plan no longer fits, though the file does.** With the measured line,
   the planned standing additions total 15,053 MiB, about 205 MiB over the
   14.5 GB line, and the reranker's 1.5 GB estimate is likely low by the same
-  ratio. The canonical file plus `tei-embed` is 11,776 MiB. D-CAP-1 as decided
+  ratio. The canonical file plus `tei-embed`, at 1.1b, is 11,776 MiB. D-CAP-1 as decided
   applies at the first addition that would take the file over the line.
-- **Weights from the Hub on first start, into a named volume.** Baking them
-  into a repo-built image would add a build pipeline and 470 MB to every pull;
-  a host-staged directory would be host state outside the canonical set. The
-  volume fetches once at a pinned commit, and the guard refuses a service
-  without `--revision`.
+- **Weights from the Hub on first start, into a named volume, even now that
+  the image is ours.** Baking them into the image would add 470 MB to every
+  weekly build and pull and tie a model change to an engine rebuild; a
+  host-staged directory would be host state outside the canonical set. The
+  volume fetches once at a pinned commit, and the smoke test runs that commit.
 - **The default network, not a network of its own** (the roadmap said
   `app`/`worker` network only). A second network on `app` and `worker` changes
   the two containers Watchtower recreates, on the request path, for a service
