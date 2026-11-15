@@ -617,6 +617,141 @@ describe('page actions — a local helper parameter resolves from its call sites
 });
 
 /**
+ * #5713. A page reaches an API route by putting its URL in an ANCHOR as well as
+ * by calling it, and `apiCalls` walked call expressions alone — so every export
+ * and download link was reported as called by nobody. Eleven sites and eight
+ * routes, among them the policy PDF, the SoA CSV, the evidence download and
+ * both invite sign-in starts.
+ *
+ * A LINK IS NOT A CALL, and two gates carry that difference. A `fetch(…)` whose
+ * URL cannot be read is a gap worth naming; an `href` that cannot be read says
+ * nothing, because it might be a page route, an external site or a `mailto:`.
+ * Wiring the first gate alone put twelve page links — `tenantHref('/agents/
+ * proposals')`, `/t/${slug}${targetPath}`, a `mailto:${email}` — into the
+ * unresolved list as unreadable API calls, which is the second gate's case.
+ */
+describe('page actions — a link to an API route is a GET site', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src));
+    };
+    /** `*` is a run-time segment; `UNREADABLE` is a reported-but-unsegmentable call. */
+    const callsOf = (text: string) =>
+        run(text).map((c) => `${c.methods.join('|')} ${c.segments ? c.segments.map((x) => x ?? '*').join('/') : 'UNREADABLE'}`);
+
+    it('reads an anchor built from a template as a GET of that route', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ id }: { id: string }) {',
+                    '    return <a href={`/api/t/x/policies/${id}/export`}>PDF</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET api/t/x/policies/*/export']);
+    });
+
+    it('reads a plain string href too', () => {
+        expect(callsOf(['export default function P() {', '    return <a href="/api/health">ok</a>;', '}'].join('\n'))).toEqual([
+            'GET api/health',
+        ]);
+    });
+
+    it('composes with a local builder, so the tenant prefix is the builder own', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ tenantSlug, id }: { tenantSlug: string; id: string }) {',
+                    '    const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;',
+                    '    return <a href={apiUrl(`/evidence/files/${id}/download`)}>get</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET api/t/*/evidence/files/*/download']);
+    });
+
+    it('is not fooled by a page route, an external site or a fragment', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ id }: { id: string }) {',
+                    '    return (',
+                    '        <>',
+                    '            <a href={`/t/x/risks/${id}`}>risk</a>',
+                    '            <a href="https://example.com/api/widgets">out</a>',
+                    '            <a href="#top">top</a>',
+                    '        </>',
+                    '    );',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    // GATE 1. The fetch is reported; the link beside it is not.
+    it('reports an unreadable fetch URL and stays silent about an unreadable href', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ target }: { target: string }) {',
+                    '    void fetch(target);',
+                    '    return <a href={target}>go</a>;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET UNREADABLE']);
+    });
+
+    // GATE 2. These RESOLVE and then fail to segment, which is a different
+    // branch from gate 1 and the one that leaked twelve page links.
+    it('stays silent about a resolved href that cannot be segmented', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ email, subject, a, b }: { email: string; subject: string; a: string; b: string }) {',
+                    '    return (',
+                    '        <>',
+                    '            <a href={`mailto:${email}?subject=${subject}`}>mail</a>',
+                    '            <a href={`/api/t/x/${a}${b}`}>two values, one segment</a>',
+                    '        </>',
+                    '    );',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    it('still reports the same unsegmentable path when a FETCH is what reaches it', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P({ a, b }: { a: string; b: string }) {',
+                    '    return fetch(`/api/t/x/${a}${b}`);',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual(['GET UNREADABLE']);
+    });
+
+    it('reads only the attributes in the GET set, so a form action is not a call', () => {
+        expect(
+            callsOf(
+                [
+                    'export default function P() {',
+                    '    return <form action="/api/t/x/widgets" />;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    it('ignores a valueless href rather than throwing', () => {
+        expect(callsOf(['export default function P() {', '    return <a href>nothing</a>;', '}'].join('\n'))).toEqual([]);
+    });
+});
+
+/**
  * #5662. A URL builder is recognised by what the callee is BOUND to, never by
  * its name. The retired name test (`apiUrl` / `buildApiUrl` / `tenantApiUrl`
  * -> always the tenant prefix) was right 144 times and wrong three: an
