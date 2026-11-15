@@ -8,7 +8,7 @@ inflect · ai architecture · cuopt · roadmap v1 · 2026-10-29
 > decided by the owner 2026-11-11) — no feature has an optimisation problem
 > today, and none at GPU scale.** The roadmap is complete once the master's
 > decision table and status board record it; that edit is the coordinator's
-> and is outstanding (§ Updating the master). The **Current state** section is true today
+> and is made — the master carries it (§ Updating the master). The **Current state** section is true today
 > (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap**
 > section records the decision; Phase 1 is kept as the plan for the day a
 > feature wants a solver. This is a
@@ -129,7 +129,7 @@ CPU backend solves inside the engine's step budget.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Find the problem and measure it (decided 2026-11-11: declined; master record outstanding)
+### Phase 0 — Find the problem and measure it (decided 2026-11-11: declined; master record made)
 
 **The record.** D-L3-3 was decided by the owner on 2026-11-11 (relayed to this
 change by the coordinating session; the owner's initials go in the master's
@@ -251,9 +251,8 @@ burn a step's budget alone).
 
 ## Updating the master
 
-Outstanding, and the coordinator's to do (this change does not edit the
-master, whose cuOpt row still reads "missing; CPU seam first if any" and whose
-D-L3-3 row shows only the default-if-undecided). Write:
+MADE — the master carries it; confirmed and recorded here 2026-11-15
+(#5358). The master reads:
 
 - **Status board**, cuOpt row, current-state column: "declined — no
   optimisation problem in the product, none at GPU scale (D-L3-3,

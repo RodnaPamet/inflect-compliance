@@ -171,9 +171,10 @@ verdict.
 - [ ] 0.2 D-L1-2: list the rails by whether they need an LLM; Phase 1 =
       LLM-free; Phase 2 = LLM-backed on the permitted route. **D-L1-2 decided:
       adopted (LLM-free rails first) — owner, 2026-11-11**, taken with nine
-      other decisions that day and relayed in the roadmap coordinator's brief;
-      the master's D-L1-2 row is the coordinator's to initial. The rail-by-rail
-      list and its residency consequences remain.
+      other decisions that day. The master's D-L1-2 row carries it — "**decided
+      2026-11-11** (owner): LLM-free rails first" — so the record is made
+      (the master carries it; confirmed here 2026-11-15, #5358). The box STAYS UNTICKED: the rail-by-rail list and
+      its residency consequences are the work, and they remain.
 - [ ] 0.3 Baseline: garak hit rates with the deterministic guard only
       ([`garak.md`](./garak.md) Phase 0/1) — the number NeMo must move.
 

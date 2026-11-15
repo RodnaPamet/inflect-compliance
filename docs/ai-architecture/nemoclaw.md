@@ -8,7 +8,7 @@ inflect · ai architecture · nemoclaw · roadmap v1 · 2026-10-29
 > Layer 5). **Phase 0's work is done and D-L1-4 is decided (by the owner,
 > 2026-11-11): reference-only; the agent runtime and the routed-inference
 > layer are declined.** The master's decision table and status board do not
-> record it yet; that edit is the coordinator's (§ Updating the master). The mapping found two policy tightenings worth taking,
+> record it; that edit is made — the master carries it (§ Updating the master). The mapping found two policy tightenings worth taking,
 > so the roadmap completes at Phase 1. The **Current state** section is true
 > today (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap**
 > section is the plan. This is a child of
@@ -142,7 +142,7 @@ tighten; nothing is imported as a dependency.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Map the current release to what exists; decide (done 2026-11-11; master record outstanding)
+### Phase 0 — Map the current release to what exists; decide (done 2026-11-11; master record made)
 
 **Sources read, 2026-11-11.** Primary sources only, from NVIDIA's `NemoClaw`
 repository on GitHub, branch `main`: the README,
@@ -292,9 +292,12 @@ denials").
 
 ## Updating the master
 
-Outstanding, and the coordinator's to do (this change does not edit the
-master, whose NemoClaw row still reads "substrate present (OpenShell); stack to
-be declined" and whose D-L1-4 row shows only the default-if-undecided). Write:
+MADE — the master carries it, in substance rather than verbatim; confirmed
+and recorded here 2026-11-15 (#5358). The master's
+NemoClaw row now reads "Phase 0 done; reference-only, runtime and router
+declined (D-L1-4, 2026-11-11)" with its note linked, and its completion phase
+is 1 — the two things this section asked for, though the current-state wording
+is the master's own rather than the sentence proposed below. The master reads:
 
 - **Status board**, NemoClaw row: current state "reference-only; runtime and
   router declined (D-L1-4, 2026-11-11); Phase 1 — two policy tightenings",
