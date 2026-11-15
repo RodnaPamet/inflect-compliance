@@ -6,7 +6,7 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 > the target architecture places in the Validation column as "testing".
 > **Phase 0's decision is taken: declined (D-EV-5, decided by the owner
 > 2026-11-11).** The roadmap is complete once the master's decision table and
-> status board record it; that edit is the coordinator's and was made on 2026-11-15
+> status board record it; that edit is the coordinator's and is made
 > (§ Updating the master). The **Current state** section is true today (re-verified
 > 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section records the
 > decision, because the benchmark measures a capability this product does not
@@ -94,7 +94,7 @@ roadmap's to take.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide, and record (decided 2026-11-11; master record made 2026-11-15)
+### Phase 0 — Decide, and record (decided 2026-11-11; master record made)
 
 **The record.** D-EV-5 was decided by the owner on 2026-11-11 (relayed to this
 change by the coordinating session; the owner's initials go in the master's
@@ -149,7 +149,8 @@ Not applicable.
 
 ## Updating the master
 
-MADE (2026-11-15, #5358). The master now reads:
+MADE — the master carries it; confirmed and recorded here 2026-11-15
+(#5358). The master reads:
 
 - **Status board**, SWE-bench row, current-state column: "declined — no
   capability to measure (D-EV-5, 2026-11-11)", linking the implementation note.

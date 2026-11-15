@@ -173,7 +173,7 @@ verdict.
       adopted (LLM-free rails first) — owner, 2026-11-11**, taken with nine
       other decisions that day. The master's D-L1-2 row carries it — "**decided
       2026-11-11** (owner): LLM-free rails first" — so the record is made
-      (2026-11-15, #5358). The box STAYS UNTICKED: the rail-by-rail list and
+      (the master carries it; confirmed here 2026-11-15, #5358). The box STAYS UNTICKED: the rail-by-rail list and
       its residency consequences are the work, and they remain.
 - [ ] 0.3 Baseline: garak hit rates with the deterministic guard only
       ([`garak.md`](./garak.md) Phase 0/1) — the number NeMo must move.
