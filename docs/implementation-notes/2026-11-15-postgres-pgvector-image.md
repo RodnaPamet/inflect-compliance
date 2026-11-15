@@ -87,6 +87,26 @@ reaches anything only through the next two acts:
   the CPU of the GitHub runner that built it; on the VM's CPU that can be an
   illegal instruction at the first distance computation. `with_llvm=no` skips
   the JIT bitcode, which would need the image's clang and LLVM in the build.
+- **gosu is rebuilt, not removed.** The first CI run built the image, found
+  zero vulnerabilities in the Alpine packages, and failed the gate on
+  `/usr/local/bin/gosu`: a static binary upstream builds with Go 1.24.6,
+  carrying 26 Go standard-library findings with fixes (1 CRITICAL,
+  CVE-2025-68121, 25 HIGH). The image's `docker-entrypoint.sh` drops from
+  root to `postgres` with `exec gosu postgres …`, and `su-exec` is a symlink
+  to `gosu`, so it is load-bearing and cannot be deleted. A first stage
+  (`golang:1.27.4-alpine`, tag and digest, as every new image is pinned)
+  compiles the same release, gosu 1.19, refused unless the tag resolves to
+  commit `6456aaa0`, with `CGO_ENABLED=0` and upstream's `-ldflags "-d -w"`,
+  and the final stage copies it over the upstream binary. Go 1.27.4 rather
+  than the older 1.27.3 because 1.27.4 is a security release (an `net/http`
+  fix) that the gate would otherwise report. No `.trivyignore` entry.
+  The smoke test reads the builder's Go version from the Dockerfile and
+  refuses a `gosu --version` that names another, so the upstream binary
+  fails it, and checks that `su-exec` still links to `gosu` and that `gosu
+  postgres id -un` answers `postgres`. Verified locally: the build compiles
+  and reports `1.19 (go1.27.4 on linux/amd64; gc)`, and an image of
+  `postgres:16-alpine` with that binary copied in starts through the
+  upstream entrypoint and passes every gosu check.
 - **No `apk upgrade`.** Unlike tei-embed, whose upstream carried unfixed
   Debian packages, `postgres:16-alpine` is rebuilt upstream as Alpine ships
   fixes, and the daily digest check follows it within a day. Upgrading

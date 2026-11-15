@@ -12,6 +12,9 @@
 #   - the C library is still musl (the existing pgdata volume's collation
 #     depends on it; a Debian base would need a reindex);
 #   - no compiler and no git survived the build layer;
+#   - gosu (which the entrypoint drops privileges with, and su-exec links to)
+#     is the one this repository rebuilt: it runs, it reports the Go version
+#     of the Dockerfile's builder stage, and it switches to the postgres user;
 #   - `CREATE EXTENSION vector` succeeds as the superuser and reports the
 #     pinned version;
 #   - a cosine nearest-neighbour query returns the expected row, once by
@@ -24,6 +27,14 @@ set -euo pipefail
 
 IMAGE="${1:?usage: smoke.sh <image-ref>}"
 PGVECTOR_VERSION="0.8.7"
+# The Go the builder stage compiles gosu with, read from the Dockerfile beside
+# this script, so the check cannot drift from the pin it checks.
+DOCKERFILE="$(dirname "$0")/Dockerfile"
+GO_VERSION=$(sed -n 's/^FROM golang:\([0-9][0-9.]*\)-alpine@sha256:[0-9a-f]\{64\} AS gosu-build$/go\1/p' "$DOCKERFILE")
+if [ -z "$GO_VERSION" ]; then
+    echo "::error::could not read the gosu builder's Go version from $DOCKERFILE"
+    exit 1
+fi
 NAME="postgres-pgvector-smoke-$$"
 
 cleanup() {
@@ -76,6 +87,26 @@ for tool in gcc cc make git; do
     fi
 done
 
+# gosu: the rebuilt binary, not the upstream one (whose Go standard library
+# carried the findings that made it necessary). `gosu --version` prints
+# "<release> (<go version> on <os/arch>; gc)".
+gosu_version=$(docker exec "$NAME" gosu --version 2>&1) || {
+    echo "::error::gosu --version failed: $gosu_version"
+    exit 1
+}
+case "$gosu_version" in
+    *"($GO_VERSION on "*) ;;
+    *) echo "::error::gosu reports '$gosu_version', expected one built with $GO_VERSION"; exit 1 ;;
+esac
+if [ "$(docker exec "$NAME" readlink /usr/local/bin/su-exec 2>/dev/null)" != "gosu" ]; then
+    echo "::error::su-exec no longer links to gosu"
+    exit 1
+fi
+if [ "$(docker exec "$NAME" gosu postgres id -un 2>&1)" != "postgres" ]; then
+    echo "::error::gosu could not switch to the postgres user"
+    exit 1
+fi
+
 version=$(psql_q -c "CREATE EXTENSION vector;" -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';") || {
     echo "::error::CREATE EXTENSION vector failed: the image does not carry pgvector"
     exit 1
@@ -117,4 +148,4 @@ case "$state" in
 esac
 
 server=$(psql_q -c 'SHOW server_version;')
-echo "postgres-pgvector smoke: server=$server, vector=$version, musl, no toolchain, cosine seq+hnsw ok, $state"
+echo "postgres-pgvector smoke: server=$server, vector=$version, gosu=${gosu_version%% *} ($GO_VERSION), musl, no toolchain, cosine seq+hnsw ok, $state"

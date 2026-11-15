@@ -27,11 +27,45 @@
 # image's clang and LLVM. The toolchain is removed in the same layer, so no
 # compiler or git reaches the published image.
 #
+# GOSU IS REBUILT (2026-11-15). The upstream image's /usr/local/bin/gosu is a
+# static Go binary built with Go 1.24.6, and Trivy reports 26 Go standard
+# library findings in it with fixes available (1 CRITICAL, CVE-2025-68121, and
+# 25 HIGH), which the repository's gate blocks on; the Alpine packages had
+# none. gosu is not optional: docker-entrypoint.sh drops from root to the
+# postgres user with `exec gosu postgres …` (and su-exec is a symlink to it),
+# so it cannot simply be removed. The first stage compiles the same gosu
+# release from source with a current Go, verified by commit, CGO off (as
+# upstream builds it), and the second stage copies it over the upstream one.
+# The Go toolchain never reaches the published image.
+#
+# The builder is pinned by tag AND digest, as every new image here is
+# (tests/guardrails/runtime-image-pinning.test.ts). Go 1.27.4 (2026-11-10) is
+# the current security release; 1.27.3 lacks its net/http fix, which the gate
+# would report. Moving it is a reviewed diff; a weekly rebuild whose gate
+# finds a newer Go fix fails, visibly, until it moves.
+#
 # NOTHING ELSE CHANGES. No ENTRYPOINT, CMD, ENV, USER or config file of ours:
 # the upstream entrypoint, its environment variables and the data directory
 # behave exactly as they do in postgres:16-alpine.
 # `tests/guards/postgres-pgvector-image.test.ts` holds the instruction set.
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS gosu-build
+
+# gosu 1.19 (2025-09-23), the release the upstream image ships.
+ARG GOSU_VERSION=1.19
+ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513
+
+RUN set -eux \
+ && apk add --no-cache git \
+ && git clone --quiet --depth 1 --branch "${GOSU_VERSION}" https://github.com/tianon/gosu.git /src/gosu \
+ && test "$(git -C /src/gosu rev-parse HEAD)" = "${GOSU_COMMIT}" \
+ && cd /src/gosu \
+ && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-d -w" -o /out/gosu . \
+ && /out/gosu --version \
+ && /out/gosu nobody true
+
 FROM postgres:16-alpine
+
+COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
 
 # v0.8.7 was released 2026-10-01. Iterative index scans (0.8.0+) are what the
 # backend's filtered search relies on; its probe refuses anything older.

@@ -79,7 +79,9 @@ flowchart LR
 - **The image that carries pgvector is built, and nothing runs it yet.**
   `deploy/postgres/Dockerfile` is `postgres:16-alpine` plus pgvector `v0.8.7`
   (pinned by tag and commit, compiled without `-march=native`, toolchain
-  removed in the same layer). ci.yml's `Postgres image` job builds it,
+  removed in the same layer), with the entrypoint's `gosu` rebuilt from the
+  same release on a current Go (the upstream binary's Go standard library
+  carried findings the Trivy gate blocks on). ci.yml's `Postgres image` job builds it,
   smoke-tests it (`deploy/postgres/smoke.sh`: musl, no toolchain, `CREATE
   EXTENSION vector`, a cosine query by sequential scan and through HNSW) and
   gates it with Trivy on every change to `deploy/postgres/`;
