@@ -128,6 +128,28 @@ describe('Risk import page', () => {
         expect(await screen.findByText(R.rowError.replace('{row}', '2').replace('{title}', 'Outage').replace('{message}', 'Owner not found'))).toBeInTheDocument();
     });
 
+    // #5313 — above the server's cap the whole batch is refused, so the page
+    // does not offer it.
+    it('does not offer an import above the server\'s row cap, and says why', async () => {
+        const { RISK_IMPORT_MAX_ROWS } = jest.requireActual('@/lib/risk-import-limits');
+        const rows = Array.from({ length: RISK_IMPORT_MAX_ROWS + 1 }, (_, i) => `Risk ${i + 1},2,2`).join('\n');
+        mount();
+        await choose(`title,likelihood,impact\n${rows}\n`);
+        const notice = await screen.findByTestId('import-over-cap');
+        expect(notice).toHaveTextContent(String(RISK_IMPORT_MAX_ROWS + 1));
+        expect(notice).toHaveTextContent(String(RISK_IMPORT_MAX_ROWS));
+        expect(document.getElementById('import-btn')).toBeDisabled();
+    });
+
+    it('offers an import at the cap', async () => {
+        const { RISK_IMPORT_MAX_ROWS } = jest.requireActual('@/lib/risk-import-limits');
+        const rows = Array.from({ length: RISK_IMPORT_MAX_ROWS }, (_, i) => `Risk ${i + 1},2,2`).join('\n');
+        mount();
+        await choose(`title,likelihood,impact\n${rows}\n`);
+        await waitFor(() => expect(document.getElementById('import-btn')).toBeEnabled());
+        expect(screen.queryByTestId('import-over-cap')).toBeNull();
+    });
+
     it('says so when the browser cannot read the file', async () => {
         const Real = global.FileReader;
         class FailingReader {

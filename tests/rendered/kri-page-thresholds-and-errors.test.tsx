@@ -50,7 +50,7 @@ import KriPage from '@/app/t/[tenantSlug]/(app)/risks/kri/page';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    risks: { kri: Record<string, string> & { rag: Record<string, string> } };
+    risks: { kri: Record<string, string> & { rag: Record<string, string> }; edit: Record<string, string> };
 };
 const K = EN.risks.kri;
 
@@ -114,6 +114,41 @@ describe('Key risk indicators page', () => {
         await waitFor(() => expect(writes.find((w) => w.method === 'POST')).toBeDefined());
         const body = writes.find((w) => w.method === 'POST')!.body as Record<string, unknown>;
         expect(body).toMatchObject({ direction: 'LOWER_IS_WORSE', amberMax: 95, greenMax: 90 });
+    });
+
+    // #5313 — `Number('1,5')` is NaN, which JSON sends as null: a threshold
+    // typed with a decimal comma was saved as "no threshold".
+    it('reads a decimal comma as a decimal point', async () => {
+        mount();
+        await screen.findByText('Patch coverage');
+        fireEvent.change(document.getElementById('kri-name')!, { target: { value: 'Error rate' } });
+        fireEvent.change(document.getElementById('kri-green')!, { target: { value: '1,5' } });
+        fireEvent.change(document.getElementById('kri-amber')!, { target: { value: '2,5' } });
+        await act(async () => { fireEvent.click(document.getElementById('kri-create-btn')!); });
+        await waitFor(() => expect(writes.find((w) => w.method === 'POST')).toBeDefined());
+        expect(writes.find((w) => w.method === 'POST')!.body).toMatchObject({ greenMax: 1.5, amberMax: 2.5 });
+    });
+
+    it('refuses a threshold that is not a number rather than saving none', async () => {
+        mount();
+        await screen.findByText('Patch coverage');
+        fireEvent.change(document.getElementById('kri-name')!, { target: { value: 'Error rate' } });
+        fireEvent.change(document.getElementById('kri-green')!, { target: { value: 'abc' } });
+        await act(async () => { fireEvent.click(document.getElementById('kri-create-btn')!); });
+        expect(await screen.findByTestId('kri-save-error')).toHaveTextContent(K.thresholdNotNumber);
+        expect(writes).toHaveLength(0);
+    });
+
+    // #5313 — the edit dialog had no draft of its own.
+    it('opening and closing an edit leaves an unsaved new indicator alone', async () => {
+        mount();
+        await screen.findByText('Patch coverage');
+        fireEvent.change(document.getElementById('kri-name')!, { target: { value: 'Half-typed indicator' } });
+        await act(async () => { fireEvent.click(screen.getByTestId('kri-edit-k1')); });
+        expect((document.getElementById('kri-edit-name') as HTMLInputElement).value).toBe('Patch coverage');
+        expect((document.getElementById('kri-name') as HTMLInputElement).value).toBe('Half-typed indicator');
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: EN.risks.edit.cancel })); });
+        expect((document.getElementById('kri-name') as HTMLInputElement).value).toBe('Half-typed indicator');
     });
 
     it('describes the card in words, with its risk and owner', async () => {

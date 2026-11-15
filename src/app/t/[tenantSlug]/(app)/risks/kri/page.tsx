@@ -67,8 +67,26 @@ function draftFromKri(k: Kri): KriDraft {
         description: k.description ?? '',
     };
 }
+/**
+ * A threshold box's figure. A decimal comma is a decimal point (the reading
+ * box already took one); an empty box is "no threshold". Anything else that
+ * is not a number is `undefined`, so the form refuses it rather than sending
+ * it as `null`, which the server stores as "no threshold" (#5313).
+ */
+function parseFigure(s: string): number | null | undefined {
+    const trimmed = s.trim();
+    if (!trimmed) return null;
+    const n = Number(trimmed.replace(',', '.'));
+    return Number.isFinite(n) ? n : undefined;
+}
+
+/** The figures a draft cannot send: true when any box holds a non-number. */
+function draftHasBadFigure(d: KriDraft): boolean {
+    return [d.greenMax, d.amberMax, d.targetValue].some((v) => parseFigure(v) === undefined);
+}
+
 function draftPayload(d: KriDraft) {
-    const num = (s: string) => (s.trim() ? Number(s) : null);
+    const num = (s: string) => parseFigure(s) ?? null;
     return {
         name: d.name.trim(), unit: d.unit.trim() || null, greenMax: num(d.greenMax), amberMax: num(d.amberMax),
         targetValue: num(d.targetValue), direction: d.direction, frequency: d.frequency,
@@ -109,6 +127,10 @@ export default function KriPage() {
     const kris = kriQuery.data?.kris ?? [];
 
     const [draft, setDraft] = useState<KriDraft>(EMPTY_DRAFT);
+    // The edit dialog's own draft (#5313). It shared `draft` with the New
+    // indicator form, so opening an edit overwrote an unsaved new indicator
+    // and closing the dialog emptied it.
+    const [editDraft, setEditDraft] = useState<KriDraft>(EMPTY_DRAFT);
     const [busy, setBusy] = useState(false);
     const [editing, setEditing] = useState<Kri | null>(null);
     const [deleting, setDeleting] = useState<Kri | null>(null);
@@ -163,6 +185,10 @@ export default function KriPage() {
 
     const create = async () => {
         if (!draft.name.trim()) return;
+        if (draftHasBadFigure(draft)) {
+            setCreateError(t('kri.thresholdNotNumber'));
+            return;
+        }
         setBusy(true);
         setCreateError(null);
         try {
@@ -205,12 +231,15 @@ export default function KriPage() {
 
     const saveEdit = async () => {
         if (!editing) return;
+        if (draftHasBadFigure(editDraft)) {
+            setEditError(t('kri.thresholdNotNumber'));
+            return;
+        }
         setBusy(true);
         setEditError(null);
         try {
-            await patchKri(editing.id, draftPayload(draft));
+            await patchKri(editing.id, draftPayload(editDraft));
             setEditing(null);
-            setDraft(EMPTY_DRAFT);
         } catch (e) {
             // The edit stays open, with the reason inside it.
             setEditError(messageOf(e));
@@ -320,7 +349,7 @@ export default function KriPage() {
                             {/* PR-L — KRI lifecycle actions. */}
                             {canEdit && (
                             <div className="flex items-center gap-tight border-t border-border-subtle pt-tight">
-                                <Button size="sm" variant="ghost" onClick={() => { setDraft(draftFromKri(k)); setEditError(null); setEditing(k); }} data-testid={`kri-edit-${k.id}`}>{t('kri.edit')}</Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setEditDraft(draftFromKri(k)); setEditError(null); setEditing(k); }} data-testid={`kri-edit-${k.id}`}>{t('kri.edit')}</Button>
                                 <Button size="sm" variant="ghost" onClick={() => toggleActive(k)} data-testid={`kri-toggle-${k.id}`}>
                                     {k.isActive ? t('kri.deactivate') : t('kri.activate')}
                                 </Button>
@@ -334,17 +363,17 @@ export default function KriPage() {
             </AnalyticsState>
 
             {/* Edit modal — reuses the shared field bag. */}
-            <Modal showModal={editing !== null} setShowModal={(v) => { if (!v) { setEditing(null); setDraft(EMPTY_DRAFT); } }} title={t('kri.editTitle')} size="lg">
+            <Modal showModal={editing !== null} setShowModal={(v) => { if (!v) setEditing(null); }} title={t('kri.editTitle')} size="lg">
                 <Modal.Header title={t('kri.editTitle')} />
                 <Modal.Body>
-                    <KriFields draft={draft} setDraft={setDraft} tenantSlug={tenantSlug} t={t} idPrefix="kri-edit" />
+                    <KriFields draft={editDraft} setDraft={setEditDraft} tenantSlug={tenantSlug} t={t} idPrefix="kri-edit" />
                     {editError && (
                         <p className="mt-default text-sm text-content-error" role="alert" data-testid="kri-edit-error">{editError}</p>
                     )}
                 </Modal.Body>
                 <Modal.Actions>
-                    <Button variant="secondary" size="sm" onClick={() => { setEditing(null); setDraft(EMPTY_DRAFT); }}>{t('edit.cancel')}</Button>
-                    <Button variant="primary" size="sm" onClick={saveEdit} disabled={busy || !draft.name.trim()} id="kri-edit-save">{t('edit.save')}</Button>
+                    <Button variant="secondary" size="sm" onClick={() => setEditing(null)}>{t('edit.cancel')}</Button>
+                    <Button variant="primary" size="sm" onClick={saveEdit} disabled={busy || !editDraft.name.trim()} id="kri-edit-save">{t('edit.save')}</Button>
                 </Modal.Actions>
             </Modal>
 

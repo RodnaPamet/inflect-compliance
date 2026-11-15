@@ -135,6 +135,34 @@ beforeEach(() => {
     global.fetch = fetchMock as unknown as typeof fetch;
 });
 
+// #5313 — the list page keeps the dialog mounted while closed; "Discard
+// draft" only closed it, and the draft came back on the next open.
+it('"Discard draft" discards: the next open starts empty', async () => {
+    function Harness() {
+        const [open, setOpen] = React.useState(true);
+        return (
+            <TooltipProvider>
+                <button type="button" onClick={() => setOpen(true)}>reopen</button>
+                <NewPolicyModal open={open} setOpen={setOpen} />
+            </TooltipProvider>
+        );
+    }
+    fetchMock.mockResolvedValue(json([]));
+    render(<Harness />);
+    fireEvent.change(document.getElementById('policy-title-input')!, { target: { value: 'Half-written policy' } });
+    fireEvent.click(document.getElementById('new-policy-cancel-btn')!);
+    fireEvent.click(await screen.findByRole('button', { name: EN.new.discardConfirmLabel }));
+    await waitFor(() => expect(document.getElementById('policy-title-input')).toBeNull());
+
+    fireEvent.click(screen.getByText('reopen'));
+    const title = await waitFor(() => {
+        const el = document.getElementById('policy-title-input') as HTMLInputElement | null;
+        expect(el).not.toBeNull();
+        return el as HTMLInputElement;
+    });
+    expect(title.value).toBe('');
+});
+
 it('a refused create shows the server\'s message, not raw JSON', async () => {
     fetchMock.mockResolvedValue(
         json({ error: { code: 'FORBIDDEN', message: 'Your plan allows 10 policies.', requestId: 'r1' } }, 403),

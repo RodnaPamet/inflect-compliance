@@ -109,7 +109,7 @@ jest.mock('@/components/InheritedMappingsPanel', () => ({ InheritedMappingsPanel
 jest.mock('@/components/LinkedTasksPanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('@/components/ui/VersionDiff', () => ({ VersionDiff: () => null }));
 jest.mock('@/app/t/[tenantSlug]/(app)/policies/[policyId]/PolicySharePointSection', () => ({
-    PolicySharePointSection: () => null,
+    PolicySharePointSection: () => <div data-testid="policy-sharepoint-section" />,
 }));
 
 import PolicyDetailPage from '@/app/t/[tenantSlug]/(app)/policies/[policyId]/page';
@@ -380,6 +380,21 @@ describe('status and errors', () => {
         expect(screen.queryByText('[object Object]')).not.toBeInTheDocument();
     });
 
+    // #5313 — the stepper shows 30 for a policy with no cadence, and Save
+    // used to send nothing for it; nor could a date be cleared.
+    it('the review-schedule save sends the cadence it shows, and a cleared date as null', async () => {
+        const patches: Array<Record<string, unknown>> = [];
+        serve(EDITED_DRAFT, (url, init) => {
+            if (url === '/api/t/acme/policies/p1' && init.method === 'PATCH') patches.push(JSON.parse(String(init.body)));
+            return json({});
+        });
+        await renderPage();
+        fireEvent.click(screen.getByText(EN.detail.editReviewSchedule));
+        fireEvent.click(screen.getByRole('button', { name: EN.detail.save }));
+        await waitFor(() => expect(patches).toHaveLength(1));
+        expect(patches[0]).toEqual({ reviewFrequencyDays: 30, nextReviewAt: null });
+    });
+
     it('a refused review-schedule save says why and keeps the form open', async () => {
         serve(EDITED_DRAFT, () => json({ error: { code: 'BAD_REQUEST', message: 'Next review must be in the future.' } }, 400));
         await renderPage();
@@ -457,6 +472,24 @@ describe('policy actions follow the policy keys, not the tier alone (#5276)', ()
         expect(document.getElementById('new-version-btn')).toBeNull();
         expect(document.getElementById('header-request-approval')).toBeNull();
         expect(screen.queryByRole('tab', { name: EN.detail.tabEditor })).toBeNull();
+    });
+
+    // #5313 — every SharePoint route on a policy takes policies.edit.
+    it('an EDITOR-based role without policies.edit is offered no SharePoint section', async () => {
+        mockPermissions.canAdmin = false;
+        const editor = getPermissionsForRole('EDITOR');
+        mockAppPermissions = { ...editor, policies: { ...editor.policies, edit: false } };
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(screen.queryByTestId('policy-sharepoint-section')).toBeNull();
+    });
+
+    it('a role holding policies.edit is offered it', async () => {
+        mockPermissions.canAdmin = false;
+        mockAppPermissions = getPermissionsForRole('EDITOR');
+        serve(EDITED_DRAFT);
+        await renderPage();
+        expect(screen.getByTestId('policy-sharepoint-section')).toBeInTheDocument();
     });
 
     it('an ADMIN-based role without policies.approve is offered no decision on a pending request', async () => {
