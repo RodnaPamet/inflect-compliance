@@ -7960,7 +7960,7 @@
       "approveSaveFirst": "Save your changes before approving them.",
       "approvedMsg": "Approved.",
       "approveFailed": "Approval failed.",
-      "approveChangedSinceViewed": "The saved appetite changed since you opened this page. Reload to review it before approving.",
+      "approveChangedSinceViewed": "The saved appetite changed since you opened this page. The page now shows the saved version: review it before approving.",
       "breachType": {
         "PORTFOLIO_ALE": "Portfolio expected loss",
         "SINGLE_RISK_ALE": "One risk's expected loss",
