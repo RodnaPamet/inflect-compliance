@@ -154,6 +154,29 @@ describe('the reference text', () => {
     });
 });
 
+describe('the deadline countdown (#5313)', () => {
+    it('says the time left and the time overdue in Bulgarian', () => {
+        // "Now" is 2026-06-02T00:00Z (the hydrated-now mock).
+        mockSWR.mockReturnValue({
+            data: makeIncident({
+                notifications: [
+                    { id: 'n1', kind: 'EARLY_WARNING_24H', dueAt: '2026-06-01T21:30:00.000Z', status: 'OVERDUE', submittedAt: null, submissionRef: null },
+                    { id: 'n2', kind: 'DETAILED_72H', dueAt: '2026-06-04T03:00:00.000Z', status: 'DUE', submittedAt: null, submissionRef: null },
+                ],
+            }),
+            isLoading: false, error: null, mutate: jest.fn(),
+        });
+        render(withSWR(<IncidentDetailPage />));
+        const overdueRow = document.getElementById('incident-notification-n1') as HTMLElement;
+        const dueRow = document.getElementById('incident-notification-n2') as HTMLElement;
+        expect(overdueRow.textContent).toContain('просрочено с 2 ч 30 мин');
+        expect(dueRow.textContent).toContain('остават 2 д 3 ч');
+        for (const row of [overdueRow, dueRow]) {
+            expect(row.textContent).not.toMatch(/\b(left|overdue)\b/);
+        }
+    });
+});
+
 describe('a refused action', () => {
     it('says a named refusal in the user’s language', async () => {
         mockSWR.mockReturnValue({ data: makeIncident(), isLoading: false, error: null, mutate: jest.fn() });

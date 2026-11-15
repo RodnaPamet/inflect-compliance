@@ -47,7 +47,11 @@ export default async function EvidencePage({
     // this as SWR fallbackData and revalidates against /evidence/retention
     // (the same usecase) — the two can never diverge.
     const [evidence, controlsRead, metrics] = await Promise.all([
-        listEvidence(ctx, undefined, { take: SSR_PAGE_LIMIT }),
+        // The Active bucket, because that is the key this slice seeds: the
+        // client's default list is `?tab=active` and takes these rows as its
+        // fallback. Unscoped, archived and expired records showed on first
+        // paint and vanished on revalidation (#5313).
+        listEvidence(ctx, { tab: 'active' }, { take: SSR_PAGE_LIMIT }),
         canViewControls
             ? listControls(ctx, undefined, { take: SSR_PAGE_LIMIT + 1 })
             : Promise.resolve([]),

@@ -53,7 +53,10 @@ jest.mock('next-intl', () => {
 jest.mock('@/lib/tenant-context-provider', () => {
     const href = (path: string) => `/t/acme${path}`;
     const apiUrl = (path: string) => `/api/t/acme${path}`;
-    const ctx = { permissions: { canWrite: true } };
+    // `vendors.edit` is the key every template write route takes (#5313);
+    // `canWrite` is set against it so a test can show the page reads the key.
+    const ctx = { permissions: { canWrite: true }, appPermissions: { vendors: { edit: true } } };
+    (globalThis as { __vendorTemplateCtx?: unknown }).__vendorTemplateCtx = ctx;
     return {
         useTenantHref: () => href,
         useTenantApiUrl: () => apiUrl,
@@ -96,6 +99,14 @@ afterEach(() => {
     (global.fetch as jest.Mock | undefined)?.mockReset?.();
 });
 
+
+type VendorTemplateCtx = { permissions: { canWrite: boolean }; appPermissions: { vendors: { edit: boolean } } };
+const tenantCtx = () => (globalThis as unknown as { __vendorTemplateCtx: VendorTemplateCtx }).__vendorTemplateCtx;
+afterEach(() => {
+    tenantCtx().permissions.canWrite = true;
+    tenantCtx().appPermissions.vendors.edit = true;
+});
+
 describe('vendor templates index', () => {
     it('shows a refused create as its message instead of crashing on the error object', async () => {
         global.fetch = jest
@@ -133,5 +144,23 @@ describe('vendor templates index', () => {
         expect(screen.queryByTestId('template-built-in-b')).toBeNull();
         expect(screen.getByTestId('template-row-b')).toHaveTextContent('Version 2 · 1 section · 3 questions');
         expect(screen.getByTestId('template-row-b')).not.toHaveTextContent('(s)');
+    });
+
+    // #5313 — the create form follows `vendors.edit`, the key the create route
+    // takes, not the coarse `canWrite` tier a custom role can contradict.
+    it('offers no create form without vendors.edit, whatever the coarse tier says', async () => {
+        tenantCtx().appPermissions.vendors.edit = false;
+        global.fetch = jest.fn().mockResolvedValue(ok([])) as unknown as typeof fetch;
+        render(<VendorTemplatesIndexClient />);
+        await screen.findByText(VT.emptyTitle);
+        expect(document.getElementById('create-template-btn')).toBeNull();
+    });
+
+    it('offers the create form with vendors.edit on a read-tier role', async () => {
+        tenantCtx().permissions.canWrite = false;
+        global.fetch = jest.fn().mockResolvedValue(ok([])) as unknown as typeof fetch;
+        render(<VendorTemplatesIndexClient />);
+        await screen.findByText(VT.emptyTitle);
+        expect(document.getElementById('create-template-btn')).not.toBeNull();
     });
 });

@@ -104,6 +104,14 @@ describe('the control list', () => {
     });
 });
 
+describe('the evidence slice (#5313)', () => {
+    it('is the Active bucket, the one the client seeds its default key with', async () => {
+        getTenantCtxMock.mockResolvedValue(makeRequestContext('EDITOR'));
+        await render();
+        expect(listEvidenceMock).toHaveBeenCalledWith(expect.anything(), { tab: 'active' }, { take: 100 });
+    });
+});
+
 describe('the evidence grants reach the client', () => {
     it('as the custom role holds them, not as its base role does', async () => {
         const ctx = makeRequestContext('EDITOR');

@@ -102,6 +102,16 @@ describe('tests dashboard (#4798)', () => {
         expect(screen.queryByText('0%')).toBeNull();
     });
 
+    // #5313 — pass, fail and evidence rates are shares of COMPLETED runs.
+    it('a period with runs but none completed rates completion only', () => {
+        answers.metrics = () => ({ data: metrics({ totalRuns: 3, completedRuns: 0, passRuns: 0, failRuns: 0, completionRate: 0, passRate: 0, failRate: 0, evidenceRate: 0, runsWithEvidence: 0 }) });
+        renderPage();
+        // Completion is a real 0% (three runs, none completed); the other
+        // three rates have no denominator and are not rated.
+        expect(screen.getAllByText('0%')).toHaveLength(1);
+        expect(screen.getAllByText('No completed runs in this period').length).toBeGreaterThanOrEqual(3);
+    });
+
     it('a period with runs shows its rates', () => {
         renderPage();
         expect(screen.getByText('80%')).toBeInTheDocument();

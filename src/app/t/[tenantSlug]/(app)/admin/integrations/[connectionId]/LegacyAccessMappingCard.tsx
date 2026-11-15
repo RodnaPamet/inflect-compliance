@@ -47,7 +47,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Input } from '@/components/ui/input';
 import { apiErrorMessage } from '@/lib/api-error';
 
-import { useIsLegacyConnection } from './useIsLegacyConnection';
+import { isLegacyConnection } from './legacy-connection';
 
 const CANONICAL_STATUSES = ['ACTIVE', 'DISABLED', 'LOCKED', 'EXPIRED', 'UNKNOWN'] as const;
 
@@ -119,11 +119,21 @@ const CANONICAL_FIELDS = [
     'entitlements', 'isPrivileged', 'accountType',
 ] as const;
 
-export function LegacyAccessMappingCard({ connectionId }: { connectionId: string }) {
+export function LegacyAccessMappingCard({
+    connectionId,
+    provider,
+}: {
+    connectionId: string;
+    /**
+     * The connection's provider, from the page's own read of the connection
+     * (#5313) — `undefined` until it has answered, `null` when it failed.
+     */
+    provider: string | null | undefined;
+}) {
     const t = useTranslations('admin.integrations.legacyMapping');
     const apiUrl = useTenantApiUrl();
 
-    const applies = useIsLegacyConnection(connectionId);
+    const applies = isLegacyConnection(provider);
     const [profile, setProfile] = useState<WireProfileResult | null>(null);
     const [reading, setReading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -349,7 +359,7 @@ export function LegacyAccessMappingCard({ connectionId }: { connectionId: string
         },
     ]), [t, targets]);
 
-    if (applies === false) return null;
+    if (!applies) return null;
 
     return (
         <Card className="space-y-default">

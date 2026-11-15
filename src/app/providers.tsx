@@ -93,8 +93,17 @@ function FormTelemetrySink() {
  * `use-calendar-badge` was among them — the 5-minute SidebarNav poller this
  * seam's own reasoning names as the motivating background writer, unable to
  * fire the store it motivates. Those three now throw `ApiClientError`, which
- * carries `status` as a property. A NEW raw `useSWR` fetcher must do the same
- * or it silently falls outside the seam.
+ * carries `status` as a property.
+ *
+ * They were not the whole population, though this comment said so until
+ * #5313: the Reports page, the treatment-plan card and the control-exceptions
+ * panel still threw a plain `Error`, and three fetchers (the traceability
+ * panel, the member picker, the risk-template list) answer a non-OK response
+ * with an EMPTY value and throw nothing, so this `onError` never runs for
+ * them. The throwers now throw `ApiClientError`; the empty-value fetchers
+ * call `noteUnauthorized` themselves before returning their fallback. A NEW
+ * raw `useSWR` fetcher must do one or the other, or it silently falls
+ * outside the seam.
  */
 export function useSwrSessionSeam() {
     // Re-render the provider when the flag flips, so the config below is

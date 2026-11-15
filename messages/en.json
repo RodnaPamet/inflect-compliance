@@ -982,6 +982,9 @@
         "updateFailed": "Couldn't save your change",
         "showResolved": "Show resolved",
         "showingResolved": "Showing resolved",
+        "capped": "Showing the {count} highest-scored vulnerabilities; this asset may have more. See all on the Vulnerabilities page.",
+        "viewRisk": "View risk",
+        "viewFinding": "View in Findings",
         "assignOwner": "Assign owner",
         "setDue": "Set due date",
         "note": "Note",
@@ -1237,7 +1240,9 @@
       "loadFailed": "Couldn't load the bow-tie analysis.",
       "retry": "Retry",
       "emptyTitle": "Nothing to diagram yet",
-      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own."
+      "emptyDesc": "This risk has no threats or consequences mapped yet, so there is no bow-tie to draw. Switch to the list view to see the barriers on their own.",
+      "nodeScore": "Score {score}",
+      "nodeAlePerYear": "{amount}/yr"
     },
     "fair": {
       "readOnlyNotice": "Read-only — changes here are not saved.",
@@ -1900,7 +1905,8 @@
       "thresholdsLower": "Green ≥ {green} · Amber ≥ {amber}",
       "greenMin": "Green ≥",
       "amberMin": "Amber ≥",
-      "targetLine": "Target {value}"
+      "targetLine": "Target {value}",
+      "thresholdNotNumber": "Thresholds and the target must be numbers."
     },
     "lossEvents": {
       "breadcrumb": "Loss events",
@@ -2612,7 +2618,9 @@
       "latestStatus": "Latest status",
       "telemetryNote": "Automated monitoring checks — separate telemetry keyed to this control's automation. They update control health and open findings on failure, but they are not test runs and do not count toward the test-run effectiveness pass-rate.",
       "emptyTitle": "No automated checks yet",
-      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule."
+      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule.",
+      "loadError": "Couldn't load the automated checks.",
+      "retry": "Retry"
     },
     "bestValue": {
       "loadFailed": "Couldn't load the best-value controls.",
@@ -4386,6 +4394,7 @@
       "depRemove": "Remove",
       "depMissing": "(no longer exists)",
       "addDependencyFailed": "Failed to add dependency.",
+      "removeDependencyFailed": "The dependency was not removed. It is back in the list.",
       "dependencyRemoved": "Dependency removed",
       "undo": "Undo",
       "secFrameworkDesc": "Framework coverage is derived from the controls this analysis is linked to as evidence — not assumed.",
@@ -5791,6 +5800,8 @@
         "bannerAgentTitle": "This agent is stopped",
         "bannerTenantTitle": "Every agent in this workspace is stopped",
         "bannerDetail": "Stopped {when}. Reason: {reason}",
+        "stateUnknownTitle": "Whether this agent is stopped could not be read",
+        "stateUnknown": "The list of stops in force did not load, so this page cannot say whether a stop holds this agent or the whole workspace. Reload the page before stopping or resuming it.",
         "engageTitle": "Stop this agent",
         "engagePrompt": "Every further tool call is refused, including inside a run already in progress, and so is reading the framework catalogue. The agent stays ACTIVE in the register. Suspending it refuses tool calls too, but not inside a run already under way, it leaves the framework catalogue readable, and it has no workspace-wide or platform-wide form.",
         "engageConfirm": "Stop agent",
@@ -5894,6 +5905,7 @@
         "ownerMovesByTransfer": "Ownership moves only by a two-step transfer: an Owner or AI admin proposes it, and the person it names accepts it.",
         "vendor": "Supplier",
         "vendorNone": "No supplier — first party",
+        "vendorUnavailable": "The supplier list could not be read, so the supplier cannot be changed here.",
         "save": "Save {count} change(s)",
         "failed": "Could not amend this agent."
       },
@@ -5976,6 +5988,7 @@
         "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
         "retireTypeToConfirm": "Type {name} to confirm",
         "retireError": "Could not retire this agent.",
+        "retireUnconfirmed": "The request did not complete, so it is not known whether this agent was retired. Check its status before trying again.",
         "driverLabel": "Run engine",
         "driverValue": {
           "static": "Static",
@@ -6234,14 +6247,16 @@
             "UNPINNED": "Not yet pinned",
             "DESCRIPTION_CHANGED": "Description changed",
             "SCHEMA_CHANGED": "Schema changed",
-            "DEFINITION_CHANGED": "Definition changed"
+            "DEFINITION_CHANGED": "Definition changed",
+            "ANNOTATIONS_CHANGED": "Annotations changed"
           },
           "explain": {
             "APPROVED": "The definition in this build is byte-identical to the one approved here.",
             "UNPINNED": "Nothing is on file. The boundary met this definition first and let it through; approving it puts a named person behind it.",
             "DESCRIPTION_CHANGED": "The instruction text the model reads has been rewritten since it was approved. The name and the parameters are untouched, so this change is visible nowhere except here.",
             "SCHEMA_CHANGED": "The parameters changed. The instruction text the model reads is unchanged.",
-            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved."
+            "DEFINITION_CHANGED": "Both the parameters and the instruction text the model reads have changed since they were approved.",
+            "ANNOTATIONS_CHANGED": "The hints the tool declares about itself (for example whether it only reads or may destroy data) have changed since it was approved. The parameters and the instruction text are unchanged."
           },
           "approveAction": "Approve definition",
           "approveSuccess": "Approved {toolName} at revision {revision}",
@@ -6702,7 +6717,7 @@
       "receiptProvenanceValue": {
         "BUILTIN": "An Inflect tool, as built in",
         "UNATTESTED": "Not attested: the description in force is not known",
-        "PIN_MOVED": "The approved description has changed since this action (revision {revision})",
+        "PIN_MOVED": "The approved description has changed since this action, so which description was in force is not recorded",
         "NONE": "Not recorded"
       }
     },
@@ -8222,6 +8237,7 @@
       "submittedAnswer": "Submitted answer",
       "auto": "Auto",
       "overridePlaceholder": "Override",
+      "overrideInvalid": "An override must be a number, such as 2.5 or -1. Correct the highlighted field or clear it.",
       "overrideLabel": "Override: {points}",
       "notes": "Notes",
       "finalRating": "Final risk rating",
@@ -9356,7 +9372,8 @@
     "backToPreview": "Back to the preview",
     "fileReadError": "Couldn't read the file. Check that it is a CSV saved as text, then choose it again.",
     "untitledRows": "{count, plural, one {# row has} other {# rows have}} no title and won't be imported.",
-    "importBreadcrumb": "Import"
+    "importBreadcrumb": "Import",
+    "tooManyRows": "This file has {count} risks; one import takes at most {max}. Split the file and import each part."
   },
   "ui": {
     "combobox": {
@@ -9719,7 +9736,13 @@
       },
       "freezeConfirmTitle": "Freeze this bundle?",
       "freezeConfirmBody": "Its items can no longer be added, removed or changed.",
-      "freezeFailed": "The bundle was not frozen. Try again."
+      "freezeFailed": "The bundle was not frozen. Try again.",
+      "addDocFailed": "Could not add the document.",
+      "createBundleFailed": "Could not create the evidence bundle.",
+      "addBundleItemFailed": "Could not add the item to the bundle.",
+      "removeBundleItemFailed": "Could not remove the item from the bundle.",
+      "addSubFailed": "Could not add the subprocessor.",
+      "enrichFailed": "Could not autofill the vendor's details."
     },
     "monitoring": {
       "loadFailed": "Failed to load monitoring",
@@ -11000,7 +11023,13 @@
         "INCIDENT_STEP_UNKNOWN": "That step is not part of this incident type’s runbook.",
         "INCIDENT_EVIDENCE_NOT_FOUND": "That evidence record no longer exists in this workspace."
       },
-      "forensicChecklistAria": "Forensic evidence checklist"
+      "forensicChecklistAria": "Forensic evidence checklist",
+      "countdown": {
+        "daysHours": "{days}d {hours}h",
+        "hoursMinutes": "{hours}h {minutes}m",
+        "left": "{time} left",
+        "overdue": "{time} overdue"
+      }
     },
     "filters": {
       "severity": "Severity",
@@ -12874,7 +12903,8 @@
           "propose_not_commit": "Writes proposed, not committed",
           "prior_state_reads": "Prior state read before a write",
           "skills_declared": "Skills declared",
-          "delegation_narrows": "Delegation only narrows"
+          "delegation_narrows": "Delegation only narrows",
+          "egress_enforced": "Outbound network access enforced"
         },
         "H4": {
           "ledger_baseline": "Run ledger with a baseline",
@@ -13477,7 +13507,8 @@
         "QUARANTINED": "The request to disable its service principal was refused by the output guard",
         "QUEUED": "Disabling its service principal is queued",
         "REFUSED": "The request to disable its service principal was refused",
-        "FAILED": "The request to disable its service principal failed"
+        "FAILED": "The request to disable its service principal failed",
+        "WOULD_REQUEST_DISABLE": "Its service principal would be disabled; nothing was requested in this dry run"
       },
       "blocked": {
         "ABOVE_CLAMP": "{next} is above the highest mode this check acts at, {clamp}.",
@@ -15360,6 +15391,8 @@
       "emptyReader": "No widgets yet. An organization owner or admin can add them.",
       "onboardingTitle": "Create a workspace to fill your portfolio",
       "onboardingDesc": "This dashboard rolls up compliance posture — coverage, risks, evidence and maturity — across every workspace in your organization. Create your first workspace; its figures appear after the next daily snapshot, at 05:00 UTC.",
+      "onboardingTitleAskOwner": "No workspaces yet",
+      "onboardingDescAskOwner": "This dashboard rolls up compliance posture across every workspace in your organization. Only an organization owner can create a workspace; ask one to create the first. Its figures appear after the next daily snapshot, at 05:00 UTC.",
       "manageTenants": "Workspaces",
       "deleteWidgetAria": "Delete {name} widget",
       "editWidgetAria": "Edit {name} widget",

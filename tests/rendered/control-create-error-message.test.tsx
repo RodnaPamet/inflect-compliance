@@ -49,10 +49,13 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
 
+// #5313 — whether the viewer holds `controls.edit`, which the applicability
+// step asks. Read lazily, so a test can flip it before rendering.
+const mockGrants = { controlsEdit: true };
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({
         permissions: { canWrite: true, canAdmin: true, canRead: true },
-        appPermissions: { controls: { create: true } },
+        appPermissions: { controls: { create: true, edit: mockGrants.controlsEdit } },
         role: 'ADMIN',
         tenantSlug: 'acme',
     }),
@@ -110,6 +113,23 @@ describe('control templates — install refused', () => {
             fireEvent.click(document.getElementById('install-selected-btn') as HTMLElement);
         });
         await waitFor(() => expect(screen.getByText('plan_limit_exceeded: control')).toBeInTheDocument());
+    });
+});
+
+describe('new control — "Not applicable" is offered only where the second step is taken (#5313)', () => {
+    afterEach(() => { mockGrants.controlsEdit = true; });
+
+    it('a role that may create but not edit controls is not offered it', () => {
+        mockGrants.controlsEdit = false;
+        render(withSWR(<NewControlModal open setOpen={() => {}} tenantSlug="acme" />));
+        expect(document.getElementById('control-name-input')).not.toBeNull();
+        expect(document.getElementById('new-control-not-applicable')).toBeNull();
+    });
+
+    it('a role holding controls.edit is', () => {
+        mockGrants.controlsEdit = true;
+        render(withSWR(<NewControlModal open setOpen={() => {}} tenantSlug="acme" />));
+        expect(document.getElementById('new-control-not-applicable')).not.toBeNull();
     });
 });
 

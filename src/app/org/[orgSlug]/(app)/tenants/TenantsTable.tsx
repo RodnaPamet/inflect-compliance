@@ -130,15 +130,25 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                 {
                     id: 'name',
                     header: t('tenants.colTenant'),
-                    cell: ({ row }) => (
-                        <Link
-                            href={row.original.drillDownUrl}
-                            className="font-medium text-content-emphasis hover:text-content-info hover:underline"
-                            data-testid={`org-tenant-link-${row.original.slug}`}
-                        >
-                            {row.original.name}
-                        </Link>
-                    ),
+                    // A Reader cannot open a workspace (`canDrillDown`); its
+                    // name is text, not a link to /no-tenant (#5313).
+                    cell: ({ row }) =>
+                        perms.canDrillDown ? (
+                            <Link
+                                href={row.original.drillDownUrl}
+                                className="font-medium text-content-emphasis hover:text-content-info hover:underline"
+                                data-testid={`org-tenant-link-${row.original.slug}`}
+                            >
+                                {row.original.name}
+                            </Link>
+                        ) : (
+                            <span
+                                className="font-medium text-content-emphasis"
+                                data-testid={`org-tenant-name-${row.original.slug}`}
+                            >
+                                {row.original.name}
+                            </span>
+                        ),
                 },
                 {
                     id: 'rag',
@@ -215,7 +225,7 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                       ]
                     : []),
             ]),
-        [perms.canManageTenants, t],
+        [perms.canManageTenants, perms.canDrillDown, t],
     );
 
     return (

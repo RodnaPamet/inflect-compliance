@@ -141,6 +141,12 @@ export function VendorAssessmentReviewClient({
     const [overrides, setOverrides] = useState<
         Record<string, { points: number | null; notes: string | null }>
     >({});
+    // The override field's text as typed, per question (#5313). Parsing every
+    // keystroke dropped a typed `.` (`Number('0.')` is 0) and refused a lone
+    // `-`, so `0.5` and any negative override could not be typed at all. The
+    // text is parsed into `overrides[q].points` only when it is a finite
+    // number, and a save refuses while any field holds text that is not one.
+    const [pointsText, setPointsText] = useState<Record<string, string>>({});
     const [finalRating, setFinalRating] = useState<string | null>(null);
     const [reviewerNotes, setReviewerNotes] = useState('');
     // Closing is final, so it is confirmed first (#4936).
@@ -190,6 +196,14 @@ export function VendorAssessmentReviewClient({
                 };
             }
             setOverrides(seedOverrides);
+            setPointsText(
+                Object.fromEntries(
+                    data.answers.map((a) => [
+                        a.questionId,
+                        a.reviewerOverridePoints === null ? '' : String(a.reviewerOverridePoints),
+                    ]),
+                ),
+            );
             setFinalRating(data.riskRating);
             setReviewerNotes(data.reviewerNotes ?? '');
         } catch {
@@ -216,6 +230,10 @@ export function VendorAssessmentReviewClient({
 
     async function saveReview() {
         if (!view || !editable) return;
+        if (Object.values(pointsText).some((v) => v.trim() !== '' && !Number.isFinite(Number(v)))) {
+            setError(t('assessmentReview.overrideInvalid'));
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
@@ -509,14 +527,20 @@ export function VendorAssessmentReviewClient({
                                                     aria-label={t('assessmentReview.overrideAria', { question: q.prompt })}
                                                     placeholder={t('assessmentReview.overridePlaceholder')}
                                                     value={
-                                                        ov.points === null
+                                                        pointsText[q.id] ??
+                                                        (ov.points === null
                                                             ? ''
-                                                            : String(ov.points)
+                                                            : String(ov.points))
+                                                    }
+                                                    aria-invalid={
+                                                        (pointsText[q.id] ?? '').trim() !== '' &&
+                                                        !Number.isFinite(Number(pointsText[q.id]))
                                                     }
                                                     onChange={(e) => {
                                                         const v = e.target.value;
+                                                        setPointsText((prev) => ({ ...prev, [q.id]: v }));
                                                         const n =
-                                                            v === ''
+                                                            v.trim() === ''
                                                                 ? null
                                                                 : Number(v);
                                                         setOverrides((prev) => ({

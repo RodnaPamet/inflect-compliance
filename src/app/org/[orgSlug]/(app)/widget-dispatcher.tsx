@@ -86,6 +86,12 @@ export interface PortfolioData {
     initiatives: InitiativeWidgetData;
     /** Whether the viewer may manage initiatives (ORG_ADMIN). */
     canManageInitiatives: boolean;
+    /**
+     * Whether the viewer may open per-workspace detail (`canDrillDown`;
+     * not ORG_READER). Without it the tenant rows and the drill-down cards
+     * are shown as text, not links to a page that refuses them (#5313).
+     */
+    canDrillDown: boolean;
 }
 
 interface DispatcherProps {
@@ -493,6 +499,7 @@ export function DispatchedWidget({
                         rows={data.tenantHealth}
                         sortBy={cfg.sortBy}
                         limit={cfg.limit}
+                        canDrillDown={data.canDrillDown}
                     />
                 </div>
             );
@@ -508,6 +515,7 @@ export function DispatchedWidget({
                     summary={data.summary}
                     orgSlug={data.orgSlug}
                     entries={cfg.entries}
+                    canDrillDown={data.canDrillDown}
                 />
             );
             break;

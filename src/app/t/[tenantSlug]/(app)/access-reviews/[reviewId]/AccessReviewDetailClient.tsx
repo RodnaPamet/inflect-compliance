@@ -348,6 +348,17 @@ interface Props {
      */
     canRegenerateEvidence?: boolean;
     /**
+     * May close the campaign: the close route's `access_reviews.close` AND the
+     * usecase's `canAdmin`, computed on the server (#5313). Defaults to
+     * `isAdmin`, the same answer for every built-in role.
+     */
+    canCloseCampaign?: boolean;
+    /**
+     * Holds `access_reviews.decide`, the key every decision route takes
+     * (#5313). Every built-in role holds it; a custom role can drop it.
+     */
+    holdsDecide?: boolean;
+    /**
      * Holds `admin.agent_registry`. A sampled agent decision is answered by
      * the campaign's reviewer or a holder of that key, never by `canAdmin`
      * (`recordAgentDecisionSampleOutcome`, #5274).
@@ -374,6 +385,8 @@ export function AccessReviewDetailClient({
     isAdmin,
     canManage = isAdmin,
     canRegenerateEvidence = isAdmin,
+    canCloseCampaign = isAdmin,
+    holdsDecide = true,
     holdsAgentRegistry = false,
 }: Props) {
     const t = useTranslations('accessReviews');
@@ -385,6 +398,10 @@ export function AccessReviewDetailClient({
     const { mutate: swrMutate } = useSWRConfig();
     const router = useRouter();
     const apiBase = `/api/t/${tenantSlug}/access-reviews/${initialReview.id}`;
+    // The register reads its list through `useTenantSWR`, whose cache key is
+    // the RESOLVED URL. Revalidating the bare `CACHE_KEYS` path hit no entry,
+    // so the register kept its pre-change progress and reviewer (#5313).
+    const listCacheKey = `/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`;
 
     const reviewQuery = useTenantSWR<ReviewDetail>(
         CACHE_KEYS.accessReviews.detail(initialReview.id),
@@ -401,8 +418,11 @@ export function AccessReviewDetailClient({
     // fails is worse than showing none.
     const isAgent = review.scope === 'AGENT';
     const agentActionsAvailable = !isAgent || AGENT_CAMPAIGNS_IMPLEMENTED;
-    const canDecide = (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
-    const canClose = isAdmin && review.status !== 'CLOSED' && agentActionsAvailable;
+    // #5313 — each follows the route's key as well as the usecase's tier: the
+    // decision routes take `access_reviews.decide`, the close route
+    // `access_reviews.close`.
+    const canDecide = holdsDecide && (isReviewer || isAdmin) && review.status !== 'CLOSED' && agentActionsAvailable;
+    const canClose = canCloseCampaign && review.status !== 'CLOSED' && agentActionsAvailable;
     // #4130 — the reviewer and the due date of an OPEN or IN_REVIEW campaign,
     // for every scope `campaignSettingsEditable` admits (not AGENT).
     const canEditSettings = canManage && review.status !== 'CLOSED' && campaignSettingsEditable(review.scope);
@@ -520,13 +540,13 @@ export function AccessReviewDetailClient({
         try {
             await postJson(url, (b) => refusalText(t, b, t('submitFailed')), body);
             await Promise.all([mutateReview(), mutatePacks()]);
-            void swrMutate(CACHE_KEYS.accessReviews.list());
+            void swrMutate(listCacheKey);
         } catch (err) {
             setConnectedError(caughtText(err, t('unknownError')));
         } finally {
             setAgentBusy(false);
         }
-    }, [mutateReview, mutatePacks, swrMutate, t]);
+    }, [mutateReview, mutatePacks, swrMutate, listCacheKey, t]);
 
     const decisionColumns = useMemo(
         () => createColumns<DecisionRow>([
@@ -1383,7 +1403,9 @@ export function AccessReviewDetailClient({
                 </div>
             ) : null}
 
-            {isAgent && isAdmin && review.status === 'OPEN' && !review.subjectsRestricted
+            {/* The prepare route takes `access_reviews.create` and the usecase
+                `canAdmin` — `canManage` is that pair (#5313). */}
+            {isAgent && canManage && review.status === 'OPEN' && !review.subjectsRestricted
                 && packsQuery.data && packs.length === 0 ? (
                 <div
                     role="status"
@@ -1488,7 +1510,7 @@ export function AccessReviewDetailClient({
                     onSuccess={() => {
                         setActiveDecision(null);
                         void reviewQuery.mutate();
-                        void swrMutate(CACHE_KEYS.accessReviews.list());
+                        void swrMutate(listCacheKey);
                     }}
                 />
             ) : null}
@@ -1503,7 +1525,7 @@ export function AccessReviewDetailClient({
                     onSuccess={() => {
                         setEditingSettings(false);
                         void reviewQuery.mutate();
-                        void swrMutate(CACHE_KEYS.accessReviews.list());
+                        void swrMutate(listCacheKey);
                     }}
                 />
             ) : null}
@@ -1528,9 +1550,7 @@ export function AccessReviewDetailClient({
                         setClosing(false);
                         void reviewQuery.mutate();
                         // List page sees the new CLOSED state too.
-                        void swrMutate(
-                            `/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`,
-                        );
+                        void swrMutate(listCacheKey);
                         router.refresh();
                     }}
                 />

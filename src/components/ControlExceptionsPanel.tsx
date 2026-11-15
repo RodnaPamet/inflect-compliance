@@ -19,6 +19,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -128,7 +129,7 @@ export function ControlExceptionsPanel({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch exceptions');
+            if (!res.ok) throw new ApiClientError('Failed to fetch exceptions', 'fetch_failed', res.status);
             return res.json();
         },
     );
@@ -318,7 +319,7 @@ export function ControlExceptionHeaderBadge({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch exceptions');
+            if (!res.ok) throw new ApiClientError('Failed to fetch exceptions', 'fetch_failed', res.status);
             return res.json();
         },
         { dedupingInterval: 30_000 },

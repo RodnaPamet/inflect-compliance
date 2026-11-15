@@ -26,13 +26,14 @@ import { getPermissionsForRole } from '@/lib/permissions';
 
 type Reply = { status: number; body: unknown };
 
-function mount({ verified, start, remove }: { verified: boolean; start?: Reply; remove?: Reply }) {
+function mount({ verified, start, remove, status }: { verified: boolean; start?: Reply; remove?: Reply; status?: Reply }) {
     const respond = ({ status, body }: Reply) =>
         ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
     global.fetch = jest.fn(async (url: unknown, init?: RequestInit) => {
         const u = String(url);
         if (u.endsWith('/security/mfa/enroll/start') && init?.method === 'POST' && start) return respond(start);
         if (u.endsWith('/security/mfa/enroll') && init?.method === 'DELETE' && remove) return respond(remove);
+        if (u.endsWith('/security/mfa/enroll') && status) return respond(status);
         if (u.endsWith('/security/mfa/enroll')) {
             return respond({
                 status: 200,
@@ -85,6 +86,15 @@ describe('personal MFA page — refusals', () => {
 
         expect(await screen.findByText('An enrolment is already in progress.')).toBeInTheDocument();
         expect(screen.queryByText('[object Object]')).toBeNull();
+    });
+
+    // #5313 — a refused status read rendered a blank page.
+    it("says why when the status cannot be read, instead of a blank page", async () => {
+        mount({
+            verified: false,
+            status: { status: 403, body: { error: { code: 'FORBIDDEN', message: 'MFA is managed by your identity provider.' } } },
+        });
+        expect(await screen.findByText('MFA is managed by your identity provider.')).toBeInTheDocument();
     });
 
     it('says so when the server refuses to remove MFA, instead of nothing', async () => {
