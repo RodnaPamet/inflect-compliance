@@ -30,7 +30,6 @@
  */
 
 import useSWR from 'swr';
-import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { useTranslations } from "next-intl";
 import * as React from "react";
 import { Combobox, type ComboboxOption } from "./combobox";
@@ -126,7 +125,7 @@ export function useTenantMembers(
     // (the picker must never crash on an auth miss) and projects the raw
     // payload into `Member[]` — neither fits useTenantSWR's fixed apiGet
     // fetcher. The tenant slug is in the URL, so the cache is per-tenant.
-    return useSWR<Member[]>(
+    const roster = useSWR<Member[]>(
         enabled ? `${rosterUrl}${audienceQuery}` : null,
         async (url: string): Promise<Member[]> => {
             // B1 — the picker reads from the non-admin `/users/assignable`
@@ -136,11 +135,16 @@ export function useTenantMembers(
             // Admin-only callers needing session counts / invite-state /
             // deactivated rows still hit `/admin/members` directly.
             const res = await fetch(url);
+            if (res.status === 401) {
+                // A lapsed session is THROWN with its status, so the app's
+                // SWR `onError` seam (providers.tsx) records it. Calling the
+                // session module from here would couple this shared
+                // primitive to the product (#5313; shared-ui-coupling-ratchet).
+                // The roster still reads as empty below.
+                throw Object.assign(new Error('roster 401'), { status: 401 });
+            }
             if (!res.ok) {
                 // Fallback: empty roster rather than crashing the picker.
-                // The empty list carries no status for the SWR 401 seam to
-                // read, so a lapsed session is reported here (#5313).
-                noteUnauthorized(res.status, url);
                 return [];
             }
             const data: Array<{
@@ -158,6 +162,8 @@ export function useTenantMembers(
         },
         { dedupingInterval: 60_000 },
     );
+    // A thrown 401 still reads as an empty roster, never a crashed picker.
+    return roster.error && roster.data === undefined ? { ...roster, data: [] } : roster;
 }
 
 // ─── Option projection ─────────────────────────────────────────────
