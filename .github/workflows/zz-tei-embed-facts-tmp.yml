@@ -1,5 +1,5 @@
-# TEMPORARY, scratch branch only — never merged. Second pass: the exact
-# hardened service definition, its healthcheck, and a compact Trivy summary.
+# TEMPORARY, scratch branch only — never merged. Third pass: which hardening
+# flag, if any, stops TEI, and the memory peak of the exact service flags.
 name: zz tei-embed facts (temporary)
 on:
   push:
@@ -7,89 +7,64 @@ on:
 permissions:
   contents: read
 jobs:
-  trivy:
+  variant:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    steps:
-      - name: Trivy JSON, all CRITICAL/HIGH
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
-          format: json
-          output: tei.json
-          exit-code: "0"
-          severity: CRITICAL,HIGH
-          ignore-unfixed: false
-          vuln-type: os,library
-          timeout: 15m
-      - name: Summary
-        run: |
-          jq -r '.Metadata.OS | "os: \(.Family) \(.Name)"' tei.json
-          jq -r '.Results[] | "\(.Target) [\(.Type)]: \((.Vulnerabilities // []) | length)"' tei.json
-          echo "--- by severity x fix status"
-          jq -r '[.Results[].Vulnerabilities // [] | .[]] | group_by(.Severity + " " + .Status)[] | "\(.[0].Severity) \(.[0].Status): \(length)"' tei.json
-          echo "--- FIXED upstream (what the repository gate, ignore-unfixed, would block on)"
-          jq -r '[.Results[].Vulnerabilities // [] | .[] | select(.Status == "fixed")] | .[] | "\(.Severity)\t\(.VulnerabilityID)\t\(.PkgName)\t\(.InstalledVersion) -> \(.FixedVersion)"' tei.json
-          echo "--- libraries (non-OS) findings"
-          jq -r '.Results[] | select(.Class != "os-pkgs") | .Target as $t | (.Vulnerabilities // [])[] | "\($t)\t\(.Severity)\t\(.Status)\t\(.VulnerabilityID)\t\(.PkgName)"' tei.json
-
-  hardened:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: plain-1g
+            flags: "--memory 1g --memory-swap 1g"
+          - name: plain-4g
+            flags: "--memory 4g"
+          - name: readonly-4g
+            flags: "--memory 4g --read-only --tmpfs /tmp:size=64m"
+          - name: capdrop-4g
+            flags: "--memory 4g --cap-drop ALL --security-opt no-new-privileges:true"
+          - name: pids-4g
+            flags: "--memory 4g --pids-limit 256"
+          - name: all-hardened-4g
+            flags: "--memory 4g --read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 256"
+    name: ${{ matrix.name }}
     env:
       IMAGE: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
     steps:
-      - name: Tools in the image
+      - name: Run and load
         run: |
-          docker pull -q "$IMAGE"
-          docker image inspect "$IMAGE" --format 'user={{.Config.User}} env={{json .Config.Env}} entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}} healthcheck={{json .Config.Healthcheck}}'
-          docker run --rm --entrypoint sh "$IMAGE" -c 'for b in curl wget; do printf "%s=" $b; command -v $b || echo absent; done; id'
-      - name: Hardened start, healthcheck as compose will run it, under 1g
-        run: |
-          set -euo pipefail
-          docker volume create tei-data
-          docker run -d --name tei --cpus 1.0 --cpu-shares 512 --memory 1g --memory-swap 1g \
-            --read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 256 \
-            --health-cmd 'curl -fsS -o /dev/null http://127.0.0.1:8080/health' --health-interval 5s --health-timeout 5s --health-retries 5 --health-start-period 300s \
+          set -uo pipefail
+          docker pull -q "$IMAGE" >/dev/null
+          docker volume create tei-data >/dev/null
+          docker run -d --name tei --cpus 1.0 --cpu-shares 512 ${{ matrix.flags }} \
             -v tei-data:/data -p 127.0.0.1:8080:8080 "$IMAGE" \
             --model-id intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3 \
-            --port 8080 --max-client-batch-size 64 --auto-truncate
-          start=$(date +%s)
+            --port 8080 --max-client-batch-size 64 --auto-truncate >/dev/null
+          CG=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' tei).scope
+          start=$(date +%s); ok=0
           for i in $(seq 1 150); do
-            s=$(docker inspect -f '{{.State.Health.Status}} {{.State.Running}}' tei); echo "$s" | grep -q '^healthy' && break
-            echo "$s" | grep -q 'false$' && { docker logs tei 2>&1 | tail -30; exit 1; }
+            if curl -fsS -o /dev/null http://127.0.0.1:8080/health 2>/dev/null; then ok=1; break; fi
+            [ "$(docker inspect -f '{{.State.Running}}' tei)" = false ] && break
             sleep 2
           done
-          echo "health: $(docker inspect -f '{{.State.Health.Status}}' tei) after $(( $(date +%s) - start )) s"
-          docker logs tei 2>&1 | tail -25
-          curl -fsS http://127.0.0.1:8080/info; echo
-          body='{"model":"intfloat/multilingual-e5-small","input":["query: how fast must a breach be reported?","passage: Доставчикът уведомява администратора."]}'
-          curl -fsS -H 'content-type: application/json' -d "$body" http://127.0.0.1:8080/v1/embeddings | jq '{model, n: (.data|length), dims: (.data[0].embedding|length)}'
+          echo "RESULT ${{ matrix.name }}: healthy=$ok after $(( $(date +%s) - start )) s; $(docker inspect -f 'running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' tei)"
+          [ -r $CG/memory.peak ] && echo "startup peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB events: $(tr '\n' ' ' < $CG/memory.events)"
+          if [ $ok = 0 ]; then docker logs tei 2>&1 | tail -15; exit 1; fi
+          docker exec tei curl -fsS -o /dev/null -w 'in-container healthcheck HTTP %{http_code}\n' http://127.0.0.1:8080/health || echo "in-container healthcheck failed"
           python3 - <<'PY'
-          import json, urllib.request
-          texts = ["passage: " + ("The supplier shall notify the controller of a breach within seventy two hours. Доставчикът уведомява администратора. " * 30)] * 64
-          for i in range(10):
+          import json, time, urllib.request
+          def post(texts):
               req = urllib.request.Request("http://127.0.0.1:8080/v1/embeddings", json.dumps({"model": "intfloat/multilingual-e5-small", "input": texts}).encode(), {"content-type": "application/json"})
-              with urllib.request.urlopen(req, timeout=300) as r: json.load(r)
-          print("64-passage batches x10 served")
+              t = time.perf_counter()
+              with urllib.request.urlopen(req, timeout=300) as r: out = json.load(r)
+              return (time.perf_counter() - t) * 1000, out
+          ms, out = post(["query: how fast must a breach be reported?"])
+          print("model:", out.get("model"), "dims:", len(out["data"][0]["embedding"]))
+          q = sorted(post(["query: how fast must a breach be reported?"])[0] for _ in range(50))
+          print("query x1 ms p50 %.0f p95 %.0f" % (q[25], q[47]))
+          p = "passage: " + ("The supplier shall notify the controller of a breach within seventy two hours. Доставчикът уведомява администратора. " * 30)
+          b = sorted(post([p] * 64)[0] for _ in range(5))
+          print("passages x64 (512 tokens each) ms p50 %.0f max %.0f" % (b[2], b[4]))
           PY
-          CG=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' tei).scope
-          echo "peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB current=$(( $(cat $CG/memory.current) / 1048576 )) MiB events: $(tr '\n' ' ' < $CG/memory.events)"
-          docker inspect -f 'running={{.State.Running}} oom={{.State.OOMKilled}} restarts={{.RestartCount}} health={{.State.Health.Status}}' tei
-      - name: Recreate on the populated volume with no network, hardened
-        run: |
-          set -euo pipefail
-          docker rm -f tei
-          start=$(date +%s)
-          docker run -d --name tei --network none --cpus 1.0 --memory 1g --memory-swap 1g \
-            --read-only --tmpfs /tmp:size=64m --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 256 \
-            --health-cmd 'curl -fsS -o /dev/null http://127.0.0.1:8080/health' --health-interval 2s --health-retries 5 \
-            -v tei-data:/data "$IMAGE" \
-            --model-id intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3 \
-            --port 8080 --max-client-batch-size 64 --auto-truncate
-          for i in $(seq 1 60); do docker inspect -f '{{.State.Health.Status}}' tei | grep -q '^healthy' && break; sleep 2; done
-          echo "no-network recreate: $(docker inspect -f '{{.State.Health.Status}} running={{.State.Running}}' tei) after $(( $(date +%s) - start )) s"
-          docker logs tei 2>&1 | tail -12
+          echo "RESULT ${{ matrix.name }} after load: peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB current=$(( $(cat $CG/memory.current) / 1048576 )) MiB; $(grep -E '^(anon|file) ' $CG/memory.stat | tr '\n' ' '); events: $(tr '\n' ' ' < $CG/memory.events); $(docker inspect -f 'running={{.State.Running}} oom={{.State.OOMKilled}}' tei)"
           sudo du -sh /var/lib/docker/volumes/tei-data/_data
-          sudo find /var/lib/docker/volumes/tei-data/_data -name '*.safetensors' -exec sha256sum {} \;
-          sudo find /var/lib/docker/volumes/tei-data/_data -type f | sed 's#.*/_data/##'
+          sudo find /var/lib/docker/volumes/tei-data/_data -type f -size +1M -exec sha256sum {} \; | sed 's#/var/lib/docker/volumes/tei-data/_data/##'
