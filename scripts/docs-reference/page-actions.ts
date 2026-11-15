@@ -132,6 +132,67 @@ function isSwrFetcherParam(arg: ts.Expression): boolean {
 }
 
 /**
+ * The function enclosing `at` that declares a parameter named `name`, with the
+ * parameter's POSITION and the local name the function is addressable by.
+ *
+ * `null` when there is no such parameter, when the function has no name a call
+ * site could use, or when it is EXPORTED — an exported helper may be called
+ * from a file this scan is not reading, so its call sites are not all visible
+ * and the union would be missing members nobody can see (#5665).
+ */
+function enclosingParameterOwner(
+    name: string,
+    at: ts.Node,
+): { local: string; index: number; fn: ts.Node } | null {
+    for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
+        if (!ts.isFunctionLike(n)) continue;
+        const index = n.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name);
+        if (index < 0) continue;
+        if (exportedAs(n)) return null;
+
+        if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) {
+            return { local: n.name.text, index, fn: n };
+        }
+        // `const f = (…) => …` and `const f = useCallback((…) => …, [deps])`.
+        let owner: ts.Node = n;
+        if (ts.isCallExpression(owner.parent) && ts.isIdentifier(owner.parent.expression) && /^use(Memo|Callback)$/.test(owner.parent.expression.text)) {
+            owner = owner.parent;
+        }
+        const d = owner.parent;
+        if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) {
+            if (exportedAs(owner)) return null;
+            return { local: d.name.text, index, fn: n };
+        }
+        return null;
+    }
+    return null;
+}
+
+/**
+ * Is this reference to `local` a CALL of it, or something that puts the
+ * function somewhere this walk cannot follow?
+ *
+ * A dependency array is benign — `useCallback(fn, [helper])` reads the value to
+ * compare identities and invokes nothing. A reference anywhere else (an
+ * `onClick={helper}`, a prop, a return) hands the function to a caller whose
+ * arguments are not in this file, which makes the union incomplete.
+ */
+function parameterReferenceKind(id: ts.Identifier): 'call' | 'dependency' | 'escapes' {
+    const p = id.parent;
+    if (ts.isCallExpression(p) && p.expression === id) return 'call';
+    if (
+        ts.isArrayLiteralExpression(p) &&
+        ts.isCallExpression(p.parent) &&
+        ts.isIdentifier(p.parent.expression) &&
+        /^use[A-Z]/.test(p.parent.expression.text) &&
+        p.parent.arguments[1] === p
+    ) {
+        return 'dependency';
+    }
+    return 'escapes';
+}
+
+/**
  * The component whose PROPS destructure `name`, if `at` sits inside one, and
  * the attribute that supplies it — `{ apiBase: base }` is read as `base`
  * locally and `apiBase` in JSX.
@@ -647,6 +708,51 @@ export class UrlResolver {
 
 
     /**
+     * What every call site in this file passes for one PARAMETER (#5665).
+     *
+     * A local helper's `fetch(url, …)` is only as readable as its callers:
+     * `AccessReviewDetailClient.tsx` writes `async function postJson(url, …)`
+     * and the route its callers build — `…/agent-samples/<sampleId>` — reached
+     * the reference through nothing else, because the `agentAct` that passes it
+     * is not a recognised callee. The chain is two deep there, and recursion
+     * handles it: an argument that is itself a parameter resolves the same way,
+     * bounded by `paths`'s depth guard.
+     *
+     * Fail-closed on each of the three ways the union can be incomplete: an
+     * exported helper (refused in `enclosingParameterOwner`), the function
+     * handed somewhere this walk cannot follow, and a call that omits the
+     * argument. A union missing a member is not a union.
+     */
+    private parameterArguments(id: ts.Identifier, sf: ts.SourceFile): { expr: ts.Expression; sf: ts.SourceFile }[] | null {
+        const owner = enclosingParameterOwner(id.text, id);
+        if (!owner) return null;
+
+        const out: { expr: ts.Expression; sf: ts.SourceFile }[] = [];
+        let unknown = false;
+        walk(sf, (n) => {
+            if (!ts.isIdentifier(n) || n.text !== owner.local || n === id) return;
+            // The declaration itself is not a reference to follow.
+            if (ts.isVariableDeclaration(n.parent) && n.parent.name === n) return;
+            if (ts.isFunctionDeclaration(n.parent) && n.parent.name === n) return;
+
+            const kind = parameterReferenceKind(n);
+            if (kind === 'dependency') return;
+            if (kind === 'escapes') {
+                unknown = true;
+                return;
+            }
+            const arg = (n.parent as ts.CallExpression).arguments[owner.index];
+            if (!arg) {
+                unknown = true;
+                return;
+            }
+            out.push({ expr: arg, sf });
+        });
+
+        return unknown || out.length === 0 ? null : out;
+    }
+
+    /**
      * The prefix the callee is bound to build, or null when the binding does
      * not say so — a local function with its own body, a parameter, an import
      * this cannot follow. Null means the call falls through and is reported,
@@ -813,6 +919,13 @@ export class UrlResolver {
                 const each = values.map((v) => this.paths(v.expr, v.sf, depth + 1));
                 if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];
             }
+            // A PARAMETER of a local helper: its value is whatever its callers
+            // pass, and they are in this file (#5665).
+            const args = this.parameterArguments(e, sf);
+            if (args) {
+                const each = args.map((a) => this.paths(a.expr, a.sf, depth + 1));
+                if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];
+            }
         }
         // `useMemo(() => …, deps)`: the key is what the factory returns —
         // every `return` of a block body.
@@ -856,11 +969,15 @@ function methodsOf(call: ts.CallExpression, how: HttpMethod | 'init' | 'arg1', s
     const init = call.arguments[1];
     if (!init) return ['GET'];
     if (!ts.isObjectLiteralExpression(init)) return null;
+    // `{ method }` is a shorthand assignment, not a property assignment: read as
+    // "no method given" it reports the fetch default, so a helper taking its verb
+    // as a parameter claimed GET on every route its callers passed.
     const prop = init.properties.find(
-        (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === 'method',
+        (p): p is ts.PropertyAssignment | ts.ShorthandPropertyAssignment =>
+            (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && ts.isIdentifier(p.name) && p.name.text === 'method',
     );
     if (!prop) return init.properties.some(ts.isSpreadAssignment) ? null : ['GET'];
-    return r.methods(prop.initializer, sf);
+    return r.methods(ts.isShorthandPropertyAssignment(prop) ? prop.name : prop.initializer, sf);
 }
 
 /** Every API call a file makes. */

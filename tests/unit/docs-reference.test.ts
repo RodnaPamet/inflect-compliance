@@ -263,19 +263,25 @@ describe('page actions — a name resolves from the scopes its use site can see'
         '}',
     ].join('\n');
 
-    it('reads a parameter as unresolvable, and the same name at a call site as that scope own const', () => {
-        expect(segmentsOf(helperAndCallSite)).toEqual([null, ['api', 't', 'x', 'agent-samples', '1']]);
+    // #5665 answered the helper's own fetch too, from the call site below it.
+    // The #5661 property is unchanged and is what the next case states: the
+    // parameter is never answered from a `const` of a scope it cannot see.
+    it('reads the helper parameter from its call site, and the same name there as that scope own const', () => {
+        expect(segmentsOf(helperAndCallSite)).toEqual([
+            ['api', 't', 'x', 'agent-samples', '1'],
+            ['api', 't', 'x', 'agent-samples', '1'],
+        ]);
     });
 
-    it('lists the parameter call rather than attributing it to the const route', () => {
+    it('attributes both the helper fetch and its call site to the one route the caller names', () => {
         const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
         const a = pageActions(page, memory({ [page]: helperAndCallSite }), [
             route('src/app/api/t/[tenantSlug]/agent-samples/[sampleId]/route.ts', "export const POST = withApiErrorHandling(requirePermission('access_reviews.decide', h));"),
         ]);
         expect(a.resolved.map((x) => `${x.method} ${x.route.url} ${x.permission.join(',')} @${x.sites.map((y) => y.line).join(',')}`)).toEqual([
-            'POST /api/t/[tenantSlug]/agent-samples/[sampleId] access_reviews.decide @6',
+            'POST /api/t/[tenantSlug]/agent-samples/[sampleId] access_reviews.decide @2,6',
         ]);
-        expect(a.unresolved.map((u) => `${u.line} ${u.expression} — ${u.why}`)).toEqual(['2 url — the URL is built in a way the scan cannot follow']);
+        expect(a.unresolved).toEqual([]);
     });
 
     // Without the parameter check this one still resolves: a top-level const is
@@ -428,6 +434,185 @@ describe('page actions — a name resolves from the scopes its use site can see'
             ['api', 'list'],
             ['api', 'bulk'],
         ]);
+    });
+});
+
+/**
+ * #5665. A local helper's `fetch(url, …)` is only as readable as its callers,
+ * so a PARAMETER resolves to the union of what every call site in the file
+ * passes for it. `AccessReviewDetailClient.tsx` reached
+ * `POST …/access-reviews/<reviewId>/agent-samples/<sampleId>` through nothing
+ * else: the `agentAct` that passes the URL on is not a recognised callee, so
+ * the chain is two parameters deep.
+ *
+ * A union missing a member is not a union, so each of the three ways it can be
+ * incomplete refuses instead: an exported helper, the function handed to a
+ * caller this file cannot see, and a call that omits the argument. Every one of
+ * those is a case here, because each is what stops the mechanism inventing a
+ * route a page does not call.
+ */
+describe('page actions — a local helper parameter resolves from its call sites', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        return apiCalls(file, src.parsed(file), new UrlResolver(src));
+    };
+    const segmentsOf = (text: string) => run(text).map((c) => c.segments);
+    const callsOf = (text: string) => run(text).map((c) => `${c.methods.join('|')} ${c.segments ? c.segments.join('/') : '—'}`);
+
+    it('follows a chain two parameters deep, which is the shape it was found in', () => {
+        expect(
+            segmentsOf(
+                [
+                    'async function relayJson(url: string, body: unknown) {',
+                    "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+                    '}',
+                    'function agentAct(url: string, note: string) {',
+                    '    return relayJson(url, { note });',
+                    '}',
+                    'export default function P() {',
+                    "    const base = '/api/t/x/access-reviews/7';",
+                    '    return agentAct(`${base}/agent-samples/1`, "act");',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'access-reviews', '7', 'agent-samples', '1']]);
+    });
+
+    // One `fetch`, two resolved paths: `apiCalls` lists a call per path.
+    it('unions what two call sites pass, and keeps each path whole', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function load(path: string) {',
+                    '    return fetch(path);',
+                    '}',
+                    'export default function P() {',
+                    "    void load('/api/widgets');",
+                    "    void load('/api/gadgets');",
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([
+            ['api', 'widgets'],
+            ['api', 'gadgets'],
+        ]);
+    });
+
+    // The #5661 property, restated for the new mechanism: the answer comes
+    // from the CALL SITE, never from a `const` the parameter shadows.
+    it('answers from the call site rather than the const the parameter shadows', () => {
+        expect(
+            segmentsOf(
+                [
+                    "const url = '/api/t/x/fallback';",
+                    'function post(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P() {',
+                    "    return post('/api/t/x/real');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', 'x', 'real']]);
+    });
+
+    it('refuses an EXPORTED helper, whose call sites are not all in this file', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export async function relayJson(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P() {',
+                    "    return relayJson('/api/widgets');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('refuses when the helper is handed to a caller this file cannot see, even beside a real call site', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function post(url: string) {',
+                    "    return fetch(url, { method: 'POST' });",
+                    '}',
+                    'export default function P({ onReady }: { onReady: (f: unknown) => void }) {',
+                    '    onReady(post);',
+                    "    return post('/api/widgets');",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('refuses when a call site omits the argument', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function post(body: unknown, url?: string) {',
+                    "    return fetch(url, { method: 'POST', body: JSON.stringify(body) });",
+                    '}',
+                    'export default function P() {',
+                    "    void post({}, '/api/widgets');",
+                    '    void post({});',
+                    '    return null;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    it('does not read a dependency array as the helper escaping', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export default function P() {',
+                    '    const load = useCallback(async (url: string) => fetch(url), []);',
+                    "    const run = useCallback(() => load('/api/widgets'), [load]);",
+                    '    return run;',
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'widgets']]);
+    });
+
+    // `{ method }` is a SHORTHAND assignment. Read as "no method given" it
+    // reported the `fetch` default, so a helper taking its verb as a parameter
+    // claimed GET on every route its callers passed — invisible until the URL
+    // resolved, and then 11 "exports no GET" rows at once.
+    const verbAndPath = [
+        'async function send(path: string, method: string, body: unknown) {',
+        '    return fetch(`/api/t/x/templates${path}`, { method, body: JSON.stringify(body) });',
+        '}',
+        'export default function P() {',
+        "    void send('/clone', 'POST', {});",
+        "    void send('/sections', 'DELETE', {});",
+        '    return null;',
+        '}',
+    ].join('\n');
+
+    it('reads a shorthand method, so the verbs are the callers and never the fetch default', () => {
+        expect(callsOf(verbAndPath)).toEqual([
+            'POST|DELETE api/t/x/templates/clone',
+            'POST|DELETE api/t/x/templates/sections',
+        ]);
+    });
+
+    it('keeps only the pairings the routes serve, and claims no GET', () => {
+        const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+        const a = pageActions(page, memory({ [page]: verbAndPath }), [
+            route('src/app/api/t/[tenantSlug]/templates/clone/route.ts', "export const POST = withApiErrorHandling(requirePermission('vendors.edit', h));"),
+            route('src/app/api/t/[tenantSlug]/templates/sections/route.ts', "export const DELETE = withApiErrorHandling(requirePermission('vendors.edit', h));"),
+        ]);
+        expect(a.resolved.map((x) => `${x.method} ${x.route.url}`)).toEqual([
+            'POST /api/t/[tenantSlug]/templates/clone',
+            'DELETE /api/t/[tenantSlug]/templates/sections',
+        ]);
+        expect(a.unresolved).toEqual([]);
     });
 });
 
