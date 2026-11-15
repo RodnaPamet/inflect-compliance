@@ -411,61 +411,6 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         }
     });
 
-    test('every org-scoped policy materialised by migration is reproducible from rls-setup.sql', () => {
-        // Live-DB cross-check that complements the static-file ratchet
-        // below. If pg_policies says the org policy exists but rls-
-        // setup.sql doesn't define it, an operator reset (apply
-        // migrations + replay rls-setup.sql) ends up in a divergent
-        // state from a migration-only reset. Both paths must converge.
-        const setupSqlPath = path.resolve(
-            __dirname,
-            '..',
-            '..',
-            'prisma',
-            'rls-setup.sql',
-        );
-        const setup = fs.readFileSync(setupSqlPath, 'utf-8');
-
-        const drifted: Array<{ model: string; policy: string }> = [];
-        for (const [model, expectedPolicy] of ORG_SCOPED_MODELS) {
-            const inDb = policies.some(
-                (p) =>
-                    p.tablename === model && p.policyname === expectedPolicy,
-            );
-            const re = new RegExp(
-                `CREATE\\s+POLICY\\s+${expectedPolicy}\\s+ON\\s+"${model}"`,
-                'i',
-            );
-            const inSetup = re.test(setup);
-            // Drift is "DB has it but the canonical replay file doesn't"
-            // — the dangerous direction. A setup-only definition that
-            // never made it into a migration is caught by the prior
-            // missing-policy test.
-            if (inDb && !inSetup) {
-                drifted.push({ model, policy: expectedPolicy });
-            }
-        }
-        if (drifted.length > 0) {
-            throw new Error(
-                `Canonical replay drift — ${drifted.length} org-layer ` +
-                    `policy(ies) exist in pg_policies but are NOT defined in ` +
-                    `prisma/rls-setup.sql:\n  ` +
-                    drifted
-                        .map(
-                            (d) =>
-                                `${d.model}.${d.policy} → add CREATE POLICY ${d.policy} ON "${d.model}" to section 4b of prisma/rls-setup.sql`,
-                        )
-                        .join('\n  ') +
-                    `\n\nWhy this matters: an operator who runs ` +
-                    `prisma/rls-setup.sql against a fresh schema (or against ` +
-                    `a partially-reset DB during repair) ends up without ` +
-                    `these policies. The migration applies them on ` +
-                    `'migrate reset', but rls-setup.sql is also a canonical ` +
-                    `replay tool — both paths must produce the same end state.`,
-            );
-        }
-    });
-
     test('ORG_SCOPED_MODELS sanity: every named policy actually carries a USING clause', () => {
         // Defence-in-depth — if a "simplification" PR drops the USING
         // clause from an org-isolation policy and replaces it with
@@ -502,22 +447,18 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
 //
 // Closes the loophole the DB-backed tests above leave open: a
 // developer can run all the migrations against a long-lived dev DB,
-// silently delete a CREATE POLICY from prisma/rls-setup.sql, and
-// every DB-backed assertion still passes (because pg_policies still
-// has the row from the earlier migration apply). The drift only
-// surfaces the next time someone bootstraps a fresh environment.
+// The org-layer expectations below are checked against the MIGRATIONS,
+// which are the only apply path: `prisma migrate reset` and every fresh
+// bootstrap run migrations and nothing else.
 //
-// Two surfaces protected (both pure file scans, no Postgres required):
-//   1. prisma/rls-setup.sql                  — canonical replay/repair tool
-//   2. prisma/migrations/**/migration.sql    — canonical apply path used
-//                                              by `prisma migrate reset`
-//
-// Scope intentionally narrowed to the Epic O-1 organization layer
-// (the regression class this guardrail was strengthened to catch).
-// Tenant-layer drift between rls-setup.sql and the per-feature
-// migrations is a known, separate housekeeping item — see follow-up
-// in docs/implementation-notes (rls-setup.sql is no longer wired into
-// any script; the migrations are the load-bearing apply path).
+// This used to cross-check them against `prisma/rls-setup.sql` as a second
+// canonical source. That file and `rls-fix.sql` were retired on 2026-11-15
+// (owner decision, #5423): they named 59 tables while the migrations carried
+// `tenant_isolation` on 226, and the header said "All tenant-scoped tables".
+// They were wired into nothing. A cross-check between the authoritative
+// source and a 26%-complete copy was comparing the migrations against a stale
+// file, not adding coverage — see
+// docs/implementation-notes/2026-11-15-retire-rls-replay-scripts.md.
 
 interface PolicyExpectation {
     model: string;
@@ -551,82 +492,24 @@ function hasForceRls(haystack: string, model: string): boolean {
     return re.test(haystack);
 }
 
-describe('Guardrail: org-layer canonical RLS setup is drift-free', () => {
-    const setupPath = path.resolve(
-        __dirname,
-        '..',
-        '..',
-        'prisma',
-        'rls-setup.sql',
-    );
-
-    let setupSql: string;
+describe('Guardrail: every org-layer policy reaches the migrations', () => {
     let migrationsSql: string;
 
     beforeAll(() => {
-        setupSql = fs.readFileSync(setupPath, 'utf-8');
         migrationsSql = readAllMigrationSql();
     });
 
-    test('every ORG_SCOPED_MODELS entry has a CREATE POLICY in prisma/rls-setup.sql', () => {
-        const missing: PolicyExpectation[] = [];
-        for (const [model, policy] of ORG_SCOPED_MODELS) {
-            if (!hasCreatePolicy(setupSql, { model, policy })) {
-                missing.push({ model, policy });
-            }
-        }
-        if (missing.length > 0) {
-            throw new Error(
-                `Canonical setup gap — ${missing.length} org-layer policy ` +
-                    `definition(s) missing from prisma/rls-setup.sql:\n  ` +
-                    missing
-                        .map(
-                            (m) =>
-                                `CREATE POLICY ${m.policy} ON "${m.model}"`,
-                        )
-                        .join('\n  ') +
-                    `\n\nFix: add the missing CREATE POLICY block(s) to ` +
-                    `prisma/rls-setup.sql section 4b ("Organization layer ` +
-                    `— user-scoped"). Mirror the canonical migration ` +
-                    `20260426060000_add_organization_layer_rls verbatim and ` +
-                    `keep the DROP POLICY IF EXISTS guard so the script ` +
-                    `stays idempotent.\n\n` +
-                    `Why this matters: prisma/rls-setup.sql is the canonical ` +
-                    `replay/repair tool. An operator who applies it against ` +
-                    `a non-migrated DB must end up with the same RLS state ` +
-                    `as 'prisma migrate reset'. Both paths must converge.`,
-            );
-        }
-    });
-
-    test('every ORG_SCOPED_MODELS table is set to FORCE ROW LEVEL SECURITY in prisma/rls-setup.sql', () => {
-        const missing: string[] = [];
-        for (const model of ORG_SCOPED_MODELS.keys()) {
-            if (!hasForceRls(setupSql, model)) missing.push(model);
-        }
-        if (missing.length > 0) {
-            throw new Error(
-                `Canonical setup gap — ${missing.length} org-layer table(s) ` +
-                    `not set to FORCE ROW LEVEL SECURITY in prisma/rls-setup.sql:\n  ` +
-                    missing
-                        .map(
-                            (m) =>
-                                `ALTER TABLE "${m}" FORCE ROW LEVEL SECURITY;`,
-                        )
-                        .join('\n  ') +
-                    `\n\nWithout FORCE, the postgres role bypasses RLS ` +
-                    `unconditionally and the bypass-by-role design (which ` +
-                    `relies on FORCE + a superuser_bypass policy keyed on ` +
-                    `current_setting('role')) collapses.`,
-            );
-        }
-    });
-
-    test('every ORG_SCOPED_MODELS policy is also created by at least one migration', () => {
-        // Reproducibility check — `prisma migrate reset` applies only
-        // migrations, never rls-setup.sql. A canonical policy that
-        // exists ONLY in rls-setup.sql vanishes on every fresh reset
-        // until somebody runs the setup script by hand.
+    test('every ORG_SCOPED_MODELS policy is created by at least one migration', () => {
+        // The migrations are the ONLY apply path: `prisma migrate reset` and
+        // every fresh bootstrap run them and nothing else. A policy this
+        // repo expects but no migration creates does not exist in a new
+        // environment, however many documents describe it.
+        //
+        // This check used to be phrased as "defined in rls-setup.sql but
+        // missing from a migration". With that file retired (#5423) the
+        // expectation is `ORG_SCOPED_MODELS` itself, which is the curated
+        // list the rest of this file already asserts against — a stronger
+        // anchor than a 26%-complete SQL copy.
         const missing: PolicyExpectation[] = [];
         for (const [model, policy] of ORG_SCOPED_MODELS) {
             if (!hasCreatePolicy(migrationsSql, { model, policy })) {
@@ -635,33 +518,33 @@ describe('Guardrail: org-layer canonical RLS setup is drift-free', () => {
         }
         if (missing.length > 0) {
             throw new Error(
-                `Reset-path gap — ${missing.length} org-layer policy(ies) ` +
-                    `defined in prisma/rls-setup.sql but missing from every ` +
-                    `migration in prisma/migrations:\n  ` +
+                `Reset-path gap — ${missing.length} org-layer policy(ies) in ` +
+                    `ORG_SCOPED_MODELS are created by no migration in ` +
+                    `prisma/migrations:\n  ` +
                     missing
-                        .map(
-                            (m) =>
-                                `CREATE POLICY ${m.policy} ON "${m.model}"`,
-                        )
+                        .map((m) => `CREATE POLICY ${m.policy} ON "${m.model}"`)
                         .join('\n  ') +
-                    `\n\nA canonical policy only in rls-setup.sql is invisible ` +
-                    `to 'prisma migrate reset' and to any environment that ` +
-                    `bootstraps from migrations alone. Ship a migration that ` +
-                    `creates each missing policy.`,
+                    `\n\nA policy no migration creates is absent from every ` +
+                    `environment that bootstraps from migrations alone, which ` +
+                    `is all of them. Ship a migration that creates each one.`,
             );
         }
     });
 
-    test('mutation regression — removing org_isolation from rls-setup.sql is detected', () => {
+    test('mutation regression — removing org_isolation from the migrations is detected', () => {
         // Proves the static-file detector actually works on a known-bad
-        // input. Without this, a future "simplification" of the regex
-        // could quietly break detection while every assertion above
-        // still passes vacuously against a clean repo.
-        const removed = setupSql.replace(
-            /CREATE\s+POLICY\s+org_isolation\s+ON\s+"Organization"[\s\S]*?\);/i,
+        // input. Without it the assertion above could pass vacuously against
+        // a clean repo if a future "simplification" broke the regex.
+        //
+        // It used to mutate `rls-setup.sql`; with that file gone the subject
+        // is the migration text, which is what the check now reads. Keeping
+        // the proof mattered more than keeping its old subject: this was the
+        // only case that could ever show `hasCreatePolicy` returning false.
+        const removed = migrationsSql.replace(
+            /CREATE\s+POLICY\s+org_isolation\s+ON\s+"Organization"[\s\S]*?;/i,
             '-- removed for regression test',
         );
-        expect(removed).not.toBe(setupSql); // sanity — the source had it
+        expect(removed).not.toBe(migrationsSql); // sanity — the source had it
         expect(
             hasCreatePolicy(removed, {
                 model: 'Organization',
