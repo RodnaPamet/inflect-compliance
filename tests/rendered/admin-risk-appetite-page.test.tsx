@@ -33,17 +33,23 @@ const ra = en.admin.riskAppetite;
 type Reply = { status: number; body: unknown };
 let puts: unknown[] = [];
 let posts: string[] = [];
+let approveBodies: unknown[] = [];
+let configReads = 0;
 
 beforeEach(() => { mockRole = 'ADMIN'; });
 
-function stub(routes: { config?: Reply; breaches?: Reply; put?: Reply; approve?: Reply }) {
+/** `config` may be a list: each read of the config takes the next, the last repeating. */
+function stub(routes: { config?: Reply | Reply[]; breaches?: Reply; put?: Reply; approve?: Reply }) {
     puts = [];
     posts = [];
+    approveBodies = [];
+    configReads = 0;
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
         const method = init?.method ?? 'GET';
         let r: Reply;
         if (method === 'POST' && String(url).endsWith('/risk-appetite/approve')) {
             posts.push(String(url));
+            approveBodies.push(init?.body === undefined ? undefined : JSON.parse(String(init.body)));
             r = routes.approve ?? { status: 200, body: { success: true } };
         } else if (method === 'PUT') {
             puts.push(JSON.parse(String(init?.body)));
@@ -51,7 +57,9 @@ function stub(routes: { config?: Reply; breaches?: Reply; put?: Reply; approve?:
         } else if (String(url).endsWith('/breaches')) {
             r = routes.breaches ?? { status: 200, body: { breaches: [] } };
         } else {
-            r = routes.config ?? { status: 200, body: { config: { totalAleThreshold: 500000 }, status: { status: 'WITHIN', portfolioAle: 1000, portfolioTested: null, activeBreaches: 0 } } };
+            const configs = Array.isArray(routes.config) ? routes.config : routes.config ? [routes.config] : [];
+            configReads += 1;
+            r = configs[Math.min(configReads, configs.length) - 1] ?? { status: 200, body: { config: { totalAleThreshold: 500000 }, status: { status: 'WITHIN', portfolioAle: 1000, portfolioTested: null, activeBreaches: 0 } } };
         }
         return { ok: r.status < 400, status: r.status, json: async () => r.body } as Response;
     }) as unknown as typeof fetch;
@@ -116,7 +124,7 @@ it('labels breach types, shows a score as a score, and marks an acknowledged bre
 
 describe('approval (#5313 item 11)', () => {
     const storedRow = {
-        id: 'cfg-1', tenantId: 't-1', createdAt: '2026-01-01', updatedAt: '2026-01-02',
+        id: 'cfg-1', tenantId: 't-1', createdAt: '2026-01-01', updatedAt: '2026-01-02T08:15:30.123Z',
         totalAleThreshold: 500000, singleRiskAleMax: null, qualScoreMax: null, testedPercentile: 80,
         appetiteStatement: 'Moderate.', reviewCadence: 'ANNUALLY', categoryOverridesJson: null,
         nextReviewAt: '2027-01-01T00:00:00.000Z',
@@ -167,6 +175,45 @@ describe('approval (#5313 item 11)', () => {
         fireEvent.click(approve);
         await waitFor(() => expect(posts).toEqual(['/api/t/acme/risk-appetite/approve']));
         expect(puts).toEqual([]);
+    });
+
+    it('sends the version it loaded, so the server approves only what was shown', async () => {
+        mockRole = 'OWNER';
+        stub({ config: configReply(null) });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        fireEvent.click(document.getElementById('appetite-approve') as HTMLElement);
+        await waitFor(() => expect(approveBodies).toHaveLength(1));
+        expect(approveBodies[0]).toEqual({ configId: 'cfg-1', viewedUpdatedAt: '2026-01-02T08:15:30.123Z' });
+    });
+
+    it('on a save made since the page loaded, says so and shows what is stored now', async () => {
+        mockRole = 'OWNER';
+        const changed: Reply = {
+            status: 200,
+            body: {
+                config: { ...storedRow, totalAleThreshold: 900000, updatedAt: '2026-11-15T09:30:00.000Z' },
+                status: { status: 'WITHIN', portfolioAle: 1, portfolioTested: null, activeBreaches: 0 },
+                approval: null,
+            },
+        };
+        stub({
+            config: [configReply(null), changed],
+            approve: {
+                status: 409,
+                body: { error: { code: 'CONFLICT', message: 'The risk appetite has changed since it was shown to you', details: { reason: 'RISK_APPETITE_CHANGED_SINCE_VIEWED' } } },
+            },
+        });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        fireEvent.click(document.getElementById('appetite-approve') as HTMLElement);
+        expect(await screen.findByTestId('appetite-save-msg')).toHaveTextContent(ra.approveChangedSinceViewed);
+        // Re-read: the limits now on screen are the ones a second Approve would approve.
+        expect(await screen.findByDisplayValue('900000')).toBeInTheDocument();
+        expect(screen.getByTestId('appetite-save-msg')).toHaveTextContent(ra.approveChangedSinceViewed);
+        fireEvent.click(document.getElementById('appetite-approve') as HTMLElement);
+        await waitFor(() => expect(approveBodies).toHaveLength(2));
+        expect(approveBodies[1]).toEqual({ configId: 'cfg-1', viewedUpdatedAt: '2026-11-15T09:30:00.000Z' });
     });
 
     it('holds Approve while the screen differs from what is stored', async () => {

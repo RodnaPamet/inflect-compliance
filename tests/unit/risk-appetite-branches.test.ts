@@ -73,9 +73,11 @@ const readerCtx = makeRequestContext('READER');
 
 function makeDb() {
     return {
+        $queryRaw: jest.fn().mockResolvedValue([]),
         riskAppetiteConfig: {
             findFirst: jest.fn(),
             update: jest.fn(),
+            updateMany: jest.fn(),
             create: jest.fn(),
         },
         risk: {
@@ -247,42 +249,87 @@ describe('risk-appetite approval (#5313 item 11)', () => {
         expect(data()).not.toHaveProperty('approvedByUserId');
     });
 
-    it('approve stamps the caller and the server clock, and writes an audit row', async () => {
+    // The version the approver's page loaded (owner decision 2026-11-15).
+    const viewed = { configId: 'cfg-1', viewedUpdatedAt: '2026-11-15T09:00:00.123Z' };
+
+    it('approve stamps the caller and the server clock in ONE write bound to the version shown', async () => {
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 1 });
         mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue({ id: 'cfg-1' });
-        mockDbHolder.db.riskAppetiteConfig.update.mockResolvedValue({ id: 'cfg-1' });
         const before = Date.now();
-        await approveAppetiteConfig(ownerCtx);
-        const args = mockDbHolder.db.riskAppetiteConfig.update.mock.calls[0][0];
-        expect(args.where).toEqual({ id: 'cfg-1' });
+        await approveAppetiteConfig(ownerCtx, viewed);
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).toHaveBeenCalledTimes(1);
+        const args = mockDbHolder.db.riskAppetiteConfig.updateMany.mock.calls[0][0];
+        expect(args.where).toEqual({
+            tenantId: ownerCtx.tenantId,
+            id: 'cfg-1',
+            updatedAt: new Date('2026-11-15T09:00:00.123Z'),
+        });
         expect(args.data.approvedByUserId).toBe('owner-1');
         expect(args.data.approvedAt.getTime()).toBeGreaterThanOrEqual(before);
+        // Never read-then-write: nothing was read before the stamp.
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+            mockDbHolder.db.riskAppetiteConfig.findFirst.mock.invocationCallOrder[0],
+        );
+        expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
         expect(logEvent).toHaveBeenCalledWith(
             expect.anything(), ownerCtx,
             expect.objectContaining({ action: 'RISK_APPETITE_APPROVED', entityId: 'cfg-1' }),
         );
     });
 
-    it('approve refuses an ADMIN (no admin.tenant_lifecycle) and writes nothing', async () => {
-        await expect(approveAppetiteConfig(adminCtx)).rejects.toMatchObject({
-            status: 403,
-            details: { reason: 'RISK_APPETITE_APPROVAL_IS_OWNER_TIER' },
+    it('approve of a version that is no longer stored is a 409 and writes no audit row', async () => {
+        // A save after the page loaded moved updatedAt: the conditional write
+        // matches nothing.
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 0 });
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue({ id: 'cfg-1' });
+        await expect(approveAppetiteConfig(ownerCtx, viewed)).rejects.toMatchObject({
+            status: 409,
+            details: { reason: 'RISK_APPETITE_CHANGED_SINCE_VIEWED' },
         });
         expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
         expect(logEvent).not.toHaveBeenCalled();
     });
 
+    it('approve refuses an ADMIN (no admin.tenant_lifecycle) and writes nothing', async () => {
+        await expect(approveAppetiteConfig(adminCtx, viewed)).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'RISK_APPETITE_APPROVAL_IS_OWNER_TIER' },
+        });
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
     it('approve refuses an API key, even one carrying the key', async () => {
-        await expect(approveAppetiteConfig({ ...ownerCtx, apiKeyId: 'key-1' })).rejects.toMatchObject({
+        await expect(approveAppetiteConfig({ ...ownerCtx, apiKeyId: 'key-1' }, viewed)).rejects.toMatchObject({
             status: 403,
             details: { reason: 'RISK_APPETITE_APPROVAL_NEEDS_PERSON' },
         });
-        expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
     });
 
     it('approve with nothing saved is a 404', async () => {
+        mockDbHolder.db.riskAppetiteConfig.updateMany.mockResolvedValue({ count: 0 });
         mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(null);
-        await expect(approveAppetiteConfig(ownerCtx)).rejects.toMatchObject({ status: 404 });
-        expect(mockDbHolder.db.riskAppetiteConfig.update).not.toHaveBeenCalled();
+        await expect(approveAppetiteConfig(ownerCtx, viewed)).rejects.toMatchObject({ status: 404 });
+        expect(logEvent).not.toHaveBeenCalled();
+    });
+
+    it('approve naming no valid version is a 400 and writes nothing', async () => {
+        await expect(approveAppetiteConfig(ownerCtx, { configId: 'cfg-1', viewedUpdatedAt: 'not a date' }))
+            .rejects.toMatchObject({ status: 400 });
+        expect(mockDbHolder.db.riskAppetiteConfig.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('a save locks the row before it reads it, so an approval cannot land between its read and its write', async () => {
+        mockDbHolder.db.riskAppetiteConfig.findFirst.mockResolvedValue(stored);
+        savedData();
+        await upsertAppetiteConfig(adminCtx, sameTerms);
+        expect(mockDbHolder.db.$queryRaw).toHaveBeenCalledTimes(1);
+        const sql = (mockDbHolder.db.$queryRaw.mock.calls[0][0] as string[]).join('?');
+        expect(sql).toMatch(/FROM "RiskAppetiteConfig"\s+WHERE "tenantId" = \?\s+FOR UPDATE/);
+        expect(mockDbHolder.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+            mockDbHolder.db.riskAppetiteConfig.findFirst.mock.invocationCallOrder[0],
+        );
     });
 
     it('getAppetiteApproval names the approver, and is null when unapproved', async () => {
