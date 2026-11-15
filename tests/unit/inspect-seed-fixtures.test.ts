@@ -137,20 +137,15 @@ describe('the plan the committed set produces', () => {
         expect(local.profiles.map((p) => p.fixture)).toEqual(['inspect-summarise']);
     });
 
-    it('grants no eval agent a tool tasks 5 and 6 read the absence of, and binds every Flue key to mcp:orchestrate', () => {
+    it('grants no eval agent a tool tasks 5 and 6 read the absence of, and starts none with a key', () => {
         for (const t of plan.tenants) {
             for (const a of t.agents) {
                 for (const never of NEVER_GRANTED) expect(a.grants).not.toContain(never);
-                if (a.profileFixture !== null) {
-                    // Started by its automation rule: no key to scope.
-                    expect(a.startedBy).toBe('automation-rule');
-                    expect(a.keyScopes).toEqual([]);
-                    continue;
-                }
-                expect(a.startedBy).toBe('agent-key');
-                expect(a.keyScopes).toContain('mcp:orchestrate');
-                expect(a.keyScopes).toContain('mcp:read');
-                expect(a.keyScopes.includes('mcp:propose')).toBe(a.grants.some((g) => g.startsWith('propose_')));
+                // A profile agent's run starts from its rule; a Flue agent answers
+                // the OWNER's question at the questions route (#5604). Neither
+                // presents a key, so the plan has none to scope.
+                expect(a.startedBy).toBe(a.profileFixture !== null ? 'automation-rule' : 'questions-route');
+                expect(Object.keys(a)).not.toContain('keyScopes');
             }
             for (const p of t.profiles) {
                 const agent = t.agents.find((a) => a.profileFixture === p.fixture)!;

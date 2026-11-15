@@ -188,11 +188,17 @@ and, for the seed,
       the named seed tenant and awaits settlement; a `ledger` helper that reads
       steps, proposals and guard verdicts through the product's API (as the
       seed tenant's OWNER) — never the database directly. No harness route
-      exists (garak built only the assistant half), so the solver starts each
-      Flue run through the product's own `POST /agent-runs` with the seed
-      agent's bound API key, the way an agent starts one: a reasoning engine
-      refuses a run no ACTIVE registered agent vouches for, and a session binds
-      none. A Tool Runner run is an agent profile's, and since #5367 a profile
+      exists (garak built only the assistant half). Every Flue sample runs the
+      ad-hoc question, and since #5604 the product refuses `ad-hoc-question`
+      on the generic `POST /agent-runs` (`AD_HOC_QUESTION_USE_QUESTIONS_ROUTE`)
+      for every caller, because only the questions route sanitises and
+      rate-limits the question. So the seed tenant's OWNER asks it at
+      `POST /agents/questions`, a person's route (`NOT_A_PERSON` for a key):
+      `startInteractiveRun` binds the tenant's designated interactive agent
+      (the seed's eval agent) to the OWNER's own context, so a reasoning engine
+      still has an ACTIVE registered agent vouching for the run and the run's
+      tools are still that agent's grants. It needs `AGENT_INTERACTIVE_RUNS`
+      on the deployment, which the workflow sets. A Tool Runner run is an agent profile's, and since #5367 a profile
       key names the trigger that starts it, which the generic route never does
       (`PROFILE_TRIGGER_REQUIRED`). So the solver starts it as the AUTOMATION
       trigger, through a real automation rule, the way production starts an
@@ -235,17 +241,16 @@ and, for the seed,
       key lives in its own workspace and needs none. The job log names which
       key and whether the header was sent, never a value.
 - [x] 1.6 `scripts/inspect-seed.ts`: the four seed tenants, eval agents (a
-      Flue agent with a bound API key carrying `mcp:orchestrate` and its
-      grants' scopes, written to `--agent-keys` and never to the manifest),
-      approved profiles allowing the AUTOMATION trigger alone, one automation
+      Flue tenant's designated as its interactive agent, which answers the
+      OWNER's questions; no tenant holds an API key, because neither start
+      path presents one), approved profiles allowing the AUTOMATION trigger alone, one automation
       rule per profile, and fixtures, all through the product's usecases,
       idempotent, refusing production and any database off loopback. A Tool
       Runner tenant has one eval agent PER PROFILE, because a profile runs as
       its own agent, an agent holds one profile, and only its version in force
       runs; the manifest names each profile's agent (`profileAgents`) and rule
-      (`automationRules`). A profile agent gets no key, because its runs start
-      from its rule and nothing would present one; the workflow refuses a key
-      handed over for a Tool Runner tenant and requires one for a Flue tenant. The fixture text follows what the read tools return:
+      (`automationRules`). The workflow hands the harness the OWNER's session
+      alone. The fixture text follows what the read tools return:
       `list_findings` returns no description, so the fragment labels ride in
       the finding's `owner` field, and `list_controls` returns no description,
       so the secret-shaped value rides in the control's name. Two fixture

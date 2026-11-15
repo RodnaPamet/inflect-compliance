@@ -2,29 +2,29 @@
     "about": "Every product response the Inspect harness reads (evals/inspect/inflect_inspect/product.py), one sample per route, in the shape the product serves it. tests/unit/inspect-harness-product-contract.test.ts holds each route file and each field read here to the product's own types; evals/inspect/tests serves these bodies to HttpProduct over HTTP. A field the harness reads that the product does not return fails one of the two.",
     "slug": "inspect-ext-flue",
     "routes": {
-        "startRun": {
+        "askQuestion": {
             "method": "POST",
-            "path": "/agent-runs",
-            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
-            "credential": "agent-key",
-            "status": 201,
-            "body": { "runId": "run_1", "status": "RUNNING", "workflowKey": "ad-hoc-question", "stepFailures": 0 }
+            "path": "/agents/questions",
+            "route": "src/app/api/t/[tenantSlug]/agents/questions/route.ts",
+            "credential": "session",
+            "status": 202,
+            "body": { "runId": "run_1" }
         },
-        "startRunMissingInput": {
+        "askQuestionMissing": {
             "method": "POST",
-            "path": "/agent-runs",
-            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
-            "credential": "agent-key",
+            "path": "/agents/questions",
+            "route": "src/app/api/t/[tenantSlug]/agents/questions/route.ts",
+            "credential": "session",
             "status": 400,
-            "body": { "error": { "code": "BAD_REQUEST", "message": "Workflow ad-hoc-question requires a non-empty question. Supply it in the run input.", "requestId": "req_1" } }
+            "body": { "error": { "code": "VALIDATION_ERROR", "message": "Invalid request payload", "requestId": "req_1", "details": [{ "path": ["question"], "code": "invalid_type", "message": "Invalid input: expected string, received undefined" }] } }
         },
-        "startRunUnknownWorkflow": {
+        "askQuestionEmpty": {
             "method": "POST",
-            "path": "/agent-runs",
-            "route": "src/app/api/t/[tenantSlug]/agent-runs/route.ts",
-            "credential": "agent-key",
+            "path": "/agents/questions",
+            "route": "src/app/api/t/[tenantSlug]/agents/questions/route.ts",
+            "credential": "session",
             "status": 400,
-            "body": { "error": { "code": "BAD_REQUEST", "message": "Unknown workflow: ad-hoc-question", "requestId": "req_2" } }
+            "body": { "error": { "code": "BAD_REQUEST", "message": "QUESTION_EMPTY: No question was supplied.", "requestId": "req_2" } }
         },
         "getRun": {
             "method": "GET",

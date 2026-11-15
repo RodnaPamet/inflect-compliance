@@ -15,11 +15,13 @@ engine, and the harness turned two product problems into two crashes:
   after 3 of 8 samples (record: FACTS_INCOMPLETE).
 
 The Tool Runner now starts its runs as the AUTOMATION trigger, through the
-profile's seeded rule (owner decision, 2026-11-13). The stub product below
-refuses a profile key at ``POST /agent-runs`` exactly as the product does, so
-a runner that went back to that route would have every sample refused; and a
-start the rule path does not complete (the dispatch refused it, the action
-failed, the trigger task was refused) is held to the same contract.
+profile's seeded rule (owner decision, 2026-11-13), and a Flue run is the
+question the OWNER asks at ``POST /agents/questions`` (#5604 refuses
+``ad-hoc-question`` on the generic route). The stub product below answers
+those two starts only, so a runner that went back to ``POST /agent-runs``
+fails here; and a start the rule path does not complete (the dispatch refused
+it, the action failed, the trigger task was refused) is held to the same
+contract.
 
 These tests replay both through the real solver and scorer, and through
 Inspect itself, and hold the contract: every sample runs, a missing fact is
@@ -50,12 +52,12 @@ TASK_SET = json.loads((HERE.parent / "task-set.json").read_text(encoding="utf-8"
 TASKS = {t["id"]: t for t in TASK_SET["tasks"]}
 GOLDEN = json.loads((HERE.parent / "fixtures" / "verdict-cases.json").read_text(encoding="utf-8"))
 CONTRACT = json.loads((HERE.parent / "fixtures" / "product-contract.json").read_text(encoding="utf-8"))["routes"]
-PROFILE_REFUSAL = {
+# The questions route's own refusal when the tenant designated no agent.
+QUESTION_REFUSAL = {
     "error": {
-        "code": "BAD_REQUEST",
-        "message": "PROFILE_TRIGGER_REQUIRED: An agent profile runs from the Ask page, an automation rule or the "
-        "Behaviour tab's Test run, as its version allows. This start is none of them.",
-        "requestId": "req_9",
+        "code": "FORBIDDEN",
+        "message": "NO_AGENT_DESIGNATED: This workspace has designated no interactive agent.",
+        "requestId": "req_8",
     }
 }
 PROFILES = {}
@@ -94,10 +96,11 @@ class Product:
     """A product whose runs never settle (``hang``), whose starts are refused (``refuse``),
     or whose abort does not take (``stuck``).
 
-    A profile run starts only through the rule (``create_task``), as in the
-    product: ``start_run`` refuses a profile key PROFILE_TRIGGER_REQUIRED. On
-    the rule path ``refuse`` is the dispatch refusing the start (the execution
-    SUCCEEDED, no run appears), ``action-failed`` an execution that FAILED and
+    A profile run starts only through the rule (``create_task``), and a Flue
+    run only as a question (``ask_question``), as in the product. On the
+    question path ``refuse`` is the route refusing the question; on the rule
+    path it is the dispatch refusing the start (the execution SUCCEEDED, no
+    run appears), ``action-failed`` an execution that FAILED and
     ``task-refused`` a trigger task the product refused.
     """
 
@@ -109,16 +112,14 @@ class Product:
         self.executions = []
         self.runs = []
 
-    def start_run(self, workflow_key, run_input):
-        if workflow_key.startswith("agent-profile:"):
-            return 400, PROFILE_REFUSAL  # #5367: the generic route names no trigger
+    def ask_question(self, run_input):
         self.started += 1
         if not run_input:  # the product's own answer to task 10's absent question
-            r = CONTRACT["startRunMissingInput"]
+            r = CONTRACT["askQuestionMissing"]
             return r["status"], r["body"]
         if self.mode == "refuse":
-            return 400, PROFILE_REFUSAL
-        return 201, {"runId": f"run_{self.started}", "status": "RUNNING"}
+            return 403, QUESTION_REFUSAL
+        return 202, {"runId": f"run_{self.started}"}
 
     def create_task(self, title):
         if self.mode == "task-refused":
@@ -264,11 +265,11 @@ def test_a_refused_start_is_logged_by_code_and_scored_incomplete(caplog):
     caplog.set_level(logging.WARNING, logger="inflect_inspect")
     task = TASKS["local-only-opens-no-external-socket"]
     sample = run_sample(Product("refuse"), task, "summarise-posture", "flue", SEED, FakeClock())
-    assert sample["facts"]["admission"] == {"httpStatus": 400, "missingKeys": []}
+    assert sample["facts"]["admission"] == {"httpStatus": 403, "missingKeys": []}
     assert sample["facts"]["run"] is None
     assert verdicts.inspect_outcome(sample, "flue")[0] == verdicts.INCOMPLETE
-    assert "HTTP 400 PROFILE_TRIGGER_REQUIRED" in caplog.text
-    assert "Behaviour tab" not in caplog.text  # the code, never the sentence
+    assert "HTTP 403 NO_AGENT_DESIGNATED" in caplog.text
+    assert "designated no interactive agent" not in caplog.text  # the code, never the sentence
 
 
 # ── The Tool Runner starts through its rule; a refused start is never a pass ─
@@ -281,8 +282,8 @@ def _tool_runner(product, task_id="every-model-call-has-a-decision-row", **kw):
 
 def test_a_tool_runner_sample_starts_through_its_rule_and_never_the_generic_route():
     class Settles(Product):
-        def start_run(self, workflow_key, run_input):
-            raise AssertionError("a profile run never starts at POST /agent-runs")
+        def ask_question(self, run_input):
+            raise AssertionError("a profile run is never started as a question")
 
         def get_run(self, run_id):
             return {"status": "COMPLETED", "errorMessage": None, "costTokens": 10, "stepCount": 0,
@@ -400,7 +401,7 @@ def test_the_nightlys_two_failures_complete_every_sample_through_inspect(engine,
     tasks = _tasks_module()
     product = Product(mode)
     monkeypatch.setattr(tasks, "_seed_for", lambda slug, task_def, eng: SEED)
-    monkeypatch.setattr(tasks, "_product_for", lambda slug, seed: product)
+    monkeypatch.setattr(tasks, "_product_for", lambda slug: product)
     monkeypatch.setattr(tasks, "run_sample", functools.partial(run_sample, clock=FakeClock(), deadline_s=0.05, poll_s=0.01, find_deadline_s=0.05))
 
     [log] = inspect_eval(tasks.governed_runs(engine=engine), model="mockllm/model", max_samples=1, log_dir=str(tmp_path), display="none")
@@ -433,7 +434,7 @@ def test_a_sample_the_solver_could_not_configure_is_not_run(monkeypatch):
 def test_a_pass_that_must_stop_is_not_swallowed(monkeypatch):
     tasks = _tasks_module()
     monkeypatch.setattr(tasks, "_seed_for", lambda slug, task_def, eng: SEED)
-    monkeypatch.setattr(tasks, "_product_for", lambda slug, seed: Product("stuck"))
+    monkeypatch.setattr(tasks, "_product_for", lambda slug: Product("stuck"))
     monkeypatch.setattr(tasks, "run_sample", functools.partial(run_sample, clock=FakeClock(), deadline_s=0.05, poll_s=0.01))
     state = SimpleNamespace(metadata={"task": TASKS["token-cap-halts-at-the-boundary"], "inputId": "list-everything"}, epoch=1, completed=False)
     with pytest.raises(PassMustStop):

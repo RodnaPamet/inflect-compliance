@@ -2,7 +2,7 @@
  * Seed the four Inspect tenants the agent-evals nightly runs against
  * (`docs/ai-architecture/inspect.md`, Phase 1.6).
  *
- *   npx tsx scripts/inspect-seed.ts --manifest <manifest.json> --agent-keys <keys.json>
+ *   npx tsx scripts/inspect-seed.ts --manifest <manifest.json>
  *
  * WHAT IT WRITES, all through the product's own usecases (the definitions are
  * in `scripts/inspect-seed/fixtures.ts`, derived from `evals/inspect/task-set.json`):
@@ -26,20 +26,23 @@
  *     `TASK_CREATED` for the titles of the samples that run the profile and
  *     starts the profile's version in force as its agent. That is how the
  *     harness starts every Tool Runner run (owner decision, 2026-11-13);
- *   - per Flue agent, an API key BOUND to it (`createApiKey`), carrying
- *     `mcp:orchestrate` and the scopes its grants need. A profile agent gets
- *     no key: its runs start from its rule, and nothing would present one.
+ *   - on a Flue tenant, its eval agent DESIGNATED as the tenant's interactive
+ *     agent (`designateInteractiveAgent`): the harness starts every Flue run
+ *     as the OWNER's question at `POST /agents/questions`, the route #5604
+ *     reserves the ad-hoc question for, and that route answers with the
+ *     designated agent bound to the asker's own context.
+ *
+ * NO API KEY. Neither start path presents one: the questions route is a
+ * person's, and a rule acts under its author's membership. A re-run against a
+ * database an earlier seed minted keys in revokes them (`revokeApiKey`), so no
+ * seed key is left live that nothing would present.
  *
  * WHAT IT PRINTS: progress lines only. The manifest (ids, run keys, rule ids,
- * synthetic markers, the owner's e-mail, `seedFixtureHash`) goes to `--manifest`; the raw
- * keys go to `--agent-keys` ONLY, as `{ slug: { agentId: key } }`, mode 0600.
- * Neither is ever written to stdout: pino logs from the usecases share it.
+ * synthetic markers, the owner's e-mail, `seedFixtureHash`) goes to
+ * `--manifest`, never to stdout: pino logs from the usecases share it.
  *
  * IDEMPOTENT. Every step reads before it writes and skips what is already
- * there. The one exception is the key: a key's plaintext cannot be read back,
- * so a re-run revokes the seed's earlier key for the agent (`revokeApiKey`) and
- * mints one fresh, leaving exactly one live seed key per Flue agent and none
- * per profile agent. A rule follows its profile's version in force, so a re-run
+ * there. A rule follows its profile's version in force, so a re-run
  * that approves a new version re-points the rule (`updateAutomationRule`). A definition
  * that disagrees with what an earlier run stored (an agent's data scope, a
  * fixture's title, a card that does not permit a grant) is refused, not
@@ -50,7 +53,7 @@
  * complete exits non-zero naming the tenant and the step.
  */
 import { randomUUID } from 'node:crypto';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import prisma from '@/lib/prisma';
@@ -81,7 +84,8 @@ import {
 } from '@/app-layer/usecases/agent-profiles';
 import { AgentProfileVersionSchema } from '@/app-layer/schemas/agent-profile.schemas';
 import { profileRunKey } from '@/lib/agentic/agent-profile';
-import { createApiKey, revokeApiKey } from '@/app-layer/usecases/api-keys';
+import { revokeApiKey } from '@/app-layer/usecases/api-keys';
+import { designateInteractiveAgent, getInteractiveAgentDesignation } from '@/app-layer/usecases/interactive-agent-designation';
 import { createAutomationRule, updateAutomationRule } from '@/app-layer/usecases/automation-rules';
 import type { AutomationTriggerFilter } from '@/app-layer/automation/types';
 import { createFinding } from '@/app-layer/usecases/finding';
@@ -112,7 +116,7 @@ import {
 } from './inspect-seed/fixtures';
 
 const ROOT = path.resolve(__dirname, '..');
-/** The name every seed key carries: a re-run revokes keys of this name, and no other. */
+/** The name an earlier seed's keys carry: a re-run revokes keys of this name, and no other. */
 export const SEED_KEY_NAME = 'Inspect seed (agent-evals nightly)';
 /** A profile version allows the one trigger the harness starts it by, and no other. */
 const PROFILE_TRIGGERS = [PROFILE_TRIGGER] as const;
@@ -577,14 +581,10 @@ async function ensureAutomationRule(
     return created.id;
 }
 
-// ─── Keys ───────────────────────────────────────────────────────────
+// ─── Keys and the interactive agent ─────────────────────────────────
 
-/**
- * Revoke the seed's earlier keys for the agent, then mint one fresh, for an
- * agent the harness starts with its key; for one started by its rule, revoke
- * and mint nothing (`null`).
- */
-async function mintAgentKey(plan: SeedTenantPlan, owner: RequestContext, agentId: string, def: AgentDefinition): Promise<string | null> {
+/** Revoke any key an earlier seed bound to the agent: no start path presents one. */
+async function revokeSeedKeys(plan: SeedTenantPlan, owner: RequestContext, agentId: string, def: AgentDefinition): Promise<void> {
     const where = `${plan.slug} / ${def.name}`;
     const earlier = await runInTenantContext(owner, (db) =>
         db.tenantApiKey.findMany({
@@ -596,18 +596,18 @@ async function mintAgentKey(plan: SeedTenantPlan, owner: RequestContext, agentId
     for (const k of earlier) {
         await step(where, 'revoke the earlier seed key', () => revokeApiKey(owner, k.id));
     }
-    if (def.startedBy !== 'agent-key') return null;
-    const created = await step(where, 'createApiKey', () =>
-        createApiKey(owner, {
-            name: SEED_KEY_NAME,
-            scopes: [...def.keyScopes],
-            agentId,
-            // min(key, agent): the key cannot drive the agent past its own rung.
-            maxAutonomyLevel: def.autonomyLevel,
-        }),
-    );
-    if (!created.plaintext.startsWith('iflk_')) throw new Error(`${where}: the minted key is not an iflk_ key`);
-    return created.plaintext;
+}
+
+/**
+ * Make the Flue agent the one that answers the tenant's questions. Without it
+ * the questions route refuses every question `NO_AGENT_DESIGNATED`.
+ */
+async function ensureInteractiveAgent(plan: SeedTenantPlan, owner: RequestContext, agentId: string, def: AgentDefinition, log: Log): Promise<void> {
+    const where = `${plan.slug} / ${def.name}`;
+    const current = await step(where, 'read the interactive agent', () => getInteractiveAgentDesignation(owner));
+    if (current === agentId) return;
+    await step(where, 'designate the interactive agent', () => designateInteractiveAgent(owner, agentId));
+    log(`${where}: answers the questions route`);
 }
 
 // ─── The run ────────────────────────────────────────────────────────
@@ -630,8 +630,6 @@ export interface InspectSeedResult {
     seedFixtureHash: string;
     seedVersion: number;
     tenants: Record<string, InspectSeedTenantManifest>;
-    /** slug → agentId → raw key, for the agents started with one. Written to the keys file only. */
-    keys: Record<string, Record<string, string>>;
 }
 
 /** The file `tasks.py` and the workflow read: `{ seedFixtureHash, seedVersion, <slug>: {...} }`. */
@@ -658,7 +656,6 @@ export async function seedInspectTenants(log: Log = (line) => console.info(line)
     log(`agent risk assessment v${bank.questionSetVersion}: ${bank.questions} questions`);
 
     const tenants: Record<string, InspectSeedTenantManifest> = {};
-    const keys: Record<string, Record<string, string>> = {};
     for (const t of plan.tenants) {
         const people = await ensureTenantAndPeople(t, log);
         await ensureSettings(t, people.owner, log);
@@ -679,10 +676,9 @@ export async function seedInspectTenants(log: Log = (line) => console.info(line)
             automationRules[p.fixture] = await ensureAutomationRule(t, people.owner, agentId, p, profiles[p.fixture], log);
         }
 
-        keys[t.slug] = {};
         for (const [def, agentId] of agentIds) {
-            const key = await mintAgentKey(t, people.owner, agentId, def);
-            if (key !== null) keys[t.slug][agentId] = key;
+            await revokeSeedKeys(t, people.owner, agentId, def);
+            if (def.startedBy === 'questions-route') await ensureInteractiveAgent(t, people.owner, agentId, def, log);
         }
 
         tenants[t.slug] = {
@@ -695,32 +691,27 @@ export async function seedInspectTenants(log: Log = (line) => console.info(line)
         };
         log(`${t.slug}: ready (${t.agents.length} agent(s), ${t.profiles.length} profile(s), ${t.fixtures.length} fixture(s))`);
     }
-    return { seedFixtureHash: hash, seedVersion: plan.version, tenants, keys };
+    return { seedFixtureHash: hash, seedVersion: plan.version, tenants };
 }
 
-/** Write both files. The keys file is 0600 and holds nothing but the keys. */
-export function writeSeedOutputs(result: InspectSeedResult, paths: { manifestPath: string; agentKeysPath: string }): void {
-    writeFileSync(paths.agentKeysPath, `${JSON.stringify(result.keys)}\n`, { mode: 0o600 });
-    chmodSync(paths.agentKeysPath, 0o600);
+/** Write the manifest, the one file the seed produces. */
+export function writeSeedOutputs(result: InspectSeedResult, paths: { manifestPath: string }): void {
     writeFileSync(paths.manifestPath, manifestJson(result));
 }
 
-export function parseArgs(argv: readonly string[]): { manifestPath: string; agentKeysPath: string } | null {
+export function parseArgs(argv: readonly string[]): { manifestPath: string } | null {
     const value = (flag: string): string | undefined => {
         const i = argv.indexOf(flag);
         return i !== -1 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : undefined;
     };
     const manifestPath = value('--manifest');
-    const agentKeysPath = value('--agent-keys');
-    if (!manifestPath || !agentKeysPath) return null;
-    if (path.resolve(manifestPath) === path.resolve(agentKeysPath)) return null;
-    return { manifestPath, agentKeysPath };
+    return manifestPath ? { manifestPath } : null;
 }
 
 async function main(): Promise<void> {
     const paths = parseArgs(process.argv.slice(2));
     if (!paths) {
-        process.stderr.write('usage: inspect-seed --manifest <manifest.json> --agent-keys <keys.json> (two different files)\n');
+        process.stderr.write('usage: inspect-seed --manifest <manifest.json>\n');
         process.exitCode = 2;
         return;
     }

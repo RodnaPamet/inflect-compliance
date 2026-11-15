@@ -20,14 +20,15 @@ record module refuses the record, naming the task.
 
 Configuration comes from the environment the workflow sets, never from a task
 argument Inspect would echo into its log: ``INSPECT_PRODUCT_URL`` (loopback),
-``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), per
-tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>``, and per
-Flue seed agent its bound API key in ``INSPECT_AGENT_KEY_<TENANT>_<AGENT ID>``
-(``runner.agent_key_env``; ``product.py`` says which route takes which). A
-Flue tenant has one eval agent, whose key starts its runs. A Tool Runner
-tenant has one per profile (``runner.seed_for`` says why) and NO key: each of
-its runs starts from the profile's automation rule, which the OWNER fires by
-creating a task (owner decision, 2026-11-13; ``runner._start_through_rule``).
+``INSPECT_SEED_MANIFEST`` (path to the seed step's JSON, no secrets), and per
+tenant the OWNER's session cookie in ``INSPECT_SESSION_<TENANT>``. No API key
+is handed over: every request is the OWNER's (``product.py`` says which route
+starts which run). A Flue tenant has one eval agent, the tenant's designated
+interactive agent, and its runs are the questions the OWNER asks at the
+questions route (#5604). A Tool Runner tenant has one per profile
+(``runner.seed_for`` says why): each of its runs starts from the profile's
+automation rule, which the OWNER fires by creating a task (owner decision,
+2026-11-13; ``runner._start_through_rule``).
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ from inspect_ai.solver import Generate, TaskState, solver
 
 from inflect_inspect import verdicts
 from inflect_inspect.product import HttpProduct
-from inflect_inspect.runner import RunNotObserved, SeedManifest, agent_key_env, run_sample, seed_for
+from inflect_inspect.runner import RunNotObserved, SeedManifest, run_sample, seed_for
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_SET = json.loads((ROOT / "task-set.json").read_text(encoding="utf-8"))
@@ -69,11 +70,9 @@ def _env_name(slug: str) -> str:
     return slug.upper().replace("-", "_")
 
 
-def _product_for(slug: str, seed: SeedManifest) -> HttpProduct:
+def _product_for(slug: str) -> HttpProduct:
     cookie = os.environ[f"INSPECT_SESSION_{_env_name(slug)}"]
-    # A run started from an automation rule presents no key, so none is read.
-    agent_key = os.environ[agent_key_env(slug, seed.agent_id)] if seed.rule_id is None else None
-    return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie, agent_key)
+    return HttpProduct(os.environ["INSPECT_PRODUCT_URL"], slug, cookie)
 
 
 def _seed_for(slug: str, task_def: Dict[str, Any], engine: str) -> SeedManifest:
@@ -89,7 +88,7 @@ def governed_run(engine: str):
         try:
             slug = _tenant(task_def, engine)
             seed = _seed_for(slug, task_def, engine)
-            product = _product_for(slug, seed)
+            product = _product_for(slug)
         except (KeyError, ValueError, OSError) as err:
             # Configuration (a seed or a credential the workflow did not hand
             # over): nothing started, so the next sample may still run.

@@ -8,10 +8,13 @@ name: Agent evals (Inspect, nightly)
 # (boot app + Postgres + Redis + worker, skip without the CI key, a dated
 # deferral a guard parses).
 #
-#   - NO BYPASS. A Flue run starts through POST /api/t/<slug>/agent-runs with
-#     the seed agent's BOUND API key, the way an agent starts one (a reasoning
-#     engine refuses a run no ACTIVE registered agent vouches for, and a
-#     session binds no agent). A Tool Runner run is an agent profile's, and the
+#   - NO BYPASS. A Flue run is the ad-hoc question, which the seed tenant's
+#     OWNER asks at POST /api/t/<slug>/agents/questions: #5604 refuses
+#     ad-hoc-question on the generic POST /agent-runs, whoever presents it,
+#     and the questions route is a person's. It binds the tenant's designated
+#     interactive agent (the seed's eval agent) to the OWNER's own context, so
+#     a reasoning engine still has an ACTIVE registered agent vouching for the
+#     run. No API key is presented anywhere. A Tool Runner run is an agent profile's, and the
 #     generic route starts no profile (#5367: a profile key names its trigger),
 #     so it starts as the AUTOMATION trigger, the way production starts an
 #     unattended run (owner decision 2026-11-13): the seed gives each profile
@@ -110,6 +113,10 @@ jobs:
       # harness's POST /tasks, an event the WEB process emits: held back
       # unless this is on (owner decision 2026-11-13; docs/deployment.md).
       AUTOMATION_WEB_EVENTS_ENABLED: '1'
+      # The Flue samples are the OWNER's questions at POST /agents/questions,
+      # the route #5604 reserves the ad-hoc question for; it refuses every
+      # question DEPLOYMENT_NOT_ENABLED unless this is on.
+      AGENT_INTERACTIVE_RUNS: '1'
       # D-EV-6: the model both engines run on for this job, every variable an
       # engine reads one from. The pinning guard holds each equal to the
       # budget's model, so the spend breaker prices what actually ran.
@@ -163,13 +170,12 @@ jobs:
       # The four seed tenants of the Phase 0 note, kept apart from acme-corp:
       # the injection and secret fixtures and the kill switch must not reach
       # any other job. The seed writes a manifest with ids and synthetic
-      # markers only (no secrets) to --manifest, and every Flue seed agent's
-      # bound API key, as { slug: { agentId: key } }, to a SEPARATE file under
-      # RUNNER_TEMP, which is never uploaded and is masked before use. Neither
-      # goes to stdout, which the usecases' own log lines share. A Tool Runner
-      # tenant has one eval agent per profile (a profile runs as its own agent)
-      # and one automation rule per profile, and NO key: its runs start from
-      # its rules, so nothing would present one. The seed exits non-zero,
+      # markers only (no secrets) to --manifest, never to stdout, which the
+      # usecases' own log lines share. A Flue tenant's eval agent is its
+      # designated interactive agent, which answers the OWNER's questions. A
+      # Tool Runner tenant has one eval agent per profile (a profile runs as
+      # its own agent) and one automation rule per profile. No tenant holds an
+      # API key: neither start path presents one. The seed exits non-zero,
       # naming the tenant and the step, on anything it cannot complete.
       - name: Apply migrations + seed the Inspect tenants
         if: steps.key.outputs.present == 'true'
@@ -177,7 +183,7 @@ jobs:
           set -euo pipefail
           npx prisma migrate deploy
           mkdir -p inspect-out
-          npx tsx scripts/inspect-seed.ts --manifest inspect-out/seed-manifest.json --agent-keys "$RUNNER_TEMP/inspect-agent-keys.json"
+          npx tsx scripts/inspect-seed.ts --manifest inspect-out/seed-manifest.json
 
       # The worker runs from the ESM bundle production runs (dist/worker.mjs,
       # the compose `worker` service), never `tsx scripts/worker.ts`: under tsx
@@ -268,21 +274,11 @@ jobs:
             if [ -z "$session" ]; then echo "::error::login failed for ${slug}"; exit 1; fi
             echo "::add-mask::$session"
             var="$(echo "$slug" | tr 'a-z-' 'A-Z_')"
+            # The OWNER's session is the harness's only credential: a Flue run
+            # is the OWNER's question (POST /agents/questions, #5604) and a
+            # Tool Runner run is fired by the OWNER's task. No API key exists
+            # to hand over.
             cookie_env+=(-e "INSPECT_SESSION_${var}=next-auth.session-token=${session}")
-            # One key per Flue seed agent: INSPECT_AGENT_KEY_<SLUG>_<AGENT ID>,
-            # the name runner.agent_key_env reads. A Tool Runner tenant (its
-            # manifest names no agentId) holds none: its runs start from its
-            # automation rules.
-            expects_key="$(node -p "require('./inspect-out/seed-manifest.json')['${slug}'].agentId ? 1 : 0")"
-            keys_for_slug=0
-            while IFS=$'\t' read -r agent_id agent_key; do
-              case "$agent_key" in iflk_*) ;; *) echo "::error::a seed key for ${slug} is not an agent-bound API key"; exit 1 ;; esac
-              echo "::add-mask::$agent_key"
-              cookie_env+=(-e "INSPECT_AGENT_KEY_$(echo "${slug}_${agent_id}" | tr 'a-z-' 'A-Z_')=${agent_key}")
-              keys_for_slug=$((keys_for_slug + 1))
-            done < <(node -e 'const k=require(process.argv[1])[process.argv[2]]||{};for(const [a,v] of Object.entries(k))process.stdout.write(`${a}\t${typeof v==="string"?v:""}\n`)' "$RUNNER_TEMP/inspect-agent-keys.json" "$slug")
-            if [ "$expects_key" = "1" ] && [ "$keys_for_slug" -eq 0 ]; then echo "::error::no agent-bound API key for ${slug}"; exit 1; fi
-            if [ "$expects_key" = "0" ] && [ "$keys_for_slug" -ne 0 ]; then echo "::error::${slug} starts its runs from automation rules; the seed handed over an agent key it would never present"; exit 1; fi
           done
           for engine in flue tool-runner; do
             spent="$(spent_usd)"

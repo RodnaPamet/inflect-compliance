@@ -16,6 +16,12 @@
  * 2026-11-13): the harness creates a task, reads the rule's execution for it
  * by the key `TASK_CREATED` carries, and finds the run among the agent's runs.
  * Those three reads are held here too.
+ *
+ * A Flue run is the ad-hoc question, which the OWNER asks at
+ * `POST /agents/questions`: #5604 refuses `ad-hoc-question` on the generic
+ * `POST /agent-runs` (`AD_HOC_QUESTION_USE_QUESTIONS_ROUTE`) for every caller,
+ * and the questions route is a person's (`NOT_A_PERSON` for a key). So every
+ * route here is called with the OWNER's session, and none with a key.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -24,24 +30,29 @@ import type { getTenantSecurityConfig } from '@/app-layer/usecases/tenant-securi
 import type { listAgentTools } from '@/app-layer/usecases/agent-tool-exposure';
 import type { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 import type { KillSwitchRecord, listKillSwitches } from '@/app-layer/usecases/agent-kill-switch';
-import type { getWorkflowRun, listWorkflowRuns, startWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import type { getWorkflowRun, listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
+import type { askAdHocQuestion } from '@/app-layer/usecases/ad-hoc-question';
 import type { RunStepFeed } from '@/app-layer/usecases/workflow-run-steps';
 import type { RiskKpiCounts } from '@/app-layer/repositories/RiskRepository';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 import type { createTask } from '@/app-layer/usecases/task';
 import type { listRuleExecutions } from '@/app-layer/usecases/automation-executions';
 import type { TaskCreatedData } from '@/app-layer/automation/event-contracts';
-import { assertRequiredInputPresent } from '@/app-layer/usecases/workflow-runs';
+import { readAdHocQuestion } from '@/lib/agentic/ad-hoc-question-input';
+import { badRequest, toApiErrorResponse } from '@/lib/errors/types';
+import { z } from 'zod';
 import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Comments blanked, strings kept: an assertion on code is not satisfied by a note about it.
+const readCode = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 interface ContractRoute {
     method: string;
     path: string;
     route: string;
-    credential: 'agent-key' | 'session';
+    credential: 'session';
     status: number;
     body: unknown;
 }
@@ -50,7 +61,7 @@ const CONTRACT = JSON.parse(read('evals/inspect/fixtures/product-contract.json')
 };
 const R = CONTRACT.routes;
 
-type StartRun = Awaited<ReturnType<typeof startWorkflowRun>>;
+type AskedQuestion = Awaited<ReturnType<typeof askAdHocQuestion>>;
 type StoredRun = NonNullable<Awaited<ReturnType<typeof getWorkflowRun>>>;
 type ListedRuns = Awaited<ReturnType<typeof listWorkflowRuns>>;
 type SecurityConfig = Awaited<ReturnType<typeof getTenantSecurityConfig>>;
@@ -63,7 +74,7 @@ type RuleExecutions = Awaited<ReturnType<typeof listRuleExecutions>>;
 // What product.py and ledger.py read, field by field, each checked against
 // the type the product returns.
 const READS = {
-    startRun: ['runId'] as const satisfies readonly (keyof StartRun)[],
+    askQuestion: ['runId'] as const satisfies readonly (keyof AskedQuestion)[],
     getRun: ['status', 'errorMessage', 'costTokens', 'stepCount', 'startedAt', 'completedAt'] as const satisfies readonly (keyof StoredRun)[],
     getSteps: ['steps', 'hasMore', 'cursor'] as const satisfies readonly (keyof RunStepFeed)[],
     step: ['seq', 'kind', 'status', 'tool', 'guardVerdict', 'guardRuleIds', 'costTokens', 'inputJson', 'outputJson', 'decisionDigest', 'delegation', 'proposals', 'at'] as const satisfies readonly (keyof RunStepFeedRow)[],
@@ -94,18 +105,20 @@ describe('each route the harness calls exists and serves the method', () => {
         expect(exported).toContain(r.method);
     });
 
-    it('starts runs with the agent key and reads everything else as the OWNER', () => {
-        const agentKeyRoutes = Object.entries(R).filter(([, r]) => r.credential === 'agent-key').map(([name]) => name);
-        expect(agentKeyRoutes.sort()).toEqual(['startRun', 'startRunMissingInput', 'startRunUnknownWorkflow']);
+    it('calls every route as the OWNER and presents no key', () => {
+        expect(Object.entries(R).filter(([, r]) => r.credential !== 'session').map(([name]) => name)).toEqual([]);
+        expect(read('evals/inspect/inflect_inspect/product.py')).not.toContain('Authorization');
     });
 });
 
 describe('each field the harness reads is in the product type and in the fixture', () => {
-    it('the run start answers { runId, status, workflowKey, stepFailures }, never { id }', () => {
-        const full = ['runId', 'status', 'workflowKey', 'stepFailures'] as const satisfies readonly (keyof StartRun)[];
-        expect(keysOf(R.startRun.body).sort()).toEqual([...full].sort());
-        expect(keysOf(R.startRun.body)).toEqual(expect.arrayContaining([...READS.startRun]));
-        expect(R.startRun.status).toBe(201);
+    it('the question answers 202 { runId }: started, not answered', () => {
+        const full = ['runId'] as const satisfies readonly (keyof AskedQuestion)[];
+        expect(keysOf(R.askQuestion.body).sort()).toEqual([...full].sort());
+        expect(keysOf(R.askQuestion.body)).toEqual(expect.arrayContaining([...READS.askQuestion]));
+        expect(R.askQuestion.status).toBe(202);
+        expect(R.askQuestion.route).toBe('src/app/api/t/[tenantSlug]/agents/questions/route.ts');
+        expect(readCode('src/app/api/t/[tenantSlug]/agents/questions/route.ts')).toContain('return jsonResponse({ runId: started.runId }, { status: 202 });');
     });
 
     it('the run, its step feed and the proposals on a step', () => {
@@ -169,23 +182,40 @@ describe('a Tool Runner run starts from its automation rule', () => {
         expect(codeOf(read('src/app-layer/jobs/agent-invoke-dispatch.ts'))).toContain("profileTrigger: 'AUTOMATION',");
     });
 
-    it('the harness never starts a profile run at the generic route', () => {
-        // product.py's start_run refuses without a key, and only a Flue tenant hands one over.
-        expect(R.startRun.body).toMatchObject({ workflowKey: 'ad-hoc-question' });
+    it('the harness never starts a run at the generic route', () => {
+        // #5367 refuses a profile key there and #5604 the ad-hoc question.
+        expect(Object.values(R).some((r) => r.method === 'POST' && r.path === '/agent-runs')).toBe(false);
         for (const name of ['createTask', 'ruleExecutions', 'listAgentRuns']) expect(R[name].credential).toBe('session');
     });
 });
 
-describe('the admission sentence task 10 reads its missing keys from', () => {
-    it('is the sentence assertRequiredInputPresent throws', () => {
-        let message = '';
-        try {
-            assertRequiredInputPresent({ key: 'ad-hoc-question', requiredInput: ['question'] }, {});
-        } catch (err) {
-            message = (err as Error).message;
-        }
-        const body = R.startRunMissingInput.body as { error: { message: string } };
-        expect(body.error.message).toBe(message);
-        expect(R.startRunMissingInput.status).toBe(400);
+describe('a Flue run is the question the OWNER asks (#5604)', () => {
+    it('the generic route refuses ad-hoc-question, so the harness asks at the questions route', () => {
+        expect(readCode('src/app-layer/usecases/agent-profile-runs.ts')).toContain("'AD_HOC_QUESTION_USE_QUESTIONS_ROUTE',");
+        expect(readCode('evals/inspect/inflect_inspect/product.py')).toContain('self._call("POST", "/agents/questions", run_input)');
+        expect(readCode('src/app/api/t/[tenantSlug]/agents/questions/route.ts')).toContain("requirePermission<{ tenantSlug: string }>('controls.view',");
+    });
+});
+
+describe('the refusals task 10 reads its missing keys from', () => {
+    it('an absent question is the route schema’s VALIDATION_ERROR naming the field', () => {
+        expect(R.askQuestionMissing.route).toBe('src/app/api/t/[tenantSlug]/agents/questions/route.ts');
+        expect(readCode('src/app/api/t/[tenantSlug]/agents/questions/route.ts')).toContain('question: z.string(),');
+        expect(readCode('src/app/api/t/[tenantSlug]/agents/questions/route.ts')).toContain('.strict();');
+        const parsed = z.object({ question: z.string() }).strict().safeParse({});
+        expect(parsed.success).toBe(false);
+        const { payload, status } = toApiErrorResponse(parsed.error, 'req_1');
+        expect(status).toBe(R.askQuestionMissing.status);
+        expect(payload).toEqual(R.askQuestionMissing.body);
+    });
+
+    it('an empty question is refused by readAdHocQuestion, naming no missing key', () => {
+        expect(readCode('src/app-layer/usecases/ad-hoc-question.ts')).toContain('throw badRequest(`${reading.refusal}: ${reading.detail}`);');
+        const reading = readAdHocQuestion('');
+        expect(reading.ok).toBe(false);
+        if (reading.ok) return;
+        const { payload, status } = toApiErrorResponse(badRequest(`${reading.refusal}: ${reading.detail}`), 'req_2');
+        expect(status).toBe(R.askQuestionEmpty.status);
+        expect(payload).toEqual(R.askQuestionEmpty.body);
     });
 });
