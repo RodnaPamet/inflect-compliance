@@ -869,7 +869,15 @@ export async function resumeWorkflowRun(
     // under, so every register term applies to the continuation exactly as it
     // applied to the first segment. Same shape as `rebuildRunContext`'s
     // `...(row.agentId ? { agentId: row.agentId } : {})` on the worker path.
-    const execCtx: RequestContext = run.agentId ? { ...ctx, agentId: run.agentId } : ctx;
+    const execCtx: RequestContext = {
+        ...ctx,
+        ...(run.agentId ? { agentId: run.agentId } : {}),
+        // THE RUN'S OWN RECURSION DEPTH (#5716), from the row and never from
+        // the resumer's context. A resumed segment goes on causing events, so a
+        // depth that lived only in the first job's payload would be lost at
+        // exactly the hop a human approval introduces.
+        ...(run.agentInvokeDepth != null ? { agentInvokeDepth: run.agentInvokeDepth } : {}),
+    };
 
     // Close the pending checkpoint step (the one that paused the run).
     const resumedFrom = await runInTenantContext(ctx, async (db) => {
@@ -1652,6 +1660,11 @@ async function createSealedRun(
                     // `local/require-agent-attribution` refuses a write site that
                     // leaves the field out.
                     agentId: ctx.agentId ?? null,
+                    // THE RECURSION DEPTH A RULE INVOKED THIS RUN AT (#5716),
+                    // NULL for every run no rule invoked. Written in the CREATE
+                    // because it is write-once at the database: the counter a
+                    // cycle is bounded by must not be resettable.
+                    agentInvokeDepth: ctx.agentInvokeDepth ?? null,
                     // …and under WHICH VERSION of that agent's declared policy.
                     // `NO_POLICY_CARD` (0) for a human-started run — the question
                     // was asked and the answer was "none", which is a different
@@ -1886,6 +1899,7 @@ export async function executeQueuedWorkflowRun(
             select: {
                 id: true, tenantId: true, workflowKey: true, status: true,
                 startedByUserId: true, triggeredViaKeyId: true, agentId: true,
+                agentInvokeDepth: true,
                 stepCount: true, startedAt: true,
                 profileVersionId: true, profileInstructionsHash: true,
             },
@@ -2017,6 +2031,13 @@ export async function rebuildRunContext(row: {
     startedByUserId: string | null;
     triggeredViaKeyId: string | null;
     agentId: string | null;
+    /**
+     * The run's `INVOKE_AGENT` depth (#5716). The worker rebuilds a
+     * continuation's authority from the row, so the counter has to come from
+     * here too — otherwise a run resumed by a later job emits events carrying
+     * no depth and the next lap of a cycle restarts at 1.
+     */
+    agentInvokeDepth: number | null;
 }): Promise<RequestContext | null> {
     if (!row.startedByUserId) return null;
 
@@ -2106,6 +2127,7 @@ export async function rebuildRunContext(row: {
         // saying so or a review cannot tell an agent's work from a sweep's.
         ...(row.triggeredViaKeyId ? { apiKeyId: row.triggeredViaKeyId, apiKeyScopes } : {}),
         ...(row.agentId ? { agentId: row.agentId } : {}),
+        ...(row.agentInvokeDepth != null ? { agentInvokeDepth: row.agentInvokeDepth } : {}),
     } as RequestContext;
 }
 

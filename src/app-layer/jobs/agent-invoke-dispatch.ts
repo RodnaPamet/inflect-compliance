@@ -203,6 +203,12 @@ export async function runAgentInvokeDispatch(
             permissions: tenant.permissions,
             appPermissions: tenant.appPermissions,
             agentId,
+            // WHAT MAKES THE CAP ABLE TO TRIP (#5716). The depth is checked
+            // above and was then dropped; carried on the context, the bus
+            // stamps it onto every event this run's effects emit, so the next
+            // lap of an agent -> rule -> agent cycle arrives at depth+1 instead
+            // of at 1.
+            agentInvokeDepth: depth,
         };
 
         const { startWorkflowRun } = await import('@/app-layer/usecases/workflow-runs');

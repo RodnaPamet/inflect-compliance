@@ -563,6 +563,30 @@ model WorkflowRun {
   /// from the decrypted text when the run was admitted. "What was this agent
   /// told" stays answerable after the profile is edited.
   profileInstructionsHash String?
+  /// THE `INVOKE_AGENT` RECURSION DEPTH this run was started at (#5716), or
+  /// NULL for a run no automation rule invoked — every human-started,
+  /// key-started and peer-started run, and every row written before this
+  /// column existed.
+  ///
+  /// `MAX_AGENT_INVOKE_DEPTH` (5) has always been READ, off the job payload,
+  /// and until this column nothing WROTE the number it reads: a run did not
+  /// record its depth, so the automation events its effects caused carried
+  /// none, so every invoke arrived at depth 1 and the cap could not trip
+  /// through a real cycle. An agent -> rule -> agent cycle was bounded only by
+  /// each lap needing an event that a usecase the run's effects reach happens
+  /// to emit, which is an accident of reachability, not a counter.
+  ///
+  /// It is on the ROW and not the payload alone because a run can be parked at
+  /// a deferral and resumed by a different job: `rebuildRunContext` and the
+  /// resume path both rebuild a continuation's authority FROM THIS ROW, so a
+  /// depth that lived only in the first job's payload would be lost exactly
+  /// when a human-approved continuation went on causing events.
+  ///
+  /// WRITE-ONCE at the database, the way `mountedSkills` and the profile pin
+  /// are: a trigger refuses ANY change once the row exists, including
+  /// NULL -> value. A counter that could be rewritten could be reset, and the
+  /// cap would stop binding. CHECKed to be at least 1 when present.
+  agentInvokeDepth        Int?
   /// THE A2A PEER WHOSE TASK STARTED THIS RUN (#3679), or NULL for every run
   /// a peer did not start. A plain id with no FK, as `parentExecutionId` is:
   /// the run must say who caused it after the peer is retired.
