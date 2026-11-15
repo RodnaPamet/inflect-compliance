@@ -628,9 +628,17 @@ operator configuration, never tenant-writable, and the client dials only
 addresses inside the deployment (`src/lib/ai/in-deployment-service.ts`).
 
 **Removing it** is not a revert alone: `up -d` does not remove a service that
-has left the file. After restoring the previous compose file, remove the
-container (`docker compose … rm --stop tei-embed`, or `up -d --remove-orphans`)
-and, if the weights should go too, the `inflect_tei-embed-data` volume.
+has left the file. Dispatch `VM apply` → `retire-tei-embed`, then revert: the
+action stops and removes the one `tei-embed` container (`docker compose rm
+--stop --force tei-embed`, or, if the live file no longer defines the service,
+`docker rm --force` of the container carrying the project's and the service's
+compose labels), keeps the `inflect_tei-embed-data` volume (the weights), and
+fails unless no `tei-embed` container is left; with none present it changes
+nothing. Then merge the revert and run `VM apply` → `apply`. Never `up -d
+--remove-orphans`: the scanner and proving-server overlays run in the same
+Compose project, so with only the canonical file named it removes their
+containers too. `sudo docker volume rm inflect_tei-embed-data`, from a
+signed-in session, removes the weights as well.
 
 The measurements behind the limit and the record of the pins are in
 [`implementation-notes/2026-11-15-retriever-tei-embed.md`](implementation-notes/2026-11-15-retriever-tei-embed.md).
@@ -975,6 +983,7 @@ owner's to make.
 | `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
 | `retire-capacity-recorder` | `deploy/vm-apply/remote.sh`: stops and disables the capacity recorder's timer and removes its units, script and rows (installed by `host-config-apply`) |
 | `refresh-env-prod-example` | `deploy/vm-apply/remote.sh`: replaces `/opt/inflect/.env.prod.example`, the VM's copy of the public template, with the repository's, keeping the previous copy root-only; it writes no other file, and prints hashes, never content |
+| `retire-tei-embed` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force tei-embed`, or, when the live compose file no longer defines it, `docker rm --force` of the container carrying the `inflect` project's and the `tei-embed` service's compose labels; the `inflect_tei-embed-data` volume kept, never `down` or `--remove-orphans`; a no-op when no such container exists, and fails if one is left |
 
 Every action that writes runs its preflight first in the same run and writes
 only if it passed. The input is a choice, never a command, a path, a host or a

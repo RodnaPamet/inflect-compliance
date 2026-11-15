@@ -28,7 +28,7 @@ set -euo pipefail
 
 ACTION="${1:?action}"
 case "$ACTION" in
-    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder | refresh-env-prod-example) ;;
+    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder | refresh-env-prod-example | retire-tei-embed) ;;
     *) echo "unknown action: $ACTION" >&2; exit 2 ;;
 esac
 
@@ -103,6 +103,7 @@ case "$ACTION" in
     recreate-legacy-mcp-proving) on_vm ;;
     retire-capacity-recorder)    on_vm ;;
     refresh-env-prod-example)    on_vm ;;
+    retire-tei-embed)            on_vm ;;
 esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
