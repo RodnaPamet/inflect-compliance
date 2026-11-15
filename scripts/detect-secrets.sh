@@ -48,9 +48,8 @@ ALLOWLIST_MARKER='pragma: allowlist secret'
 # Don't scan binaries, lockfiles, the build output, or large vendored
 # dirs — they generate noise without catching real secrets.
 # Names that may legitimately appear at ANY depth, because nothing in this
-# repository is ever genuinely called them: a nested install, and the lockfiles
-# a nested package owns (`site/package-lock.json`,
-# `packages/agent-harness-scanner/container/package-lock.json`).
+# repository is ever genuinely called them: a nested install, and the lockfile
+# a nested package owns (`site/package-lock.json`).
 SKIP_ANY_DEPTH=(
     'node_modules/'
     'package-lock.json' 'yarn.lock' 'pnpm-lock.yaml'

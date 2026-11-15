@@ -66,7 +66,8 @@ from a client environment. `inflect-agent-harness/2` (#3754, owner decisions
 window on each tool (stored with the tool) and the model endpoints it calls
 (stored on the agent's scan item since #3759, and shown on the harness matrix).
 `inflect-agent-harness/3` (#3785, owner decision 2026-10-19) is `/2` plus one
-source kind, `gcp-sa`, and is what the reference scanner emits; the ingest
+source kind, `gcp-sa`, and is what the reference scanner emitted (the in-repo
+scanner, removed by scanent #26; scanent's scanner emits `/4`); the ingest
 accepts both, each against its own schema, so a `/2` report naming `gcp-sa` is
 refused. The
 schemas are `src/lib/agentic/harness-contract.ts` and the executable reference
@@ -111,6 +112,14 @@ signature (decision 9).
 
 ### The reference scanner and client estates
 
+> **Removed by scanent #26 (2026-11-15).** The in-repo scanner this section
+> describes, `packages/agent-harness-scanner`, its container and its `Scanner
+> image` CI job and workflow were deleted: the scanner is the standalone scanent
+> product ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), which
+> carries every source and rule below. The section records what step `4a` and
+> #3686 built; the client estates, the ingest and the VM overlay it names are
+> unchanged.
+
 Step `4a` (#3678) built the scanner the ingest was waiting for, as the owner
 decided on 2026-10-18: `packages/agent-harness-scanner`, a CLI that reads an
 estate's sources, signs an `inflect-agent-harness` report (`/3` since #3785) with a key the
@@ -141,10 +150,11 @@ replace a `code` agent's `<key>:*` placeholder for the same URL (owner decisions
 register through `get_harness_register` with the ingest key: each live agent,
 with its owner, its own API keys by reference and the H1 and H2 verdicts the
 register can evidence, and each principal a person confirmed as an agent. It is
-the only source whose `registeredAgentId` reaches a report. The scanner runs as
-a container a client builds from this repository
+the only source whose `registeredAgentId` reaches a report. The scanner ran as
+a container a client built from this repository
 (`packages/agent-harness-scanner/Dockerfile`, #3686): built, smoke-tested and
-scanned by Trivy in CI on every pull request (owner decision, 2026-10-19).
+scanned by Trivy in CI on every pull request (owner decision, 2026-10-19), until
+scanent #26 removed it; a client now runs scanent's signed image.
 Inflect's own estate ran a copy published by digest to the repository's
 private GHCR package, by the dispatch-only `Scanner image` workflow, which
 smoke-tests and scans before it pushes (owner decision, 2026-10-20). Since
@@ -1779,7 +1789,7 @@ What this means for Phase 1:
 - **Three of the scanner's four sources are in the pilot.** The scanner reads
   `entra-sp`, one vault, `mcp` and `inflect-register`: #3686 adds the first,
   the third and the fourth to `packages/agent-harness-scanner` with its
-  container, and the vault reader is #3678's Azure Key Vault reader (owner
+  container (removed by scanent #26, which carries them), and the vault reader is #3678's Azure Key Vault reader (owner
   decision, 2026-10-19, which dropped #3686's own vault item). Inflect has
   no vault, so the recommendation on #3664 that the pilot sit on Entra with a
   vault and an internal MCP server is met for Entra and MCP and not for the

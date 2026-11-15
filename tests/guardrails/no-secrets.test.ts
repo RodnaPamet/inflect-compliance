@@ -474,7 +474,6 @@ describe('path skips are anchored where they must be (#5631)', () => {
         // Why the list is split rather than wholly anchored: these are real
         // paths in this repo and are noise, not surface.
         expect(isSkippedPath('site/package-lock.json')).toBe(true);
-        expect(isSkippedPath('packages/agent-harness-scanner/container/package-lock.json')).toBe(true);
         expect(isSkippedPath('packages/ui/node_modules/x/index.js')).toBe(true);
     });
 

@@ -2,21 +2,22 @@
  * The harness contract is the scanent package's, and the eight application
  * modules that name it are re-exports of it and nothing else.
  *
- * The contract the reference scanner signs against and the ingest verifies
- * with (the report schema, the ladder, the findings planner, canonical JSON,
- * receipt verification, redaction and the CIDR helper) lives in
- * `@rodnapamet/scanent-contract` (scanent #26). The application keeps eight
- * files at the paths the contract used to occupy, `CONTRACT_FILES` below, so
- * its ~100 importers keep their `@/` paths; each re-exports its package
- * module. The scanner package (`packages/agent-harness-scanner`, a client's
- * estate) imports the package directly.
+ * The contract the scanner (scanent's, github.com/RodnaPamet/scanent) signs
+ * against and the ingest verifies with (the report schema, the ladder, the
+ * findings planner, canonical JSON, receipt verification, redaction and the
+ * CIDR helper) lives in `@rodnapamet/scanent-contract` (scanent #26). The
+ * application keeps eight files at the paths the contract used to occupy,
+ * `CONTRACT_FILES` below, so its ~100 importers keep their `@/` paths; each
+ * re-exports its package module. The scanner is not in this repository: the
+ * in-repo copy, `packages/agent-harness-scanner`, was removed on 2026-11-15
+ * (scanent #26), and with it the claim that walked its imports.
  *
  * TYPE-ONLY IMPORTS COUNT. `import type` is erased at run time, so a bundler
  * never notices one, but a type-check resolves it and then everything THAT
  * file imports. The contract once took two types from the read model, which
  * takes a type from the IAM skill outputs, and so on into the application.
  *
- * Three claims:
+ * Two claims:
  *
  *   1. Each of the eight is a re-export of the package module of its own name:
  *      its only import is `@rodnapamet/scanent-contract/<module>`. Code put
@@ -27,10 +28,6 @@
  *      reference), contains no other file of this repository. Packages and
  *      Node built-ins are not repository files and are not walked. A specifier
  *      that looks like a repository path and resolves to nothing fails too.
- *   3. The scanner package imports no file of this repository outside itself:
- *      the contract reaches it from the package, which is what its image
- *      installs. An application import there would be a file the image does
- *      not carry.
  *
  * The edges come from the TypeScript compiler (`ts.preProcessFile`) and the
  * targets from its module resolution under this repository's `tsconfig.json`,
@@ -54,8 +51,6 @@ const CONTRACT_FILES: readonly string[] = [
     'src/lib/audit-redact.ts',
     'src/lib/security/cidr.ts',
 ];
-
-const SCANNER_PACKAGE = 'packages/agent-harness-scanner/';
 
 const CONTRACT_PACKAGE = '@rodnapamet/scanent-contract';
 
@@ -184,33 +179,6 @@ describe('the harness scanner contract is closed under import', () => {
             }
         }
         expect(notReexports).toEqual([]);
-    });
-
-    it('is not imported by the scanner package, which imports no repository file outside itself', () => {
-        const scannerFiles = repoRelativeFiles().filter(
-            (f) => f.startsWith(SCANNER_PACKAGE) && /\.tsx?$/.test(f),
-        );
-        expect(scannerFiles.length).toBeGreaterThan(0);
-
-        const outside: string[] = [];
-        const unresolved: string[] = [];
-        let packageImports = 0;
-        for (const file of scannerFiles) {
-            const source = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8');
-            packageImports += ts.preProcessFile(source, true, true).importedFiles
-                .filter((f) => f.fileName.startsWith(`${CONTRACT_PACKAGE}/`)).length;
-            for (const edge of repoEdgesOf(file)) {
-                if (edge.to === null) {
-                    unresolved.push(`${edge.from} imports '${edge.spec}', which resolves to no file`);
-                } else if (!edge.to.startsWith(SCANNER_PACKAGE)) {
-                    outside.push(`${edge.from} imports '${edge.spec}' (${edge.to})`);
-                }
-            }
-        }
-        expect(unresolved).toEqual([]);
-        expect(outside).toEqual([]);
-        // The denominator: the scanner does take the contract, from the package.
-        expect(packageImports).toBeGreaterThan(0);
     });
 
     // The detector, shown to detect. Each case hands the walk one contract

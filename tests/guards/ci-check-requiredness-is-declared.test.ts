@@ -173,12 +173,8 @@ const CHECK_REQUIREDNESS: Readonly<Record<string, { required: boolean; why: stri
             + 'would be requiring a context that can go absent — and an absent check scores as zero '
             + 'failures in every aggregate that reads a check set.',
     },
-    'scanner-image': {
-        required: false,
-        why: 'Builds the reference agent-harness scanner container from `packages/`. It ships to a '
-            + 'client estate rather than into this app, so its verdict says nothing about whether '
-            + 'this diff is safe to merge into main.',
-    },
+    // REMOVED 2026-11-15: `scanner-image`. The in-repo harness scanner and its
+    // container were deleted (scanent #26); the scanner is scanent's image.
 };
 
 describe('every ci.yml job declares whether it is a required check', () => {

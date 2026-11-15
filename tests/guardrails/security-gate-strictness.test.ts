@@ -47,12 +47,13 @@ function readRepoFile(rel: string): string {
 /**
  * One step of one ci.yml job: from its `- name:` line to the next step.
  *
- * ci.yml carries two blocking Trivy gates — the application image's, in the
- * `trivy` job, and the scanner image's, in `scanner-image` (#3686) — beside the
- * application image's non-blocking SARIF report. A severity or exit-code needle
- * read over the whole file is satisfied by whichever of those survives, so
- * deleting one gate's setting would leave it green. Each gate is asserted
- * inside its own step instead.
+ * ci.yml carries one blocking Trivy gate — the application image's, in the
+ * `trivy` job — beside the application image's non-blocking SARIF report. A
+ * severity or exit-code needle read over the whole file is satisfied by
+ * whichever of those survives, so deleting the gate's setting could leave it
+ * green. The gate is asserted inside its own step instead. (A second gate, the
+ * scanner image's in `scanner-image` (#3686), was removed with the in-repo
+ * harness scanner on 2026-11-15, scanent #26.)
  */
 function stepOf(yaml: string, job: string, stepName: string): string {
     const lines = yaml.split('\n');
@@ -108,7 +109,6 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
      */
     const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
     const appImageGate = stepOf(ci, 'trivy', 'Gate: Trivy vulnerability scan');
-    const scannerImageGate = stepOf(ci, 'scanner-image', 'Gate: Trivy scan of the scanner image');
 
     it('npm audit gate blocks on MODERATE+ severity (production deps)', () => {
         // 2026-08-08: the gate moved from a bare `npm audit` line in the
@@ -174,11 +174,9 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
     });
 
     it('Trivy scan gate blocks on CRITICAL,HIGH, not CRITICAL-only', () => {
-        // Each Trivy gate must declare both severities, asserted inside the
-        // gate's own step so neither the SARIF report nor the other gate can
-        // satisfy it.
+        // The Trivy gate must declare both severities, asserted inside the
+        // gate's own step so the SARIF report cannot satisfy it.
         expect(appImageGate).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
-        expect(scannerImageGate).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
         // Regression: a future PR that downgrades to severity:
         // "CRITICAL" alone reintroduces the lowered-gate posture
         // GAP-05 closed.
@@ -214,10 +212,9 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // a gate — it names both severities and blocks neither, so every
         // assertion above would pass on a workflow that enforces nothing.
         // ci.yml carries a deliberately non-blocking trivy-action step for
-        // the SARIF upload too, so each gate's exit code is asserted inside
+        // the SARIF upload too, so the gate's exit code is asserted inside
         // its own step rather than anywhere in the file.
         expect(appImageGate).toMatch(/exit-code:\s*["']1["']/);
-        expect(scannerImageGate).toMatch(/exit-code:\s*["']1["']/);
         expect(publish).toMatch(/exit-code:\s*["']1["']/);
     });
 

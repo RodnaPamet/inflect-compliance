@@ -165,7 +165,10 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `bundle-analyze.yml:analyze` ('ag' < 'bu'), +5/-0.
         // Merged 2026-11-12 with #5360: the digest is over the file holding the
         // final batch's entries and `vm-apply.yml:vm-apply` together.
-        keyOrderSha: 'a73f31ea3d38e43ae28f436338f325e0f70b162189d47c0d1b913986bfba22f2',
+        // Updated 2026-11-15 by a DELETION: `scanner-image.yml:build-scan-push`
+        // went with the workflow and the in-repo harness scanner (scanent #26;
+        // the VM runs scanent's own image). -5/+0; no other key moved.
+        keyOrderSha: 'dc9b22218ecc1b041aeb7fc2e103b6bcefcbdce8ac0916e41730f71130e1ba95',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

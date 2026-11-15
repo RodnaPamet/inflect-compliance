@@ -13,7 +13,8 @@
  *
  * The unconfigured transport answers `unreachable`. It is not a stub that
  * pretends: a caller that reaches it gets a refusal it can act on, which is the
- * same choice `packages/agent-harness-scanner` made for its own OpenShell wire.
+ * same choice the harness scanner made for its own OpenShell wire (the scanner
+ * is scanent's since scanent #26, github.com/RodnaPamet/scanent).
  *
  * ═══ THE VOCABULARY IS THE GATEWAY'S, READ FROM THE BINARY ═══
  *
