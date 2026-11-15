@@ -19,6 +19,7 @@ import {
     encryptField,
     decryptField,
     hashForLookup,
+    deriveSubkey,
     _resetKeyCache,
 } from '@/lib/security/encryption';
 
@@ -41,13 +42,21 @@ function setLookupKey(key?: string): void {
     _resetKeyCache();
 }
 
+function setSubkeyKey(key?: string): void {
+    if (key === undefined) delete process.env.DERIVED_SUBKEY_KEY;
+    else process.env.DERIVED_SUBKEY_KEY = key;
+    _resetKeyCache();
+}
+
 const savedEnv = {
     primary: process.env.DATA_ENCRYPTION_KEY,
     previous: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
     lookup: process.env.LOOKUP_HASH_KEY,
+    subkey: process.env.DERIVED_SUBKEY_KEY,
 };
 
 afterAll(() => {
+    setSubkeyKey(savedEnv.subkey);
     setLookupKey(savedEnv.lookup);
     setKeys(savedEnv.primary, savedEnv.previous);
 });
@@ -239,5 +248,96 @@ describe('Dual-KEK decrypt (Epic B.3)', () => {
         // re-encrypted — the test bed doesn't simulate that, so a
         // direct decrypt of the g1 ciphertext fails.
         expect(() => decryptField(a)).toThrow();
+    });
+});
+
+/**
+ * A DERIVED SUBKEY HAS NO PREVIOUS-KEY FALLBACK EITHER (#5500).
+ *
+ * #5071's defect, one subsystem over. `deriveSubkey` has six consumers and for
+ * most of them stability is a documented property: four audit SAMPLING SEEDS
+ * (the workpaper draw is specified as re-derived identically by every sweep,
+ * which is why the daily sweep is idempotent), the assistant ANSWER SEAL, and
+ * the MCP exchanged-token SIGNING KEY. A rotation moved all of them silently —
+ * and a sample is the record that a population was checked, so rows from
+ * either side of one stopped being comparable with nothing saying why.
+ */
+describe('derived subkeys across a master-KEK rotation (#5500)', () => {
+    // A real consumer's purpose, not a synthetic one: if the purpose strings
+    // ever gain structure this case travels with them.
+    const PURPOSE = 'audit-workpaper-review:tenant-abc';
+
+    beforeEach(() => {
+        setLookupKey(undefined);
+    });
+
+    test('with DERIVED_SUBKEY_KEY pinned, rotating the KEK moves no subkey', () => {
+        // The property the fix exists for, and the whole migration path.
+        setSubkeyKey(OLD_KEY);
+        setKeys(OLD_KEY);
+        const before = deriveSubkey(PURPOSE).toString('hex');
+
+        setKeys(NEW_KEY, OLD_KEY);
+        expect(deriveSubkey(PURPOSE).toString('hex')).toBe(before);
+    });
+
+    test('ciphertext still rotates while the subkey stays put', () => {
+        // Not coupled in EITHER direction: pinning the subkey material must not
+        // pin the data key, or the rotation would do nothing.
+        setSubkeyKey(OLD_KEY);
+        setKeys(OLD_KEY);
+        const ct = encryptField('secret');
+        const seed = deriveSubkey(PURPOSE).toString('hex');
+
+        setKeys(NEW_KEY, OLD_KEY);
+        expect(decryptField(ct)).toBe('secret');
+        expect(deriveSubkey(PURPOSE).toString('hex')).toBe(seed);
+        expect(decryptField(encryptField('fresh'))).toBe('fresh');
+    });
+
+    test('UNPINNED, a KEK change does move every subkey — which is why boot refuses', () => {
+        // A fact, not a wish: the fallback keeps today's derivation, so an
+        // operator who rotates without setting DERIVED_SUBKEY_KEY gets exactly
+        // the #5500 breakage. `checkProductionEncryptionKey` refuses to boot in
+        // that state; recording it here keeps the fallback from being mistaken
+        // for safety.
+        setSubkeyKey(undefined);
+        setKeys(OLD_KEY);
+        const before = deriveSubkey(PURPOSE).toString('hex');
+
+        setKeys(NEW_KEY, OLD_KEY);
+        expect(deriveSubkey(PURPOSE).toString('hex')).not.toBe(before);
+    });
+
+    test('an untouched deployment derives exactly as it did before', () => {
+        // The no-backfill property, and the reason this ships without a
+        // migration: UNSET must reproduce deriving from the KEK byte for byte,
+        // so no stored seed, seal or outstanding token moves on deploy.
+        setKeys(OLD_KEY);
+        setSubkeyKey(undefined);
+        const fallback = deriveSubkey(PURPOSE).toString('hex');
+
+        setSubkeyKey(OLD_KEY);
+        expect(deriveSubkey(PURPOSE).toString('hex')).toBe(fallback);
+    });
+
+    test('the two derivation keys are independent of each other', () => {
+        // They are siblings, not one setting (owner decision, 2026-11-15): a
+        // lookup hash is an index that can never rotate, a signing key should
+        // be rotatable. Moving one must not move the other, or neither can.
+        setKeys(OLD_KEY);
+        setSubkeyKey(OLD_KEY);
+        setLookupKey(OLD_KEY);
+        const seed = deriveSubkey(PURPOSE).toString('hex');
+        const hash = hashForLookup('person@example.com');
+
+        setLookupKey(NEW_KEY);
+        expect(deriveSubkey(PURPOSE).toString('hex')).toBe(seed);
+        expect(hashForLookup('person@example.com')).not.toBe(hash);
+
+        setLookupKey(OLD_KEY);
+        setSubkeyKey(NEW_KEY);
+        expect(hashForLookup('person@example.com')).toBe(hash);
+        expect(deriveSubkey(PURPOSE).toString('hex')).not.toBe(seed);
     });
 });
