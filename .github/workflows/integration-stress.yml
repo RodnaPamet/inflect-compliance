@@ -122,7 +122,7 @@ permissions:
 # missing rather than passing.
 #
 # Nothing was being protected by the repo-wide group: the job brings up
-# its OWN `postgres:16-alpine` service container, so two runs share no
+# its OWN Postgres service container, so two runs share no
 # database, no lock and no external resource. Compare `release` and the
 # `terraform-staging` JOB group, which are global because they genuinely
 # must be — one release pipeline, one remote state.
@@ -142,7 +142,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci_password

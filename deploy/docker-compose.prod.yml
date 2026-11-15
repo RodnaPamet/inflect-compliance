@@ -114,7 +114,14 @@ services:
     # Request path. 1.5, not 2.0: a runaway query cannot take both cores from
     # `app`, and the half core left over is enough for caddy and pgbouncer.
     cpus: 1.5
-    image: postgres:16-alpine
+    # postgres:16-alpine plus pgvector (deploy/postgres/Dockerfile; vector
+    # store 1.2, D-L4-1). Same base, musl and collation, so `pgdata` mounts
+    # unchanged. By the moving line tag, as postgres:16-alpine was (D-L4-8):
+    # postgres-pgvector-image.yml republishes it weekly and on every upstream
+    # digest move, and each build also has an immutable tag to roll back to.
+    # Not Watchtower's: it reaches the VM on `deploy/apply.sh` (`VM apply`),
+    # which recreates this container.
+    image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres

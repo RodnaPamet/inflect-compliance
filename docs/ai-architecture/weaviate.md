@@ -76,7 +76,7 @@ flowchart LR
   the production stack (`deploy/docker-compose.prod.yml`, repo-canonical since
   #2849) runs `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`,
   `watchtower`, `caddy` — nothing else.
-- **The image that carries pgvector is built, and nothing runs it yet.**
+- **Every Postgres the repository runs carries pgvector.**
   `deploy/postgres/Dockerfile` is `postgres:16-alpine` plus pgvector `v0.8.7`
   (pinned by tag and commit, compiled without `-march=native`, toolchain
   removed in the same layer), with the entrypoint's `gosu` rebuilt from the
@@ -90,20 +90,18 @@ flowchart LR
   immutable per-build tag, from `main` only, on dispatch, every Wednesday, and
   on any day the upstream `16-alpine` digest moved (D-L4-8)
   ([implementation note](../implementation-notes/2026-11-15-postgres-pgvector-image.md)).
-- **The Postgres every service runs cannot load pgvector yet.** Every Postgres
-  reference in the repository is still `postgres:16-alpine`:
+- **Every Postgres reference is that image's line tag**,
+  `ghcr.io/rodnapamet/postgres-pgvector:16-alpine`:
   `deploy/docker-compose.prod.yml`, the four root Compose files
   (`docker-compose.yml`, `.test`, `.staging`, `.prod`) and the service
   containers of seven workflows (`ci.yml` three times, `agent-evals.yml`,
   `dast.yml`, `dast-full.yml`, `garak.yml`, `integration-stress.yml`,
-  `load-test.yml`; this list said five until 2026-11-15, missing the two
-  evaluation workflows). They move to the published line tag in the pull
-  request after the first publish (1.2): a CI service container cannot pull
-  an image that has never been published. The
-  official image's `16/alpine3.23` Dockerfile compiles the core server and
-  `contrib` and nothing else; pgvector is not in it. So `CREATE EXTENSION
-  vector` fails on the production database, in every CI job, and in local
-  development today.
+  `load-test.yml`). `tests/guards/postgres-pgvector-image.test.ts` holds the
+  whole population to that tag, and the official `postgres:16-alpine` is only
+  the Dockerfile's base. On the VM the change takes effect when the owner's
+  `VM apply` recreates `postgres` on the same volume (`docs/deployment.md`,
+  "`postgres`: the image carries pgvector"). No migration creates the
+  extension yet.
 - **The one extension a migration creates is `pg_trgm`**
   (`20260806150000_control_index_fit`), a contrib extension marked trusted,
   which a database owner may create without superuser. pgvector's
@@ -250,8 +248,8 @@ vector column.
       `main`, and only then do the references and the `BASELINE` entry move
       (1.2), because a CI service container cannot pull an unpublished image
       and the guard refuses a baseline entry nothing references.
-- [ ] 1.2 **Every Postgres moves together.** The production Compose file, the
-      four root Compose files and the five workflows' service containers all
+- [x] 1.2 **Every Postgres moves together.** The production Compose file, the
+      four root Compose files and the seven workflows' service containers all
       reference the same image and line tag, or the fresh-DB migration gate
       fails in CI the day the first `CREATE EXTENSION vector` lands. A guard
       pins that every Postgres image reference in the repository is that one

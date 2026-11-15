@@ -6,7 +6,7 @@
 # Usage: docker compose -f docker-compose.test.yml up -d
 services:
   postgres-test:
-    image: postgres:16-alpine
+    image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
     container_name: inflect-test-db
     environment:
       POSTGRES_USER: test

@@ -68,7 +68,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci_password

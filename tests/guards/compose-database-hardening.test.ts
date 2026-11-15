@@ -42,7 +42,11 @@ function services(file: string): Record<string, Service> {
     return doc.services ?? {};
 }
 
-const isPostgres = (s: Service) => String(s.image ?? '').startsWith('postgres:');
+// The official image or ours on top of it (postgres:16-alpine plus pgvector,
+// deploy/postgres/Dockerfile; tests/guards/postgres-pgvector-image.test.ts
+// holds every reference to the latter).
+const isPostgres = (s: Service) =>
+    /^(postgres|ghcr\.io\/rodnapamet\/postgres-pgvector):/.test(String(s.image ?? ''));
 const isDatabaseFacing = (s: Service) => isPostgres(s) || /pgbouncer/.test(String(s.image ?? ''));
 
 /** A short-syntax port is published on all interfaces unless it names a loopback host IP. */

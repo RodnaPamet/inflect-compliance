@@ -15,7 +15,7 @@
 services:
   # ── Postgres ──
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
     container_name: inflect-staging-db
     restart: unless-stopped
     environment:
