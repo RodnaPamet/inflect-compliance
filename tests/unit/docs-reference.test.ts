@@ -470,13 +470,18 @@ describe('page actions — a URL builder is read from its binding', () => {
     // 17 of this repo's local builders are declared inside useCallback against
     // 10 bare arrows, so treating the wrapper as "not a builder" cost 42 route
     // rows — measured, which is why the unwrap exists.
-    it('unwraps a builder declared inside useCallback and reads its body', () => {
+    // Named OUTSIDE the legacy set on purpose. With `apiUrl` the name fallback
+    // returns the same answer, so the case cannot tell the unwrap from the
+    // fallback and stays green when the unwrap is removed — it proved nothing
+    // until the name changed. It now also pins the claim that keying on the
+    // hook is wider than the three names it replaced.
+    it('unwraps a builder declared inside useCallback, whatever the local name', () => {
         expect(
             segmentsOf(
                 [
                     'export function S({ tenantSlug }: Props) {',
-                    '    const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);',
-                    "    return fetch(apiUrl('/assets/bulk/delete'), { method: 'POST' });",
+                    '    const buildUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);',
+                    "    return fetch(buildUrl('/assets/bulk/delete'), { method: 'POST' });",
                     '}',
                 ].join('\n'),
             ),
