@@ -304,7 +304,8 @@ esac
         };
         for (const [f, v] of Object.entries(files)) fs.writeFileSync(path.join(cg, f), `${v}\n`);
         const p = spawnSync('bash', [path.join(REPO_ROOT, 'deploy/vm-check/remote.sh'), 'tei-embed-timing'], {
-            env: { PATH: `${bin}:/usr/bin:/bin`, FAKE_ROOT: root, FAKE_ID: id, FAKE_CG: cg, CGROUP_ROOT: path.join(root, 'cgroup'), ...env },
+            // NODE_ENV: the repo's ProcessEnv type requires it.
+            env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, FAKE_ROOT: root, FAKE_ID: id, FAKE_CG: cg, CGROUP_ROOT: path.join(root, 'cgroup'), ...env },
             encoding: 'utf8',
         });
         const readOr = (f: string) => (fs.existsSync(path.join(root, f)) ? fs.readFileSync(path.join(root, f), 'utf8') : '');
