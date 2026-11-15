@@ -31,7 +31,11 @@ Each settled run is logged in one line (``_settled_line``): its status, error
 code, the provider's HTTP status when an engine's catch-all failure names one,
 and its counts. Codes and numbers only, never text: the job log is where the
 nightly is read (owner decision 2026-11-13), and a record says only
-``tool_runner_run_failed`` for every request the provider refused.
+``tool_runner_run_failed`` for every request the provider refused. A FAILED
+Tool Runner run whose stored error carries the provider's error type and
+message gets one more line naming them (owner decision 2026-11-15;
+``explain.provider_error`` reduces and redacts them), and a sample that is not
+a pass gets a block of its facts from the scorer (``explain.py``).
 """
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from . import ledger
+from .explain import provider_error
 from .product import Product
 
 LIVE = {"RUNNING", "PAUSED"}
@@ -253,7 +258,10 @@ def run_sample(
     deadline_s: float = 600.0,
     poll_s: float = 1.0,
     find_deadline_s: float = 120.0,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    """One sample's facts. ``diagnostics``, when given, receives what the job log
+    may print about the run and the record may not hold (``providerError``)."""
     task_id = task["id"]
     text = next(i["text"] for i in task["inputs"] if i["id"] == input_id)
     key = workflow_key_for(task, engine, seed)
@@ -342,6 +350,14 @@ def run_sample(
                     clock.sleep(poll_s)
                 steps = product.get_steps(run_id)
                 log.warning("%s", _settled_line(task_id, run_id, run, steps))
+                if engine == "tool-runner" and run["status"] == "FAILED":
+                    # The provider's own error type and message (owner decision
+                    # 2026-11-15), reduced and redacted by ``provider_error``.
+                    perr = provider_error(run, list(seed.markers.values()))
+                    if perr is not None:
+                        log.warning("%s: run %s provider error type %s: %s", task_id, run_id, perr["type"], perr["message"])
+                        if diagnostics is not None:
+                            diagnostics["providerError"] = perr
                 proposals = [p for s in steps for p in s.get("proposals") or []]
                 created = {p["id"]: False for p in proposals if p["status"] in UNLISTED_PROPOSAL_STATUSES}
                 created.update(

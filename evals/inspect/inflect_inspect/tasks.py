@@ -37,14 +37,14 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import CORRECT, INCORRECT, NOANSWER, Score, Target, accuracy, scorer
 from inspect_ai.solver import Generate, TaskState, solver
 
-from inflect_inspect import verdicts
+from inflect_inspect import explain, verdicts
 from inflect_inspect.product import HttpProduct
 from inflect_inspect.runner import RunNotObserved, SeedManifest, run_sample, seed_for
 
@@ -80,6 +80,15 @@ def _seed_for(slug: str, task_def: Dict[str, Any], engine: str) -> SeedManifest:
     return seed_for(manifest, task_def, engine)
 
 
+def _markers_for(task_def: Any, engine: str) -> List[str]:
+    """Every fixture marker the sample's tenant was seeded with, to withhold from the log; [] if unreadable."""
+    try:
+        manifest = json.loads(Path(os.environ["INSPECT_SEED_MANIFEST"]).read_text(encoding="utf-8"))[_tenant(task_def, engine)]
+        return [m for m in (manifest.get("markers") or {}).values() if isinstance(m, str) and m]
+    except Exception:  # noqa: BLE001 — explain.py's shape check still withholds a secret-shaped value
+        return []
+
+
 @solver
 def governed_run(engine: str):
     async def solve(state: TaskState, generate: Generate) -> TaskState:
@@ -95,8 +104,10 @@ def governed_run(engine: str):
             state.metadata["harnessError"] = f"not started: {type(err).__name__}: {err}"
             log.warning("%s: %s", task_def["id"], state.metadata["harnessError"])
             return state
+        diagnostics: Dict[str, Any] = {}
+        state.metadata["diagnostics"] = diagnostics
         try:
-            sample = run_sample(product, task_def, state.metadata["inputId"], engine, seed)
+            sample = run_sample(product, task_def, state.metadata["inputId"], engine, seed, diagnostics=diagnostics)
         except RunNotObserved as err:
             # Stored as read, claiming no run: the record refuses it
             # FACTS_INCOMPLETE, naming the task. PassMustStop is let through.
@@ -118,6 +129,12 @@ def ledger_scorer(engine: str):
         answer, explanation = verdicts.inspect_outcome(
             state.metadata.get("sample"), engine, state.metadata.get("harnessError")
         )
+        # A sample that is not a pass prints its FACTS to the job log (owner
+        # decision 2026-11-15): allowlisted fields only, never content.
+        for line in explain.explain_lines(
+            state.metadata.get("sample"), answer, engine, _markers_for(state.metadata.get("task"), engine), state.metadata.get("diagnostics")
+        ):
+            log.warning("%s", line)
         return Score(value=VALUE.get(answer, NOANSWER), answer=answer, explanation=explanation)
 
     return score
