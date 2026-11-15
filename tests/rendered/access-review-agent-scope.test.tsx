@@ -118,6 +118,7 @@ interface PacksPayload {
     narrowings: unknown[];
     samples: unknown[];
     evidence: unknown;
+    preparation?: unknown;
 }
 
 function pack(decisionId: string) {
@@ -322,6 +323,52 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.queryByTestId('access-review-agent-read-only')).not.toBeInTheDocument();
         expect(screen.queryByTestId('access-review-agent-table')).not.toBeInTheDocument();
     });
+});
+
+describe('a large campaign prepared in the background shows its progress (#5317)', () => {
+    it('shows "N of M agents" while the job runs, and offers no second Prepare', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'RUNNING', done: 4, total: 12 } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        const notice = await screen.findByTestId('access-review-agent-packs-preparing');
+        expect(notice).toHaveAttribute('data-state', 'RUNNING');
+        expect(notice).toHaveTextContent('Preparing reviewer packs… 4 of 12 agents');
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
+    });
+
+    it('says a queued preparation is queued before the job reports a total', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'QUEUED', done: 0, total: null } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        expect(await screen.findByTestId('access-review-agent-packs-preparing'))
+            .toHaveTextContent('Reviewer packs are queued for preparation');
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
+    });
+
+    it('says a failed preparation failed, with its refusal, and offers Prepare again', async () => {
+        packsPayload = {
+            packs: [], narrowings: [], samples: [], evidence: null,
+            preparation: { state: 'FAILED', reason: 'PREPARER_NOT_ACTIVE: the preparer is SUSPENDED' },
+        };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        const alert = await screen.findByTestId('access-review-agent-packs-preparation-failed');
+        expect(alert).toHaveTextContent('Preparing the reviewer packs failed');
+        expect(alert).toHaveTextContent('PREPARER_NOT_ACTIVE: the preparer is SUSPENDED');
+        expect(screen.getByTestId('access-review-agent-prepare-packs')).toBeInTheDocument();
+        expect(screen.queryByTestId('access-review-agent-packs-preparing')).not.toBeInTheDocument();
+    });
+
+    it('re-reads the packs while the job runs, and reloads the campaign when it is done', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'RUNNING', done: 1, total: 2 } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        await screen.findByTestId('access-review-agent-packs-preparing');
+        const fetchMock = (global as unknown as { fetch: jest.Mock }).fetch;
+        const detailReads = () => fetchMock.mock.calls.filter(([u]) => /\/access-reviews\/rev_agent$/.test(String(u))).length;
+        const before = detailReads();
+
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], samples: [], evidence: null, preparation: null };
+        await waitFor(() => expect(screen.getByTestId('agent-pack-1')).toBeInTheDocument(), { timeout: 6000 });
+        expect(screen.queryByTestId('access-review-agent-packs-preparing')).not.toBeInTheDocument();
+        await waitFor(() => expect(detailReads()).toBeGreaterThan(before));
+    }, 10_000);
 });
 
 describe('the register reads an AGENT campaign', () => {

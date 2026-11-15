@@ -24,7 +24,7 @@
  *   - Anyone with read can browse + download the evidence PDF when
  *     the campaign is CLOSED, and read each decision's justification.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -211,10 +211,28 @@ interface AgentSampleRow {
     reviewedAt: string | null;
 }
 
+/**
+ * A background preparation of a large campaign's packs (#5317), as the packs
+ * route reads it off the queue; null when there is none to show.
+ */
+type AgentPackPreparation =
+    | { state: 'QUEUED' | 'RUNNING'; done: number; total: number | null }
+    | { state: 'FAILED'; reason: string | null }
+    | { state: 'UNKNOWN' };
+
+/** How often the page re-reads a preparation that is queued or running. */
+const PREPARATION_POLL_MS = 3000;
+
+function preparationIsLive(p: AgentPackPreparation | null | undefined): boolean {
+    return p?.state === 'QUEUED' || p?.state === 'RUNNING';
+}
+
 interface AgentPacksResponse {
     packs: AgentPackRow[];
     narrowings: AgentNarrowingRow[];
     samples: AgentSampleRow[];
+    /** Absent from a response that predates it, which reads as none. */
+    preparation?: AgentPackPreparation | null;
     evidence: {
         fileRecordId: string;
         storedSha256: string | null;
@@ -497,9 +515,24 @@ export function AccessReviewDetailClient({
     // Read only by somebody the server will answer: the packs are register
     // data, narrowed to the reviewer or a holder of `admin.agent_registry`,
     // and a withheld campaign (`subjectsRestricted`) would only fetch a 403.
+    // A preparation handed to the background job (#5317) is re-read until it
+    // ends; nothing else on the packs read changes without a press here. A
+    // NUMBER, set from the last read, rather than SWR's function form: SWR
+    // asks the function only when it arms the next tick, and with no data at
+    // mount it answers 0 and never arms one.
+    const [preparationPollMs, setPreparationPollMs] = useState(0);
     const packsQuery = useTenantSWR<AgentPacksResponse>(
         isAgent && !review.subjectsRestricted ? `/access-reviews/${review.id}/agent-packs` : null,
+        // `dedupingInterval` below the poll, or the default 5 s deduping
+        // swallows every tick (see MonitorTab).
+        {
+            refreshInterval: preparationPollMs,
+            dedupingInterval: PREPARATION_POLL_MS - 1000,
+            onSuccess: (data) => setPreparationPollMs(preparationIsLive(data?.preparation) ? PREPARATION_POLL_MS : 0),
+        },
     );
+    const preparation = packsQuery.data?.preparation ?? null;
+    const preparationLive = preparationIsLive(preparation);
     const packs = useMemo(() => packsQuery.data?.packs ?? [], [packsQuery.data]);
     const narrowings = useMemo(() => packsQuery.data?.narrowings ?? [], [packsQuery.data]);
     const samples = useMemo(() => packsQuery.data?.samples ?? [], [packsQuery.data]);
@@ -533,6 +566,19 @@ export function AccessReviewDetailClient({
 
     const mutateReview = reviewQuery.mutate;
     const mutatePacks = packsQuery.mutate;
+
+    // When a background preparation ends, the campaign it prepared is read
+    // again: its packs came with the packs read, and the subjects beside them
+    // are the review's.
+    const wasPreparing = useRef(false);
+    useEffect(() => {
+        if (wasPreparing.current && !preparationLive) {
+            void mutateReview();
+            // The register's cache key is the RESOLVED URL.
+            void swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.accessReviews.list()}`);
+        }
+        wasPreparing.current = preparationLive;
+    }, [preparationLive, mutateReview, swrMutate, tenantSlug]);
     const agentAct = useCallback(async (url: string, body?: unknown) => {
         setAgentBusy(true);
         setConnectedError(null);
@@ -1412,7 +1458,7 @@ export function AccessReviewDetailClient({
             ) : null}
 
             {isAgent && isAdmin && review.status === 'OPEN' && !review.subjectsRestricted
-                && packsQuery.data && packs.length === 0 ? (
+                && packsQuery.data && packs.length === 0 && !preparationLive ? (
                 <div
                     role="status"
                     data-testid="access-review-agent-packs-missing"
@@ -1425,6 +1471,51 @@ export function AccessReviewDetailClient({
                         onClick={() => void agentAct(`${apiBase}/agent-packs`)}
                         data-testid="access-review-agent-prepare-packs"
                     >{agentBusy ? t('agentPreparing') : t('agentPreparePacks')}</Button>
+                </div>
+            ) : null}
+
+            {isAgent && preparationLive && preparation && 'done' in preparation ? (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    data-testid="access-review-agent-packs-preparing"
+                    data-state={preparation.state}
+                    className="flex flex-col gap-tight rounded-md border border-border-subtle bg-bg-muted p-3 text-sm"
+                >
+                    <span className="text-content-default">
+                        {preparation.total === null
+                            ? t('agentPacksQueued')
+                            : t('agentPacksPreparingProgress', { done: preparation.done, total: preparation.total })}
+                    </span>
+                    {preparation.total ? (
+                        <ProgressBar
+                            value={Math.round((preparation.done / preparation.total) * 100)}
+                            variant="info"
+                            aria-label={t('agentPacksPreparingProgress', { done: preparation.done, total: preparation.total })}
+                            className="w-full sm:w-48"
+                        />
+                    ) : null}
+                </div>
+            ) : null}
+
+            {isAgent && preparation?.state === 'FAILED' && packs.length === 0 ? (
+                <div
+                    role="alert"
+                    data-testid="access-review-agent-packs-preparation-failed"
+                    className="rounded-md border border-border-error bg-bg-error p-3 text-sm text-content-error"
+                >
+                    {t('agentPacksPreparationFailed')}
+                    {preparation.reason ? <> <span className="font-mono text-xs">{preparation.reason}</span></> : null}
+                </div>
+            ) : null}
+
+            {isAgent && preparation?.state === 'UNKNOWN' && packs.length === 0 ? (
+                <div
+                    role="status"
+                    data-testid="access-review-agent-packs-preparation-unknown"
+                    className="rounded-md border border-border-subtle bg-bg-muted p-3 text-sm text-content-muted"
+                >
+                    {t('agentPacksPreparationUnknown')}
                 </div>
             ) : null}
 

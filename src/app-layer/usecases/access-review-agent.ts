@@ -60,6 +60,7 @@ import {
     RecertificationEvidenceSchema,
     agentCampaignEvidenceBytes,
     buildAgentCampaignEvidence,
+    fullToolNameFor,
     observationWindow,
     planAgentReviewPacks,
     sectionsOf,
@@ -85,6 +86,9 @@ import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
 import { assertReviewerIsActiveMember } from './access-review-reviewer';
+import { enqueue } from '../jobs/queue';
+import { findTenantJob } from '../jobs/tenant-job-lookup';
+import { recordAgentRecertPackPreparation } from '@/lib/observability/integration-metrics';
 
 // ── Refusals ─────────────────────────────────────────────────────────────
 
@@ -103,6 +107,7 @@ export type AgentCampaignRefusal =
     | 'PREPARER_BREAKER_LATCHED'
     | 'PREPARER_LACKS_READ_GRANT'
     | 'PREPARE_REQUIRES_PERSON'
+    | 'REQUESTER_NOT_AUTHORISED'
     | 'SELF_PACK_REFUSED'
     | 'STATIC_PACK_NOT_PREPARERS_OWN'
     | 'PACK_RUN_FAILED'
@@ -493,35 +498,32 @@ async function runPack(
     return { evidence, plan: checkedPlan(evidence, recorded), runId: run.runId, agentId };
 }
 
+/** What a preparation reads first, and asks every refusal over. */
+interface PreparationHead {
+    readonly review: {
+        readonly id: string;
+        readonly createdAt: Date;
+        readonly preparerAgentId: string;
+        readonly crossPreparerAgentId: string | null;
+    };
+    readonly subjects: ReadonlyArray<{ id: string; subjectAgentId: string | null; subjectOwnerUserId: string | null }>;
+}
+
 /**
- * Prepare every subject's reviewer pack, through the pack workflow, run by the
- * campaign's registered agents.
- *
- * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
- * over every subject but its own. The preparer's own pack is prepared by the
- * CROSS-PREPARER's run when the campaign names one, and otherwise by a run
- * this person starts with no agent bound (`PERSON_STATIC_SELF_PACK`), which
- * may prepare that one pack and no other. Each run's READ step is the evidence
- * read and its SYNTHESIS step the plan. The packs and narrowings are written
- * only after every run succeeded, in one transaction, so a campaign has all of
- * its packs or none — and every pack records how it was prepared, and by
- * which agent.
- *
- * Started by a person (OWNER/ADMIN), never by a credential: the person only
- * starts the agents' runs, and a key's own agent binding would otherwise decide
- * whose run it is.
+ * Every refusal a preparation asks before a run exists, in one place, so the
+ * request that hands a campaign to the job and the job that prepares it ask
+ * the same ones: a person (never a credential or an agent) holding the admin
+ * tier, an OPEN AGENT campaign with a preparer, no packs yet, a population,
+ * and preparers that still qualify.
  */
-export async function prepareAgentReviewPacks(
-    ctx: RequestContext,
-    accessReviewId: string,
-): Promise<PreparePacksResult> {
+async function readPreparationHead(ctx: RequestContext, accessReviewId: string): Promise<PreparationHead> {
     assertCanAdmin(ctx);
     assertAgentCampaignsAvailable('prepare');
     if (ctx.apiKeyId || ctx.agentId) {
         refuse('PREPARE_REQUIRES_PERSON', 'packs are prepared by the campaign’s agents, started by a signed-in person');
     }
 
-    const head = await runInTenantContext(ctx, async (db) => {
+    return runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, scope: true, status: true, createdAt: true, preparerAgentId: true, crossPreparerAgentId: true },
@@ -547,10 +549,74 @@ export async function prepareAgentReviewPacks(
             await assertPreparerEligible(db, ctx, review.crossPreparerAgentId, 'cross-preparer');
         }
         return {
-            review: { ...review, preparerAgentId: review.preparerAgentId, crossPreparerAgentId: review.crossPreparerAgentId },
+            review: {
+                id: review.id,
+                createdAt: review.createdAt,
+                preparerAgentId: review.preparerAgentId,
+                crossPreparerAgentId: review.crossPreparerAgentId,
+            },
             subjects,
         };
     });
+}
+
+/**
+ * How many pack runs a campaign takes: one per page of `PACK_PAGE_SIZE` of the
+ * preparer's subjects, and one for the preparer's own pack.
+ */
+function packRunCount(head: PreparationHead): number {
+    const own = head.subjects.filter((x) => x.subjectAgentId === head.review.preparerAgentId).length;
+    return Math.ceil((head.subjects.length - own) / PACK_PAGE_SIZE) + (own > 0 ? 1 : 0);
+}
+
+/** Progress of one preparation: subjects whose run has finished, of all of them. */
+export interface PackPreparationProgress {
+    readonly done: number;
+    readonly total: number;
+}
+
+/**
+ * Prepare every subject's reviewer pack, through the pack workflow, run by the
+ * campaign's registered agents.
+ *
+ * The PREPARER runs one static workflow per page of `PACK_PAGE_SIZE` subjects
+ * over every subject but its own. The preparer's own pack is prepared by the
+ * CROSS-PREPARER's run when the campaign names one, and otherwise by a run
+ * this person starts with no agent bound (`PERSON_STATIC_SELF_PACK`), which
+ * may prepare that one pack and no other. Each run's READ step is the evidence
+ * read and its SYNTHESIS step the plan. The packs and narrowings are written
+ * only after every run succeeded, in one transaction, so a campaign has all of
+ * its packs or none — and every pack records how it was prepared, and by
+ * which agent.
+ *
+ * Started by a person (OWNER/ADMIN), never by a credential: the person only
+ * starts the agents' runs, and a key's own agent binding would otherwise decide
+ * whose run it is. The route reaches it through `requestAgentReviewPacks`,
+ * inline for a small campaign and through the `agent-recert-packs-prepare` job
+ * for a large one; `onProgress` hears the subjects covered after each run.
+ */
+export async function prepareAgentReviewPacks(
+    ctx: RequestContext,
+    accessReviewId: string,
+    opts: { readonly onProgress?: (progress: PackPreparationProgress) => Promise<void> | void } = {},
+): Promise<PreparePacksResult> {
+    const head = await readPreparationHead(ctx, accessReviewId);
+    const total = head.subjects.length;
+    let done = 0;
+    const report = async () => {
+        // Progress is a courtesy to the page: a transport that cannot take it
+        // must not stop a preparation that is otherwise going well.
+        try {
+            await opts.onProgress?.({ done, total });
+        } catch (err) {
+            logger.warn('agent pack preparation: progress not reported', {
+                component: 'access-review-agent',
+                accessReviewId,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    };
+    await report();
 
     const { preparerAgentId, crossPreparerAgentId } = head.review;
     const preparerSubjects = head.subjects.filter((x) => x.subjectAgentId !== preparerAgentId);
@@ -559,7 +625,10 @@ export async function prepareAgentReviewPacks(
     const prepared: PreparedRun[] = [];
     const pages = Math.ceil(preparerSubjects.length / PACK_PAGE_SIZE);
     for (let page = 0; page < pages; page++) { // guardrail-allow: n+1 — one workflow run and one bounded step read per page of PACK_PAGE_SIZE agents
-        prepared.push(await runPack(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF));
+        const run = await runPack(ctx, preparerAgentId, accessReviewId, page, PACK_SUBJECT_ALL_BUT_SELF);
+        prepared.push(run);
+        done += run.evidence.subjects.length;
+        await report();
     }
     if (preparersOwn.length > 0) {
         if (crossPreparerAgentId) {
@@ -571,6 +640,8 @@ export async function prepareAgentReviewPacks(
             assertStaticRunIsPreparersOwn(own.evidence, preparerAgentId);
             prepared.push(own);
         }
+        done += prepared[prepared.length - 1].evidence.subjects.length;
+        await report();
     }
     const runIds = prepared.map((r) => r.runId);
 
@@ -620,6 +691,19 @@ export async function prepareAgentReviewPacks(
         });
         const packByDecision = new Map(packs.map((p) => [p.decisionId, p]));
 
+        // A pack carries a granted tool's name cut at TOOL_NAME_IN_PACK; the
+        // narrowing a reviewer accepts, and the revocation it records, name the
+        // tool whole, read from the grant by the id the pack names.
+        const narrowedGrantIds = [...new Set(prepared.flatMap(({ plan }) =>
+            plan.packs.flatMap((p) => p.narrowings.map((n) => n.grantId))))];
+        const storedNames = narrowedGrantIds.length
+            ? new Map((await db.registeredAgentTool.findMany({
+                where: { tenantId: ctx.tenantId, id: { in: narrowedGrantIds } },
+                select: { id: true, toolName: true },
+                take: narrowedGrantIds.length,
+            })).map((g) => [g.id, g.toolName]))
+            : new Map<string, string>();
+
         const narrowingRows = prepared.flatMap(({ plan }) =>
             plan.packs.flatMap((p) => p.narrowings.map((n) => ({
                 tenantId: ctx.tenantId,
@@ -628,7 +712,7 @@ export async function prepareAgentReviewPacks(
                 packId: packByDecision.get(p.decisionId)!.id,
                 agentId: p.agentId,
                 grantId: n.grantId,
-                toolName: n.toolName,
+                toolName: fullToolNameFor(n.toolName, storedNames.get(n.grantId)),
                 grantedByUserId: n.grantedByUserId,
                 grantedAt: new Date(n.grantedAt),
                 basis: n.basis,
@@ -665,6 +749,179 @@ export async function prepareAgentReviewPacks(
 
         return { accessReviewId, packs: packs.length, narrowings: narrowed.count, runIds };
     });
+}
+
+// ── Preparing a large campaign off the request ───────────────────────────
+
+/**
+ * The most pack runs a request prepares itself (#5317). A run takes about a
+ * quarter of a second, and every run of a preparation happens before its one
+ * write, so a campaign of 500 agents would hold its request for minutes. Above
+ * this the request hands the campaign to the `agent-recert-packs-prepare` job
+ * and answers 202, and the page shows the job's progress.
+ */
+export const SYNC_PACK_RUN_LIMIT = 5;
+
+/** The job that prepares a campaign too large for its request. */
+export const AGENT_RECERT_PACKS_JOB = 'agent-recert-packs-prepare' as const;
+
+/**
+ * The job's id, fixed per campaign: a second press while the first is queued
+ * or running finds it rather than starting a second preparation, and the page
+ * finds it without being told an id. Colon-free (#3554).
+ */
+export function agentPackPreparationJobId(accessReviewId: string): string {
+    return `agent-recert-packs-${accessReviewId}`;
+}
+
+/** BullMQ states in which a preparation is still to happen. */
+const LIVE_JOB_STATES: ReadonlySet<string> = new Set(['waiting', 'delayed', 'prioritized', 'waiting-children', 'active']);
+
+export type RequestPacksResult =
+    | ({ readonly mode: 'PREPARED' } & PreparePacksResult)
+    | {
+        readonly mode: 'QUEUED';
+        readonly accessReviewId: string;
+        readonly jobId: string;
+        /** Pack runs the job will start. */
+        readonly runs: number;
+        /** True when a preparation was already queued or running, and this press joined it. */
+        readonly alreadyQueued: boolean;
+    };
+
+/**
+ * The prepare button: prepare a small campaign now, hand a large one to the
+ * job. Every refusal a preparation asks is asked HERE first, so a request the
+ * job would refuse is refused to the person who made it, with its reason —
+ * and the job asks every one of them again when it runs, as its requester.
+ */
+export async function requestAgentReviewPacks(ctx: RequestContext, accessReviewId: string): Promise<RequestPacksResult> {
+    const head = await readPreparationHead(ctx, accessReviewId);
+    const runs = packRunCount(head);
+    if (runs <= SYNC_PACK_RUN_LIMIT) {
+        const prepared = await prepareAgentReviewPacks(ctx, accessReviewId);
+        recordAgentRecertPackPreparation({ outcome: 'prepared', path: 'request' });
+        return { mode: 'PREPARED', ...prepared };
+    }
+
+    const jobId = agentPackPreparationJobId(accessReviewId);
+    const existing = await findTenantJob(jobId, ctx.tenantId, AGENT_RECERT_PACKS_JOB);
+    if (existing) {
+        if (LIVE_JOB_STATES.has(await existing.getState())) {
+            return { mode: 'QUEUED', accessReviewId, jobId, runs, alreadyQueued: true };
+        }
+        // A finished job keeps its id until BullMQ trims it. A failed one is
+        // what the page shows until somebody presses again — this press — and
+        // a completed one left no packs (the head refused if it had), so
+        // neither is a preparation to wait for.
+        await existing.remove();
+    }
+    await enqueue(AGENT_RECERT_PACKS_JOB, {
+        tenantId: ctx.tenantId,
+        accessReviewId,
+        requestedByUserId: ctx.userId,
+        requestId: ctx.requestId,
+    }, { jobId });
+    recordAgentRecertPackPreparation({ outcome: 'queued', path: 'request' });
+
+    await runInTenantContext(ctx, (db) => logEvent(db, ctx, {
+        action: 'ACCESS_REVIEW_AGENT_PACKS_QUEUED',
+        entityType: 'AccessReview',
+        entityId: accessReviewId,
+        detailsJson: {
+            category: 'custom',
+            event: 'access_review_agent_packs_queued',
+            summary: `Reviewer pack preparation of ${head.subjects.length} subject(s) in ${runs} run(s) handed to the background job`,
+            jobId,
+            subjects: head.subjects.length,
+            runs,
+            requestedByUserId: ctx.userId,
+        },
+    }));
+
+    return { mode: 'QUEUED', accessReviewId, jobId, runs, alreadyQueued: false };
+}
+
+/** Where a campaign's background preparation stands, for its page. */
+export type PackPreparationStatus =
+    | { readonly state: 'QUEUED' | 'RUNNING'; readonly done: number; readonly total: number | null }
+    | { readonly state: 'FAILED'; readonly reason: string | null }
+    | { readonly state: 'UNKNOWN' };
+
+/** A refusal sentence this module wrote (`CODE: detail`), never an arbitrary error's text. */
+const REFUSAL_SENTENCE = /^[A-Z][A-Z_]+: /;
+
+function progressOf(raw: unknown): { done: number; total: number | null } {
+    const p = raw as { done?: unknown; total?: unknown } | null;
+    return {
+        done: typeof p?.done === 'number' && Number.isFinite(p.done) ? p.done : 0,
+        total: typeof p?.total === 'number' && Number.isFinite(p.total) ? p.total : null,
+    };
+}
+
+/**
+ * The campaign's background preparation, or null when there is none to show:
+ * none was asked for, or it finished and the packs are there to read.
+ *
+ * Read by the packs route AFTER `getAgentReviewPacks`, whose gate is the one
+ * this answers under. A queue that cannot be read is `UNKNOWN`, never null —
+ * null would offer the Prepare button over a preparation that may be running.
+ * A failure's reason is shown only when it is one of this module's refusal
+ * sentences; anything else is the page's generic sentence.
+ */
+export async function readAgentPackPreparation(ctx: RequestContext, accessReviewId: string): Promise<PackPreparationStatus | null> {
+    assertCanRead(ctx);
+    try {
+        const job = await findTenantJob(agentPackPreparationJobId(accessReviewId), ctx.tenantId, AGENT_RECERT_PACKS_JOB);
+        if (!job) return null;
+        const state = await job.getState();
+        if (state === 'completed') return null;
+        if (state === 'failed') {
+            const reason = job.failedReason ?? '';
+            return { state: 'FAILED', reason: REFUSAL_SENTENCE.test(reason) ? reason : null };
+        }
+        if (state === 'active') return { state: 'RUNNING', ...progressOf(job.progress) };
+        if (LIVE_JOB_STATES.has(state)) return { state: 'QUEUED', ...progressOf(job.progress) };
+        return { state: 'UNKNOWN' };
+    } catch (err) {
+        logger.warn('agent pack preparation: queue unreadable', {
+            component: 'access-review-agent',
+            accessReviewId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return { state: 'UNKNOWN' };
+    }
+}
+
+/**
+ * The job's half: prepare `accessReviewId` as the person who asked, re-read
+ * now. Never a fabricated context: a requester who is no longer an ACTIVE
+ * member, or no longer holds the key the prepare route takes
+ * (`access_reviews.create`), is refused `REQUESTER_NOT_AUTHORISED` and nothing
+ * is prepared; everything else — the admin tier, a person not a credential,
+ * the campaign's state, both preparers' eligibility, the self-pack rules — is
+ * asked again by `prepareAgentReviewPacks` itself.
+ */
+export async function prepareAgentReviewPacksForRequester(
+    ctx: RequestContext | null,
+    accessReviewId: string,
+    opts: { readonly onProgress?: (progress: PackPreparationProgress) => Promise<void> | void } = {},
+): Promise<PreparePacksResult> {
+    try {
+        if (!ctx) {
+            refuse('REQUESTER_NOT_AUTHORISED', 'the person who asked for these packs is no longer an active member of this workspace');
+        }
+        if (ctx.appPermissions?.access_reviews?.create !== true) {
+            refuse('REQUESTER_NOT_AUTHORISED', 'the person who asked for these packs no longer holds access_reviews.create');
+        }
+        const prepared = await prepareAgentReviewPacks(ctx, accessReviewId, opts);
+        recordAgentRecertPackPreparation({ outcome: 'prepared', path: 'job' });
+        return prepared;
+    } catch (err) {
+        const named = err instanceof Error && REFUSAL_SENTENCE.test(err.message);
+        recordAgentRecertPackPreparation({ outcome: named ? 'refused' : 'error', path: 'job' });
+        throw err;
+    }
 }
 
 /**

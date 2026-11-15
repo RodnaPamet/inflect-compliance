@@ -765,9 +765,12 @@ reads. A tenant with a single agent can run a campaign.
 
 Each pack is prepared by the `agent-recertification-pack` workflow, a static
 run of one READ step on the `get_agent_recertification_evidence` read tool and
-one pure SYNTHESIS step, one run per agent (`PACK_PAGE_SIZE`: the worst
-page, every section at its cap, must fit a run's 256 KiB context, #5317). The pack holds the
-agent's grants with grantor and date, which granted tools it called in the 90
+one pure SYNTHESIS step, one run per two agents (`PACK_PAGE_SIZE`: the worst
+page, every section at its cap, must fit a run's 256 KiB context with 10% to
+spare, #5317). A campaign of more than five runs is prepared by the
+`agent-recert-packs-prepare` job rather than inside the request, as the person
+who asked, re-read when the job runs; the campaign page shows its progress. The pack holds the
+agent's grants (at most 100, a tool's name cut at 64 characters and flagged) with grantor and date, which granted tools it called in the 90
 days before the campaign, its proposals and their outcomes per grant, its card
 versions since its last closed campaign, its time-bounded grants and whether
 each expired on time, guard flags, breaker trips, kill engagements and its

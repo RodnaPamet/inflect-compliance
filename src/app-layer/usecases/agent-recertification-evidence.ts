@@ -11,7 +11,8 @@
  *
  * The sections, and the table each reads:
  *
- *   grants with grantor and date             RegisteredAgentTool
+ *   grants with grantor and date             RegisteredAgentTool, per agent, capped and flagged;
+ *                                            a long tool name cut at TOOL_NAME_IN_PACK (#5317)
  *   granted tools called in the window       AgentBehaviourWindow (tool names per hour)
  *   proposals and outcomes per grant         AgentProposal, by the kind a propose tool queues
  *   card versions since the last campaign    AgentPolicyCardVersion, after the agent's
@@ -53,6 +54,7 @@ import {
     PACK_PAGE_SIZE,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     observationWindow,
+    packToolName,
     type RecertificationEvidence,
     type SubjectEvidence,
 } from '@/lib/agentic/agent-recertification';
@@ -68,8 +70,17 @@ import type { RequestContext } from '../types';
 // test rather than a campaign's preparation. The arithmetic is at
 // `PACK_PAGE_SIZE`.
 
-/** Grants read per agent before the read is called truncated (the catalogue is a handful). */
-export const GRANTS_PER_AGENT = 200;
+/**
+ * Grants read per AGENT before its section is called truncated (#5317). 100 by
+ * the owner's decision of 2026-11-15; it was 200, read for the whole page in
+ * one shared read. Per agent, read one past the cap, so `grantsTruncated` is
+ * this agent's own fact: an agent with exactly 100 grants is read whole and
+ * may be narrowed, one with 101 is truncated and plans no narrowing — and one
+ * agent with many grants no longer truncates every other agent on its page.
+ * The built-in catalogue is a few dozen tools; an agent over the cap is one
+ * granted most of several external servers' tools.
+ */
+export const GRANTS_PER_AGENT = 100;
 /** Card versions read per agent since its last campaign. */
 export const CARD_VERSIONS_PER_AGENT = 50;
 /**
@@ -183,13 +194,30 @@ export async function readAgentRecertificationEvidence(
         }
 
         // ── Grants ───────────────────────────────────────────────────────
-        const grants = await db.registeredAgentTool.findMany({
-            where: { tenantId: ctx.tenantId, agentId: { in: agentIds } },
-            select: { id: true, agentId: true, toolName: true, grantedByUserId: true, createdAt: true },
-            orderBy: [{ agentId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-            take: agentIds.length * GRANTS_PER_AGENT + 1,
-        });
-        const grantsTruncatedOverall = grants.length > agentIds.length * GRANTS_PER_AGENT;
+        //
+        // One read PER AGENT, capped and read one past the cap (#5317), as the
+        // time-bounded and kill reads below. It was one read for the whole page,
+        // `pageSize × cap + 1` rows: one agent holding more than its share
+        // marked every agent on the page truncated, and so stopped every
+        // narrowing on the page, and a single agent could carry the whole
+        // page's rows into the pack.
+        const grantsByAgent = new Map<string, {
+            rows: Array<{ id: string; agentId: string; toolName: string; grantedByUserId: string; createdAt: Date }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read let one agent truncate the rest (#5317)
+            const read = await db.registeredAgentTool.findMany({
+                where: { tenantId: ctx.tenantId, agentId },
+                select: { id: true, agentId: true, toolName: true, grantedByUserId: true, createdAt: true },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                take: GRANTS_PER_AGENT + 1,
+            });
+            grantsByAgent.set(agentId, {
+                rows: read.slice(0, GRANTS_PER_AGENT),
+                truncated: read.length > GRANTS_PER_AGENT,
+            });
+        }
+        const grants = [...grantsByAgent.values()].flatMap((g) => g.rows);
 
         // ── Observed use, one bounded read per grant ─────────────────────
         //
@@ -393,7 +421,7 @@ export async function readAgentRecertificationEvidence(
         // ── Assemble, in memory ──────────────────────────────────────────
         const out: SubjectEvidence[] = rows.map((s) => {
             const agentId = s.subjectAgentId;
-            const own = grants.filter((g) => g.agentId === agentId);
+            const own = grantsByAgent.get(agentId)?.rows ?? [];
             const kindsGranted = new Set(
                 own.map((g) => PROPOSAL_KIND_BY_PROPOSE_TOOL[g.toolName]).filter((k): k is string => Boolean(k)),
             );
@@ -452,9 +480,14 @@ export async function readAgentRecertificationEvidence(
                 grants: own.map((g) => {
                     const lastCalledAt = lastCalledByGrant.get(g.id) ?? null;
                     const kind = PROPOSAL_KIND_BY_PROPOSE_TOOL[g.toolName];
+                    // The stored name, cut at TOOL_NAME_IN_PACK; the key is
+                    // written only when it was cut, so a whole name's row is
+                    // the row it always was.
+                    const name = packToolName(g.toolName);
                     return {
                         grantId: g.id,
-                        toolName: g.toolName,
+                        toolName: name.toolName,
+                        ...(name.truncated ? { toolNameTruncated: true } : {}),
                         grantedByUserId: g.grantedByUserId,
                         grantedAt: g.createdAt.toISOString(),
                         lastCalledAt: iso(lastCalledAt),
@@ -462,9 +495,10 @@ export async function readAgentRecertificationEvidence(
                         proposals: kind ? countsFor(kind) : null,
                     };
                 }),
-                // Per agent: this agent's own list hit the cap, or the read as a
-                // whole did and this agent's share cannot be vouched for.
-                grantsTruncated: own.length >= GRANTS_PER_AGENT || grantsTruncatedOverall,
+                // This agent's own read found more than the cap: the list above
+                // is its oldest grants, not all of them, and it plans no
+                // narrowing (`narrowingsFor`).
+                grantsTruncated: grantsByAgent.get(agentId)?.truncated ?? false,
                 otherProposals,
                 cardVersions: { since: iso(since), currentVersion: card?.currentVersion ?? null, versions },
                 timeBoundedGrants: (timeBoundedByAgent.get(agentId)?.rows ?? [])

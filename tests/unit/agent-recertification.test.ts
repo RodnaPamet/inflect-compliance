@@ -15,10 +15,13 @@ import {
     NARROWING_BASIS,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     RecertificationEvidenceSchema,
+    TOOL_NAME_IN_PACK,
     USE_WINDOW_DAYS,
     agentCampaignEvidenceBytes,
     buildAgentCampaignEvidence,
+    fullToolNameFor,
     narrowingsFor,
+    packToolName,
     observationWindow,
     planAgentReviewPacks,
     sectionsOf,
@@ -228,6 +231,64 @@ describe('the kill-engagement truncation flag (#5317) moves no pack filed before
         const reparsed = RecertificationEvidenceSchema.parse(evidence([{ ...old, killsTruncated: true }]));
         expect(sectionsOf(reparsed.subjects[0]).killsTruncated).toBe(true);
         expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_KILL_PACK_HASH);
+    });
+});
+
+describe('a pack carries a granted tool’s name cut at TOOL_NAME_IN_PACK (#5317)', () => {
+    // A grant may be named up to 200 characters; an external tool's name is
+    // `mcp__<connectionId>__<name>`.
+    const LONG = `mcp__c${'0'.repeat(24)}__${'microsoft_graph_list_users_by_department_and_manager_'.repeat(2)}`;
+
+    it('a name within the bound is carried whole and unflagged; a longer one is cut to the bound and flagged', () => {
+        expect(packToolName('list_risks')).toEqual({ toolName: 'list_risks', truncated: false });
+        const exact = 'x'.repeat(TOOL_NAME_IN_PACK);
+        expect(packToolName(exact)).toEqual({ toolName: exact, truncated: false });
+        expect(LONG.length).toBeGreaterThan(TOOL_NAME_IN_PACK);
+        expect(packToolName(LONG)).toEqual({ toolName: LONG.slice(0, TOOL_NAME_IN_PACK), truncated: true });
+    });
+
+    it('a narrowing is recorded under the stored name only when the pack’s name is that name cut', () => {
+        const cut = packToolName(LONG).toolName;
+        expect(fullToolNameFor(cut, LONG)).toBe(LONG);
+        expect(fullToolNameFor('list_risks', 'list_risks')).toBe('list_risks');
+        // A grant that is gone keeps the pack's name; a stored name that does
+        // not reproduce the pack's is not the grant the evidence described.
+        expect(fullToolNameFor(cut, undefined)).toBe(cut);
+        expect(fullToolNameFor(cut, `${LONG.slice(0, 10)}_other`)).toBe(cut);
+        expect(fullToolNameFor('list_risks', 'list_controls')).toBe('list_risks');
+    });
+
+    it('the flag never changes a plan: the narrowing names the grant by id, under the name the pack carries', () => {
+        const name = packToolName(LONG);
+        const s = subject({ grants: [grant({ toolName: name.toolName, toolNameTruncated: true })] });
+        expect(narrowingsFor(s)).toEqual(narrowingsFor(subject({ grants: [grant({ toolName: name.toolName })] })));
+    });
+
+    // A grant with a long name, as the read returned it before #5317: the
+    // name whole, no `toolNameTruncated` key. This is its pack's hash, computed
+    // with the module as it stood at 1cab6b8d4 (before the field existed) and
+    // checked equal under this one.
+    const OLD_LONG_NAME_PACK_HASH = 'sha256:05c85e5b221e834571373211910b0336e01d3a97d63712bac691c1eae9ab5600';
+    const old = subject({ grants: [grant({ toolName: LONG })] });
+
+    it('evidence recorded without the key parses to sections without it, hashing as it did', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence([old]))));
+        const sections = sectionsOf(reparsed.subjects[0]);
+        expect(sections.grants[0]).not.toHaveProperty('toolNameTruncated');
+        expect(sections.grants[0].toolName).toBe(LONG);
+        expect(sha256Of(sections)).toBe(OLD_LONG_NAME_PACK_HASH);
+    });
+
+    it('a run whose READ was recorded before the key still has its plan accepted', () => {
+        const recorded = JSON.parse(JSON.stringify(planAgentReviewPacks(evidence([old]))));
+        expect(checkedPlan(RecertificationEvidenceSchema.parse(evidence([old])), recorded)).toEqual(recorded);
+    });
+
+    it('a new read keeps the flag through the parse, so the filed pack states it', () => {
+        const cut = subject({ grants: [grant({ toolName: packToolName(LONG).toolName, toolNameTruncated: true })] });
+        const reparsed = RecertificationEvidenceSchema.parse(evidence([cut]));
+        expect(sectionsOf(reparsed.subjects[0]).grants[0].toolNameTruncated).toBe(true);
+        expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_LONG_NAME_PACK_HASH);
     });
 });
 

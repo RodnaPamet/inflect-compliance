@@ -54,24 +54,62 @@ export const USE_WINDOW_DAYS = 90;
  * campaign's whole preparation.
  *
  * The worst agent, every section at its cap (the caps are in
- * `agent-recertification-evidence.ts`) and every row at its largest, is about
- * 239,400 bytes of sealed context (#5317, measured by
+ * `agent-recertification-evidence.ts`) and every row at its largest, seals at
+ * 117,069 bytes (#5317, measured by
  * `tests/unit/agent-recertification-pack-budget.test.ts`):
  *
- *   grants             199 × ~511 B   ≈ 101.7 KB   (200 grants is truncated and plans nothing)
- *   their narrowings   199 × ~383 B   ≈  76.2 KB   (in the plan, beside the evidence)
- *   time-bounded       100 × ~429 B   ≈  42.9 KB   (TIME_BOUNDED_PER_AGENT, 100 since 2026-11-14)
+ *   grants             100 × ~297 B   ≈  30.3 KB   (GRANTS_PER_AGENT, each name cut at TOOL_NAME_IN_PACK;
+ *                                                  counts only on the five propose-tool grants, ~401 B)
+ *   their narrowings   100 × ~246 B   ≈  24.7 KB   (in the plan, beside the evidence)
+ *   time-bounded       100 × ~429 B   ≈  42.9 KB   (TIME_BOUNDED_PER_AGENT)
  *   card versions       50 × ~243 B   ≈  12.2 KB
  *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
- *   everything else                   ≈   1.8 KB
+ *   everything else                   ≈   2.4 KB
  *
- * One such agent seals at about 239,900 bytes, under the cap; two at about
- * 479,300, over it. So a page is ONE agent. It was 20, which fit only while
- * no agent came near its grant cap: 20 agents at their caps were over a
- * megabyte before #5317 raised the time-bounded cap, and the grant section
- * alone, not that raise, is what keeps the page from being two.
+ * Two such agents seal at 233,578 bytes: inside the budget the test holds a
+ * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929). Three are over the
+ * cap itself. So a page is TWO agents. It was one while an agent could carry
+ * 200 grants with 200-character names (~178 KB of grants and narrowings on its
+ * own), and twenty before #5317, which fit only while no agent came near a cap.
+ *
+ * What bounds the page now is the floor, not the grants: an agent with no
+ * grant at all seals at 62,049 bytes, 42.9 KB of it the time-bounded section,
+ * so no grant cap could make a page larger than three inside the budget.
  */
-export const PACK_PAGE_SIZE = 1;
+export const PACK_PAGE_SIZE = 2;
+
+/**
+ * How much of a granted tool's name a pack carries (#5317, owner decision of
+ * 2026-11-15). A grant may be named up to 200 characters
+ * (`AgentToolGrantSchema`), and the name is carried twice, in the grant and in
+ * its narrowing, so it was most of a pack's weight. A built-in tool's name is
+ * under 30 characters and an external tool's is `mcp__<connectionId>__<name>`,
+ * 32 characters before the server's own name, so 64 carries every built-in
+ * name and an external name's first 32 characters of its own whole.
+ *
+ * A longer name is cut and the grant says so (`toolNameTruncated`). The full
+ * name stays in the store: the pack identifies a grant by `grantId`, and a
+ * narrowing is written with the stored name (`fullToolNameFor`), so what a
+ * reviewer accepts, and what the revocation records, names the tool whole.
+ */
+export const TOOL_NAME_IN_PACK = 64;
+
+/** The name a pack carries for a granted tool, and whether it was cut. */
+export function packToolName(full: string): { toolName: string; truncated: boolean } {
+    return full.length > TOOL_NAME_IN_PACK
+        ? { toolName: full.slice(0, TOOL_NAME_IN_PACK), truncated: true }
+        : { toolName: full, truncated: false };
+}
+
+/**
+ * The name to record for a narrowing whose pack carried `packName`: the
+ * stored name when the pack's is that name cut at `TOOL_NAME_IN_PACK` (or is
+ * it whole), else the pack's own. A stored name that does not reproduce the
+ * pack's is not the grant the evidence described, and is not borrowed.
+ */
+export function fullToolNameFor(packName: string, stored: string | undefined): string {
+    return stored !== undefined && packToolName(stored).toolName === packName ? stored : packName;
+}
 
 /** The most agents one campaign freezes; read one past to know it was cut off. */
 export const MAX_AGENT_SUBJECTS = 500;
@@ -127,6 +165,15 @@ export const GrantEvidenceSchema = z.object({
     heldForWholeWindow: z.boolean(),
     /** Proposals of the kind this tool queues, by outcome; null for a non-propose tool. */
     proposals: StatusCounts.nullable(),
+    /**
+     * True when `toolName` is the stored name cut at `TOOL_NAME_IN_PACK`
+     * (#5317); the grant is identified by `grantId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, for the reason `timeBoundedTruncated`
+     * gives: a pack filed before it must re-parse to the sections it was hashed
+     * over. Absent means the name is whole, which every earlier pack's was.
+     */
+    toolNameTruncated: z.boolean().optional(),
 });
 
 export const TimeBoundedGrantSchema = z.object({
@@ -145,7 +192,11 @@ export const SubjectEvidenceSchema = z.object({
     decisionId: z.string().min(1),
     agentId: z.string().min(1),
     grants: z.array(GrantEvidenceSchema),
-    /** True when the grant read hit its cap: no narrowing is proposed from a partial list. */
+    /**
+     * True when this agent's grant read found more grants than its cap (per
+     * agent since #5317; before it, when the page's shared read filled): no
+     * narrowing is proposed from a partial list.
+     */
     grantsTruncated: z.boolean(),
     /** Proposals this agent made in the window whose kind maps to no granted tool. */
     otherProposals: z.record(z.string(), StatusCounts),
