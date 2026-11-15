@@ -126,27 +126,28 @@ const ROWS = [
 const PEOPLE = { 'emp-ana': { name: 'Ana Petrova', email: 'ana@acme.test' } };
 
 let queueStatus = 200;
-let calls: Array<{ path: string; method: string; body: unknown }> = [];
+let calls: Array<{ path: string; method: string; body: unknown; query: URLSearchParams }> = [];
+/** What `executions/latest` names: the newest PASSED match run, or nothing. */
+let latestRun: { id: string; automationKey: string; status: string; executedAt: string } | null;
 
 beforeEach(() => {
     customCalls.length = 0;
     calls = [];
     queueStatus = 200;
+    latestRun = { id: 'exec-1', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2026-02-01T00:00:00.000Z' };
     TENANT_CTX.appPermissions.identity_reconciliation.confirm = true;
     window.localStorage.clear();
     window.history.replaceState({}, '', '/t/acme/admin/integrations/conn-1/reconciliation');
     global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), 'https://test.local');
         const method = init?.method ?? 'GET';
-        calls.push({ path: url.pathname, method, body: init?.body ? JSON.parse(String(init.body)) : null });
+        calls.push({ path: url.pathname, method, body: init?.body ? JSON.parse(String(init.body)) : null, query: url.searchParams });
         let status = 200;
         let body: unknown = {};
-        if (url.pathname.endsWith('/executions')) {
+        if (url.pathname.endsWith('/executions/latest')) {
             body = {
                 connection: { id: 'conn-1', name: 'Payroll', provider: 'legacy-mcp', isEnabled: true, ownerUserId: null },
-                executions: [
-                    { id: 'exec-1', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2026-02-01T00:00:00.000Z' },
-                ],
+                execution: latestRun,
             };
         } else if (url.pathname.endsWith('/queue')) {
             status = queueStatus;
@@ -165,6 +166,37 @@ beforeEach(() => {
 });
 
 const decideCalls = () => calls.filter((c) => c.path.endsWith('/decide'));
+
+describe('#5313 item 10 — the run is the one the server names', () => {
+    it('asks for the newest PASSED match run on this connection, and opens that run\'s queue', async () => {
+        // The run is old on purpose: the history route returns the 50 newest
+        // rows of every kind, and a match run older than those read as none.
+        latestRun = { id: 'exec-old', automationKey: 'legacy-mcp.reconcile', status: 'PASSED', executedAt: '2025-01-01T00:00:00.000Z' };
+        render(<ReconciliationQueuePage />);
+        await screen.findByText('jdoe');
+
+        const latest = calls.filter((c) => c.path.endsWith('/executions/latest'));
+        expect(latest).toHaveLength(1);
+        expect(latest[0].path).toBe('/api/t/acme/admin/integrations/conn-1/executions/latest');
+        expect(latest[0].query.get('automationKey')).toBe('legacy-mcp.reconcile');
+        expect(latest[0].query.get('status')).toBe('PASSED');
+        // The 50-row history is not read at all.
+        expect(calls.some((c) => c.path.endsWith('/executions'))).toBe(false);
+
+        const queue = calls.filter((c) => c.path.endsWith('/queue'));
+        expect(queue).toHaveLength(1);
+        expect(queue[0].query.get('executionId')).toBe('exec-old');
+        expect(queue[0].query.get('connectionId')).toBe('conn-1');
+        expect(screen.queryByText(L.emptyNoRun)).toBeNull();
+    });
+
+    it('when the server names no run, says the connection has not been matched, and reads no queue', async () => {
+        latestRun = null;
+        render(<ReconciliationQueuePage />);
+        expect(await screen.findByText(L.emptyNoRun)).toBeTruthy();
+        expect(calls.some((c) => c.path.endsWith('/queue'))).toBe(false);
+    });
+});
 
 function rowOf(accountKey: string): HTMLElement {
     const cell = screen.getByText(accountKey);

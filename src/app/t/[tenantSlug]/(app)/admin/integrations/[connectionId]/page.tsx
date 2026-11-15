@@ -254,15 +254,15 @@ export default function ConnectionOutcomePage() {
             {/*
               * Reading the accounts and matching them to people, for a
               * `legacy-mcp` connection only. Both are background jobs whose
-              * result is an execution row, so the card reads the rows this page
-              * already loaded for Check runs, and Refresh reloads them here too.
+              * result is an execution row. The card asks the server for the
+              * newest row of each kind itself (#5313, item 10): the rows this
+              * page loads are the 50 newest of every kind, a history, and an
+              * older match run is not among them. Refresh reloads the history
+              * here too.
               */}
             <LegacyAccessRunsCard
                 connectionId={connectionId}
                 provider={connectionProvider}
-                runs={rows}
-                runsLoading={loading}
-                runsError={error}
                 onReloadRuns={load}
             />
 
