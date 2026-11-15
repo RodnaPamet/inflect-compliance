@@ -198,7 +198,8 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         // resolves LINKED on every run and is acted on without anybody
         // looking. The row's one-click Confirm therefore waits out the undo
         // window, so a mis-click in a long queue is caught before the POST.
-        file: 'src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page.tsx',
+        // The queue lives in its client component since #5695 made page.tsx a server gate.
+        file: 'src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient.tsx',
         name: 'Reconciliation queue row Confirm',
         handlers: ['confirmWithUndo'],
     },

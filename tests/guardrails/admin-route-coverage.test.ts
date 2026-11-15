@@ -69,6 +69,9 @@ const ADMIN_ONLY_ROUTES = [
     // lives under admin/, and this guard's question is "is every admin route
     // authorised", not "is every admin route admin.manage".
     'admin/legacy-access/queue/route.ts',
+    // #5695 — which run the queue opens; `identity_reconciliation.view`, the
+    // queue's own key (owner decision 2026-11-15).
+    'admin/legacy-access/queue/latest-run/route.ts',
     'admin/legacy-access/queue/decide/route.ts',
     'admin/legacy-access/queue/bulk-confirm/route.ts',
     // /admin/* routes

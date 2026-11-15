@@ -31,6 +31,7 @@ import middleware from '../../src/middleware';
 import { getToken } from 'next-auth/jwt';
 import {
     AI_ADMIN_ADMIN_PATH_PREFIXES,
+    RECONCILIATION_VIEW_READ_PATHS,
     checkAdminAccess,
     isAiAdminAdminPath,
 } from '@/lib/auth/guard';
@@ -104,6 +105,18 @@ function insideAllowlist(url: string): boolean {
     return AI_ADMIN_ADMIN_PATH_PREFIXES.some((p) => t === p || t.startsWith(`${p}/`));
 }
 
+/**
+ * The two reconciliation-queue GETs (#5695, owner decision 2026-11-15: holding
+ * `identity_reconciliation.view` is enough to open the queue). Not part of the
+ * AI_ADMIN agent allowlist: the edge admits them to EVERY role below the admin
+ * roles that holds the view key, AI_ADMIN among them, because AI_ADMIN carries
+ * READER's set. Exact templates, GET only — pinned with the real middleware in
+ * `tests/unit/reconciliation-view-key-edge.test.ts`.
+ */
+function viewKeyRead(url: string): boolean {
+    return RECONCILIATION_VIEW_READ_PATHS.includes(templateOf(url));
+}
+
 const apiRoutes = repoFiles({ under: API_ADMIN_DIR, extensions: ['route.ts'] }).map(repoRelative);
 const adminPages = repoFiles({ under: PAGE_ADMIN_DIR, extensions: ['page.tsx'] }).map(repoRelative);
 
@@ -157,7 +170,7 @@ describe('the real middleware, for an AI_ADMIN in the URL tenant, on every admin
         async (_rel, url) => {
             expect({ url, refused: await refusedAtEdge('AI_ADMIN', url) }).toEqual({
                 url,
-                refused: !insideAllowlist(url),
+                refused: !insideAllowlist(url) && !viewKeyRead(url),
             });
         },
     );
@@ -167,7 +180,7 @@ describe('the real middleware, for an AI_ADMIN in the URL tenant, on every admin
         for (const r of apiRoutes) {
             const url = apiUrlOf(r);
             const root = url.split('/').slice(0, 6).join('/'); // /api/t/acme/admin/<root>
-            if (!insideAllowlist(url) && !roots.has(root)) roots.set(root, url);
+            if (!insideAllowlist(url) && !viewKeyRead(url) && !roots.has(root)) roots.set(root, url);
         }
         expect(roots.size).toBeGreaterThan(30);
         const admitted: string[] = [];

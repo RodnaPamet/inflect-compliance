@@ -729,6 +729,54 @@ export function isAuditorAdminReadPath(pathname: string, method: string | null |
 }
 
 /**
+ * The two admin API READS the edge admits a holder of
+ * `identity_reconciliation.view` to (#5695, owner decision 2026-11-15: the view
+ * key is enough to open the legacy-access reconciliation queue; decisions stay
+ * on their existing keys). Exact templates, GET or HEAD only:
+ *
+ *   - `/api/t/[slug]/admin/legacy-access/queue`             the queue rows
+ *   - `/api/t/[slug]/admin/legacy-access/queue/latest-run`  the connection's
+ *     name and its latest PASSED match run, which the queue needs first
+ *
+ * Nothing beneath them and no sibling: `queue/decide` and `queue/bulk-confirm`
+ * are `identity_reconciliation.confirm` and stay behind the admin roles here.
+ * Both routes' only verb is a GET whose literal `requirePermission` names the
+ * view key, and that handler stays the authority — it is what refuses a
+ * custom role that withholds the key, and what writes `AUTHZ_DENIED`.
+ * `tests/unit/reconciliation-view-key-edge.test.ts` pins the list, the roles
+ * and the refusals with the real middleware.
+ */
+export const RECONCILIATION_VIEW_READ_PATHS: readonly string[] = [
+    '/api/t/[slug]/admin/legacy-access/queue',
+    '/api/t/[slug]/admin/legacy-access/queue/latest-run',
+];
+
+/**
+ * The built-in roles below `EDGE_ADMIN_ROLES` whose permission set holds
+ * `identity_reconciliation.view` — today every one of them (see the policy
+ * `assertCanViewReconciliation`). Spelled out rather than computed, because
+ * this module runs at the edge and stays free of the permission tables; the
+ * test above holds it equal to `getPermissionsForRole`, so a role that loses
+ * the key fails CI until it leaves this set. None of them holds `confirm`.
+ */
+export const RECONCILIATION_VIEW_EDGE_ROLES: ReadonlySet<string> = new Set([
+    'EDITOR',
+    'READER',
+    'AUDITOR',
+    'AI_ADMIN',
+]);
+
+/** Whether this request is a GET/HEAD of one of `RECONCILIATION_VIEW_READ_PATHS`. */
+export function isReconciliationViewReadPath(pathname: string, method: string | null | undefined): boolean {
+    const verb = (method ?? '').toUpperCase();
+    if (verb !== 'GET' && verb !== 'HEAD') return false;
+    const raw = tenantPathTemplate(pathname);
+    if (raw === null) return false;
+    const template = raw.endsWith('/') ? raw.slice(0, -1) : raw;
+    return RECONCILIATION_VIEW_READ_PATHS.includes(template);
+}
+
+/**
  * Pure gate function: may this session reach an admin path, judged by the
  * role it holds IN THE TENANT THE PATH NAMES (#3701)?
  *
@@ -744,7 +792,9 @@ export function isAuditorAdminReadPath(pathname: string, method: string | null |
  *   'allow' — the role here is an admin role, or is AI_ADMIN and the path is
  *             one of the agent admin paths (`AI_ADMIN_ADMIN_PATH_PREFIXES`,
  *             #3699), or is AUDITOR and the request is a GET of the agent
- *             inventory (`AUDITOR_ADMIN_READ_PATHS`, #3710)
+ *             inventory (`AUDITOR_ADMIN_READ_PATHS`, #3710), or holds
+ *             `identity_reconciliation.view` and the request is a GET of the
+ *             reconciliation queue (`RECONCILIATION_VIEW_READ_PATHS`, #5695)
  *   'deny'  — the role here is not
  *   'defer' — the URL's tenant is not in the claim. This gate does not own
  *             that answer: the tenant-access gate does, and it refuses
@@ -781,6 +831,8 @@ export function checkAdminAccess(
     if (here.role === 'AI_ADMIN' && isAiAdminAdminPath(pathname)) return 'allow';
     // #3710 — AUDITOR in THIS tenant, reading the agent inventory only.
     if (here.role === 'AUDITOR' && isAuditorAdminReadPath(pathname, method)) return 'allow';
+    // #5695 — a view-key holder in THIS tenant, reading the reconciliation queue only.
+    if (RECONCILIATION_VIEW_EDGE_ROLES.has(here.role) && isReconciliationViewReadPath(pathname, method)) return 'allow';
     return 'deny';
 }
 

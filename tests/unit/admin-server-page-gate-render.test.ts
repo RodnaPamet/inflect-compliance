@@ -13,7 +13,9 @@
  *   · an ADMIN's render reads and returns the page.
  *
  * The audit log is the one page an AUDITOR's render reads (owner decision
- * 2026-10-29); every other gated page refuses an AUDITOR.
+ * 2026-10-29); every other gated page refuses an AUDITOR — but the legacy
+ * reconciliation queue, which every holder of `identity_reconciliation.view`
+ * opens (owner decision 2026-11-15, #5695), and every built-in role holds it.
  *
  * The structural rule (gate first, own route, from the real module) is
  * `tests/guardrails/admin-layout-guard.test.ts`; who each row admits is
@@ -148,6 +150,17 @@ jest.mock('@/lib/prisma', () => ({
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { PageHeader } from '@/components/layout/PageHeader';
 import en from '../../messages/en.json';
+// The queue's client component is the page's whole body; a stub keeps this
+// node-environment file off its UI graph. The page under test is the gate.
+jest.mock('@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient', () => ({
+    __esModule: true,
+    ReconciliationQueueClient: function ReconciliationQueueClient() {
+        return null;
+    },
+}));
+import ReconciliationPage from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page';
+import { ReconciliationQueueClient } from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient';
+import { getPermissionsForRole } from '@/lib/permissions';
 import AdminPage from '@/app/t/[tenantSlug]/(app)/admin/page';
 import AuditLogPage from '@/app/t/[tenantSlug]/(app)/admin/audit-log/page';
 import { AuditLogClient } from '@/app/t/[tenantSlug]/(app)/admin/audit-log/AuditLogClient';
@@ -180,6 +193,7 @@ const PAGES: Record<string, unknown> = {
     '/admin/audit-log': AuditLogPage,
     '/admin/billing': BillingPage,
     '/admin/devices': DevicesPage,
+    '/admin/integrations/[connectionId]/reconciliation': ReconciliationPage,
     '/admin/dsar-requests': DsarPage,
     '/admin/mcp': McpPage,
     '/admin/personnel': PersonnelPage,
@@ -202,7 +216,7 @@ async function render(
 ): Promise<Element> {
     // A built-in membership: its own role is the role the edge reads (#4581 B).
     currentCtx = makeRequestContext(role, { tenantSlug: 'acme', membershipRole: role as RequestContext['role'] });
-    const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1' });
+    const params = Promise.resolve({ tenantSlug: 'acme', assessmentId: 'a-1', templateId: 't-1', connectionId: 'c-1' });
     // Next hands every page `searchParams`; the personnel page reads it, and
     // the audit log reads its cursor from it.
     return (PAGES[route] as PageFn)({ params, searchParams: Promise.resolve(searchParams ?? {}) });
@@ -239,13 +253,42 @@ beforeEach(() => {
     getTenantCtxMock.mockClear();
 });
 
+/** The one gated page a READER opens: the view key is enough (#5695, owner decision 2026-11-15). */
+const RECON = '/admin/integrations/[connectionId]/reconciliation';
+
 describe('a READER is refused by every gated admin page before any read', () => {
-    test.each(Object.keys(PAGES))('%s', async (route) => {
+    test.each(Object.keys(PAGES).filter((r) => r !== RECON))('%s', async (route) => {
         const el = await render(route, 'READER');
         expectAdminForbidden(el);
         expect(readsStarted()).toEqual([]);
         // The gate resolved the caller from the URL's tenant, and only that.
         expect(getTenantCtxMock).toHaveBeenCalledWith({ tenantSlug: 'acme' });
+    });
+});
+
+describe('reconciliation queue — the view key opens it (#5695, owner decision 2026-11-15)', () => {
+    test.each(['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'])(
+        'an %s, who holds identity_reconciliation.view, gets the queue and nothing is read on the server',
+        async (role) => {
+            const el = await render(RECON, role);
+            expect(el.type).toBe(ReconciliationQueueClient);
+            expect(readsStarted()).toEqual([]);
+            expect(getTenantCtxMock).toHaveBeenCalledWith({ tenantSlug: 'acme' });
+        },
+    );
+
+    test('a member whose custom role withholds the view key gets the forbidden page', async () => {
+        currentCtx = makeRequestContext('AUDITOR', {
+            tenantSlug: 'acme',
+            membershipRole: 'AUDITOR',
+            appPermissions: { ...getPermissionsForRole('AUDITOR'), identity_reconciliation: { view: false, confirm: false } },
+        });
+        const el = await (ReconciliationPage as unknown as PageFn)({
+            params: Promise.resolve({ tenantSlug: 'acme', connectionId: 'c-1' }),
+            searchParams: Promise.resolve({}),
+        });
+        expectAdminForbidden(el);
+        expect(readsStarted()).toEqual([]);
     });
 });
 

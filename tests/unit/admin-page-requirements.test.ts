@@ -7,9 +7,12 @@
  * matrix, and this file pins it:
  *
  *   · OWNER and ADMIN reach every gated page — no change for either;
- *   · EDITOR, READER and AI_ADMIN reach none — none holds `admin.view`;
- *   · AUDITOR reaches the audit log only (owner decision 2026-10-29: the read
- *     asserts `canAudit`, and an AUDITOR may read the log).
+ *   · EDITOR, READER and AI_ADMIN reach none — none holds `admin.view` —
+ *     but the legacy reconciliation queue (owner decision 2026-11-15, #5695:
+ *     `identity_reconciliation.view` is enough to open it, and every built-in
+ *     role holds that key);
+ *   · AUDITOR reaches the audit log (owner decision 2026-10-29: the read
+ *     asserts `canAudit`, and an AUDITOR may read the log) and the queue.
  *
  * A custom role is judged by its own keys, so its rows are spelled out below.
  * Every row also asks the membership's OWN role, as the edge reads it (#4581 B):
@@ -28,6 +31,8 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/admin/_lib/admin-page-requirements';
 
 const ROUTES = Object.keys(ADMIN_PAGE_REQUIREMENTS) as AdminPageRoute[];
+/** The one page the reconciliation view key opens without `admin.view` (#5695). */
+const RECON: AdminPageRoute = '/admin/integrations/[connectionId]/reconciliation';
 /** A built-in membership: its own role and its effective role are the same. */
 const builtIn = (role: string) => makeRequestContext(role, { membershipRole: role as Role });
 const admitted = (role: string, route: AdminPageRoute) =>
@@ -42,12 +47,25 @@ describe('built-in roles', () => {
         expect(ROUTES.filter((r) => !admitted(role, r))).toEqual([]);
     });
 
-    test.each(['EDITOR', 'READER', 'AI_ADMIN'])('%s reaches no gated admin page', (role) => {
-        expect(ROUTES.filter((r) => admitted(role, r))).toEqual([]);
+    // #5695, owner decision 2026-11-15: each holds identity_reconciliation.view,
+    // which is enough to open the reconciliation queue. Nothing else.
+    test.each(['EDITOR', 'READER', 'AI_ADMIN'])('%s reaches the reconciliation queue and no other gated admin page', (role) => {
+        expect(ROUTES.filter((r) => admitted(role, r))).toEqual([RECON]);
     });
 
-    test('AUDITOR reaches the audit log and nothing else', () => {
-        expect(ROUTES.filter((r) => admitted('AUDITOR', r))).toEqual(['/admin/audit-log']);
+    test('AUDITOR reaches the audit log and the reconciliation queue, and nothing else', () => {
+        expect(ROUTES.filter((r) => admitted('AUDITOR', r)).sort()).toEqual(['/admin/audit-log', RECON].sort());
+    });
+
+    test('the reconciliation queue refuses a member whose custom role withholds the view key', () => {
+        for (const role of ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN']) {
+            const base = getPermissionsForRole(role as Role);
+            const ctx = makeRequestContext(role, {
+                membershipRole: role as Role,
+                appPermissions: { ...base, identity_reconciliation: { view: false, confirm: false } },
+            });
+            expect({ role, admitted: admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[RECON]) }).toEqual({ role, admitted: false });
+        }
     });
 });
 
@@ -102,8 +120,9 @@ describe('custom roles are judged by their own keys', () => {
     test('an ADMIN base with admin.view switched off reaches no admin.view page', () => {
         const ctx = custom('ADMIN', { admin: { view: false } });
         const reached = ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]));
-        // The audit log asks `canAudit`, which the ADMIN base still carries.
-        expect(reached).toEqual(['/admin/audit-log']);
+        // The audit log asks `canAudit`, which the ADMIN base still carries; the
+        // reconciliation queue asks only its own view key (#5695).
+        expect(reached.sort()).toEqual(['/admin/audit-log', RECON].sort());
     });
 });
 
@@ -125,8 +144,14 @@ describe('the membership\'s own role, as the edge reads it (#4581 B)', () => {
                 const ctx = everything(base, membershipRole);
                 const reached = ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]));
                 // An AUDITOR membership keeps the audit log when its tier allows it.
-                const expected = membershipRole === 'AUDITOR' && ctx.permissions.canAudit ? ['/admin/audit-log'] : [];
-                expect({ base, reached }).toEqual({ base, reached: expected });
+                // Every base holds identity_reconciliation.view, which opens the
+                // reconciliation queue to every membership role (#5695) — that
+                // row asks no admin key.
+                const expected = [
+                    ...(membershipRole === 'AUDITOR' && ctx.permissions.canAudit ? ['/admin/audit-log'] : []),
+                    RECON,
+                ].sort();
+                expect({ base, reached: reached.sort() }).toEqual({ base, reached: expected });
             }
         },
     );
@@ -143,9 +168,9 @@ describe('the membership\'s own role, as the edge reads it (#4581 B)', () => {
         expect(admitsAdminPage(makeRequestContext('AUDITOR', { membershipRole: 'EDITOR' }), row)).toBe(false);
     });
 
-    test('AI_ADMIN opens no gated page, whatever it holds', () => {
+    test('AI_ADMIN opens no admin.view page, whatever it holds — only the reconciliation queue (#5695)', () => {
         const ctx = everything('READER', 'AI_ADMIN');
-        expect(ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]))).toEqual([]);
+        expect(ROUTES.filter((r) => admitsAdminPage(ctx, ADMIN_PAGE_REQUIREMENTS[r]))).toEqual([RECON]);
     });
 });
 
@@ -210,13 +235,14 @@ describe('the client layout reads the same rows (adminPageRouteForPath)', () => 
         expect(adminPageRouteForPath(path)).toBeNull();
     });
 
-    test('the only rows that stand without admin.view are the audit log', () => {
+    test('the only rows that stand without admin.view are the audit log and the reconciliation queue', () => {
         // The layout shows a page whose row admits the caller, so a row without
         // admin.view opens that page on screen to whoever the row admits. Today
-        // that is one page, by owner decision; a second is a decision too.
+        // that is two pages, each by owner decision (the audit log 2026-10-29;
+        // the reconciliation queue 2026-11-15, #5695); a third is a decision too.
         const withoutAdminView = ROUTES.filter(
             (r) => !(ADMIN_PAGE_REQUIREMENTS[r].keys as readonly string[]).includes('admin.view'),
         );
-        expect(withoutAdminView).toEqual(['/admin/audit-log']);
+        expect(withoutAdminView.sort()).toEqual(['/admin/audit-log', RECON].sort());
     });
 });
