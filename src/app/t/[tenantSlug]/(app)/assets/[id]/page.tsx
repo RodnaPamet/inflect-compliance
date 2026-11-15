@@ -74,7 +74,22 @@ interface AssetVulnRow {
     ownerUserId: string | null;
     cve: { id: string; cvssScore: number | null; cvssSeverity: string | null; summary: string } | null;
     ownerUser: { id: string; name: string | null; email: string | null } | null;
+    /** What To Risk / To Finding made, if anything (#4465). A deleted one no longer counts. */
+    convertedRisk?: { id: string; key: string | null; deletedAt: string | null } | null;
+    convertedFinding?: { id: string; deletedAt: string | null } | null;
 }
+
+/** A conversion's target, unless it was deleted since (then the button is offered again). */
+function liveTarget<T extends { deletedAt: string | null }>(target: T | null | undefined): T | null {
+    return target && !target.deletedAt ? target : null;
+}
+
+/**
+ * The most rows `GET /vulnerabilities` returns when asked for none
+ * (`listVulnerabilities`' default `take`). A tab holding this many may hold
+ * fewer than the asset has, so it says so (#5313).
+ */
+const ASSET_VULN_READ_CAP = 200;
 
 /** One scanner finding resolved to this asset (GET /assets/[id]/scanner-findings). */
 interface AssetScannerFindingRow {
@@ -245,9 +260,16 @@ export default function AssetDetailPage() {
     const activityLoading = activityQuery.isLoading;
 
     // ─── Vulnerabilities feed (lazy, only while that tab is open) ───
+    // The Open/Resolved toggle filters on the SERVER (#5313). The read is
+    // capped and ordered by score, so filtering a capped all-status read in the
+    // browser dropped open rows that sat past the cap behind resolved ones.
+    const [showResolved, setShowResolved] = useState(false);
     const vulnQuery = useTenantSWR<{ rows: AssetVulnRow[] }>(
-        activeTab === 'vulnerabilities' ? `/vulnerabilities?assetId=${assetId}` : null,
+        activeTab === 'vulnerabilities'
+            ? `/vulnerabilities?assetId=${assetId}${showResolved ? '' : '&status=OPEN'}`
+            : null,
     );
+    const vulnRowsCapped = (vulnQuery.data?.rows.length ?? 0) >= ASSET_VULN_READ_CAP;
     const vulnRows = vulnQuery.data?.rows ?? [];
     const vulnLoading = vulnQuery.isLoading;
     // Scanner findings resolved to this asset — rendered alongside the CVE
@@ -291,7 +313,6 @@ export default function AssetDetailPage() {
     // The two feeds default to OPEN — matching the "open vulnerabilities" framing
     // of the list column — with a toggle to reveal resolved rows. Edits reuse the
     // same PATCH endpoints the global Vulnerabilities / Security-testing pages use.
-    const [showResolved, setShowResolved] = useState(false);
     const [vulnOverrides, setVulnOverrides] = useState<Record<string, Partial<AssetVulnRow>>>({});
     const [scannerOverrides, setScannerOverrides] = useState<Record<string, Partial<AssetScannerFindingRow>>>({});
 
@@ -641,6 +662,14 @@ export default function AssetDetailPage() {
                             {t('detail.vuln.seeAll')} →
                         </Link>
                     </div>
+                    {vulnRowsCapped && (
+                        <p
+                            className="border-b border-border-subtle px-3 py-2 text-xs text-content-muted"
+                            data-testid="asset-vulns-capped"
+                        >
+                            {t('detail.vuln.capped', { count: ASSET_VULN_READ_CAP })}
+                        </p>
+                    )}
                     <DataTable<AssetVulnRow>
                         data={visibleVulnRows}
                         loading={vulnLoading}
@@ -788,30 +817,61 @@ export default function AssetDetailPage() {
                                 ? [{
                                       id: 'actions',
                                       header: t('detail.vuln.actions'),
-                                      cell: ({ row }: { row: { original: AssetVulnRow } }) => (
-                                          <div className="flex items-center gap-compact">
-                                              {canConvertToRisk && (
-                                                  <Button
-                                                      variant="secondary"
-                                                      size="sm"
-                                                      disabled={convertingId === row.original.id}
-                                                      onClick={() => convertVuln(row.original.id, 'risk')}
-                                                  >
-                                                      {t('detail.vuln.convertToRisk')}
-                                                  </Button>
-                                              )}
-                                              {canConvertToFinding && (
-                                                  <Button
-                                                      variant="secondary"
-                                                      size="sm"
-                                                      disabled={convertingId === row.original.id}
-                                                      onClick={() => convertVuln(row.original.id, 'finding')}
-                                                  >
-                                                      {t('detail.vuln.convertToFinding')}
-                                                  </Button>
-                                              )}
-                                          </div>
-                                      ),
+                                      // Each conversion works once (#4465): once it
+                                      // has made its item, the button becomes a
+                                      // link to it, as on the Vulnerabilities page.
+                                      // It stayed a button here, and every press
+                                      // was a 409 (#5313).
+                                      cell: ({ row }: { row: { original: AssetVulnRow } }) => {
+                                          const risk = liveTarget(row.original.convertedRisk);
+                                          const finding = liveTarget(row.original.convertedFinding);
+                                          return (
+                                              <div className="flex items-center gap-compact">
+                                                  {risk ? (
+                                                      <Link
+                                                          href={tenantHref(`/risks/${risk.id}`)}
+                                                          data-testid={`asset-vuln-converted-risk-${row.original.id}`}
+                                                          className="text-sm font-medium text-content-link hover:underline"
+                                                      >
+                                                          {risk.key ?? t('detail.vuln.viewRisk')}
+                                                      </Link>
+                                                  ) : (
+                                                      canConvertToRisk && (
+                                                          <Button
+                                                              variant="secondary"
+                                                              size="sm"
+                                                              disabled={convertingId === row.original.id}
+                                                              onClick={() => convertVuln(row.original.id, 'risk')}
+                                                          >
+                                                              {t('detail.vuln.convertToRisk')}
+                                                          </Button>
+                                                      )
+                                                  )}
+                                                  {finding ? (
+                                                      // Findings have no page of their own; the
+                                                      // link opens the register it is in.
+                                                      <Link
+                                                          href={tenantHref('/findings')}
+                                                          data-testid={`asset-vuln-converted-finding-${row.original.id}`}
+                                                          className="text-sm font-medium text-content-link hover:underline"
+                                                      >
+                                                          {t('detail.vuln.viewFinding')}
+                                                      </Link>
+                                                  ) : (
+                                                      canConvertToFinding && (
+                                                          <Button
+                                                              variant="secondary"
+                                                              size="sm"
+                                                              disabled={convertingId === row.original.id}
+                                                              onClick={() => convertVuln(row.original.id, 'finding')}
+                                                          >
+                                                              {t('detail.vuln.convertToFinding')}
+                                                          </Button>
+                                                      )
+                                                  )}
+                                              </div>
+                                          );
+                                      },
                                   }]
                                 : []),
                         ] as ColumnDef<AssetVulnRow, unknown>[]}

@@ -180,7 +180,10 @@ export function Nis2GapLifecycleClient({
     const rerunning = rerunMutation.isMutating;
 
     const handleRerun = useCallback(async () => {
+        // A later action clears an earlier one's error (#5313): a refusal used
+        // to stay on the page beside the next action's success notice.
         setNotice(null);
+        setActionError(null);
         try {
             await rerunMutation.trigger();
             setNotice(tx('nis2Gap.rerunStarted'));
@@ -222,6 +225,8 @@ export function Nis2GapLifecycleClient({
     const applying = applyMutation.isMutating;
 
     const handleApply = useCallback(async () => {
+        setNotice(null);
+        setActionError(null);
         try {
             const approvals = suggestions
                 .filter((s) => approved[s.questionId])

@@ -186,7 +186,21 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
         }
     };
 
+    // Removed at once, committed when the undo window closes (Epic 67). The
+    // row leaves the list on click; Undo puts it back, and a refused DELETE
+    // puts it back AND says why (#5313) — it used to stay silent after the
+    // "removed" toast, so a refusal read as a removal.
+    const [removedDepIds, setRemovedDepIds] = useState<ReadonlySet<string>>(() => new Set());
+    const restoreDependency = (id: string) =>
+        setRemovedDepIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+        });
+    const dependencies = bia.dependencies.filter((d) => !removedDepIds.has(d.id));
+
     const removeDependency = (dep: ResolvedDependency) => {
+        setRemovedDepIds((prev) => new Set(prev).add(dep.id));
         triggerUndoToast({
             message: tx('biaDetail.dependencyRemoved'),
             undoMessage: tx('biaDetail.undo'),
@@ -195,10 +209,15 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                     `/api/t/${tenantSlug}/business-continuity/${bia.id}/dependencies/${dep.id}`,
                     { method: 'DELETE' },
                 );
-                if (!res.ok) throw new Error('remove');
+                if (!res.ok) throw new Error(await refusalMessage(res, tx('biaDetail.removeDependencyFailed')));
                 router.refresh();
             },
-            onError: () => router.refresh(),
+            undoAction: () => restoreDependency(dep.id),
+            onError: (err) => {
+                restoreDependency(dep.id);
+                toast.error(err instanceof Error && err.message ? err.message : tx('biaDetail.removeDependencyFailed'));
+                router.refresh();
+            },
         });
     };
 
@@ -296,11 +315,11 @@ export function BiaDetailClient({ bia, tenantSlug, canWrite }: { bia: BiaDetail;
                 </Section>
 
                 <Section title={tx('biaDetail.secDependencies')}>
-                    {bia.dependencies.length === 0 ? (
+                    {dependencies.length === 0 ? (
                         <p className="text-sm text-content-subtle">{tx('biaDetail.dependenciesEmpty')}</p>
                     ) : (
                         <ul className="space-y-tight">
-                            {bia.dependencies.map((d) => (
+                            {dependencies.map((d) => (
                                 <li
                                     key={d.id}
                                     className="flex items-center justify-between rounded-lg border border-border-subtle px-3 py-1.5 text-sm"
