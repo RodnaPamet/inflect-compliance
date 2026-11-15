@@ -248,6 +248,22 @@ the measurements are still to run.
       p50/p95 for a 20-token query, 32 × 512-token passages and a 1 × 50
       rerank, plus `memory.peak` and the host CPU's flags. Proposed budgets
       (not agreed): query p95 ≤ 250 ms, rerank p95 ≤ 2 s.
+      **The embedder half runs on the live service, not a temporary
+      container**, which runs on the VM since 2026-11-15: dispatch
+      `VM check` with the check `tei-embed-timing` (owner approves the run in
+      `production`). It `docker exec`s the image's curl inside the running
+      container against its own port and sends only text the script generates:
+      20 calls of a 20-token query (p50/p95), then three runs each of 8, 16, 32
+      and 64 passages of 512 tokens, one request at a time, each cut at 60 s,
+      with a line per batch size saying whether its slowest run is within the
+      seam's 15 s (`TEI_DEADLINE_MS`), the cgroup's `memory.current` and
+      `memory.peak` before and after, CPU throttling during the load, and the
+      host CPU's model and AVX2/AVX-512F flags. Those lines are what the
+      indexing caller's batch size or the deadline is decided against (1.1's
+      note below). The batches share the container's one core at half CPU
+      weight with the request path while they run, so the repetitions are kept
+      small and a run takes minutes. The rerank figure waits for the
+      reranker's service (Phase 2).
 - [x] 0.6 Dependency governance: TEI is a runtime image (digest), the model
       weights are a volume (`deploy/` volume + a checksum of the snapshot
       recorded in the note); no Python enters the app image.
