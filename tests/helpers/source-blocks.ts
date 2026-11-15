@@ -117,6 +117,111 @@ interface Span {
  * An unterminated comment or literal runs to EOF, which makes the caller
  * throw `unterminated …` rather than return a wrong block.
  */
+/**
+ * How deeply a template may nest before this stops following it. Real code
+ * nests one or two levels; the cap exists so a pathological or truncated file
+ * cannot recurse without bound.
+ */
+const MAX_TEMPLATE_DEPTH = 10;
+
+/**
+ * The index just past the string or template literal opening at `start`.
+ *
+ * Shared by `scanSpans` and `commentsOf`, which each had their own copy of
+ * this loop. Two copies of a scanner is how they come to disagree, and both
+ * copies had the same two defects (#5696):
+ *
+ *   * A template was scanned to the next unescaped backtick with NO
+ *     understanding of `${…}`. An interpolated expression containing another
+ *     template therefore closed the outer one on the INNER backtick, and
+ *     everything after it was scanned in the wrong phase —
+ *     `tests/guards/card-padding-cascade.test.ts` wrote
+ *     `` `rung(s) ${xs.map((r) => `\`${r}\``)} emit no ` `` and its following
+ *     comments reached guards as code.
+ *   * A `'` or `"` string ran to the next matching quote ANYWHERE, or to EOF.
+ *     JavaScript forbids a raw newline in either, so an unterminated one is a
+ *     syntax error — ending the span at the line break bounds any future
+ *     desync of this class to one line. #5545 blanked 6,925 characters of one
+ *     file precisely because nothing stopped the runaway.
+ */
+function literalEnd(src: string, start: number, depth = 0): number {
+    const quote = src[start];
+    let j = start + 1;
+    while (j < src.length) {
+        const c = src[j];
+        if (c === '\\') {
+            j += 2;
+            continue;
+        }
+        if (c === quote) return j + 1;
+        if (quote !== '`' && c === '\n') return j;
+        if (quote === '`' && c === '$' && src[j + 1] === '{') {
+            j = depth < MAX_TEMPLATE_DEPTH ? interpolationEnd(src, j + 1, depth + 1) : j + 2;
+            continue;
+        }
+        j++;
+    }
+    return src.length;
+}
+
+/**
+ * The index just past the `}` closing the `${` whose brace sits at `open`.
+ *
+ * An interpolated expression is CODE: it can carry braces, strings, further
+ * templates, comments and regex literals, and every one of those can hold a
+ * `}` that does not close it. So this consumes each of them rather than
+ * counting braces blindly — the same reason `scanSpans` consumes a regex
+ * instead of skipping its slash (#4658).
+ */
+function interpolationEnd(src: string, open: number, depth: number): number {
+    let brace = 0;
+    let last = -1;
+    let j = open;
+    while (j < src.length) {
+        const c = src[j];
+        if (c === '{') {
+            brace++;
+            last = j;
+            j++;
+            continue;
+        }
+        if (c === '}') {
+            brace--;
+            j++;
+            if (brace === 0) return j;
+            last = j - 1;
+            continue;
+        }
+        if (c === "'" || c === '"' || c === '`') {
+            const end = literalEnd(src, j, depth);
+            last = end - 1;
+            j = end;
+            continue;
+        }
+        if (c === '/' && src[j + 1] === '/') {
+            const nl = src.indexOf('\n', j);
+            j = nl < 0 ? src.length : nl;
+            continue;
+        }
+        if (c === '/' && src[j + 1] === '*') {
+            const close = src.indexOf('*/', j + 2);
+            j = close < 0 ? src.length : close + 2;
+            continue;
+        }
+        if (c === '/' && regexCanStartAt(src, j, last)) {
+            const end = regexEnd(src, j);
+            if (end > 0) {
+                last = end - 1;
+                j = end;
+                continue;
+            }
+        }
+        if (!/\s/.test(c)) last = j;
+        j++;
+    }
+    return src.length;
+}
+
 function scanSpans(src: string): Span[] {
     const spans: Span[] = [];
     let i = 0;
@@ -176,21 +281,10 @@ function scanSpans(src: string): Span[] {
             }
         }
         if (ch === "'" || ch === '"' || ch === '`') {
-            let j = i + 1;
-            while (j < src.length) {
-                if (src[j] === '\\') {
-                    j += 2;
-                    continue;
-                }
-                if (src[j] === ch) {
-                    j++;
-                    break;
-                }
-                j++;
-            }
-            spans.push({ start: i, end: j, kind: 'literal' });
-            lastCode = j - 1;
-            i = j;
+            const end = literalEnd(src, i);
+            spans.push({ start: i, end, kind: 'literal' });
+            lastCode = end - 1;
+            i = end;
             continue;
         }
         if (!/\s/.test(ch)) lastCode = i;
@@ -493,20 +587,9 @@ export function commentsOf(src: string): string {
         // Literals are CONSUMED, not inspected: a `//` or `/* … *\/` inside
         // one must never reach the comment branches above.
         if (ch === "'" || ch === '"' || ch === '`') {
-            let j = i + 1;
-            while (j < src.length) {
-                if (src[j] === '\\') {
-                    j += 2;
-                    continue;
-                }
-                if (src[j] === ch) {
-                    j++;
-                    break;
-                }
-                j++;
-            }
-            lastCode = j - 1;
-            i = j;
+            const end = literalEnd(src, i);
+            lastCode = end - 1;
+            i = end;
             continue;
         }
         if (ch === '/' && regexCanStartAt(src, i, lastCode)) {
