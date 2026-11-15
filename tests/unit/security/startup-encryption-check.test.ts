@@ -44,14 +44,35 @@ describe('checkProductionEncryptionKey — a KEK rotation needs the lookup key p
         expect(out.ok === false && out.reason).toContain('DATA_ENCRYPTION_KEY_PREVIOUS');
     });
 
-    it('boots when the rotation has LOOKUP_HASH_KEY pinned', () => {
+    it('boots when the rotation has BOTH derivation keys pinned', () => {
+        // Both, since #5500 added the sibling: `deriveSubkey` has the same
+        // defect for sampling seeds, the answer seal and the exchanged-token
+        // signing key, and pinning one does not pin the other.
+        const out = checkProductionEncryptionKey({
+            NODE_ENV: 'production',
+            DATA_ENCRYPTION_KEY: REAL,
+            DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
+            LOOKUP_HASH_KEY: PREV,
+            DERIVED_SUBKEY_KEY: PREV,
+        } as NodeJS.ProcessEnv);
+        expect(out.ok).toBe(true);
+    });
+
+    it('refuses when a rotation is in progress and DERIVED_SUBKEY_KEY is unset', () => {
+        // LOOKUP_HASH_KEY is pinned here deliberately, to isolate the subkey
+        // refusal: with both unset the lookup check fires first and this case
+        // would pass while proving nothing about #5500.
         const out = checkProductionEncryptionKey({
             NODE_ENV: 'production',
             DATA_ENCRYPTION_KEY: REAL,
             DATA_ENCRYPTION_KEY_PREVIOUS: PREV,
             LOOKUP_HASH_KEY: PREV,
         } as NodeJS.ProcessEnv);
-        expect(out).toEqual({ ok: true });
+        expect(out.ok).toBe(false);
+        // Name the variable AND the value to use, or an operator mid-rotation
+        // has a dead deployment and no next step.
+        expect(out.ok === false && out.reason).toContain('DERIVED_SUBKEY_KEY');
+        expect(out.ok === false && out.reason).toContain('DATA_ENCRYPTION_KEY_PREVIOUS');
     });
 
     it('boots with no rotation in progress and no LOOKUP_HASH_KEY', () => {

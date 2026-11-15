@@ -386,9 +386,10 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
 
-Master-KEK rotation: **set `LOOKUP_HASH_KEY` to the CURRENT
-(outgoing) `DATA_ENCRYPTION_KEY` value and deploy that FIRST**
-(#5071), then set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
+Master-KEK rotation: **set BOTH `LOOKUP_HASH_KEY` (#5071) and
+`DERIVED_SUBKEY_KEY` (#5500) to the CURRENT (outgoing)
+`DATA_ENCRYPTION_KEY` value and deploy that FIRST**, then set
+`DATA_ENCRYPTION_KEY_PREVIOUS` alongside
 the new primary, under which `decryptField` falls back
 transparently. The deterministic lookup hashes (`hashForLookup` —
 `User.emailHash` and friends) get no such fallback: they are an
@@ -399,6 +400,20 @@ and invite redemption from the first request. Unset,
 `LOOKUP_HASH_KEY` reproduces the old derivation exactly, so no
 stored hash moves and no backfill is needed; a production boot with
 `DATA_ENCRYPTION_KEY_PREVIOUS` set and it unset REFUSES to start.
+
+`DERIVED_SUBKEY_KEY` is its SIBLING and the same story for every
+HKDF subkey (#5500): the four audit sampling seeds — the workpaper
+draw is specified as re-derived identically by every sweep, which is
+why the daily sweep is idempotent — the assistant answer seal, and
+the MCP exchanged-token signing key, whose `kid` names the API key
+rather than a signing-key version. None has a previous-key fallback,
+so a rotation re-decided every sampled population and invalidated
+every stored seal and outstanding token, silently. Unset it
+reproduces the old derivation exactly; a production boot mid-rotation
+with it unset REFUSES to start, naming it. It is deliberately NOT the
+same variable as `LOOKUP_HASH_KEY`: an index can never rotate, a
+signing key should be able to, and one secret for both would mean
+neither could move without the other.
 Admins trigger the v1→v2 re-encryption sweep via
 `POST /api/t/{slug}/admin/key-rotation`, which enqueues the
 background job in `src/app-layer/jobs/key-rotation.ts`. The job
