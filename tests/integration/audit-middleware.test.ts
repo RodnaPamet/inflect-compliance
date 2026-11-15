@@ -138,14 +138,13 @@ function createTestPrismaWithMiddleware() {
     return client.$extends({
         name: 'test-audit-middleware',
         query: {
+            // `$allOperations` rather than one hook per write verb: `handle`
+            // already passes reads straight through (WRITE_ACTIONS), and a
+            // per-verb `$allModels.create` stops type-checking once any model
+            // has no `create` (KnowledgeChunkEmbedding's required
+            // Unsupported("vector") column removes it from the client).
             $allModels: {
-                async create(args) { return handle(args); },
-                async createMany(args) { return handle(args); },
-                async update(args) { return handle(args); },
-                async updateMany(args) { return handle(args); },
-                async upsert(args) { return handle(args); },
-                async delete(args) { return handle(args); },
-                async deleteMany(args) { return handle(args); },
+                async $allOperations(params) { return handle(params); },
             },
         },
     });

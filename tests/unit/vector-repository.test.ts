@@ -13,6 +13,27 @@
 
 jest.mock('@/env', () => ({ env: {} }));
 
+// The two signals (Phase 1.8): every request adds to the counter and records
+// its latency, labelled by operation, backend and outcome.
+const counted: Array<Record<string, string>> = [];
+const timed: Array<{ ms: number; labels: Record<string, string> }> = [];
+jest.mock('@opentelemetry/api', () => {
+    const actual = jest.requireActual('@opentelemetry/api');
+    const meter = {
+        createCounter: (name: string) => ({
+            add: (_n: number, labels: Record<string, string>) => {
+                if (name === 'vector_index.requests') counted.push(labels);
+            },
+        }),
+        createHistogram: (name: string) => ({
+            record: (ms: number, labels: Record<string, string>) => {
+                if (name === 'vector_index.request.duration') timed.push({ ms, labels });
+            },
+        }),
+    };
+    return { ...actual, metrics: { ...actual.metrics, getMeter: () => meter } };
+});
+
 import { createHash } from 'node:crypto';
 import { env } from '@/env';
 import {
@@ -296,5 +317,21 @@ describe('the deployment’s vector store is off unless the operator names pgvec
 
     it('the module-level getter is off in this test environment', () => {
         expect(getVectorRepository()).toBeNull();
+    });
+});
+
+describe('every request is counted and timed, by outcome (vector_index.requests and its histogram)', () => {
+    it('records one counter increment and one latency per request, with the same labels', async () => {
+        counted.length = 0;
+        timed.length = 0;
+        const repo = createVectorRepository(createInProcessVectorStore());
+        await repo.upsert(A, DOC1);
+        await refusal(repo.search(A, { embeddingRevision: REV, embedding: [0, 0, 0, 0], k: 1 }));
+        expect(counted).toEqual([
+            { operation: 'upsert', backend: 'in-process', outcome: 'ok' },
+            { operation: 'search', backend: 'in-process', outcome: 'INVALID_QUERY' },
+        ]);
+        expect(timed.map((t) => t.labels)).toEqual(counted);
+        for (const t of timed) expect(t.ms).toBeGreaterThanOrEqual(0);
     });
 });

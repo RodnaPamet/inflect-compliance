@@ -64,12 +64,27 @@ flowchart LR
 
 ## Current state (true today)
 
-- **There is a vector store SEAM and no vector store.**
-  `src/app-layer/repositories/VectorRepository.ts` (2026-11-11, pgvector first)
-  is the only way in, held by ESLint `local/vector-store-single-seam`; it is off
-  unless `VECTOR_STORE_BACKEND=pgvector`, and no Postgres this repository runs
-  carries the `vector` extension, so no table exists
-  ([implementation note](../implementation-notes/2026-11-11-vector-store-seam.md)).
+- **The knowledge store exists and nothing writes to it.** Migration
+  `20261115190000_knowledge_vector_store` creates the `vector` extension and
+  two tenant-scoped tables under RLS + `FORCE`
+  (`prisma/schema/knowledge.prisma`): `KnowledgeChunk` (the chunk's key, its
+  `text` in the encryption manifest, the hex SHA-256 of the text, the chunker
+  revision) and `KnowledgeChunkEmbedding` (the composite chunk reference
+  `(chunkId, tenantId)` with `ON DELETE CASCADE`, the embedding model, the
+  dimension count held to `vector_dims` by a CHECK, the content hash and an
+  untyped `vector`, never text). One partial HNSW expression index exists, for
+  `intfloat/multilingual-e5-small` at 384 dimensions (D-L4-3).
+  `src/app-layer/repositories/VectorRepository.ts` is the only way in, held by
+  ESLint `local/vector-store-single-seam` (no other file under `src/` loads a
+  backend, names `KnowledgeChunkEmbedding` in a literal or touches the
+  `knowledgeChunkEmbedding` Prisma delegate); it is off unless
+  `VECTOR_STORE_BACKEND=pgvector`, it counts and times every request
+  (`vector_index.requests`, `vector_index.request.duration`), and
+  `tests/integration/vector-tenant-isolation.test.ts` proves two tenants apart
+  against the real tables
+  ([implementation note](../implementation-notes/2026-11-15-knowledge-store-tables.md);
+  the seam's own: [2026-11-11](../implementation-notes/2026-11-11-vector-store-seam.md)).
+  No path writes a chunk yet (Phase 2).
   `weaviate` returns nothing under `src/`; the 18 files matching `embedding`
   use the word in its prompt/UI sense (`risk-assessment/prompt-builder.ts`,
   `EvidenceGallery.tsx`). The database is PostgreSQL 16 behind PgBouncer, and
@@ -100,8 +115,7 @@ flowchart LR
   whole population to that tag, and the official `postgres:16-alpine` is only
   the Dockerfile's base. On the VM the change takes effect when the owner's
   `VM apply` recreates `postgres` on the same volume (`docs/deployment.md`,
-  "`postgres`: the image carries pgvector"). No migration creates the
-  extension yet.
+  "`postgres`: the image carries pgvector").
 - **The one extension a migration creates is `pg_trgm`**
   (`20260806150000_control_index_fit`), a contrib extension marked trusted,
   which a database owner may create without superuser. pgvector's
@@ -254,13 +268,23 @@ vector column.
       fails in CI the day the first `CREATE EXTENSION vector` lands. A guard
       pins that every Postgres image reference in the repository is that one
       image.
-- [ ] 1.3 **The extension.** A migration runs `CREATE EXTENSION IF NOT EXISTS
+- [x] 1.3 **The extension.** A migration runs `CREATE EXTENSION IF NOT EXISTS
       vector`. Because the extension is not trusted, the role that runs
       `prisma migrate deploy` must be a superuser, or the operator creates the
       extension once as `postgres` before the migration (which is then a
       no-op). The pull request states which role the production
-      `DIRECT_DATABASE_URL` uses, read off the VM, not assumed.
-- [ ] 1.4 **The models**, in a new `prisma/schema/knowledge.prisma`:
+      `DIRECT_DATABASE_URL` uses, read off the VM, not assumed. *What the
+      repository shows (2026-11-15):* `prisma migrate deploy` runs in the
+      `app` container's entrypoint over `DIRECT_DATABASE_URL`, falling back
+      to `DATABASE_URL` (PgBouncer) when it is unset (`prisma.config.ts`);
+      both live in `/opt/inflect/.env.prod`, which the repository does not
+      hold. The only login role the canonical Compose file configures is
+      `postgres`, the image's superuser (`POSTGRES_USER`, PgBouncer's
+      `DB_USER`), and `init-roles.sh` creates `app_user` as `NOLOGIN`. So the
+      repository points at a superuser, and **the VM's actual
+      `DIRECT_DATABASE_URL` role is still to be read off the VM** (`VM check`)
+      before the first apply that carries the migration.
+- [x] 1.4 **The models**, in a new `prisma/schema/knowledge.prisma`:
       `KnowledgeChunk` (tenantId, sourceModel, sourceId, chunkIndex, `text` in
       the encryption manifest, contentHash, `chunkerRevision`) and
       `KnowledgeChunkEmbedding` (tenantId, chunkId with `ON DELETE CASCADE`,
@@ -270,7 +294,7 @@ vector column.
       `docs/data-retention.md` as business records purged with their source
       and with the tenant, before the migration lands
       (`retention-policy-coverage.test.ts`).
-- [ ] 1.5 **The seam.** `src/app-layer/repositories/VectorRepository.ts` is the
+- [x] 1.5 **The seam.** `src/app-layer/repositories/VectorRepository.ts` is the
       only module that reads or writes `KnowledgeChunkEmbedding.embedding`:
       Prisma cannot read an `Unsupported` column, so every access is
       parameterised `$queryRaw` (never `$queryRawUnsafe`) inside
@@ -278,7 +302,7 @@ vector column.
       also filters on `ctx.tenantId`. No method takes a tenant id as a plain
       argument. A rule refuses SQL naming the embedding table anywhere else
       (G10: a structural rule is an ESLint rule where the shape allows it).
-- [ ] 1.6 **The index.** One HNSW expression index per embedding model, partial
+- [x] 1.6 **The index.** One HNSW expression index per embedding model, partial
       on that model: `USING hnsw ((embedding::vector(<dims>))
       vector_cosine_ops) WHERE "embeddingModel" = '<id>'`. The `vector` type
       indexes at most 2,000 dimensions (`halfvec` at most 4,000), so a model
@@ -303,13 +327,24 @@ vector column.
       adopted model's index lands in a migration. Any other residue the new
       tables produce (the `Unsupported("vector")` column, the extension) is
       measured with `npm run db:check-schema-drift` and reconciled or signed
-      off the same way, never pasted in unsigned.
-- [ ] 1.7 **The two-tenant behavioural test** (G7, checklist §2), in the
+      off the same way, never pasted in unsigned. *Measured 2026-11-15, and it
+      corrects the paragraph above:* with Prisma 7.10.1, a database built from
+      the migrations (extension, both tables, the e5 index) diffs against the
+      schema with exactly the 90 statements the file already held. Prisma's
+      diff does not see an EXPRESSION index at all (the `pg_trgm` indexes are
+      on plain columns with an operator class, which it does see), and it
+      ignores the extension and the `Unsupported("vector")` column's type. So
+      there is nothing to sign off, and adding a `DROP INDEX` line would fail
+      the gate in the other direction, because the file is held to equality.
+      What keeps the index from being dropped is
+      `tests/integration/vector-tenant-isolation.test.ts`, which reads it from
+      `pg_indexes` and reads the plan of the backend's own search query.
+- [x] 1.7 **The two-tenant behavioural test** (G7, checklist §2), in the
       integration project as `app_user` with RLS live: A inserts chunks and
       embeddings; a nearest-neighbour query under B returns nothing; B asking
       for A's chunk id returns nothing; purging tenant A leaves no row of
       either table.
-- [ ] 1.8 **Signals.** `/api/readyz` does not gate on the index; an outcome
+- [x] 1.8 **Signals.** `/api/readyz` does not gate on the index; an outcome
       metric `vector_index.requests` with an `outcome` label and a latency
       histogram (checklist §4) carry the alerting.
 

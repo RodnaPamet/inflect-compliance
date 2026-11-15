@@ -47,7 +47,12 @@ describe('local/vector-store-single-seam', () => {
             {
                 name: 'a comment naming the table is prose, not a query',
                 filename: USECASE,
-                code: `// KnowledgeVector rows are reached through the repository.\nexport const a = 1;`,
+                code: `// KnowledgeChunkEmbedding rows are reached through the repository.\nexport const a = 1;`,
+            },
+            {
+                name: 'the chunk table and its delegate are ordinary (the index pipeline writes chunks)',
+                filename: USECASE,
+                code: `prisma.knowledgeChunk.findMany({ take: 1 });\nconst q = 'SELECT 1 FROM "KnowledgeChunk"';`,
             },
         ],
         invalid: [
@@ -84,8 +89,14 @@ describe('local/vector-store-single-seam', () => {
             {
                 name: 'a raw query naming the table, in a string and in a template',
                 filename: USECASE,
-                code: `const q = 'SELECT 1 FROM "KnowledgeVector"';\nconst r = \`DELETE FROM "KnowledgeVector" WHERE x = \${1}\`;`,
+                code: `const q = 'SELECT 1 FROM "KnowledgeChunkEmbedding"';\nconst r = \`DELETE FROM "KnowledgeChunkEmbedding" WHERE x = \${1}\`;`,
                 errors: [{ messageId: 'tableName' }, { messageId: 'tableName' }],
+            },
+            {
+                name: 'the Prisma delegate, by name and by computed literal',
+                filename: USECASE,
+                code: `prisma.knowledgeChunkEmbedding.deleteMany({});\ntx['knowledgeChunkEmbedding'].count();`,
+                errors: [{ messageId: 'delegate' }, { messageId: 'delegate' }],
             },
         ],
     });

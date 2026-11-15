@@ -4,11 +4,9 @@
  * its table is absent, and every statement it sends runs inside the caller's
  * tenant transaction AND binds that tenant's id as a parameter.
  *
- * No Postgres this repository runs today carries `vector` (see
- * docs/implementation-notes/2026-11-11-vector-store-seam.md), so the
- * transaction is a recorder. The behavioural half — two tenants against a
- * real table under RLS — is the follow-up that lands with the image change
- * and the migration; it reuses tests/unit/vector-repository.test.ts's cases.
+ * Here the transaction is a recorder, so these run without a database. The
+ * behavioural half — two tenants against the real tables under RLS, with the
+ * extension loaded — is tests/integration/vector-tenant-isolation.test.ts.
  */
 
 import type { Prisma } from '@prisma/client';
@@ -17,6 +15,8 @@ type Statement = { sql: string; values: unknown[]; txn: number };
 const statements: Statement[] = [];
 const tenantsBound: string[] = [];
 let probe: { ver: string | null; tbl: boolean } = { ver: '0.8.0', tbl: true };
+/** The chunks the resolution query finds: by default, RECORD's. */
+let chunks: Array<Record<string, unknown>> = [];
 const START_SEQ = BigInt(41);
 
 jest.mock('@/lib/db/rls-middleware', () => ({
@@ -32,6 +32,7 @@ jest.mock('@/lib/db/rls-middleware', () => ({
                 const sql = record(q);
                 if (sql.includes('pg_extension')) return [probe];
                 if (sql.includes('nextval')) return [{ seq: START_SEQ }];
+                if (sql.includes('LEFT JOIN')) return chunks;
                 return [];
             }),
             $executeRaw: jest.fn(async (q: Prisma.Sql) => {
@@ -62,6 +63,7 @@ beforeEach(() => {
     statements.length = 0;
     tenantsBound.length = 0;
     probe = { ver: '0.8.0', tbl: true };
+    chunks = [{ chunkId: 'chunk-1', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 0, prior: null }];
 });
 
 describe('the pgvector backend fails closed until the extension and its table exist', () => {
@@ -105,7 +107,7 @@ describe('every pgvector statement is the caller’s tenant’s', () => {
         );
 
         expect(new Set(tenantsBound)).toEqual(new Set([CTX.tenantId]));
-        const onTable = statements.filter((s) => s.sql.includes('"KnowledgeVector"') && !s.sql.includes('to_regclass'));
+        const onTable = statements.filter((s) => s.sql.includes('"KnowledgeChunkEmbedding"') && !s.sql.includes('to_regclass'));
         expect(onTable.length).toBeGreaterThanOrEqual(8);
         for (const s of onTable) {
             expect([s.sql.includes('"tenantId"'), s.values.includes(CTX.tenantId)]).toEqual([true, true]);
@@ -165,7 +167,7 @@ describe('a rebuild never erases a write that landed while it ran', () => {
         const store = createPgvectorStore();
         await store.upsert(CTX, [RECORD]);
         const lockIdx = statements.findIndex((s) => s.sql.includes('pg_advisory_xact_lock_shared('));
-        const firstOnTable = statements.findIndex((s) => s.sql.includes('FROM "KnowledgeVector"') || s.sql.includes('INTO "KnowledgeVector"'));
+        const firstOnTable = statements.findIndex((s) => s.sql.includes('FROM "KnowledgeChunkEmbedding"') || s.sql.includes('INTO "KnowledgeChunkEmbedding"') || s.sql.includes('FROM "KnowledgeChunk"'));
         expect([lockIdx >= 0, lockIdx < firstOnTable]).toEqual([true, true]);
         expect(statements[lockIdx].values).toEqual([`knowledge-vector:${CTX.tenantId}`, 'test-embed@3']);
     });
@@ -194,7 +196,52 @@ describe('a rebuild never erases a write that landed while it ran', () => {
         const store = createPgvectorStore();
         await store.upsert(CTX, [RECORD]);
         const insert = statements.find((s) => s.sql.includes('INSERT INTO'));
-        expect(insert?.sql).toMatch(/"rebuildGeneration" = COALESCE\(EXCLUDED\."rebuildGeneration", "KnowledgeVector"\."rebuildGeneration"\)/);
+        expect(insert?.sql).toMatch(/"rebuildGeneration" = COALESCE\(EXCLUDED\."rebuildGeneration", "KnowledgeChunkEmbedding"\."rebuildGeneration"\)/);
         expect(insert?.sql).toMatch(/"writeSeq" = EXCLUDED\."writeSeq"/);
+    });
+});
+
+describe('a vector belongs to a chunk of the caller’s tenant, and the backend never reads chunk text', () => {
+    it('refuses CHUNK_NOT_FOUND, and writes nothing, when a record names a chunk the tenant does not hold', async () => {
+        chunks = [];
+        const store = createPgvectorStore();
+        const err = await store.upsert(CTX, [RECORD]).catch((e: unknown) => e);
+        expect((err as VectorStoreError).reason).toBe('CHUNK_NOT_FOUND');
+        expect(statements.some((s) => s.sql.includes('INSERT INTO'))).toBe(false);
+        // The message names the model and position, never an id or text.
+        expect((err as Error).message).not.toContain('pv1');
+    });
+
+    it('resolves the chunk in the caller’s tenant and inserts that chunk’s id, conflicting on (tenant, chunk, model)', async () => {
+        const store = createPgvectorStore();
+        await expect(store.upsert(CTX, [RECORD])).resolves.toEqual({ inserted: 1, updated: 0, unchanged: 0 });
+        const resolve = statements.find((s) => s.sql.includes('LEFT JOIN'));
+        expect(resolve?.sql).toMatch(/WHERE c\."tenantId" = \?/);
+        expect(resolve?.values[resolve.values.length - 3]).toBe(CTX.tenantId);
+        const insert = statements.find((s) => s.sql.includes('INSERT INTO'));
+        expect(insert?.values).toContain('chunk-1');
+        expect(insert?.sql).toMatch(/ON CONFLICT \("tenantId", "chunkId", "embeddingModel"\)/);
+    });
+
+    it('counts a re-upsert of the same hash as unchanged and a moved hash as updated', async () => {
+        chunks = [
+            { chunkId: 'chunk-1', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 0, prior: RECORD.contentHash },
+            { chunkId: 'chunk-2', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 1, prior: 'f'.repeat(64) },
+        ];
+        const store = createPgvectorStore();
+        await expect(store.upsert(CTX, [RECORD, { ...RECORD, chunkIndex: 1 }])).resolves.toEqual({
+            inserted: 0,
+            updated: 1,
+            unchanged: 1,
+        });
+    });
+
+    it('no statement it sends reads or writes a text column', async () => {
+        const store = createPgvectorStore();
+        await store.upsert(CTX, [RECORD]);
+        await store.search(CTX, { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 5 });
+        await store.listKeys(CTX, 'test-embed@3', 10);
+        await store.deleteSource(CTX, 'PolicyVersion', 'pv1');
+        for (const s of statements) expect(s.sql).not.toMatch(/"text"/);
     });
 });

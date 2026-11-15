@@ -37,6 +37,7 @@ current Prisma 5.22.0 it is opt-in.
 | `trust-center.prisma` | TrustCenter + TrustCenterDocument + access requests |
 | `agentic.prisma` | AgentProposal + WorkflowRun/WorkflowStep |
 | `analytics.prisma` | ComplianceSnapshot + CompliancePostureSummary |
+| `knowledge.prisma` | KnowledgeChunk + KnowledgeChunkEmbedding — Layer 4's chunk text (encrypted) and pgvector embeddings (vector store Phase 1) |
 | `compliance.prisma` | **Empty stub.** Kept so path references resolve; do NOT add models here — use the matching domain file above. |
 | `schema.prisma` | **Transitional**. Holds models not yet relocated to a domain file. Shrinks toward empty as splits land in follow-up PRs. |
 

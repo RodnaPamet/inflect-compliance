@@ -226,6 +226,8 @@ model Tenant {
   thirdPartyAppScans                ThirdPartyAppScan[]
   discoveredThirdPartyApps          DiscoveredThirdPartyApp[]
   thirdPartyAppScanItems            ThirdPartyAppScanItem[]
+  knowledgeChunks                   KnowledgeChunk[]
+  knowledgeChunkEmbeddings          KnowledgeChunkEmbedding[]
   discoveredAgents                  DiscoveredAgent[]
   agentHarnessAcceptances           AgentHarnessAcceptance[]
   agentHarnessEstates               AgentHarnessEstate[]

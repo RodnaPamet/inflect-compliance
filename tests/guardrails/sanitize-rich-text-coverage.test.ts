@@ -289,6 +289,13 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'rendered, never returned by any route, and cleared when the run resumes ' +
         'or settles; sanitising it would change the bytes a thinking block\'s ' +
         'signature binds, so the API would refuse the resumed conversation.',
+    KnowledgeChunk:
+        'text is a CHUNK of a source row\'s text (vector store Phase 1.4), cut ' +
+        'by the index pipeline from a field that is sanitised at its own write ' +
+        'path (a policy version\'s content, a control description). Nobody types ' +
+        'it: it is derived, and re-sanitising a chunk would make its contentHash ' +
+        'disagree with the source it was cut from. It reaches a reader as plain ' +
+        'text and a model only through the guarded query path (Phase 3).',
     WorkflowStep:
         'inputJson/outputJson are per-step tool payloads (engine-internal), same ' +
         'reasoning as WorkflowRun — derived from already-sanitised reads + engine ' +

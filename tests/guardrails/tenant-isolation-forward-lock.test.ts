@@ -28,6 +28,13 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
+    // Vector store Phase 1.7 — both tables, one file, against the real tables
+    // with pgvector loaded and RLS live: B's nearest-neighbour query, key
+    // listing, chunk read, write and delete never reach A's rows, the
+    // composite FK refuses a cross-tenant chunk reference even for a
+    // superuser, and purging A leaves no row of either.
+    KnowledgeChunk: 'tests/integration/vector-tenant-isolation.test.ts',
+    KnowledgeChunkEmbedding: 'tests/integration/vector-tenant-isolation.test.ts',
     // #4568 — the lease's isolation case opens a lease in each of two tenants
     // and asserts a sweep in one reaches only its own. RLS enforces it in the
     // database too (`FORCE ROW LEVEL SECURITY` + `tenant_isolation`), which is

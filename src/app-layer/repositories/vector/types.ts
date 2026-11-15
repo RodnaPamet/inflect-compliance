@@ -12,8 +12,8 @@
  * `(tenantId, sourceModel, sourceId, chunkIndex, embeddingRevision)`; beside
  * it sit the `contentHash` of the chunk the vector was computed from and the
  * vector's `dimensions`. The chunk's text lives in Postgres under the
- * encryption manifest (the `KnowledgeChunk` row of the Weaviate/pgvector
- * roadmap's Phase 2) and is hydrated at query time through the ordinary
+ * encryption manifest (`KnowledgeChunk.text`; the pgvector backend's row
+ * references its chunk and never carries text) and is hydrated at query time through the ordinary
  * repositories, under RLS. So every field here is derived from a source row
  * plus an embedding call: losing the store loses nothing, and
  * `rebuildRevision` restores it from the system of record.
@@ -124,6 +124,8 @@ export interface VectorStoreBackend {
 export type VectorStoreRefusal =
     | 'VECTOR_STORE_DISABLED'
     | 'PGVECTOR_NOT_INSTALLED'
+    /** pgvector only: a record names a chunk that does not exist in the tenant. */
+    | 'CHUNK_NOT_FOUND'
     | 'INVALID_RECORD'
     | 'UNKNOWN_RECORD_FIELD'
     | 'DIMENSION_MISMATCH'
