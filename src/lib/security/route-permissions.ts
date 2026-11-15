@@ -448,6 +448,22 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'the paged view of data the unpaged view hands out.',
     },
     {
+        // D-EV-8 (owner decision 2026-11-15). The run's gate here, and the
+        // decision log's own rule (`assertMayReadOversightSurface`) in the
+        // usecase, so a reader of a run's rows is a reader of the decisions
+        // page too. The second term reads a tenant setting, which is why it
+        // cannot be a key in this map.
+        path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/decisions$`),
+        methods: ['GET'],
+        permission: ['admin.view', 'admin.agent_registry_view'],
+        mode: 'any',
+        note:
+            "The EU AI Act Art 12 rows one run wrote: id, input digest, agent, " +
+            'time and outcome code, no text. The run detail page\'s gate, and ' +
+            "the decision log's own read rule in the usecase on top of it, so " +
+            'nobody reads a row here they could not read on /agents/decisions.',
+    },
+    {
         path: new RegExp(`^${T}\\/agent-runs\\/[^/]+\\/(resume|abort)$`),
         methods: ['POST'],
         permission: ['admin.view', 'admin.agent_registry_view'],

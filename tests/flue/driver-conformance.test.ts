@@ -372,3 +372,60 @@ async function runOnFlue(run: ConformanceRun): Promise<ConformanceObservation> {
 }
 
 describeDriverConformance({ engine: 'flue', run: runOnFlue });
+
+// ─── Flue only: which model call issued each tool call ──────────────
+//
+// Not a conformance scenario: the Tool Runner's ledger answers the question by
+// its order (one MODEL_CALL step per call, before that reply's tool calls), so
+// the property is Flue's alone, and the helper takes no engine branch. Flue
+// records ONE MODEL_CALL step per dispatch, after every call in it, so it
+// names the issuing call on each TOOL_CALL step (`FlueModelTurn`, owner
+// decision 2026-11-15, Inspect task 9) and the step projection lifts it out.
+describe('flue: a TOOL_CALL step names the model call that issued it', () => {
+    const LIST_RISKS = { name: 'list_risks', result: '{"risks":[{"id":"r1"}]}' };
+    const LIST_CONTROLS = { name: 'list_controls', result: '{"controls":[{"id":"c1"}]}' };
+
+    it('two calls from one reply share a turn; a call from the next reply has the next one', async () => {
+        await runOnFlue({
+            tools: [LIST_RISKS, LIST_CONTROLS],
+            turns: [
+                { toolCalls: [{ name: 'list_risks', args: {} }, { name: 'list_controls', args: {} }] },
+                { toolCalls: [{ name: 'list_risks', args: {} }] },
+                { text: 'Done.' },
+            ],
+        });
+        const toolSteps = mockState.ledger.filter((s) => s.kind === 'TOOL_CALL');
+        const turns = toolSteps.map((s) => (s.rec.output as { modelTurn?: unknown } | undefined)?.modelTurn);
+        expect(turns).toEqual([
+            { segment: 0, call: 1 },
+            { segment: 0, call: 1 },
+            { segment: 0, call: 2 },
+        ]);
+        // The ledger's own accounting is unchanged: one MODEL_CALL step, three calls.
+        const model = mockState.ledger.filter((s) => s.kind === 'MODEL_CALL');
+        expect(model.map((s) => (s.rec.input as { modelCalls?: unknown }).modelCalls)).toEqual([3]);
+        // And the input the model chose stays the arguments alone: the turn is not in it.
+        expect(toolSteps.map((s) => Object.keys((s.rec.input ?? {}) as object).includes('modelTurn'))).toEqual([false, false, false]);
+    });
+
+    it('the projection lifts the turn out and leaves a DONE step with no output, as before', async () => {
+        const { projectRunSteps } = await import('@/lib/agentic/run-step-projection');
+        await runOnFlue({ tools: [LIST_RISKS], turns: [{ toolCalls: [{ name: 'list_risks', args: {} }] }, { text: 'Done.' }] });
+        const steps = mockState.ledger.map((s, seq) => ({
+            id: `s${seq}`,
+            seq,
+            kind: s.kind,
+            status: String(s.rec.status ?? 'DONE'),
+            toolCalled: typeof s.rec.toolCalled === 'string' ? s.rec.toolCalled : null,
+            inputJson: s.rec.input !== undefined ? JSON.stringify(s.rec.input) : null,
+            outputJson: s.rec.output !== undefined ? JSON.stringify(s.rec.output) : null,
+            guardVerdict: null,
+            guardRuleIds: [],
+            costTokens: null,
+            at: new Date(),
+            actorUserId: null,
+        }));
+        const [tool] = projectRunSteps(undefined, steps, []).filter((r) => r.kind === 'TOOL_CALL');
+        expect({ modelTurn: tool.modelTurn, outputJson: tool.outputJson }).toEqual({ modelTurn: { segment: 0, call: 1 }, outputJson: null });
+    });
+});

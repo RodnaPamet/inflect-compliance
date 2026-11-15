@@ -104,6 +104,22 @@ export interface RunStepFeedRow {
      */
     compaction: { estimatedTokensBefore: number | null; estimatedTokensAfter: number | null } | null;
     /**
+     * WHICH MODEL CALL ISSUED THIS TOOL CALL (owner decision 2026-11-15), for
+     * an engine that records it: Flue, whose one MODEL_CALL step per dispatch
+     * cannot say whether two tool calls came from the same reply. `segment` is
+     * the seq the dispatch started at and `call` the 1-based ordinal of the
+     * model call within it (`FlueModelTurn` in `flue/execute.ts`). Two calls
+     * share a turn exactly when both members are equal. Null for every other
+     * step, for the Tool Runner (whose MODEL_CALL step precedes the reply's
+     * tool calls, so the ledger's order already says it), and for every step
+     * written before the turn was recorded: null is "not recorded", never a turn.
+     *
+     * Lifted OUT of `outputJson`, where the engine stores it: the `outputJson`
+     * above is the stored value with this one key removed, so the payload
+     * panel and every reader of it see what they saw before it existed.
+     */
+    modelTurn: { segment: number; call: number } | null;
+    /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
      * constraint.
@@ -203,6 +219,50 @@ export function compactionOf(
     };
 }
 
+/** The key the Flue engine records a tool call's issuing model call under. */
+const MODEL_TURN_KEY = 'modelTurn';
+
+/**
+ * A TOOL_CALL step's issuing model call, and its `outputJson` without it.
+ *
+ * Only a TOOL_CALL step, only a well-formed pair of non-negative integers
+ * (`call` from 1), and only a JSON object output: anything else is returned
+ * untouched with no turn, so a malformed blob costs the turn and never the row
+ * or its payload. The remaining keys are re-serialised in their stored order,
+ * which reproduces the engine's own `JSON.stringify` byte for byte; an output
+ * holding nothing but the turn becomes `null`, as it was before the turn was
+ * recorded.
+ */
+export function modelTurnOf(
+    kind: string,
+    outputJson: string | null,
+): { modelTurn: { segment: number; call: number } | null; outputJson: string | null } {
+    const untouched = { modelTurn: null, outputJson };
+    if (kind !== 'TOOL_CALL' || !outputJson) return untouched;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(outputJson);
+    } catch {
+        return untouched;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return untouched;
+    const record = parsed as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(record, MODEL_TURN_KEY)) return untouched;
+    const raw = record[MODEL_TURN_KEY];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return untouched;
+    const { segment, call } = raw as { segment?: unknown; call?: unknown };
+    const ok =
+        Number.isSafeInteger(segment) && (segment as number) >= 0 &&
+        Number.isSafeInteger(call) && (call as number) >= 1 &&
+        Object.keys(raw).length === 2;
+    if (!ok) return untouched;
+    const { [MODEL_TURN_KEY]: _turn, ...rest } = record;
+    return {
+        modelTurn: { segment: segment as number, call: call as number },
+        outputJson: Object.keys(rest).length > 0 ? JSON.stringify(rest) : null,
+    };
+}
+
 /**
  * The tools whose TOOL_CALL step is a delegation marker: Flue's runtime `task`
  * and the Tool Runner's own `delegate` (Step 2e). Both write the marker shape
@@ -282,6 +342,9 @@ export function projectRunSteps(
         // data rung below all read it, and the rule must not be evaluated
         // twice and risk answering differently.
         const { tool, label } = stepDeclaration(defSteps, s.seq, s.kind, s.toolCalled);
+        // The issuing model call, lifted out of the stored output, so every
+        // field below that reads the output reads it as it was before.
+        const { modelTurn, outputJson } = modelTurnOf(s.kind, s.outputJson);
         return {
             id: s.id,
             seq: s.seq,
@@ -321,7 +384,7 @@ export function projectRunSteps(
             // and a parse here would only move the failure of a malformed blob
             // from a collapsed panel to the whole page.
             inputJson: s.inputJson,
-            outputJson: s.outputJson,
+            outputJson,
             // A GUARDED parse, and only for this one field — so a malformed
             // blob costs the LINK and not the page.
             decisionDigest: decisionDigestOf(s.inputJson),
@@ -334,7 +397,9 @@ export function projectRunSteps(
             // WHOSE STEP, from its own column (Step 2e). Null for the parent.
             subagent: s.subagentName ?? null,
             // A COMPACTION, labelled as such on the run page (Step 2g).
-            compaction: compactionOf(s.kind, s.inputJson, s.outputJson),
+            compaction: compactionOf(s.kind, s.inputJson, outputJson),
+            // WHICH MODEL CALL ISSUED IT, where the engine recorded one.
+            modelTurn,
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the

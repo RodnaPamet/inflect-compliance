@@ -20,7 +20,7 @@ inflect · ai architecture · inspect · roadmap v1 · 2026-10-29
 | Wave | 2 (its tasks need only what exists today; model selection compares models available by API key) |
 | Depends on | the harness route from [`garak.md`](./garak.md) Phase 1 (or a sibling) |
 | Unblocks | a record behind every engine that is on — Flue, and the Tool Runner, which Claude engines Step 2c turned on (#4512) before any record existed; worker-model selection in [`nemotron-reasoning.md`](./nemotron-reasoning.md) |
-| Owner decisions | **D-EV-4** — decided 2026-11-11 (owner): adopt. The product scores its own agents on its own ladder, and the Inspect records are the evidence. Source: the owner's decision batch of 2026-11-11 (with D-L4-1..4, D-EV-1/2, D-L3-1, D-L1-1/2/5/6/7), as relayed to this work. It is not in force until the owner initials its row in the master roadmap's D-* table. Open from Phase 0: D-EV-6 (budget), D-EV-7 (Tool Runner missing-input arm), D-EV-8 (a JSON read of a run's decision rows), D-EV-9 (persisting the offered tool set), D-EV-10 (a guard verdict on the delegation step) |
+| Owner decisions | **D-EV-4** — decided 2026-11-11 (owner): adopt. The product scores its own agents on its own ladder, and the Inspect records are the evidence. Source: the owner's decision batch of 2026-11-11 (with D-L4-1..4, D-EV-1/2, D-L3-1, D-L1-1/2/5/6/7), as relayed to this work. It is not in force until the owner initials its row in the master roadmap's D-* table. Open from Phase 0: D-EV-6 (budget), D-EV-7 (Tool Runner missing-input arm), D-EV-8 (a JSON read of a run's decision rows; **done 2026-11-15**, `GET /agent-runs/:id/decisions`), D-EV-9 (persisting the offered tool set), D-EV-10 (a guard verdict on the delegation step) |
 | Complete at | Phase 3, comparing worker candidates available by API key |
 
 ## At a glance
@@ -144,7 +144,8 @@ Local candidates join only if Layer 5 is taken up.
 Phase 0 leaves five questions for the owner, listed in the note: D-EV-6 (the
 nightly budget, since Inspect runs each engine's own model), D-EV-7 (the Tool
 Runner covers three case kinds, because profile runs take no caller input),
-D-EV-8 (no REST route returns a run's decision rows), D-EV-9 (the offered
+D-EV-8 (no REST route returned a run's decision rows; done 2026-11-15, see
+1.3), D-EV-9 (the offered
 tool set is logged, not stored) and D-EV-10 (the delegation step records no
 guard verdict). They belong in the master roadmap's D-* table beside D-EV-4.
 
@@ -242,17 +243,24 @@ and, for the seed,
       turn on any engine; the Tool Runner records one MODEL_CALL step per
       call, before that call's tool calls, so no model step between them means
       the same turn; Flue records one MODEL_CALL step per dispatch, after all
-      of its calls, so there the turn is not recorded and such a sample is
-      VACUOUS (NOT_EVIDENCED), never guessed. Task 8: a run the guard settled
+      of its calls, so since 2026-11-15 (owner decision) each Flue TOOL_CALL
+      step names the model call that issued it (`outputJson.modelTurn`:
+      the dispatch's starting seq and the call's ordinal in it, lifted into
+      the step feed's `modelTurn`), and task 9 compares those. A Flue step
+      written before that carries none, and a call after the read with no
+      recorded turn is VACUOUS (NOT_EVIDENCED), never guessed. Task 8: a run the guard settled
       (`<engine>_run_guard_flagged` / `_blocked`, on a flag its ledger records)
       is scored like a COMPLETED one, and a call the review latch refused
       (`ai_guard_review_required`, read off the step's recorded error, after a
       flag in the same run) is not a funnel step: the latch refuses "before the
       funnel, before the guards", so no guard verdict exists for it. Its
-      decision-row count still waits on D-EV-8: the harness reads no
-      `AiDecisionLog` row, because no JSON route returns a run's rows (the
-      `/agents/decisions` page reads them server-side only), and that clause is
-      not scored while the fact is unread.
+      decision-row count is scored since D-EV-8 (2026-11-15): the harness
+      reads `GET /agent-runs/:id/decisions` as the OWNER (the run detail
+      page's gate AND the decision log's own read rule), joins the rows to
+      the MODEL_CALL steps by digest, and records two counts (`total`,
+      `matched`) or `readable: false`. The rows naming a model step's digest
+      must number the model calls: a missing row FAILS only where the read
+      succeeded, and an unreadable read is VACUOUS (NOT_EVIDENCED).
 - [x] 1.4 `src/lib/ai/evals/inspect-record.ts`: the record shape (task set
       hash, engine + model revision, per-sample raw ledger facts), strict.
       Verdicts are recomputed from the facts and never stored.

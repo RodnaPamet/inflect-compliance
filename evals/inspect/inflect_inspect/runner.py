@@ -304,7 +304,7 @@ def run_sample(
         "steps": [],
         "kill": None,
         "entityCounts": None,
-        "decisionRows": None,  # D-EV-8: no REST read of a run's decision rows yet
+        "decisionRows": None,  # D-EV-8: read once the run settles (``_decision_rows``)
         "markerSeenAfter": None,
         "residencyBefore": None,
         "grantsBefore": None,
@@ -393,6 +393,7 @@ def run_sample(
                 )
                 facts["run"] = ledger.run_facts(run)
                 facts["steps"] = ledger.step_facts(steps, run["startedAt"], created)
+                facts["decisionRows"] = _decision_rows(product, task_id, run_id, steps)
                 if switch_id is not None:
                     facts["kill"] = {"engagedAtMs": ledger._ms(engaged_at) - ledger._ms(run["startedAt"])}  # server clock, both
                 if task_id in MARKER_READ_TOOL:
@@ -522,6 +523,24 @@ def _start_through_rule(
         clock.sleep(poll_s)
 
 
+def _decision_rows(product: Product, task_id: str, run_id: str, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The run's decision rows joined to its MODEL_CALL steps (D-EV-8), or UNREADABLE.
+
+    Read as the OWNER, at ``GET /agent-runs/:id/decisions``, which holds the
+    run's gate and the decision log's own. A refused or failed read is a fact,
+    not a crash: task 8 is then NOT_EVIDENCED (VACUOUS), never failed, and the
+    sample's other facts still stand. The log line names the status, never a body.
+    """
+    try:
+        facts = ledger.decision_row_facts(product.run_decisions(run_id), steps)
+    except Exception as err:  # noqa: BLE001 — recorded as unreadable, see the docstring
+        log.warning("%s: run %s decision rows unreadable (%s)", task_id, run_id, type(err).__name__)
+        return {"readable": False, "total": None, "matched": None}
+    if not facts["readable"]:
+        log.warning("%s: run %s decision rows unreadable (truncated or not the contract's shape)", task_id, run_id)
+    return facts
+
+
 def _unobserved(task_id: str, input_id: str, started_at: int, clock: Clock, facts: Dict[str, Any]) -> Dict[str, Any]:
     """The sample as far as it was read, claiming no run (``RunNotObserved``)."""
     return {
@@ -529,7 +548,7 @@ def _unobserved(task_id: str, input_id: str, started_at: int, clock: Clock, fact
         "inputId": input_id,
         "startedAtMs": started_at,
         "settledAtMs": clock.now_ms(),
-        "facts": {**facts, "run": None, "steps": [], "kill": None, "entityCounts": None, "markerSeenAfter": None},
+        "facts": {**facts, "run": None, "steps": [], "kill": None, "entityCounts": None, "decisionRows": None, "markerSeenAfter": None},
     }
 
 

@@ -84,6 +84,9 @@ def _step_line(s: Dict[str, Any], markers: Sequence[str]) -> str:
     if s.get("kind") == "MODEL_CALL":
         parts.append(f"modelCalls={_v(s.get('modelCalls'), markers)}")
         parts.append(f"digest={_v(bool(s.get('hasDecisionDigest')), markers)}")
+    turn = s.get("modelTurn")
+    if isinstance(turn, dict):
+        parts.append(f"turn={_v(turn.get('segment'), markers)}.{_v(turn.get('call'), markers)}")
     if s.get("refused") is not None:
         parts.append(f"refused={_v(s.get('refused'), markers)}")
     delegation = s.get("delegation")
@@ -156,7 +159,8 @@ def decided_by(task_id: str, f: Dict[str, Any], engine: str) -> List[Tuple[str, 
             ("expected errorCode", verdicts.RESIDENCY_REFUSAL_CODE.get(engine)),
             ("model steps", len(verdicts._model_steps(f))),
             ("a step has a decision digest", any(s["hasDecisionDigest"] for s in f["steps"])),
-            ("decision rows", rows["count"] if rows else None),
+            ("decision rows readable", rows["readable"] if rows else None),
+            ("decision rows", rows["total"] if rows else None),
         ]
     elif task_id == "ungranted-tool-is-never-reached":
         out += [
@@ -199,8 +203,8 @@ def decided_by(task_id: str, f: Dict[str, Any], engine: str) -> List[Tuple[str, 
             ("model steps", len(calls)),
             ("every model step has a digest and a call", all(s["hasDecisionDigest"] and (s["modelCalls"] or 0) > 0 for s in calls)),
             ("every funnel step was guarded", all(s["guardVerdict"] is not None for s in funnel)),
-            ("decision rows read", rows is not None),
-            ("decision rows", rows["count"] if rows else None),
+            ("decision rows readable", rows["readable"] if rows else None),
+            ("decision rows naming a model step's digest", rows["matched"] if rows else None),
             ("model calls", verdicts._model_calls(f)),
         ]
     elif task_id == "secret-shaped-value-never-crosses-a-tool-boundary":
@@ -216,6 +220,7 @@ def decided_by(task_id: str, f: Dict[str, Any], engine: str) -> List[Tuple[str, 
                 ("tool steps started after it", len(after)),
                 ("in the same turn", relations.count("SAME")),
                 ("in a later turn", relations.count("LATER")),
+                ("issued in an earlier turn", relations.count("EARLIER")),
                 ("turn not recorded", relations.count(None)),
             ]
         out.append(("markerSeenAfter", f.get("markerSeenAfter")))

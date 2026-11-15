@@ -1,5 +1,6 @@
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { notFound } from '@/lib/errors/types';
 
 import { assertCanRead } from '../policies/common';
 import { assertMayReadOversightSurface } from './agent-oversight-settings';
@@ -114,6 +115,11 @@ function isRunRow(feature: string): boolean {
     return feature.startsWith('agentic-run:') || feature === 'agentic-tool:external';
 }
 
+/** The same rows as `isRunRow`, as a `where` (D-EV-8). */
+const RUN_ROW_WHERE = {
+    OR: [{ feature: { startsWith: 'agentic-run:' } }, { feature: 'agentic-tool:external' }],
+};
+
 /**
  * The tenant's decision rows, newest first.
  *
@@ -221,4 +227,99 @@ async function readAiDecisions(ctx: RequestContext, opts: AiDecisionQuery, take:
         // agentic payload in this tree converts here for the same reason.
         createdAt: r.createdAt.toISOString(),
     }));
+}
+
+
+// ── ONE RUN'S ROWS, FOR A MACHINE (D-EV-8) ───────────────────────────────────
+//
+// The decisions page reads the tenant's newest window and narrows by digest;
+// nothing answered "which rows did THIS run write", so the Inspect harness
+// could not count them, and task 8 ("every model call has a decision row")
+// left its row-count clause unscored. The owner decided (2026-11-15) that a
+// JSON read of one run's rows closes it.
+//
+// TWO GATES, and the reader must hold both. The route takes the run detail
+// page's gate (`admin.view` OR `admin.agent_registry_view`,
+// `mayReadAgentActivity`), because the rows are addressed through a run. This
+// usecase then asks the decision log's own rule (`mayReadOversightSurface`):
+// the register key, or the inventory view key while the owner's switch lets
+// Auditors read the log. So nobody reads a run's rows here who could not read
+// the same rows on `/agents/decisions`. An ADMIN-tier custom role holding
+// `admin.view` without the register key passes the route and is refused here,
+// exactly as the decisions page refuses it.
+//
+// FEWER COLUMNS THAN THE PAGE. The page shows `outputSummary`, the model, the
+// provider and the tokens; this read returns the join key and nothing a
+// sentence could ride in: the row id, the input digest (a sha256, already the
+// page's own `?digest=` link target), the agent, the time and the Art 14
+// outcome code. No prompt text exists on the row to leak, and the output
+// summary is deliberately not selected.
+
+/**
+ * How many of one run's rows the read returns. Past every run the engine caps
+ * admit (a run's STEPS cap bounds its model calls); the read takes one more,
+ * so a run that somehow exceeds it is reported `truncated` rather than shown
+ * as if the window were the whole of it. A count drawn from a truncated read
+ * is no count, and the harness treats it as unreadable.
+ */
+export const RUN_DECISION_ROWS_CAP = 1000;
+
+/** One decision row of a run, as the join needs it and no more. */
+export interface RunDecisionRow {
+    id: string;
+    /** `AiDecisionLog.inputDigest`: the key a MODEL_CALL step's `decisionDigest` names. */
+    inputDigest: string;
+    /** The registered agent the call spoke for, or `null`. */
+    agentId: string | null;
+    createdAt: string;
+    /** The Art 14 outcome code: `PENDING`, `ACCEPTED`, `EDITED`, `REJECTED` or `AUTONOMOUS`. */
+    humanOutcome: string;
+}
+
+export interface RunDecisionRows {
+    runId: string;
+    rows: RunDecisionRow[];
+    /** True when the run has more rows than `RUN_DECISION_ROWS_CAP`: `rows` is then a prefix. */
+    truncated: boolean;
+}
+
+/**
+ * Every decision row one run wrote, oldest first, bounded.
+ *
+ * Rows are the run's when `sessionRef` is the run id on a run feature
+ * (`agentic-run:<key>`, `agentic-tool:external`), which is how the page
+ * derives `runId` too (`isRunRow`). A run in another tenant is not found:
+ * the run is read under the caller's tenant context and `tenantId`, so its
+ * existence is never confirmed across tenants.
+ */
+export async function readRunDecisionRows(ctx: RequestContext, runId: string): Promise<RunDecisionRows> {
+    assertCanRead(ctx);
+    await assertMayReadOversightSurface(ctx, 'decisions');
+    const result = await runInTenantContext(ctx, async (db) => {
+        const run = await db.workflowRun.findFirst({
+            where: { id: runId, tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!run) return null;
+        const rows = await db.aiDecisionLog.findMany({
+            where: { tenantId: ctx.tenantId, sessionRef: run.id, ...RUN_ROW_WHERE },
+            // Oldest first, ties by id: a stable order for a reader comparing two reads.
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            take: RUN_DECISION_ROWS_CAP + 1,
+            select: { id: true, inputDigest: true, agentId: true, createdAt: true, humanOutcome: true },
+        });
+        return { runId: run.id, rows };
+    });
+    if (!result) throw notFound('Workflow run not found');
+    return {
+        runId: result.runId,
+        rows: result.rows.slice(0, RUN_DECISION_ROWS_CAP).map((r) => ({
+            id: r.id,
+            inputDigest: r.inputDigest,
+            agentId: r.agentId,
+            createdAt: r.createdAt.toISOString(),
+            humanOutcome: r.humanOutcome,
+        })),
+        truncated: result.rows.length > RUN_DECISION_ROWS_CAP,
+    };
 }

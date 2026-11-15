@@ -114,6 +114,7 @@ function step(seq: number, kind: string, status: string): RunStepRow {
         delegation: null,
         subagent: null,
         compaction: null,
+        modelTurn: null,
         proposals: [],
     } as RunStepRow;
 }
