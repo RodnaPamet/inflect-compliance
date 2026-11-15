@@ -3408,6 +3408,14 @@ one careless edit from being undone:
     sub-processor step's diff, not an engine's.
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
+  - **A model is sent only the parameters its row accepts** (owner decision
+    2026-11-15). `tool-runner/model-capabilities.ts` is a closed `Record` over
+    model families saying whether each takes adaptive thinking, `effort` and
+    `fallbacks`; `lockedParams` reads the row of the model it chose (a resume's
+    STORED model) and sends those three members only where the row says so.
+    An unknown model gets none of them, the set every current model accepts:
+    never "assume the newest". A refused request logs one line with the
+    provider's status, error type and message (truncated), never the body.
 
 **The Tool Runner driver runs agent profiles** (`src/lib/agentic/tool-runner/`,
 built in Step 2b, #4149, and turned on in Step 2c, #4150).

@@ -31,7 +31,7 @@ sys.path.insert(0, str(HERE.parent))
 from inflect_inspect import ledger, verdicts  # noqa: E402
 from inflect_inspect.record import build_record, task_set_hash  # noqa: E402
 from inflect_inspect.product import HttpProduct  # noqa: E402
-from inflect_inspect.runner import MARKER_READ_TOOL, Clock, SeedManifest, missing_input_keys, provider_status, run_sample, seed_for  # noqa: E402
+from inflect_inspect.runner import MARKER_READ_TOOL, Clock, SeedManifest, missing_input_keys, provider_error_type, provider_status, run_sample, seed_for  # noqa: E402
 
 TASK_SET = json.loads((HERE.parent / "task-set.json").read_text(encoding="utf-8"))
 GOLDEN = json.loads((HERE.parent / "fixtures" / "verdict-cases.json").read_text(encoding="utf-8"))["cases"]
@@ -489,4 +489,35 @@ def test_a_settled_run_is_logged_in_one_line_of_codes_and_counts(caplog):
     seed = SeedManifest(agent_id="agent_1", markers={task["id"]: MARKER})
     run_sample(Refused(latch_works=True), task, "summarise-findings", "flue", seed, FakeClock(), poll_s=0.01)
     assert "run run_1 settled FAILED (errorCode tool_runner_run_failed, provider HTTP 400), 0 model step(s), 0 tool step(s), 0 tokens" in caplog.text
+    assert "secret text" not in caplog.text
+
+
+def test_the_provider_error_type_is_read_as_a_code_and_the_message_never_is():
+    # Run 43715891271: seven 400s, and the job log could not say which refusal.
+    body = '{"type":"error","error":{"type":"invalid_request_error","message":"secret text"},"request_id":"req_1"}'
+    assert provider_error_type(f"tool_runner_run_failed: 400 {body}") == "invalid_request_error"
+    assert provider_error_type(f"flue_run_failed: dispatch(sub_1) failed: 529 {body}") == "invalid_request_error"
+    assert provider_error_type("tool_runner_run_failed: 500 status code (no body)") is None
+    assert provider_error_type(f"skill_not_mountable: 400 {body}") is None
+    assert provider_error_type('tool_runner_run_failed: 400 {"type":"error","error":{"type":"Not A Code"}}') is None
+    assert provider_error_type(None) is None
+
+
+def test_a_settled_line_names_the_provider_error_type_beside_the_status(caplog):
+    import logging
+
+    class Refused(StubProduct):
+        def get_run(self, run_id):
+            return {"status": "FAILED",
+                    "errorMessage": 'tool_runner_run_failed: 400 {"type":"error","error":{"type":"invalid_request_error","message":"secret text"}}',
+                    "costTokens": 0, "stepCount": 0, "startedAt": "2026-11-12T02:00:00.000Z", "completedAt": "2026-11-12T02:00:00.400Z"}
+
+        def get_steps(self, run_id):
+            return []
+
+    caplog.set_level(logging.WARNING, logger="inflect_inspect")
+    task = TASKS["flagged-tool-result-halts-the-run"]
+    seed = SeedManifest(agent_id="agent_1", markers={task["id"]: MARKER})
+    run_sample(Refused(latch_works=True), task, "summarise-findings", "flue", seed, FakeClock(), poll_s=0.01)
+    assert "(errorCode tool_runner_run_failed, provider HTTP 400 invalid_request_error), 0 model step(s)" in caplog.text
     assert "secret text" not in caplog.text

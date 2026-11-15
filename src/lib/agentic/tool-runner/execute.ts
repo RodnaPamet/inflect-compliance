@@ -244,13 +244,40 @@ export function resumeTranscriptRefusedMessage(apiErrorType: string | null): str
     );
 }
 
-/** The status and error type of a model API refusal, when the thrown value carries them. */
-function apiRefusalOf(err: unknown): { status: number | null; type: string | null } {
-    if (!err || typeof err !== 'object') return { status: null, type: null };
-    const status = (err as { status?: unknown }).status;
-    const body = (err as { error?: { error?: { type?: unknown }; type?: unknown } }).error;
-    const type = body?.error?.type ?? body?.type;
-    return { status: typeof status === 'number' ? status : null, type: typeof type === 'string' ? type : null };
+/** The longest provider error message the run's log line carries. */
+export const PROVIDER_ERROR_MESSAGE_MAX_CHARS = 300;
+
+/**
+ * What the model provider said when it refused a request: its HTTP status, its
+ * error type and message, and its request id, when the thrown value carries
+ * them. Read from the SDK's `APIError` (`status`, `type`, `apiMessage`,
+ * `requestID`) with the response body as the fallback. The message is the
+ * provider's own sentence about the REQUEST, truncated to
+ * `PROVIDER_ERROR_MESSAGE_MAX_CHARS`; nothing of the request body is read.
+ */
+export function providerErrorOf(err: unknown): {
+    status: number | null;
+    type: string | null;
+    message: string | null;
+    requestId: string | null;
+} {
+    if (!err || typeof err !== 'object') return { status: null, type: null, message: null, requestId: null };
+    const thrown = err as { status?: unknown; type?: unknown; apiMessage?: unknown; requestID?: unknown; error?: unknown };
+    const body = (thrown.error ?? null) as { error?: { type?: unknown; message?: unknown }; type?: unknown } | null;
+    const text = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
+    const type = text(thrown.type) ?? text(body?.error?.type) ?? (body?.type !== 'error' ? text(body?.type) : null);
+    const message = text(thrown.apiMessage) ?? text(body?.error?.message);
+    return {
+        status: typeof thrown.status === 'number' ? thrown.status : null,
+        type,
+        message:
+            message === null
+                ? null
+                : message.length > PROVIDER_ERROR_MESSAGE_MAX_CHARS
+                  ? `${message.slice(0, PROVIDER_ERROR_MESSAGE_MAX_CHARS - 1)}…`
+                  : message,
+        requestId: text(thrown.requestID),
+    };
 }
 
 /** The text a model call produced, from its text blocks only. */
@@ -784,7 +811,26 @@ async function runModelLoop(
         // else is a failure.
         if (rt.binding.stopped() === null) {
             failure = err instanceof Error ? err.message : String(err);
-            failureApi = apiRefusalOf(err);
+            const provider = providerErrorOf(err);
+            failureApi = { status: provider.status, type: provider.type };
+            // THE PROVIDER'S OWN REASON, in one line (2026-11-15). A refused
+            // request used to leave its status in the record and its reason
+            // nowhere an operator reads: Inspect run 43715891271 saw seven
+            // 400s and could not say why. The status, the error type, the
+            // provider's message (truncated) and its request id; never the
+            // request body, the prompt or a tool's content.
+            if (provider.status !== null) {
+                logger.warn('tool-runner: the model provider refused the request', {
+                    component: 'agentic',
+                    runId: rt.runId,
+                    subagent: spec.subagent,
+                    model: spec.params.model,
+                    status: provider.status,
+                    providerErrorType: provider.type,
+                    providerErrorMessage: provider.message,
+                    providerRequestId: provider.requestId,
+                });
+            }
         }
     }
     return { calls, namedStop, lastStopReason, failure, lastText, failureApi };

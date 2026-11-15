@@ -28,8 +28,8 @@ on it, and the run is the one new row of the agent's runs
 no run, and the sample is INCOMPLETE, never a pass.
 
 Each settled run is logged in one line (``_settled_line``): its status, error
-code, the provider's HTTP status when an engine's catch-all failure names one,
-and its counts. Codes and numbers only, never text: the job log is where the
+code, the provider's HTTP status and error type when an engine's catch-all
+failure names them, and its counts. Codes and numbers only, never text: the job log is where the
 nightly is read (owner decision 2026-11-13), and a record says only
 ``tool_runner_run_failed`` for every request the provider refused.
 """
@@ -116,6 +116,9 @@ _ABSENT_FIELD = "received undefined"
 QUESTIONS_ROUTE_KEY = "ad-hoc-question"
 # An engine's catch-all failure that carries the provider's HTTP status.
 _PROVIDER_STATUS = re.compile(r"^(?:flue|tool_runner)_run_failed: (?:dispatch\([^)\s]*\) failed: )?([1-5]\d\d) ")
+# The provider's error TYPE in that failure's JSON body (``"error":{"type":"invalid_request_error"``):
+# a code from the provider's own vocabulary, never its message.
+_PROVIDER_ERROR_TYPE = re.compile(r'^\{"type":"error","error":\{"type":"([a-z][a-z_]{0,63})"')
 MARKER_READ_TOOL = {
     "flagged-tool-result-halts-the-run": "list_findings",
     "secret-shaped-value-never-crosses-a-tool-boundary": "list_controls",
@@ -229,16 +232,32 @@ def provider_status(message: Optional[str]) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+def provider_error_type(message: Optional[str]) -> Optional[str]:
+    """The provider's error type in an engine's catch-all failure (``invalid_request_error``), else None.
+
+    Read only where ``provider_status`` reads a status, and only from the JSON
+    body the SDK puts after it: a code, so it may go in the job log. The
+    provider's message is not read; the worker's log line carries it.
+    """
+    match = _PROVIDER_STATUS.match(message) if isinstance(message, str) else None
+    if not match:
+        return None
+    typed = _PROVIDER_ERROR_TYPE.match(message[match.end():])
+    return typed.group(1) if typed else None
+
+
 def _settled_line(task_id: str, run_id: str, run: Dict[str, Any], steps: List[Dict[str, Any]]) -> str:
     """One line for the job log about a settled run: codes and counts, never text."""
     facts = ledger.run_facts(run)
     status = provider_status(run.get("errorMessage"))
+    error_type = provider_error_type(run.get("errorMessage"))
     model = [s for s in steps if s.get("kind") == "MODEL_CALL"]
     tools = [s for s in steps if s.get("kind") == "TOOL_CALL"]
     return (
         f"{task_id}: run {run_id} settled {facts['status']}"
         f" (errorCode {facts['errorCode'] or '-'}"
         + (f", provider HTTP {status}" if status is not None else "")
+        + (f" {error_type}" if status is not None and error_type is not None else "")
         + f"), {len(model)} model step(s), {len(tools)} tool step(s), {facts['costTokens']} tokens"
     )
 
