@@ -55,26 +55,28 @@ export const USE_WINDOW_DAYS = 90;
  *
  * The worst agent, every section at its cap (the caps are in
  * `agent-recertification-evidence.ts`) and every row at its largest, seals at
- * 117,069 bytes (#5317, measured by
- * `tests/unit/agent-recertification-pack-budget.test.ts`):
+ * 112,969 bytes (#5317, measured by
+ * `tests/unit/agent-recertification-pack-budget.test.ts`, which states what
+ * "largest" assumes of a character's bytes):
  *
  *   grants             100 × ~297 B   ≈  30.3 KB   (GRANTS_PER_AGENT, each name cut at TOOL_NAME_IN_PACK;
  *                                                  counts only on the five propose-tool grants, ~401 B)
  *   their narrowings   100 × ~246 B   ≈  24.7 KB   (in the plan, beside the evidence)
- *   time-bounded       100 × ~429 B   ≈  42.9 KB   (TIME_BOUNDED_PER_AGENT)
+ *   time-bounded       100 × ~387 B   ≈  38.8 KB   (TIME_BOUNDED_PER_AGENT, each connection name cut at
+ *                                                  CONNECTION_NAME_IN_PACK, two bytes a character)
  *   card versions       50 × ~243 B   ≈  12.2 KB
  *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
  *   everything else                   ≈   2.4 KB
  *
- * Two such agents seal at 233,578 bytes: inside the budget the test holds a
- * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929). Three are over the
- * cap itself. So a page is TWO agents. It was one while an agent could carry
- * 200 grants with 200-character names (~178 KB of grants and narrowings on its
- * own), and twenty before #5317, which fit only while no agent came near a cap.
+ * Two such agents seal at 225,378 bytes: inside the budget the test holds a
+ * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929), by 10,551. Three
+ * are over the cap itself. So a page is TWO agents. It was one while an agent
+ * could carry 200 grants with 200-character names (~178 KB of grants and
+ * narrowings on its own), and twenty before #5317, which fit only while no
+ * agent came near a cap.
  *
- * What bounds the page now is the floor, not the grants: an agent with no
- * grant at all seals at 62,049 bytes, 42.9 KB of it the time-bounded section,
- * so no grant cap could make a page larger than three inside the budget.
+ * An agent with no grant at all seals at 57,949 bytes, 38.8 KB of it the
+ * time-bounded section, so no grant cap could make a page larger than four.
  */
 export const PACK_PAGE_SIZE = 2;
 
@@ -94,11 +96,41 @@ export const PACK_PAGE_SIZE = 2;
  */
 export const TOOL_NAME_IN_PACK = 64;
 
+/**
+ * How much of a time-bounded grant's connection name a pack carries (#5317,
+ * owner decision of 2026-11-15). The name is an administrator's label on the
+ * integration with no length bound, and it was the largest field of the
+ * largest section left once the grant names were cut. A longer name is cut
+ * and the row says so (`connectionNameTruncated`); the journal keeps it whole,
+ * and the row is identified by `journalId`.
+ */
+export const CONNECTION_NAME_IN_PACK = 64;
+
+/**
+ * `value` cut to its first `max` CHARACTERS — code points, so a cut never
+ * splits a surrogate pair. Half a pair is a lone surrogate, which Postgres
+ * refuses in a `jsonb` column: the pack's insert would fail.
+ */
+function cutForPack(value: string, max: number): { value: string; truncated: boolean } {
+    // Every code point is at least one UTF-16 unit, so a string no longer than
+    // `max` units has no more than `max` code points.
+    if (value.length <= max) return { value, truncated: false };
+    const points = Array.from(value);
+    return points.length > max
+        ? { value: points.slice(0, max).join(''), truncated: true }
+        : { value, truncated: false };
+}
+
 /** The name a pack carries for a granted tool, and whether it was cut. */
 export function packToolName(full: string): { toolName: string; truncated: boolean } {
-    return full.length > TOOL_NAME_IN_PACK
-        ? { toolName: full.slice(0, TOOL_NAME_IN_PACK), truncated: true }
-        : { toolName: full, truncated: false };
+    const cut = cutForPack(full, TOOL_NAME_IN_PACK);
+    return { toolName: cut.value, truncated: cut.truncated };
+}
+
+/** The connection name a pack carries for a time-bounded grant, and whether it was cut. */
+export function packConnectionName(full: string): { connectionName: string; truncated: boolean } {
+    const cut = cutForPack(full, CONNECTION_NAME_IN_PACK);
+    return { connectionName: cut.value, truncated: cut.truncated };
 }
 
 /**
@@ -180,6 +212,16 @@ export const TimeBoundedGrantSchema = z.object({
     journalId: z.string().min(1),
     toolName: z.string(),
     connectionName: z.string(),
+    /**
+     * True when `connectionName` is the journal's name cut at
+     * `CONNECTION_NAME_IN_PACK` (#5317); the grant is identified by
+     * `journalId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, as `toolNameTruncated`: a pack filed
+     * before it must re-parse to the sections it was hashed over. Absent means
+     * the name is whole, which every earlier pack's was.
+     */
+    connectionNameTruncated: z.boolean().optional(),
     grantedAt: Iso,
     endsAt: NullableIso,
     /** EXPIRED_VERIFIED | OUTLIVED_WINDOW | RUNNING | AWAITING_VERIFICATION | END_UNREADABLE */

@@ -18,7 +18,8 @@
  *   card versions since the last campaign    AgentPolicyCardVersion, after the agent's
  *                                            last CLOSED AGENT campaign
  *   time-bounded grants, expired on time?    ExternalWriteJournal (`GRANT_EXPIRY_ARGS` tools),
- *                                            per agent, capped and flagged (#5317)
+ *                                            per agent, capped and flagged; a long connection
+ *                                            name cut at CONNECTION_NAME_IN_PACK (#5317)
  *   guard flags                              AgentProposal.guardVerdict
  *   breaker trips                            AgentCircuitBreaker
  *   kill engagements                         AgentKillSwitch, per agent, capped and flagged (#5317)
@@ -54,6 +55,7 @@ import {
     PACK_PAGE_SIZE,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     observationWindow,
+    packConnectionName,
     packToolName,
     type RecertificationEvidence,
     type SubjectEvidence,
@@ -502,13 +504,19 @@ export async function readAgentRecertificationEvidence(
                 otherProposals,
                 cardVersions: { since: iso(since), currentVersion: card?.currentVersion ?? null, versions },
                 timeBoundedGrants: (timeBoundedByAgent.get(agentId)?.rows ?? [])
-                    .map((t) => ({
-                        journalId: t.id,
-                        toolName: t.advertisedToolName,
-                        connectionName: t.connectionName,
-                        grantedAt: t.attemptedAt.toISOString(),
-                        ...timeBoundedState(t, window.end),
-                    })),
+                    .map((t) => {
+                        // The journal's name, cut at CONNECTION_NAME_IN_PACK;
+                        // the key is written only when it was cut.
+                        const name = packConnectionName(t.connectionName);
+                        return {
+                            journalId: t.id,
+                            toolName: t.advertisedToolName,
+                            connectionName: name.connectionName,
+                            ...(name.truncated ? { connectionNameTruncated: true } : {}),
+                            grantedAt: t.attemptedAt.toISOString(),
+                            ...timeBoundedState(t, window.end),
+                        };
+                    }),
                 // This agent's own read hit its cap: the list above is its
                 // outlived and undetermined grants, then the newest that ended
                 // on time — not all of them.

@@ -10,7 +10,10 @@
  *     job removes it and queues again;
  *   - the job re-reads its requester when it runs: one who lost the key or
  *     left the workspace is refused, and one whose campaign's preparer stopped
- *     qualifying is refused — each writes nothing;
+ *     qualifying is refused — each prepares nothing and writes exactly ONE
+ *     audit row, `ACCESS_REVIEW_AGENT_PACKS_REFUSED`, naming the campaign and
+ *     the refusal code: the requester's when they resolved, the tenant system
+ *     job's when they did not;
  *   - a job naming another workspace's campaign finds nothing there and writes
  *     nothing in either (two-tenant behaviour);
  *   - otherwise the job prepares a pack for every subject, reporting progress
@@ -46,6 +49,8 @@ import {
 } from '@/app-layer/usecases/access-review-agent';
 import { runAgentRecertPackPreparation } from '@/app-layer/jobs/agent-recert-pack-preparation';
 import { AGENT_RECERTIFICATION_EVIDENCE_TOOL, PACK_PAGE_SIZE } from '@/lib/agentic/agent-recertification';
+import { tenantSystemUserId } from '@/lib/tenant-system-user';
+import { ensureTenantDek } from '@/lib/security/tenant-key-manager';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(240_000);
@@ -85,6 +90,7 @@ async function clear(): Promise<void> {
     await prisma.user.deleteMany({
         where: { emailHash: { in: [hashForLookup(`owner@${T}.test`), hashForLookup(`admin@${T}.test`)] } },
     });
+    await prisma.user.deleteMany({ where: { id: { in: [tenantSystemUserId(T), tenantSystemUserId(T2)] } } });
 }
 
 let seq = 0;
@@ -120,6 +126,43 @@ async function ctxFor(tenantId: string, userId: string): Promise<RequestContext>
 const packCount = (accessReviewId: string) =>
     prisma.accessReviewAgentPack.count({ where: { tenantId: T, accessReviewId } });
 
+/** Every row a refused job could write, counted per tenant. */
+async function footprint(tenantId: string) {
+    return {
+        audit: await prisma.auditLog.count({ where: { tenantId } }),
+        packs: await prisma.accessReviewAgentPack.count({ where: { tenantId } }),
+        narrowings: await prisma.accessReviewAgentNarrowing.count({ where: { tenantId } }),
+        runs: await prisma.workflowRun.count({ where: { tenantId } }),
+        steps: await prisma.workflowStep.count({ where: { tenantId } }),
+    };
+}
+
+/**
+ * Run a job that must be refused, and hold it to: fails with `sentence`,
+ * writes exactly one row anywhere — an `ACCESS_REVIEW_AGENT_PACKS_REFUSED`
+ * audit row in `tenantId`, naming the campaign and `code` — and returns it.
+ */
+async function expectRefused(
+    payload: Parameters<typeof runAgentRecertPackPreparation>[0],
+    sentence: RegExp,
+    code: string,
+) {
+    const before = await footprint(payload.tenantId);
+    await expect(runAgentRecertPackPreparation(payload)).rejects.toThrow(sentence);
+    const after = await footprint(payload.tenantId);
+    expect(after).toEqual({ ...before, audit: before.audit + 1 });
+    const rows = await prisma.auditLog.findMany({
+        where: { tenantId: payload.tenantId, action: 'ACCESS_REVIEW_AGENT_PACKS_REFUSED' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { entity: true, entityId: true, userId: true, actorType: true, detailsJson: true },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ entity: 'AccessReview', entityId: payload.accessReviewId });
+    expect(rows[0].detailsJson).toMatchObject({ reason: code, requestedByUserId: payload.requestedByUserId });
+    return rows[0];
+}
+
 /** The payload `requestAgentReviewPacks` enqueued last. */
 function lastPayload(): { tenantId: string; accessReviewId: string; requestedByUserId: string; requestId?: string } {
     const call = mockEnqueue.mock.calls[mockEnqueue.mock.calls.length - 1];
@@ -130,6 +173,10 @@ beforeAll(async () => {
     await clear();
     await prisma.tenant.create({ data: { id: T, name: T, slug: T } });
     await prisma.tenant.create({ data: { id: T2, name: T2, slug: T2 } });
+    // Both workspaces get their data key now rather than on their first
+    // encrypted write, so that write's footprint is its own row alone.
+    await ensureTenantDek(T);
+    await ensureTenantDek(T2);
     for (const who of ['owner', 'admin'] as const) {
         const email = `${who}@${T}.test`;
         users[who] = (await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } })).id;
@@ -199,7 +246,7 @@ describe('a large AGENT campaign is prepared by the job (#5317)', () => {
         expect(mockEnqueue).toHaveBeenCalledTimes(1);
     });
 
-    it('a requester who lost the key by the time the job runs is refused, and nothing is written', async () => {
+    it('a requester who lost the key by the time the job runs is refused, and only the refusal is recorded', async () => {
         await requestAgentReviewPacks(ctxs.admin, campaignId);
         const payload = lastPayload();
         await prisma.tenantMembership.update({
@@ -207,7 +254,10 @@ describe('a large AGENT campaign is prepared by the job (#5317)', () => {
             data: { role: Role.EDITOR },
         });
         try {
-            await expect(runAgentRecertPackPreparation(payload)).rejects.toThrow(/^REQUESTER_NOT_AUTHORISED:/);
+            const row = await expectRefused(payload, /^REQUESTER_NOT_AUTHORISED:/, 'REQUESTER_NOT_AUTHORISED');
+            // They resolved, so the row is theirs.
+            expect(row.userId).toBe(users.admin);
+            expect(row.detailsJson).toMatchObject({ attributedTo: 'REQUESTER' });
             expect(await packCount(campaignId)).toBe(0);
         } finally {
             await prisma.tenantMembership.update({
@@ -217,10 +267,17 @@ describe('a large AGENT campaign is prepared by the job (#5317)', () => {
         }
     });
 
-    it('a requester who left the workspace is refused, never run as anybody else', async () => {
-        await expect(runAgentRecertPackPreparation({
-            tenantId: T, accessReviewId: campaignId, requestedByUserId: 'usr-not-a-member',
-        })).rejects.toThrow(/^REQUESTER_NOT_AUTHORISED:/);
+    it('a requester who left the workspace is refused, never run as anybody else; the row is the system job’s', async () => {
+        // The tenant's system user (`sys_<tenantId>`) is made on its first use,
+        // as for every system job; it is a global User row, not tenant data.
+        const row = await expectRefused(
+            { tenantId: T, accessReviewId: campaignId, requestedByUserId: 'usr-not-a-member' },
+            /^REQUESTER_NOT_AUTHORISED:/,
+            'REQUESTER_NOT_AUTHORISED',
+        );
+        expect(row.userId).toBe(tenantSystemUserId(T));
+        expect(row.actorType).toBe('JOB');
+        expect(row.detailsJson).toMatchObject({ attributedTo: 'TENANT_SYSTEM_JOB' });
         expect(await packCount(campaignId)).toBe(0);
     });
 
@@ -229,20 +286,24 @@ describe('a large AGENT campaign is prepared by the job (#5317)', () => {
         const payload = lastPayload();
         await prisma.registeredAgent.update({ where: { id: preparer }, data: { status: 'SUSPENDED' } });
         try {
-            await expect(runAgentRecertPackPreparation(payload)).rejects.toThrow(/^PREPARER_NOT_ACTIVE:/);
+            const row = await expectRefused(payload, /^PREPARER_NOT_ACTIVE:/, 'PREPARER_NOT_ACTIVE');
+            expect(row.userId).toBe(users.admin);
             expect(await packCount(campaignId)).toBe(0);
         } finally {
             await prisma.registeredAgent.update({ where: { id: preparer }, data: { status: 'ACTIVE' } });
         }
     });
 
-    it('a job naming another workspace finds no campaign there and writes nothing in either', async () => {
-        await expect(runAgentRecertPackPreparation({
-            tenantId: T2, accessReviewId: campaignId, requestedByUserId: users.owner,
-        })).rejects.toThrow(/not found/i);
+    it('a job naming another workspace finds no campaign there, and writes nothing in the campaign’s workspace', async () => {
+        const inT = await footprint(T);
+        // Refused in the workspace the job names, and audited there only.
+        await expectRefused(
+            { tenantId: T2, accessReviewId: campaignId, requestedByUserId: users.owner },
+            /not found/i,
+            'CAMPAIGN_NOT_FOUND',
+        );
+        expect(await footprint(T)).toEqual(inT);
         expect(await packCount(campaignId)).toBe(0);
-        expect(await prisma.accessReviewAgentPack.count({ where: { tenantId: T2 } })).toBe(0);
-        expect(await prisma.workflowRun.count({ where: { tenantId: T2 } })).toBe(0);
     });
 
     it('the job prepares a pack for every subject, as the requester, reporting progress up to every subject', async () => {

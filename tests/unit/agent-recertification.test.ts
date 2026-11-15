@@ -12,6 +12,7 @@ import path from 'path';
 
 import {
     AGENT_CAMPAIGN_EVIDENCE_SCHEMA,
+    CONNECTION_NAME_IN_PACK,
     NARROWING_BASIS,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     RecertificationEvidenceSchema,
@@ -21,6 +22,7 @@ import {
     buildAgentCampaignEvidence,
     fullToolNameFor,
     narrowingsFor,
+    packConnectionName,
     packToolName,
     observationWindow,
     planAgentReviewPacks,
@@ -289,6 +291,64 @@ describe('a pack carries a granted tool’s name cut at TOOL_NAME_IN_PACK (#5317
         const reparsed = RecertificationEvidenceSchema.parse(evidence([cut]));
         expect(sectionsOf(reparsed.subjects[0]).grants[0].toolNameTruncated).toBe(true);
         expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_LONG_NAME_PACK_HASH);
+    });
+});
+
+describe('a pack carries a time-bounded grant’s connection name cut at CONNECTION_NAME_IN_PACK (#5317)', () => {
+    const LONG = 'Microsoft Entra ID – Privileged Identity Management (production tenant, EU West)';
+    const row = (over: Partial<SubjectEvidence['timeBoundedGrants'][number]> = {}): SubjectEvidence['timeBoundedGrants'][number] => ({
+        journalId: 'ewj-1', toolName: 'grant_time_bounded_access', connectionName: 'entra-pim',
+        grantedAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-08-02T00:00:00.000Z',
+        state: 'OUTLIVED_WINDOW', expiredOnTime: false, ...over,
+    });
+
+    it('a short name is carried whole and unflagged; a longer one is cut to the bound and flagged', () => {
+        expect(packConnectionName('entra-pim')).toEqual({ connectionName: 'entra-pim', truncated: false });
+        expect(LONG.length).toBeGreaterThan(CONNECTION_NAME_IN_PACK);
+        expect(packConnectionName(LONG)).toEqual({ connectionName: LONG.slice(0, CONNECTION_NAME_IN_PACK), truncated: true });
+    });
+
+    it('a cut never splits a character: the bound counts code points, so no lone surrogate reaches the jsonb column', () => {
+        const emoji = '\u{1F512}'.repeat(CONNECTION_NAME_IN_PACK + 1);
+        const cut = packConnectionName(emoji);
+        expect(cut.truncated).toBe(true);
+        expect(Array.from(cut.connectionName)).toHaveLength(CONNECTION_NAME_IN_PACK);
+        expect(cut.connectionName).toBe('\u{1F512}'.repeat(CONNECTION_NAME_IN_PACK));
+        // Exactly the bound in code points, though twice it in UTF-16 units, is whole.
+        expect(packConnectionName('\u{1F512}'.repeat(CONNECTION_NAME_IN_PACK)).truncated).toBe(false);
+        expect(packToolName(`a${'\u{1F512}'.repeat(TOOL_NAME_IN_PACK)}`).toolName).not.toMatch(/[\uD800-\uDBFF]$/);
+    });
+
+    // A pack whose names are short hashes as it did — this is the
+    // time-bounded pack pinned above, re-asserted here because its connection
+    // name is the field this bound reads.
+    it('a pack whose names are short hashes as it always did', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence([subject({ timeBoundedGrants: [row()] })]))));
+        expect(sectionsOf(reparsed.subjects[0]).timeBoundedGrants[0]).not.toHaveProperty('connectionNameTruncated');
+        expect(sha256Of(sectionsOf(reparsed.subjects[0])))
+            .toBe('sha256:7716a744dea1beb2bf0b2e4ae6fb5fab7fff31c09c3f26628d775d5330921ff1');
+    });
+
+    // A long connection name as the read returned it before the bound: whole,
+    // no flag. Its hash, computed with the module as it stood at 84663f4ec
+    // (before the field existed) and checked equal under this one.
+    const OLD_LONG_CONNECTION_PACK_HASH = 'sha256:90be52ff833ccdd7c65986fdf863ed500d53662b51f162eb14cca742284a1db7';
+    const old = subject({ timeBoundedGrants: [row({ connectionName: LONG })] });
+
+    it('evidence recorded without the key parses to sections without it, hashing as it did', () => {
+        const reparsed = RecertificationEvidenceSchema.parse(JSON.parse(JSON.stringify(evidence([old]))));
+        const sections = sectionsOf(reparsed.subjects[0]);
+        expect(sections.timeBoundedGrants[0]).not.toHaveProperty('connectionNameTruncated');
+        expect(sections.timeBoundedGrants[0].connectionName).toBe(LONG);
+        expect(sha256Of(sections)).toBe(OLD_LONG_CONNECTION_PACK_HASH);
+    });
+
+    it('a new read keeps the flag through the parse, and it never changes a plan', () => {
+        const cut = subject({ timeBoundedGrants: [row({ connectionName: packConnectionName(LONG).connectionName, connectionNameTruncated: true })] });
+        const reparsed = RecertificationEvidenceSchema.parse(evidence([cut]));
+        expect(sectionsOf(reparsed.subjects[0]).timeBoundedGrants[0].connectionNameTruncated).toBe(true);
+        expect(sha256Of(sectionsOf(reparsed.subjects[0]))).not.toBe(OLD_LONG_CONNECTION_PACK_HASH);
+        expect(planAgentReviewPacks(evidence([cut]))).toEqual(planAgentReviewPacks(evidence([old])));
     });
 });
 

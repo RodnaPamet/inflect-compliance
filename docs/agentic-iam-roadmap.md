@@ -769,11 +769,11 @@ one pure SYNTHESIS step, one run per two agents (`PACK_PAGE_SIZE`: the worst
 page, every section at its cap, must fit a run's 256 KiB context with 10% to
 spare, #5317). A campaign of more than five runs is prepared by the
 `agent-recert-packs-prepare` job rather than inside the request, as the person
-who asked, re-read when the job runs; the campaign page shows its progress. The pack holds the
+who asked, re-read when the job runs; a refusal then fails the job and writes one `ACCESS_REVIEW_AGENT_PACKS_REFUSED` audit row, and the campaign page shows the progress or the refusal. The pack holds the
 agent's grants (at most 100, a tool's name cut at 64 characters and flagged) with grantor and date, which granted tools it called in the 90
 days before the campaign, its proposals and their outcomes per grant, its card
-versions since its last closed campaign, its time-bounded grants and whether
-each expired on time, guard flags, breaker trips, kill engagements and its
+versions since its last closed campaign, its time-bounded grants (a connection
+name cut at 64 characters and flagged) and whether each expired on time, guard flags, breaker trips, kill engagements and its
 harness level and drift, with a `sha256:` hash of the sections, the run that
 read them and the agent whose run it was. Packs are readable by the campaign's reviewer and by holders of
 `admin.agent_registry`, as the subjects are.

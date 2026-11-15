@@ -28,7 +28,18 @@ import {
     TIME_BOUNDED_PER_AGENT,
     readAgentRecertificationEvidence,
 } from '@/app-layer/usecases/agent-recertification-evidence';
-import { AGENT_RECERTIFICATION_EVIDENCE_TOOL, type SubjectEvidence } from '@/lib/agentic/agent-recertification';
+import {
+    AGENT_RECERTIFICATION_EVIDENCE_TOOL,
+    CONNECTION_NAME_IN_PACK,
+    type SubjectEvidence,
+} from '@/lib/agentic/agent-recertification';
+
+/**
+ * A connection label longer than the pack carries (#5317), in four-byte
+ * characters, so a cut that split one would leave a lone surrogate the pack's
+ * jsonb insert refuses.
+ */
+const LONG_CONNECTION = `Entra PIM ${'\u{1F512}'.repeat(CONNECTION_NAME_IN_PACK)}`;
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -86,10 +97,10 @@ async function makeAgent(): Promise<string> {
     return agent.id;
 }
 
-function journalRow(agentId: string, attemptedAt: Date, extra: { expiryVerifiedAt?: Date | null; expiryRaisedAt?: Date | null } = {}) {
+function journalRow(agentId: string, attemptedAt: Date, extra: { expiryVerifiedAt?: Date | null; expiryRaisedAt?: Date | null; connectionName?: string } = {}) {
     return {
         tenantId: T,
-        connectionName: 'entra-pim',
+        connectionName: extra.connectionName ?? 'entra-pim',
         endpointUrl: 'https://mcp.example.test/entra',
         toolName: GRANT_TOOL,
         advertisedToolName: GRANT_TOOL,
@@ -161,6 +172,11 @@ beforeAll(async () => {
     }));
     // Made before the window and never verified gone: may still be live in it.
     rows.quietBUnverified = await one(journalRow(agents.quietB, new Date(now - 120 * DAY)));
+    // Verified gone in the window, through a connection with a long label.
+    rows.quietBLongName = await one(journalRow(agents.quietB, new Date(now - 80 * DAY), {
+        expiryVerifiedAt: new Date(now - 79 * DAY),
+        connectionName: LONG_CONNECTION,
+    }));
     // Made, ended and verified gone before the window began: not this window's.
     rows.quietBStale = await one(journalRow(agents.quietB, new Date(now - 200 * DAY), {
         expiryVerifiedAt: new Date(now - 190 * DAY),
@@ -247,6 +263,23 @@ describe('the time-bounded-grant section of a reviewer pack (#5317)', () => {
         expect((busy.sectionsJson as { timeBoundedTruncated?: boolean }).timeBoundedTruncated).toBe(true);
         expect((byAgent.get(agents.quietA)!.sectionsJson as { timeBoundedTruncated?: boolean }).timeBoundedTruncated).toBe(false);
         for (const p of packs) expect(p.contentHash).toBe(sha256Of(p.sectionsJson));
+    });
+
+    it('a long connection label is cut to the bound and flagged in the FILED pack; the journal keeps it whole', async () => {
+        const quietB = (await subjects()).get(agents.quietB)!;
+        const long = quietB.timeBoundedGrants.find((g) => g.journalId === rows.quietBLongName)!;
+        expect(long.connectionName).toBe(Array.from(LONG_CONNECTION).slice(0, CONNECTION_NAME_IN_PACK).join(''));
+        expect(long.connectionNameTruncated).toBe(true);
+        const short = quietB.timeBoundedGrants.find((g) => g.journalId === rows.quietBUnverified)!;
+        expect(short.connectionName).toBe('entra-pim');
+        expect(short).not.toHaveProperty('connectionNameTruncated');
+
+        const pack = await prisma.accessReviewAgentPack.findFirstOrThrow({ where: { accessReviewId: campaignId, agentId: agents.quietB } });
+        const filed = (pack.sectionsJson as { timeBoundedGrants: Array<{ journalId: string; connectionName: string; connectionNameTruncated?: boolean }> })
+            .timeBoundedGrants.find((g) => g.journalId === rows.quietBLongName)!;
+        expect(filed).toMatchObject({ connectionName: long.connectionName, connectionNameTruncated: true });
+        const journal = await prisma.externalWriteJournal.findUniqueOrThrow({ where: { id: rows.quietBLongName } });
+        expect(journal.connectionName).toBe(LONG_CONNECTION);
     });
 
     it('a subject read on its own is read the same way', async () => {

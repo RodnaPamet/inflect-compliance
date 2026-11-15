@@ -26,21 +26,30 @@ the grant section. Two changes follow from the owner's decision.
   the pack's name is that name cut — so what a reviewer accepts and what the
   revocation records name the tool whole.
 
-Measured by `tests/unit/agent-recertification-pack-budget.test.ts`:
+- A time-bounded grant's connection name is carried at most
+  `CONNECTION_NAME_IN_PACK` (64) characters (`packConnectionName`, second
+  owner decision of 2026-11-15), flagged `connectionNameTruncated: true` the
+  same way. Nothing reads the name back from a pack; the journal keeps it
+  whole. Both bounds count CODE POINTS, so a cut never leaves half a surrogate
+  pair, which Postgres refuses in a `jsonb` column.
+
+Measured by `tests/unit/agent-recertification-pack-budget.test.ts`, with tool
+names ASCII and connection names two bytes a character (Cyrillic):
 
 | | bytes sealed |
 | --- | --- |
-| one worst agent | 117,069 |
-| two worst agents | 233,578 |
+| one worst agent | 112,969 |
+| two worst agents | 225,378 |
 | budget (cap less 10% headroom) | 235,929 |
+| two worst agents, connection names in emoji (4 B a character) | 250,978 (under the cap, over the budget) |
 | three worst agents | over the cap |
-| one agent with no grants | 62,049 |
+| one agent with no grants | 57,949 |
 
 | section (one agent, at its cap) | rows × worst row | bytes |
 | --- | --- | --- |
 | grants | 100 × ~297 (five carry counts, ~401) | ~30.3 KB |
 | their narrowings (in the plan) | 100 × ~246 | ~24.7 KB |
-| time-bounded grants | 100 × ~429 | ~42.9 KB |
+| time-bounded grants | 100 × ~387 | ~38.8 KB |
 | card versions | 50 × ~243 | ~12.2 KB |
 | kill engagements | 25 × ~184 | ~4.6 KB |
 
@@ -63,6 +72,8 @@ POST …/agent-packs ── requestAgentReviewPacks
         access_reviews.create? — no ⇒ REQUESTER_NOT_AUTHORISED
         prepareAgentReviewPacks(ctx, id, { onProgress → job.updateProgress })
            (readPreparationHead again: every refusal re-asked)
+        a refusal ⇒ one ACCESS_REVIEW_AGENT_PACKS_REFUSED audit row {reason: CODE},
+           as the requester if they resolved, else the tenant system job; job fails
         metric agentic.recert_pack_preparation.outcome {prepared|refused|error, job}
 
 GET …/agent-packs ── packs + (no packs yet ? readAgentPackPreparation : null)
@@ -95,6 +106,14 @@ page ── polls every 3 s while QUEUED/RUNNING; "Preparing reviewer packs… N
   called by the request before it enqueues and by `prepareAgentReviewPacks`
   when the job runs, so the two cannot drift. The job adds the route's key
   (`access_reviews.create`), which no route asks for it.
+- **A refusal is audited once, with its code.** `ACCESS_REVIEW_AGENT_PACKS_REFUSED`
+  names the campaign, the refusal code, the requester's id and whom the row is
+  attributed to, and no free text. The row is the requester's re-read
+  context's when it resolved, and the tenant system job's
+  (`buildTenantSystemJobContext`, the `sys_<tenantId>` principal) when it did
+  not: a person who left is not borrowed to sign for their own refusal. The
+  head's two uncoded refusals are named `CAMPAIGN_NOT_FOUND` and
+  `REQUESTER_NOT_ADMIN`. A fault that is not a refusal writes no row.
 - **One attempt.** Every refusal the job can reach is terminal, and a retry
   would start every page's workflow run again. The page shows the failure and
   the next press removes the failed job before queueing.
@@ -105,11 +124,9 @@ page ── polls every 3 s while QUEUED/RUNNING; "Preparing reviewer packs… N
   read is `UNKNOWN`, never "none": "none" would offer Prepare over a
   preparation that may be running. A failure's reason is shown only when it
   is one of the usecase's refusal sentences (`CODE: detail`).
-- **The floor, not the grants, now bounds the page.** An agent with no grant
-  at all seals at ~62 KB, ~43 KB of it the time-bounded section with its
-  connection names assumed at 200 bytes, so no grant cap could make a page
-  larger than three. Bounding the connection name the same way is not done
-  here; it is the owner's call.
-- The margin from two worst agents to the 10% headroom line is ~2.3 KB; a
-  field added to any section will fail the budget test before it fails a
-  campaign.
+- **What the budget assumes of a character.** Two worst agents are 10,551
+  bytes inside the 10% line with two-byte connection names, 23,351 with ASCII
+  ones. Four-byte labels (emoji) put a page over the budget but under the cap,
+  which the budget test holds. A label of control characters or lone
+  surrogates, which JSON writes as six-byte escapes, would not fit; no code
+  bounds that, and the test says so.

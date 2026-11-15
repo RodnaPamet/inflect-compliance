@@ -15,7 +15,9 @@
  * the same code: the requester must still be an ACTIVE member holding
  * `access_reviews.create` and the admin tier, be a person, and the campaign
  * and both preparers must still qualify. A refusal FAILS the job with its
- * sentence, which the page shows, and writes nothing.
+ * sentence, which the page shows, prepares nothing, and writes one
+ * `ACCESS_REVIEW_AGENT_PACKS_REFUSED` audit row (the requester's when they
+ * resolved, the tenant system job's when they did not).
  *
  * @module app-layer/jobs/agent-recert-pack-preparation
  */
@@ -39,6 +41,12 @@ export async function runAgentRecertPackPreparation(
             userId: payload.requestedByUserId,
             requestId: payload.requestId ?? `agent-recert-packs-${payload.accessReviewId}`,
         });
-        return prepareAgentReviewPacksForRequester(ctx, payload.accessReviewId, { onProgress });
+        return prepareAgentReviewPacksForRequester({
+            tenantId: payload.tenantId,
+            ctx,
+            accessReviewId: payload.accessReviewId,
+            requestedByUserId: payload.requestedByUserId,
+            requestId: payload.requestId,
+        }, { onProgress });
     }, { tenantId: payload.tenantId });
 }

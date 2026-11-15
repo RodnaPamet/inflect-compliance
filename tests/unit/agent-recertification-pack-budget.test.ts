@@ -27,16 +27,27 @@
  *     many grants carry counts, one per proposal status;
  *   - a time-bounded grant's tool is `grant_time_bounded_access`, the only key
  *     of `GRANT_EXPIRY_ARGS`;
- *   - ASSUMED: a connection name serialises to at most 200 bytes. The
- *     integrations route bounds it by nothing; 200 bytes is 100 Cyrillic or
- *     200 Latin characters.
+ *   - a connection name is carried through `packConnectionName`, so at most
+ *     `CONNECTION_NAME_IN_PACK` characters (the integrations route bounds the
+ *     stored name by nothing).
+ *
+ * And two ASSUMPTIONS about how a character serialises, which no code holds:
+ *   - a tool name is ASCII, one byte a character (MCP's naming rule for
+ *     tools, and every built-in name);
+ *   - a connection name, an administrator's label, is at most two bytes a
+ *     character — Latin or Cyrillic. A label of four-byte characters (emoji)
+ *     still fits the cap itself, which the last case below holds; one made of
+ *     control characters or lone surrogates, which JSON writes as six-byte
+ *     escapes, would not.
  */
 import { AgentProposalKind, SuggestionItemStatus } from '@prisma/client';
 
 import {
+    CONNECTION_NAME_IN_PACK,
     PACK_PAGE_SIZE,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     TOOL_NAME_IN_PACK,
+    packConnectionName,
     packToolName,
     planAgentReviewPacks,
     type RecertificationEvidence,
@@ -54,7 +65,10 @@ import {
 const ID = 25;
 const USER_ID = 32;
 const GRANTABLE_TOOL_NAME = 200;
-const CONNECTION_NAME_BYTES = 200;
+/** A connection name longer than the pack carries, two bytes a character (Cyrillic). */
+const CYRILLIC_LABEL = 'Ж'.repeat(CONNECTION_NAME_IN_PACK * 3);
+/** The same, four bytes a character (emoji). */
+const EMOJI_LABEL = '\u{1F512}'.repeat(CONNECTION_NAME_IN_PACK * 3);
 const TS = '2026-11-14T12:34:56.789Z';
 
 /**
@@ -82,7 +96,7 @@ const PROPOSE_TOOLS = Object.keys(PROPOSAL_KIND_BY_PROPOSE_TOOL).length;
  * narrowing, which carries the name a second time. (A truncated read holds the
  * same number of grants and plans no narrowing, so it is lighter.)
  */
-function worstSubject(): SubjectEvidence {
+function worstSubject(label: string = CYRILLIC_LABEL): SubjectEvidence {
     return {
         decisionId: id(),
         agentId: id(),
@@ -114,15 +128,19 @@ function worstSubject(): SubjectEvidence {
                 permittedToolCount: 100,
             })),
         },
-        timeBoundedGrants: Array.from({ length: TIME_BOUNDED_PER_AGENT }, () => ({
-            journalId: id(),
-            toolName: 'grant_time_bounded_access',
-            connectionName: 'n'.repeat(CONNECTION_NAME_BYTES),
-            grantedAt: TS,
-            endsAt: TS,
-            state: 'AWAITING_VERIFICATION',
-            expiredOnTime: null,
-        })),
+        timeBoundedGrants: Array.from({ length: TIME_BOUNDED_PER_AGENT }, () => {
+            const name = packConnectionName(label);
+            return {
+                journalId: id(),
+                toolName: 'grant_time_bounded_access',
+                connectionName: name.connectionName,
+                ...(name.truncated ? { connectionNameTruncated: true } : {}),
+                grantedAt: TS,
+                endsAt: TS,
+                state: 'AWAITING_VERIFICATION',
+                expiredOnTime: null,
+            };
+        }),
         timeBoundedTruncated: true,
         guardFlags: { CLEAN: 999_999, FLAGGED: 999_999, QUARANTINED: 999_999 },
         breaker: {
@@ -190,7 +208,8 @@ function sealedBytes(evidence: RecertificationEvidence): number | null {
     return bytes;
 }
 
-const worstPage = (size: number) => page(Array.from({ length: size }, worstSubject));
+const worstPage = (size: number, label: string = CYRILLIC_LABEL) =>
+    page(Array.from({ length: size }, () => worstSubject(label)));
 const fitsBudget = (size: number) => {
     const bytes = sealedBytes(worstPage(size));
     return bytes !== null && bytes <= BUDGET;
@@ -218,5 +237,19 @@ describe('the worst page of recertification evidence fits its run’s context (#
         expect(grant.toolNameTruncated).toBe(true);
         const plan = planAgentReviewPacks(page([worstSubject()]));
         for (const n of plan.packs[0].narrowings) expect(n.toolName.length).toBeLessThanOrEqual(TOOL_NAME_IN_PACK);
+    });
+
+    it('a connection name weighs at most CONNECTION_NAME_IN_PACK characters in the pack, however long the label is', () => {
+        const row = worstSubject().timeBoundedGrants[0];
+        expect(Array.from(row.connectionName)).toHaveLength(CONNECTION_NAME_IN_PACK);
+        expect(row.connectionNameTruncated).toBe(true);
+    });
+
+    it('a full page whose labels are four bytes a character still seals under the cap itself', () => {
+        // Outside the assumption the budget is drawn on, so held to the cap
+        // and not to the headroom.
+        const bytes = sealedBytes(worstPage(PACK_PAGE_SIZE, EMOJI_LABEL));
+        expect(bytes).not.toBeNull();
+        expect(bytes!).toBeLessThanOrEqual(MAX_CONTEXT_BYTES);
     });
 });

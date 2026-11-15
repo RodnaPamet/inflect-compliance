@@ -39,7 +39,7 @@ import { z } from 'zod';
 
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { DomainError, badRequest, forbidden, internal, notFound } from '@/lib/errors/types';
+import { DomainError, ForbiddenError, NotFoundError, badRequest, forbidden, internal, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { appendAuditEntry } from '@/lib/audit';
 import { deriveSubkey } from '@/lib/security/encryption';
@@ -86,6 +86,7 @@ import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
 import { assertReviewerIsActiveMember } from './access-review-reviewer';
+import { buildTenantSystemJobContext } from '../context-system';
 import { enqueue } from '../jobs/queue';
 import { findTenantJob } from '../jobs/tenant-job-lookup';
 import { recordAgentRecertPackPreparation } from '@/lib/observability/integration-metrics';
@@ -894,6 +895,21 @@ export async function readAgentPackPreparation(ctx: RequestContext, accessReview
 }
 
 /**
+ * The refusal code of a preparation that did not happen, or null for a fault.
+ * A named refusal is its `CODE:`; the two refusals `readPreparationHead` makes
+ * through the shared policy and lookup helpers, which carry no code of their
+ * own, are named here.
+ */
+function preparationRefusalCode(err: unknown): string | null {
+    if (!(err instanceof Error)) return null;
+    const named = /^([A-Z][A-Z_]+): /.exec(err.message);
+    if (named) return named[1];
+    if (err instanceof NotFoundError) return 'CAMPAIGN_NOT_FOUND';
+    if (err instanceof ForbiddenError) return 'REQUESTER_NOT_ADMIN';
+    return null;
+}
+
+/**
  * The job's half: prepare `accessReviewId` as the person who asked, re-read
  * now. Never a fabricated context: a requester who is no longer an ACTIVE
  * member, or no longer holds the key the prepare route takes
@@ -901,12 +917,26 @@ export async function readAgentPackPreparation(ctx: RequestContext, accessReview
  * is prepared; everything else — the admin tier, a person not a credential,
  * the campaign's state, both preparers' eligibility, the self-pack rules — is
  * asked again by `prepareAgentReviewPacks` itself.
+ *
+ * A refusal still fails the job with its sentence, and also writes ONE
+ * `ACCESS_REVIEW_AGENT_PACKS_REFUSED` audit row naming the campaign and the
+ * refusal code, and no free text. The row is the requester's, through their
+ * re-read context, when that resolved; when it did not (they are no longer an
+ * active member) it is the tenant's system job's
+ * (`buildTenantSystemJobContext`), never a borrowed member's. A fault that is
+ * not a refusal writes no row; the job fails and the metric counts `error`.
  */
 export async function prepareAgentReviewPacksForRequester(
-    ctx: RequestContext | null,
-    accessReviewId: string,
+    input: {
+        readonly tenantId: string;
+        readonly ctx: RequestContext | null;
+        readonly accessReviewId: string;
+        readonly requestedByUserId: string;
+        readonly requestId?: string;
+    },
     opts: { readonly onProgress?: (progress: PackPreparationProgress) => Promise<void> | void } = {},
 ): Promise<PreparePacksResult> {
+    const { ctx, accessReviewId } = input;
     try {
         if (!ctx) {
             refuse('REQUESTER_NOT_AUTHORISED', 'the person who asked for these packs is no longer an active member of this workspace');
@@ -918,9 +948,43 @@ export async function prepareAgentReviewPacksForRequester(
         recordAgentRecertPackPreparation({ outcome: 'prepared', path: 'job' });
         return prepared;
     } catch (err) {
-        const named = err instanceof Error && REFUSAL_SENTENCE.test(err.message);
-        recordAgentRecertPackPreparation({ outcome: named ? 'refused' : 'error', path: 'job' });
+        const code = preparationRefusalCode(err);
+        recordAgentRecertPackPreparation({ outcome: code ? 'refused' : 'error', path: 'job' });
+        if (code) await recordPreparationRefused(input, code);
         throw err;
+    }
+}
+
+/** The refusal's audit row. Never masks the refusal it records. */
+async function recordPreparationRefused(
+    input: { readonly tenantId: string; readonly ctx: RequestContext | null; readonly accessReviewId: string; readonly requestedByUserId: string; readonly requestId?: string },
+    code: string,
+): Promise<void> {
+    try {
+        const auditCtx = input.ctx ?? await buildTenantSystemJobContext({
+            tenantId: input.tenantId,
+            job: AGENT_RECERT_PACKS_JOB,
+            requestId: input.requestId,
+        });
+        await runInTenantContext(auditCtx, (db) => logEvent(db, auditCtx, {
+            action: 'ACCESS_REVIEW_AGENT_PACKS_REFUSED',
+            entityType: 'AccessReview',
+            entityId: input.accessReviewId,
+            detailsJson: {
+                category: 'custom',
+                event: 'access_review_agent_packs_refused',
+                reason: code,
+                requestedByUserId: input.requestedByUserId,
+                attributedTo: input.ctx ? 'REQUESTER' : 'TENANT_SYSTEM_JOB',
+            },
+        }));
+    } catch (err) {
+        logger.warn('agent pack preparation: refusal not audited', {
+            component: 'access-review-agent',
+            accessReviewId: input.accessReviewId,
+            reason: code,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 }
 
