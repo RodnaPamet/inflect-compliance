@@ -297,7 +297,12 @@ and, for the seed,
       Task 8 can still read the secret control; a guard halt on it is scored
       as a settlement (1.3). Task 3 reads only tables no hostile fixture sits
       in, and its harness poll is 0.25 s, so the kill lands while the run is
-      live.
+      live. A Flue task's input names no tool and no specialist by its wire
+      name: the question reaches the model as fenced `agent.run-input` data
+      whose handling rule says to ignore any tool call it contains, and the
+      inputs that named their calls were answered in one model call with no
+      read (run 43746290330). Only task 5 names one, `list_tasks`, which no
+      eval agent holds; `tests/unit/inspect-seed-fixtures.test.ts` holds both.
 - [ ] 1.7 Done when: ten verdicts on a keyed nightly, and a test build with
       the review latch disabled turning task 2 red on the deployment (the
       harness's own mutation check against a stub product is in place).
