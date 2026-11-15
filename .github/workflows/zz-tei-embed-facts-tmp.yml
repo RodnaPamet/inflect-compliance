@@ -1,0 +1,157 @@
+# TEMPORARY, scratch branch only — never merged. Reads public facts for the
+# Retriever 1.1 `tei-embed` service that the authoring session's network could
+# not reach: the Hub revision, licence file and file checksums of the chosen
+# models, a Trivy report on the pinned TEI image, and the container's memory
+# under load at 1.0 CPU. Read-only; holds no secret.
+name: zz tei-embed facts (temporary)
+on:
+  push:
+    branches: [claude/retriever-tei-facts-tmp]
+permissions:
+  contents: read
+jobs:
+  hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      embed_sha: ${{ steps.facts.outputs.embed_sha }}
+    steps:
+      - id: facts
+        name: Hub facts
+        run: |
+          set -euo pipefail
+          for m in intfloat/multilingual-e5-small BAAI/bge-reranker-base; do
+            echo "================ $m"
+            curl -fsS "https://huggingface.co/api/models/$m/revision/main" > rev.json
+            jq '{id, sha, lastModified, createdAt, gated, private, license: .cardData.license, licenseTags: (.tags | map(select(startswith("license:"))))}' rev.json
+            sha=$(jq -r .sha rev.json)
+            if [ "$m" = intfloat/multilingual-e5-small ]; then echo "embed_sha=$sha" >> "$GITHUB_OUTPUT"; fi
+            echo "--- files at $sha (path, size, sha256-or-gitoid, lfs?)"
+            curl -fsS "https://huggingface.co/api/models/$m/tree/$sha?recursive=true" \
+              | jq -r '.[] | select(.type=="file") | [.path, (.size|tostring), (.lfs.oid // .oid), (if .lfs then "lfs" else "git" end)] | @tsv'
+            for f in LICENSE LICENSE.txt LICENSE.md; do
+              code=$(curl -sS -o lic.txt -w '%{http_code}' -L "https://huggingface.co/$m/resolve/$sha/$f" || true)
+              echo "--- $f -> HTTP $code"
+              if [ "$code" = 200 ]; then sha256sum lic.txt; cat lic.txt; echo; fi
+            done
+            echo "--- README front matter, licence and language lines"
+            curl -fsSL "https://huggingface.co/$m/resolve/$sha/README.md" -o readme.md
+            sha256sum readme.md
+            awk 'NR==1 && /^---$/ {f=1; next} f && /^---$/ {exit} f' readme.md | grep -n -E '^(license|license_name|license_link|language|library_name|pipeline_tag)' || true
+            echo "--- README lines naming a licence"
+            grep -n -i 'licen' readme.md | head -20 || true
+          done
+
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Trivy, fixed only (the repository gate's settings)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+          format: table
+          exit-code: "0"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          timeout: 15m
+      - name: Trivy, including unfixed
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+          format: table
+          exit-code: "0"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          vuln-type: os,library
+          timeout: 15m
+          skip-setup-trivy: true
+
+  memory:
+    needs: hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      IMAGE: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+      MODEL: intfloat/multilingual-e5-small
+      REV: ${{ needs.hub.outputs.embed_sha }}
+    steps:
+      - name: Host
+        run: |
+          nproc; grep -m1 'model name' /proc/cpuinfo; grep -m1 -o -w -E 'avx2|avx512f' /proc/cpuinfo | sort -u | tr '\n' ' '; echo
+          free -m; df -h / | tail -1; stat -fc %T /sys/fs/cgroup
+      - name: Image
+        run: |
+          time docker pull "$IMAGE"
+          docker image inspect "$IMAGE" --format 'size={{.Size}} user={{.Config.User}} env={{json .Config.Env}} entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}} exposed={{json .Config.ExposedPorts}} healthcheck={{json .Config.Healthcheck}}'
+          docker run --rm --entrypoint sh "$IMAGE" -c 'for b in curl wget bash nc python3; do printf "%s=" $b; command -v $b || echo absent; done; cat /etc/os-release | head -3; id'
+      - name: Load script
+        run: |
+          cat > load.py <<'PY'
+          import json, sys, time, urllib.request
+          base = sys.argv[1]; rounds = int(sys.argv[2])
+          en = "The supplier shall notify the controller of any personal data breach without undue delay and in any event within seventy two hours, providing the categories and approximate number of data subjects concerned. "
+          bg = "Доставчикът уведомява администратора за всяко нарушение на сигурността на личните данни без ненужно забавяне и при всички случаи в срок от седемдесет и два часа. "
+          passage = "passage: " + (en + bg) * 9
+          def post(texts):
+              body = json.dumps({"model": "intfloat/multilingual-e5-small", "input": texts}).encode()
+              req = urllib.request.Request(base + "/v1/embeddings", body, {"content-type": "application/json"})
+              t = time.perf_counter()
+              with urllib.request.urlopen(req, timeout=120) as r:
+                  out = json.load(r)
+              return (time.perf_counter() - t) * 1000, out
+          ms, out = post(["query: how fast must a breach be reported?"])
+          print("model field:", out.get("model"), "dims:", len(out["data"][0]["embedding"]))
+          def pct(xs, p):
+              xs = sorted(xs); return xs[min(len(xs) - 1, int(round(p * (len(xs) - 1))))]
+          q = [post(["query: how fast must a breach be reported?"])[0] for _ in range(100)]
+          print("query x1: p50 %.1f ms p95 %.1f ms" % (pct(q, .5), pct(q, .95)))
+          b = [post([passage] * 32)[0] for _ in range(rounds)]
+          print("passages x32: p50 %.0f ms p95 %.0f ms" % (pct(b, .5), pct(b, .95)))
+          b = [post([passage] * 64)[0] for _ in range(max(3, rounds // 3))]
+          print("passages x64: p50 %.0f ms p95 %.0f ms" % (pct(b, .5), pct(b, .95)))
+          PY
+      - name: Cold start into an empty volume, 4g limit (the true peak)
+        run: |
+          set -euo pipefail
+          test -n "$REV"
+          docker volume create tei-data
+          start=$(date +%s)
+          docker run -d --name tei --cpus 1.0 --memory 4g -v tei-data:/data -p 127.0.0.1:8080:8080 "$IMAGE" \
+            --model-id "$MODEL" --revision "$REV" --port 8080 --max-client-batch-size 64 --auto-truncate
+          for i in $(seq 1 300); do curl -fsS -o /dev/null http://127.0.0.1:8080/health && break; sleep 2; done
+          echo "healthy after $(( $(date +%s) - start )) s"
+          docker logs tei 2>&1 | tail -40
+          curl -fsS http://127.0.0.1:8080/info; echo
+          sudo du -sh /var/lib/docker/volumes/tei-data/_data
+          sudo find /var/lib/docker/volumes/tei-data/_data -type f -size +1M -exec ls -l {} \; -exec sha256sum {} \;
+          sudo find /var/lib/docker/volumes/tei-data/_data -type f | sed 's#.*/_data/##'
+          CG=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' tei).scope
+          echo "idle: current=$(( $(cat $CG/memory.current) / 1048576 )) MiB peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB"
+          python3 load.py http://127.0.0.1:8080 30
+          echo "after load: current=$(( $(cat $CG/memory.current) / 1048576 )) MiB peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB"
+          grep -E '^(anon|file) ' $CG/memory.stat
+          docker stats --no-stream tei
+          docker rm -f tei
+      - name: Recreate on the populated volume with NO network, 1g limit
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          docker run -d --name tei --network none --cpus 1.0 --memory 1g --memory-swap 1g -v tei-data:/data "$IMAGE" \
+            --model-id "$MODEL" --revision "$REV" --port 8080 --max-client-batch-size 64 --auto-truncate
+          for i in $(seq 1 90); do docker logs tei 2>&1 | grep -q 'Ready' && break; sleep 2; done
+          echo "ready (no network) after $(( $(date +%s) - start )) s"
+          docker logs tei 2>&1 | tail -15
+          docker inspect -f 'running={{.State.Running}} oom={{.State.OOMKilled}}' tei
+          docker rm -f tei
+      - name: Serve under the proposed 1g limit and load it
+        run: |
+          set -euo pipefail
+          docker run -d --name tei --cpus 1.0 --memory 1g --memory-swap 1g -v tei-data:/data -p 127.0.0.1:8080:8080 "$IMAGE" \
+            --model-id "$MODEL" --revision "$REV" --port 8080 --max-client-batch-size 64 --auto-truncate
+          for i in $(seq 1 120); do curl -fsS -o /dev/null http://127.0.0.1:8080/health && break; sleep 2; done
+          CG=/sys/fs/cgroup/system.slice/docker-$(docker inspect -f '{{.Id}}' tei).scope
+          python3 load.py http://127.0.0.1:8080 30 || echo "load failed"
+          echo "1g: peak=$(( $(cat $CG/memory.peak) / 1048576 )) MiB events: $(tr '\n' ' ' < $CG/memory.events)"
+          docker inspect -f 'running={{.State.Running}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}' tei
