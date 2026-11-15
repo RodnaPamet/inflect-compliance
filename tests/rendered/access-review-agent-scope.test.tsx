@@ -118,6 +118,7 @@ interface PacksPayload {
     narrowings: unknown[];
     samples: unknown[];
     evidence: unknown;
+    preparation?: unknown;
 }
 
 function pack(decisionId: string) {
@@ -169,7 +170,7 @@ beforeEach(() => {
     });
 });
 
-function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string; holdsAgentRegistry?: boolean } = {}) {
+function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string; holdsAgentRegistry?: boolean; canManage?: boolean } = {}) {
     detailPayload = agentReview(review);
     return render(
         withClient(
@@ -179,6 +180,7 @@ function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean
                 currentUserId={opts.userId ?? 'usr_admin'}
                 isAdmin={opts.isAdmin ?? true}
                 holdsAgentRegistry={opts.holdsAgentRegistry ?? false}
+                {...(opts.canManage === undefined ? {} : { canManage: opts.canManage })}
             />,
         ),
     );
@@ -217,6 +219,43 @@ describe('the detail page reads an AGENT campaign', () => {
         await waitFor(() => expect(screen.getByTestId('agent-decision-select-1')).toBeInTheDocument());
     });
 
+    it('says which of a pack’s sections were capped, so a partial list is not read as whole (#5317)', async () => {
+        const capped = pack('1');
+        capped.sectionsJson = {
+            ...capped.sectionsJson,
+            grantsTruncated: true,
+            timeBoundedTruncated: true,
+            killsTruncated: true,
+        } as typeof capped.sectionsJson;
+        const partly = pack('2');
+        partly.sectionsJson = { ...partly.sectionsJson, grantsTruncated: false, timeBoundedTruncated: true } as typeof partly.sectionsJson;
+        packsPayload = { packs: [capped, partly], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+
+        await waitFor(() => expect(screen.getByTestId('agent-pack-truncated-1')).toBeInTheDocument());
+        const all = screen.getByTestId('agent-pack-truncated-1');
+        expect(all).toHaveTextContent('Grant list capped — the pack does not hold every grant');
+        expect(all).toHaveTextContent('Time-bounded grant list capped — the pack does not hold every one');
+        expect(all).toHaveTextContent('Kill list capped — the pack does not hold every kill');
+
+        const one = screen.getByTestId('agent-pack-truncated-2');
+        expect(one).toHaveTextContent('Time-bounded grant list capped');
+        expect(one).not.toHaveTextContent('Grant list capped');
+        expect(one).not.toHaveTextContent('Kill list capped');
+    });
+
+    it('notes nothing for a pack whose sections were read whole, or that predates the flags', async () => {
+        const whole = pack('1');
+        whole.sectionsJson = {
+            ...whole.sectionsJson, grantsTruncated: false, timeBoundedTruncated: false, killsTruncated: false,
+        } as typeof whole.sectionsJson;
+        packsPayload = { packs: [whole, pack('2')], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-pack-1')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-pack-truncated-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('agent-pack-truncated-2')).not.toBeInTheDocument();
+    });
+
     it('names a person as the preparer of the preparing agent’s own pack, when no agent prepared it', async () => {
         const own = { ...pack('1'), preparedByAgentId: null, preparationBasis: 'PERSON_STATIC_SELF_PACK' };
         packsPayload = { packs: [own, pack('2')], narrowings: [], samples: [], evidence: null };
@@ -229,6 +268,12 @@ describe('the detail page reads an AGENT campaign', () => {
         await waitFor(() => expect(screen.getByTestId('access-review-agent-prepare-packs')).toBeInTheDocument());
         expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
         expect(screen.getAllByText('No pack yet').length).toBeGreaterThan(0);
+    });
+
+    it('offers no preparation to an admin whose role lacks access_reviews.create, which the route takes (#5313)', async () => {
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin', canManage: false });
+        await waitFor(() => expect(screen.getAllByText('No pack yet').length).toBeGreaterThan(0));
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
     });
 
     it('gives the agent’s owner no verdict and no narrowing control, even as an admin', async () => {
@@ -285,6 +330,52 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.queryByTestId('access-review-agent-read-only')).not.toBeInTheDocument();
         expect(screen.queryByTestId('access-review-agent-table')).not.toBeInTheDocument();
     });
+});
+
+describe('a large campaign prepared in the background shows its progress (#5317)', () => {
+    it('shows "N of M agents" while the job runs, and offers no second Prepare', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'RUNNING', done: 4, total: 12 } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        const notice = await screen.findByTestId('access-review-agent-packs-preparing');
+        expect(notice).toHaveAttribute('data-state', 'RUNNING');
+        expect(notice).toHaveTextContent('Preparing reviewer packs… 4 of 12 agents');
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
+    });
+
+    it('says a queued preparation is queued before the job reports a total', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'QUEUED', done: 0, total: null } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        expect(await screen.findByTestId('access-review-agent-packs-preparing'))
+            .toHaveTextContent('Reviewer packs are queued for preparation');
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
+    });
+
+    it('says a failed preparation failed, with its refusal, and offers Prepare again', async () => {
+        packsPayload = {
+            packs: [], narrowings: [], samples: [], evidence: null,
+            preparation: { state: 'FAILED', reason: 'PREPARER_NOT_ACTIVE: the preparer is SUSPENDED' },
+        };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        const alert = await screen.findByTestId('access-review-agent-packs-preparation-failed');
+        expect(alert).toHaveTextContent('Preparing the reviewer packs failed');
+        expect(alert).toHaveTextContent('PREPARER_NOT_ACTIVE: the preparer is SUSPENDED');
+        expect(screen.getByTestId('access-review-agent-prepare-packs')).toBeInTheDocument();
+        expect(screen.queryByTestId('access-review-agent-packs-preparing')).not.toBeInTheDocument();
+    });
+
+    it('re-reads the packs while the job runs, and reloads the campaign when it is done', async () => {
+        packsPayload = { packs: [], narrowings: [], samples: [], evidence: null, preparation: { state: 'RUNNING', done: 1, total: 2 } };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        await screen.findByTestId('access-review-agent-packs-preparing');
+        const fetchMock = (global as unknown as { fetch: jest.Mock }).fetch;
+        const detailReads = () => fetchMock.mock.calls.filter(([u]) => /\/access-reviews\/rev_agent$/.test(String(u))).length;
+        const before = detailReads();
+
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], samples: [], evidence: null, preparation: null };
+        await waitFor(() => expect(screen.getByTestId('agent-pack-1')).toBeInTheDocument(), { timeout: 6000 });
+        expect(screen.queryByTestId('access-review-agent-packs-preparing')).not.toBeInTheDocument();
+        await waitFor(() => expect(detailReads()).toBeGreaterThan(before));
+    }, 10_000);
 });
 
 describe('the register reads an AGENT campaign', () => {

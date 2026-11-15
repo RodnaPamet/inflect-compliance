@@ -52,6 +52,8 @@ import {
     addReadinessToPack,
     exportUnmappedCsv,
     exportControlGapsCsv,
+    scoreReadiness,
+    UNCAPPED_GAPS,
 } from '@/app-layer/usecases/audit-readiness/scoring';
 import { assertCanViewPack } from '@/app-layer/policies/audit-readiness.policies';
 import { makeRequestContext } from '../helpers/make-context';
@@ -128,8 +130,10 @@ function buildDb(opts: {
         task: {
             findMany: jest.fn(async (args: any) => {
                 // ISO overdue path filters on dueAt; NIS2/ISO issue path on type.
-                if (args?.where?.dueAt) return opts.overdueTasks ?? [];
-                return opts.openTasks ?? [];
+                // Honours `take`, as the database does — a double that ignores
+                // the bound cannot see a truncation (#5317).
+                const rows = args?.where?.dueAt ? opts.overdueTasks ?? [] : opts.openTasks ?? [];
+                return typeof args?.take === 'number' ? rows.slice(0, args.take) : rows;
             }),
             count: jest.fn().mockResolvedValue(opts.taskCount ?? 0),
         },
@@ -697,5 +701,39 @@ describe('readiness exports are not capped at the page\'s top ten', () => {
         });
         const { csv } = await exportControlGapsCsv(ctx, 'c1');
         expect(csv).toMatch(/MISSING_POLICY/);
+    });
+});
+
+describe('coverage counts live controls on counted requirements only (#5317)', () => {
+    it.each(['ISO27001', 'NIS2'])('%s: the link read names the counted requirements and live controls', async (frameworkKey) => {
+        mockDbHolder.db = buildDb({
+            cycle: { id: 'c1', frameworkKey },
+            framework: { id: 'fw' },
+            requirements: [{ id: 'r1', code: 'A.5', title: 'x' }, { id: 'r2', code: 'A.6', title: 'y' }],
+            mappedLinks: [{ requirementId: 'r1' }],
+        });
+        const r = await computeReadiness(ctx, 'c1');
+        const where = mockDbHolder.db.controlRequirementLink.findMany.mock.calls[0][0].where;
+        expect(where.requirementId).toEqual({ in: ['r1', 'r2'] });
+        expect(where.control).toEqual({ deletedAt: null });
+        expect(r.breakdown.coverage.score).toBe(50);
+    });
+});
+
+describe('task gaps are counted, not capped at the read (#5317)', () => {
+    it('an export of 60 overdue tasks lists all 60 and reports overdue: 60', async () => {
+        const overdueTasks = Array.from({ length: 60 }, (_, i) => ({ id: `t${i}`, title: `task ${i}`, dueAt: new Date('2026-01-01') }));
+        mockDbHolder.db = buildDb({ cycle: { id: 'c1', frameworkKey: 'ISO27001' }, framework: { id: 'fw' }, overdueTasks });
+        const r = await scoreReadiness(ctx, 'c1', UNCAPPED_GAPS);
+        expect(r.breakdown.tasks!.overdue).toBe(60);
+        expect(r.gaps.filter((g) => g.type === 'OVERDUE_TASK')).toHaveLength(60);
+    });
+
+    it('the page lists five but counts what the read could not hold', async () => {
+        const overdueTasks = Array.from({ length: 30 }, (_, i) => ({ id: `t${i}`, title: `task ${i}`, dueAt: new Date('2026-01-01') }));
+        mockDbHolder.db = buildDb({ cycle: { id: 'c1', frameworkKey: 'ISO27001' }, framework: { id: 'fw' }, overdueTasks, taskCount: 30 });
+        const r = await scoreReadiness(ctx, 'c1');
+        expect(r.breakdown.tasks!.overdue).toBe(30);
+        expect(r.gaps.filter((g) => g.type === 'OVERDUE_TASK')).toHaveLength(5);
     });
 });

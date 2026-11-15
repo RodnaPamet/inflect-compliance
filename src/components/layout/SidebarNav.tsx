@@ -228,6 +228,9 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
     const pathname = usePathname();
     const tc = useTranslations('common');
     const tn = useTranslations('nav');
+    // The role under the user's name, by its label as the workspace switcher
+    // shows it — the stored value only where no label exists (#5309).
+    const tRoles = useTranslations('roles');
     const tenant = useTenantContext();
     const tenantHref = useTenantHref();
     const perms = usePermissions();
@@ -409,7 +412,9 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                                 4.25:1 — below WCAG AA's 4.5:1 for small text — and
                                 the role line is informational, not a brand
                                 accent. */}
-                            <p className="text-xs text-content-muted">{tenant.role}</p>
+                            <p className="text-xs text-content-muted">
+                                {tRoles.has?.(tenant.role) ? tRoles(tenant.role) : tenant.role}
+                            </p>
                         </div>
                     )}
                     <div className={cn('flex gap-tight', collapsed ? 'flex-col items-center' : 'items-center')}>

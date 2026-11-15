@@ -39,6 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -187,6 +188,46 @@ export function AutomationInspectorPanel({
         await refresh(ids);
     }
 
+    /**
+     * Whether any of these rules stores a trigger filter. The list rows carry
+     * no filter, so a rule other than the one this panel already read is read
+     * now. A read that fails counts as a filter: the person is asked rather
+     * than a filter left behind unseen.
+     */
+    async function anyFilterStored(ids: string[]): Promise<boolean> {
+        for (const id of ids) {
+            if (id === primaryId && rule) {
+                if (rule.triggerFilterJson != null) return true;
+                continue;
+            }
+            try {
+                const res = await fetch(apiUrl(CACHE_KEYS.automation.rules.detail(id)));
+                if (!res.ok) return true;
+                const detail = (await res.json()) as { triggerFilterJson?: unknown };
+                if (detail.triggerFilterJson != null) return true;
+            } catch {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A filter names the fields of the event it was written for, so carried
+     * onto another event it can never match (#5309 item 20, owner decision
+     * 2026-11-15). Changing the trigger of a rule that has one asks first, and
+     * the same save clears the filter; Cancel keeps both.
+     */
+    const [pendingTrigger, setPendingTrigger] = useState<string | null>(null);
+    async function changeTrigger(next: string) {
+        if (!canManageRules || next === rule?.triggerEvent) return;
+        if (await anyFilterStored(ruleIds)) {
+            setPendingTrigger(next);
+            return;
+        }
+        await patchRules(ruleIds, { triggerEvent: next });
+    }
+
     const triggerSelected = useMemo(
         () => TRIGGER_OPTIONS.find((o) => o.value === rule?.triggerEvent) ?? null,
         [rule?.triggerEvent],
@@ -274,13 +315,33 @@ export function AutomationInspectorPanel({
                     <Combobox
                         options={TRIGGER_OPTIONS}
                         selected={triggerSelected}
-                        setSelected={(o) => o && patchRules(ruleIds, { triggerEvent: o.value })}
+                        setSelected={(o) => { if (o) void changeTrigger(String(o.value)); }}
                         disabled={!canManageRules}
                         placeholder={t('selectEvent')}
                         forceDropdown
                         matchTriggerWidth
                     />
                 </FormField>
+            )}
+
+            {kind === 'trigger' && pendingTrigger !== null && (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={(v) => {
+                        const open = typeof v === 'function' ? v(pendingTrigger !== null) : v;
+                        if (!open) setPendingTrigger(null);
+                    }}
+                    tone="warning"
+                    title={t('triggerChangeTitle')}
+                    description={t('triggerChangeFilterRemoved')}
+                    confirmLabel={t('triggerChangeConfirm')}
+                    onConfirm={async () => {
+                        const next = pendingTrigger;
+                        if (next) await patchRules(ruleIds, { triggerEvent: next, triggerFilter: null });
+                        setPendingTrigger(null);
+                    }}
+                    onCancel={() => setPendingTrigger(null)}
+                />
             )}
 
             {owning && (

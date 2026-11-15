@@ -559,6 +559,18 @@ async function clickHeader(columnId: string) {
     });
 }
 
+// #5313 — the page fetched /vendors/metrics on every view and used none of
+// it; its cards read the list's own `kpiCounts`.
+describe('Vendors list — reads no metrics it does not use', () => {
+    it('never asks /vendors/metrics', async () => {
+        await mountAs('READER');
+        await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+        const asked = (global.fetch as jest.Mock).mock.calls.map(([u]) => new URL(String(u), 'https://test.local').pathname);
+        expect(asked).not.toContain('/api/t/acme/vendors/metrics');
+        expect(kpiValue(V.kpi.total)).not.toBe('—');
+    });
+});
+
 describe('Vendors list — Criticality and Risk sort by level', () => {
     beforeEach(() => {
         listRows = LEVEL_ROWS;

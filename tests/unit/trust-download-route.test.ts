@@ -17,13 +17,16 @@
  */
 import { NextRequest } from 'next/server';
 
-const consumeDownloadTokenMock = jest.fn();
+const resolveDownloadTokenMock = jest.fn();
+const spendDownloadTokenMock = jest.fn();
 const findUniqueMock = jest.fn();
 const createSignedDownloadUrlMock = jest.fn();
+const getProviderByNameMock = jest.fn();
 
 jest.mock('@/lib/trust-center/gated', () => ({
     __esModule: true,
-    consumeDownloadToken: (...a: unknown[]) => consumeDownloadTokenMock(...a),
+    resolveDownloadToken: (...a: unknown[]) => resolveDownloadTokenMock(...a),
+    spendDownloadToken: (...a: unknown[]) => spendDownloadTokenMock(...a),
 }));
 
 jest.mock('@/lib/prisma', () => ({
@@ -33,9 +36,10 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/lib/storage', () => ({
     __esModule: true,
-    getStorageProvider: () => ({
-        createSignedDownloadUrl: (...a: unknown[]) => createSignedDownloadUrlMock(...a),
-    }),
+    // Mocked by NAME so a test can assert WHICH provider was asked — the
+    // route must read with the provider that wrote the bytes (#5615), not the
+    // process-wide default.
+    getProviderByName: (...a: unknown[]) => getProviderByNameMock(...a),
 }));
 
 import { GET } from '@/app/api/trust/download/[token]/route';
@@ -46,6 +50,10 @@ const req = () => new NextRequest('https://example.test/api/trust/download/ictc_
 
 /** A file that SHOULD be servable — every gate satisfied. */
 const servable = {
+    id: 'file-1',
+    tenantId: 't1',
+    sha256: 'a'.repeat(64),
+    storageProvider: 's3',
     pathKey: 'tenants/t1/evidence/ok.pdf',
     originalName: 'ok.pdf',
     scanStatus: 'CLEAN',
@@ -55,10 +63,14 @@ const servable = {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    // A VALID, correctly-consumed token in every test below. The point is that
+    // A VALID, correctly-resolved token in every test below. The point is that
     // token validity alone must not be sufficient to be served bytes.
-    consumeDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1' });
+    resolveDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
+    spendDownloadTokenMock.mockResolvedValue(true);
     createSignedDownloadUrlMock.mockResolvedValue('https://signed.example/blob');
+    getProviderByNameMock.mockReturnValue({
+        createSignedDownloadUrl: (...a: unknown[]) => createSignedDownloadUrlMock(...a),
+    });
 });
 
 describe('trust-center download — the happy path still works', () => {
@@ -81,7 +93,9 @@ describe('trust-center download — the happy path still works', () => {
         // The original defect was a SELECT omission, not a missing branch: you
         // cannot gate on a column you never loaded.
         const select = findUniqueMock.mock.calls[0][0].select;
-        expect(select).toMatchObject({ scanStatus: true, status: true, deletedAt: true });
+        // storageProvider joins the list for the same reason (#5615): it decides
+        // which provider can read pathKey at all.
+        expect(select).toMatchObject({ scanStatus: true, status: true, deletedAt: true, storageProvider: true });
     });
 });
 
@@ -155,7 +169,7 @@ describe('trust-center download — blocked is indistinguishable from absent', (
     });
 
     it('still rejects an invalid or expired token before touching the DB', async () => {
-        consumeDownloadTokenMock.mockResolvedValue(null);
+        resolveDownloadTokenMock.mockResolvedValue(null);
 
         const res = await GET(req(), ctx);
 
@@ -166,7 +180,7 @@ describe('trust-center download — blocked is indistinguishable from absent', (
 });
 
 describe('trust-center download — the signed URL is short-lived', () => {
-    // The token is single-use and already consumed by the time the URL is
+    // The token is single-use and is spent immediately before the URL is
     // minted, so from that point the SIGNED URL is the bearer credential:
     // shareable, replayable, visible to intermediaries, and outside our
     // revocation. Its lifetime is the whole exposure window for a document a
@@ -205,5 +219,124 @@ describe('trust-center download — the signed URL is short-lived', () => {
         // Seconds, not milliseconds — the value goes straight to the S3
         // presigner, where 300_000 would read as ~3.5 days.
         expect(expiresIn).toBeGreaterThan(0);
+    });
+});
+
+describe('trust-center download — a refusal must not cost the single use (#5614)', () => {
+    // #5385 settled this for the `enabled` check by putting it above the claim
+    // inside the token module. The AV and lifecycle gate is the same shape of
+    // refusal — transient, cleared by something that happens later — but it
+    // lives out here, and the route used to consume before reaching it. So a
+    // file that was merely mid-scan spent the requester's one use on a 404 that
+    // would have succeeded minutes later.
+    const refusals: Array<[string, Record<string, unknown>]> = [
+        ['a scan still PENDING', { scanStatus: 'PENDING' }],
+        ['a scan in progress', { scanStatus: 'SCANNING' }],
+        ['an INFECTED verdict', { scanStatus: 'INFECTED' }],
+        ['a soft delete', { deletedAt: new Date('2026-01-01') }],
+        ['an upload that never reached STORED', { status: 'PENDING' }],
+    ];
+
+    it.each(refusals)('does not spend the token when the gate refuses: %s', async (_label, over) => {
+        findUniqueMock.mockResolvedValue({ ...servable, ...over });
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(404);
+        // The whole point. A spent token cannot be retried, and the admin is
+        // never told it was burnt.
+        expect(spendDownloadTokenMock).not.toHaveBeenCalled();
+        expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
+    });
+
+    it('does not spend the token when the FileRecord has vanished', async () => {
+        findUniqueMock.mockResolvedValue(null);
+        expect((await GET(req(), ctx)).status).toBe(404);
+        expect(spendDownloadTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('DOES spend it on the happy path, naming the access request', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(302);
+        expect(spendDownloadTokenMock).toHaveBeenCalledWith('req-1');
+    });
+
+    it('spends BEFORE minting the URL, so no URL exists for a use it did not win', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+        const order: string[] = [];
+        spendDownloadTokenMock.mockImplementation(async () => { order.push('spend'); return true; });
+        createSignedDownloadUrlMock.mockImplementation(async () => { order.push('sign'); return 'https://signed.example/blob'; });
+
+        await GET(req(), ctx);
+
+        expect(order).toEqual(['spend', 'sign']);
+    });
+
+    it('serves nothing when a concurrent request already took the use', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+        spendDownloadTokenMock.mockResolvedValue(false);
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(404);
+        // Losing the race must not mint a second URL for a one-use token.
+        expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('trust-center download — reads with the provider that wrote the bytes (#5615)', () => {
+    it('presigns with the provider named on the FileRecord', async () => {
+        findUniqueMock.mockResolvedValue(servable);
+
+        await GET(req(), ctx);
+
+        // Not getStorageProvider(): on a deployment that migrated providers the
+        // configured default presigns a key that is not in its bucket.
+        expect(getProviderByNameMock).toHaveBeenCalledWith('s3');
+    });
+
+    it('refuses a locally-stored file instead of handing out a URL that cannot work', async () => {
+        // The local provider's "signed URL" is /api/files/<key>, which calls
+        // getLegacyCtx — an authenticated route an anonymous trust-center
+        // visitor cannot open. Serving it would spend the use on a dead link.
+        findUniqueMock.mockResolvedValue({ ...servable, storageProvider: 'local' });
+
+        const res = await GET(req(), ctx);
+
+        expect(res.status).toBe(404);
+        expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
+        // And the token survives for an operator who moves the object.
+        expect(spendDownloadTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('treats an unrecognised or absent provider as unservable, not as the default', async () => {
+        for (const storageProvider of [undefined, null, '', 'gcs']) {
+            jest.clearAllMocks();
+            resolveDownloadTokenMock.mockResolvedValue({ fileRecordId: 'file-1', accessRequestId: 'req-1' });
+            spendDownloadTokenMock.mockResolvedValue(true);
+            getProviderByNameMock.mockReturnValue({ createSignedDownloadUrl: createSignedDownloadUrlMock });
+            findUniqueMock.mockResolvedValue({ ...servable, storageProvider });
+
+            const res = await GET(req(), ctx);
+
+            expect(res.status).toBe(404);
+            expect(createSignedDownloadUrlMock).not.toHaveBeenCalled();
+            expect(spendDownloadTokenMock).not.toHaveBeenCalled();
+        }
+    });
+
+    it('a refused provider is indistinguishable from a missing document', async () => {
+        findUniqueMock.mockResolvedValue(null);
+        const missing = await GET(req(), ctx);
+        const missingBody = await missing.json();
+
+        findUniqueMock.mockResolvedValue({ ...servable, storageProvider: 'local' });
+        const refused = await GET(req(), ctx);
+
+        expect(refused.status).toBe(missing.status);
+        expect(await refused.json()).toEqual(missingBody);
     });
 });

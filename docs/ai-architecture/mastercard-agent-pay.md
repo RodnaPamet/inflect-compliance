@@ -350,7 +350,8 @@ agentic IAM rule that a later break is a finding.
       *Built 2026-11-12 for x402's payer clients* (`x402-fetch`,
       `x402-axios`, `@x402/fetch`, `@x402/axios`, PyPI `x402`; confirmed from
       the registries, since 0.1 confirmed no Mastercard package), in
-      `packages/agent-harness-scanner/src/sources/code/payment.ts`. Deviation,
+      `packages/agent-harness-scanner/src/sources/code/payment.ts` (removed
+      by scanent #26; the reader is scanent's since). Deviation,
       stated: the libraries are NOT in `FRAMEWORK_MARKERS`, because the
       capability is attributed to an agent the same file defines, which
       already carries a framework marker; a payment helper in another file is
@@ -388,7 +389,9 @@ agentic IAM rule that a later break is a finding.
       record (G11). *Built 2026-11-12:
       `tests/fixtures/agent-pay-scanner/payment-capability-record.json`,
       fifteen cases, read by
-      `tests/unit/agent-harness-scanner/payment-capability-code-source.test.ts`.*
+      `tests/unit/agent-harness-scanner/payment-capability-code-source.test.ts`;
+      both were removed with the in-repo scanner by scanent #26, which carries
+      the reader.*
 
 **Where Phase 2 stands (2026-11-12).** 2.1, 2.2, 2.3 and 2.5 are built; 2.4
 waits for Web Bot Auth Phase 3's verifier. `/4` widens what the ingest

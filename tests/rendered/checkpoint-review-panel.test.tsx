@@ -81,6 +81,7 @@ jest.mock('next-intl', () => {
             const v = resolve(key);
             return typeof v === 'string' ? v : key;
         };
+        t.has = (key: string) => typeof resolve(key) === 'string';
         cache.set(ns, t);
         return t;
     };
@@ -336,8 +337,17 @@ describe('a parked run that queued nothing', () => {
     it('a settled run names its status instead', () => {
         load({ data: review({ proposals: [], status: 'COMPLETED', awaitingHuman: false }) });
         mount();
-        expect(screen.getByTestId('checkpoint-none')).toHaveTextContent('COMPLETED');
+        expect(screen.getByTestId('checkpoint-none')).toHaveTextContent(agentsEn('runs.status.COMPLETED'));
+        expect(screen.getByTestId('checkpoint-none').textContent).not.toContain('COMPLETED');
     });
+
+    it('names the run status by its label in the subtitle (#5309)', () => {
+        mount();
+        const subtitle = screen.getByTestId('checkpoint-subtitle');
+        expect(subtitle).toHaveTextContent(agentsEn('runs.status.AWAITING_APPROVAL'));
+        expect(subtitle.textContent).not.toContain('AWAITING_APPROVAL');
+    });
+
 
     it('a truncated checkpoint says so rather than looking complete', () => {
         load({ data: review({ truncated: true }) });
@@ -613,8 +623,9 @@ describe('the run’s own window is shown, not discovered', () => {
         // will not continue: `resumeWorkflowRun` refuses past this instant.
         load({ data: review({ approvalExpiresAt: '2026-10-15T12:00:00.000Z' }) });
         mount();
-        expect(screen.getByTestId('checkpoint-window')).toHaveTextContent(
-            '2026-10-15T12:00:00.000Z',
-        );
+        // Formatted, and marked as UTC — never the raw ISO string (#5309).
+        const window = screen.getByTestId('checkpoint-window');
+        expect(window).toHaveTextContent('15 Oct 2026, 12:00 (UTC)');
+        expect(window.textContent).not.toContain('2026-10-15T12:00:00');
     });
 });

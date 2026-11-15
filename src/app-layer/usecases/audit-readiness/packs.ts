@@ -17,6 +17,7 @@ import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evide
 import { frameworkHasStatementOfApplicability } from '@/lib/compliance/statement-of-applicability';
 import { toCsv } from '@/lib/csv/format-csv';
 import { logger } from '@/lib/observability/logger';
+import { withDeleted } from '@/lib/soft-delete';
 
 /**
  * The item types that reference ONE owned row (ISSUE → Task). Their snapshot is
@@ -57,10 +58,13 @@ async function resolveItemNames(
     const evidenceIds = idsOf('EVIDENCE');
     const issueIds = idsOf('ISSUE');
     const [controls, policies, evidence, tasks] = await Promise.all([
-        controlIds.length ? tdb.control.findMany({ where: { id: { in: controlIds }, tenantId }, select: { id: true, code: true, name: true }, take: controlIds.length }) : [],
-        policyIds.length ? tdb.policy.findMany({ where: { id: { in: policyIds }, tenantId }, select: { id: true, title: true }, take: policyIds.length }) : [],
-        evidenceIds.length ? tdb.evidence.findMany({ where: { id: { in: evidenceIds }, tenantId }, select: { id: true, title: true }, take: evidenceIds.length }) : [],
-        issueIds.length ? tdb.task.findMany({ where: { id: { in: issueIds }, tenantId }, select: { id: true, title: true }, take: issueIds.length }) : [],
+        // `withDeleted` (#5317): the soft-delete extension would otherwise
+        // filter a deleted row out, and the docstring's promise that it still
+        // answers its name was false.
+        controlIds.length ? tdb.control.findMany(withDeleted({ where: { id: { in: controlIds }, tenantId }, select: { id: true, code: true, name: true }, take: controlIds.length })) : [],
+        policyIds.length ? tdb.policy.findMany(withDeleted({ where: { id: { in: policyIds }, tenantId }, select: { id: true, title: true }, take: policyIds.length })) : [],
+        evidenceIds.length ? tdb.evidence.findMany(withDeleted({ where: { id: { in: evidenceIds }, tenantId }, select: { id: true, title: true }, take: evidenceIds.length })) : [],
+        issueIds.length ? tdb.task.findMany(withDeleted({ where: { id: { in: issueIds }, tenantId }, select: { id: true, title: true }, take: issueIds.length })) : [],
     ]);
     // The same field a frozen snapshot is read by: a control's code where it
     // has one, so a draft row and its frozen row read alike.
@@ -208,6 +212,12 @@ export async function addAuditPackItems(
             if (set && !set.has(item.entityId)) {
                 throw badRequest(`${item.entityType} ${item.entityId} not found in this tenant`, { reason: 'PACK_ITEM_REF_INVALID' satisfies AuditPackRefusal });
             }
+            // A computed item's snapshot IS its content and is kept as given, so
+            // it must be a JSON object (#5317): anything else would break every
+            // export of the pack once frozen, with no way left to remove it.
+            if (!ROW_BACKED_ITEM_TYPES.has(item.entityType) && item.snapshotJson && !isJsonObjectText(item.snapshotJson)) {
+                throw badRequest(`The snapshot for ${item.entityType} ${item.entityId} must be a JSON object`);
+            }
         }
 
         const payload = items.map(item => ({
@@ -224,6 +234,17 @@ export async function addAuditPackItems(
             snapshotJson: ROW_BACKED_ITEM_TYPES.has(item.entityType) ? '{}' : (item.snapshotJson || '{}'),
             sortOrder: item.sortOrder ?? 0,
         }));
+
+        // The DRAFT interlock `removeAuditPackItem` takes (#5317): it holds the
+        // pack's row lock until this transaction ends, so a freeze that began
+        // first makes this match nothing and refuse, and a freeze that comes
+        // later waits and then snapshots these items. Without it the items
+        // could land, unsnapshotted, in a pack that had just been frozen.
+        const stillDraft = await tdb.auditPack.updateMany({
+            where: { id: packId, tenantId: ctx.tenantId, status: 'DRAFT' },
+            data: { updatedAt: new Date() },
+        });
+        if (stillDraft.count === 0) throw badRequest('Cannot add items to a frozen or exported pack', { reason: 'PACK_NOT_DRAFT' satisfies AuditPackRefusal });
 
         const result = await tdb.auditPackItem.createMany({
             data: payload,
@@ -456,12 +477,20 @@ export async function freezeAuditPack(ctx: RequestContext, packId: string, opts:
     // COLLECTED and surfaced (#8) instead of being swallowed into a silent
     // '{}' while still reporting "frozen with N items".
     const frozen = await runInTenantContext(ctx, async (tdb) => {
+        // The pack's row lock FIRST, before its items are read (#5317): an add
+        // or a second freeze in flight is serialised behind this one, so every
+        // item this freeze reads is every item the pack holds, and a second
+        // freeze finds the pack no longer DRAFT rather than freezing it again.
+        const locked = await tdb.auditPack.updateMany({
+            where: { id: packId, tenantId: ctx.tenantId, deletedAt: null, status: 'DRAFT' },
+            data: { updatedAt: new Date() },
+        });
         const pack = await tdb.auditPack.findFirst({
             where: { id: packId, tenantId: ctx.tenantId, deletedAt: null },
             include: { items: true },
         });
         if (!pack) throw notFound('Audit pack not found', { reason: 'PACK_NOT_FOUND' satisfies AuditPackRefusal });
-        if (pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported', { reason: 'PACK_ALREADY_FROZEN' satisfies AuditPackRefusal });
+        if (locked.count === 0 || pack.status !== 'DRAFT') throw badRequest('Pack is already frozen or exported', { reason: 'PACK_ALREADY_FROZEN' satisfies AuditPackRefusal });
         if (pack.items.length === 0) throw badRequest('Cannot freeze an empty pack', { reason: 'PACK_EMPTY' satisfies AuditPackRefusal });
 
         // Items still lacking a server-built snapshot need one (`needsSnapshot`).
@@ -766,6 +795,32 @@ async function buildCuratedDefaultPack(ctx: RequestContext, frameworkKey: string
 
 // РІвЂќР‚РІвЂќР‚РІвЂќР‚ Export Primitives РІвЂќР‚РІвЂќР‚РІвЂќР‚
 
+/**
+ * A stored snapshot as an object, whatever was stored (#5317). A computed item's
+ * snapshot is caller-supplied, and a frozen pack cannot be edited to repair it,
+ * so one `'abc'` or `'null'` must not fail every export of the pack: it is
+ * exported as unreadable instead.
+ */
+function parsedSnapshot(snapshotJson: string | null | undefined): Record<string, unknown> {
+    try {
+        const v: unknown = JSON.parse(snapshotJson || '{}');
+        if (v !== null && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
+    } catch {
+        // fall through
+    }
+    return { snapshotUnreadable: true };
+}
+
+/** Whether a caller-supplied snapshot is a JSON object, the only shape a snapshot may take. */
+function isJsonObjectText(text: string): boolean {
+    try {
+        const v: unknown = JSON.parse(text);
+        return v !== null && typeof v === 'object' && !Array.isArray(v);
+    } catch {
+        return false;
+    }
+}
+
 export async function exportAuditPack(ctx: RequestContext, packId: string, format: 'json' | 'csv' = 'json') {
     assertCanViewPack(ctx);
     const pack = await getAuditPack(ctx, packId);
@@ -775,7 +830,7 @@ export async function exportAuditPack(ctx: RequestContext, packId: string, forma
         entityType: item.entityType,
         entityId: item.entityId,
         sortOrder: item.sortOrder,
-        snapshot: JSON.parse(item.snapshotJson || '{}'),
+        snapshot: parsedSnapshot(item.snapshotJson),
     }));
 
     if (format === 'json') {
@@ -795,8 +850,8 @@ export async function exportAuditPack(ctx: RequestContext, packId: string, forma
         rows.push([
             item.entityType,
             item.entityId,
-            s.code || s.title || s.name || '',
-            s.status || '',
+            String(s.code || s.title || s.name || ''),
+            String(s.status || ''),
             JSON.stringify(s),
         ]);
     }

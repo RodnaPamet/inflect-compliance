@@ -47,8 +47,101 @@ import { canonicalJson } from '@/lib/canonical-json';
 /** How far back observed use is read: the 90 days before the campaign froze. */
 export const USE_WINDOW_DAYS = 90;
 
-/** Agents per pack-preparation run. One run's context must fit `MAX_CONTEXT_BYTES`. */
-export const PACK_PAGE_SIZE = 20;
+/**
+ * Agents per pack-preparation run. One run's sealed context holds its page of
+ * evidence and the plan built from it, and may not weigh more than
+ * `MAX_CONTEXT_BYTES` (262,144 bytes): over it the run fails, and with it the
+ * campaign's whole preparation.
+ *
+ * The worst agent, every section at its cap (the caps are in
+ * `agent-recertification-evidence.ts`) and every row at its largest, seals at
+ * 112,969 bytes (#5317, measured by
+ * `tests/unit/agent-recertification-pack-budget.test.ts`, which states what
+ * "largest" assumes of a character's bytes):
+ *
+ *   grants             100 × ~297 B   ≈  30.3 KB   (GRANTS_PER_AGENT, each name cut at TOOL_NAME_IN_PACK;
+ *                                                  counts only on the five propose-tool grants, ~401 B)
+ *   their narrowings   100 × ~246 B   ≈  24.7 KB   (in the plan, beside the evidence)
+ *   time-bounded       100 × ~387 B   ≈  38.8 KB   (TIME_BOUNDED_PER_AGENT, each connection name cut at
+ *                                                  CONNECTION_NAME_IN_PACK, two bytes a character)
+ *   card versions       50 × ~243 B   ≈  12.2 KB
+ *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
+ *   everything else                   ≈   2.4 KB
+ *
+ * Two such agents seal at 225,378 bytes: inside the budget the test holds a
+ * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929), by 10,551. Three
+ * are over the cap itself. So a page is TWO agents. It was one while an agent
+ * could carry 200 grants with 200-character names (~178 KB of grants and
+ * narrowings on its own), and twenty before #5317, which fit only while no
+ * agent came near a cap.
+ *
+ * An agent with no grant at all seals at 57,949 bytes, 38.8 KB of it the
+ * time-bounded section, so no grant cap could make a page larger than four.
+ */
+export const PACK_PAGE_SIZE = 2;
+
+/**
+ * How much of a granted tool's name a pack carries (#5317, owner decision of
+ * 2026-11-15). A grant may be named up to 200 characters
+ * (`AgentToolGrantSchema`), and the name is carried twice, in the grant and in
+ * its narrowing, so it was most of a pack's weight. A built-in tool's name is
+ * under 30 characters and an external tool's is `mcp__<connectionId>__<name>`,
+ * 32 characters before the server's own name, so 64 carries every built-in
+ * name and an external name's first 32 characters of its own whole.
+ *
+ * A longer name is cut and the grant says so (`toolNameTruncated`). The full
+ * name stays in the store: the pack identifies a grant by `grantId`, and a
+ * narrowing is written with the stored name (`fullToolNameFor`), so what a
+ * reviewer accepts, and what the revocation records, names the tool whole.
+ */
+export const TOOL_NAME_IN_PACK = 64;
+
+/**
+ * How much of a time-bounded grant's connection name a pack carries (#5317,
+ * owner decision of 2026-11-15). The name is an administrator's label on the
+ * integration with no length bound, and it was the largest field of the
+ * largest section left once the grant names were cut. A longer name is cut
+ * and the row says so (`connectionNameTruncated`); the journal keeps it whole,
+ * and the row is identified by `journalId`.
+ */
+export const CONNECTION_NAME_IN_PACK = 64;
+
+/**
+ * `value` cut to its first `max` CHARACTERS — code points, so a cut never
+ * splits a surrogate pair. Half a pair is a lone surrogate, which Postgres
+ * refuses in a `jsonb` column: the pack's insert would fail.
+ */
+function cutForPack(value: string, max: number): { value: string; truncated: boolean } {
+    // Every code point is at least one UTF-16 unit, so a string no longer than
+    // `max` units has no more than `max` code points.
+    if (value.length <= max) return { value, truncated: false };
+    const points = Array.from(value);
+    return points.length > max
+        ? { value: points.slice(0, max).join(''), truncated: true }
+        : { value, truncated: false };
+}
+
+/** The name a pack carries for a granted tool, and whether it was cut. */
+export function packToolName(full: string): { toolName: string; truncated: boolean } {
+    const cut = cutForPack(full, TOOL_NAME_IN_PACK);
+    return { toolName: cut.value, truncated: cut.truncated };
+}
+
+/** The connection name a pack carries for a time-bounded grant, and whether it was cut. */
+export function packConnectionName(full: string): { connectionName: string; truncated: boolean } {
+    const cut = cutForPack(full, CONNECTION_NAME_IN_PACK);
+    return { connectionName: cut.value, truncated: cut.truncated };
+}
+
+/**
+ * The name to record for a narrowing whose pack carried `packName`: the
+ * stored name when the pack's is that name cut at `TOOL_NAME_IN_PACK` (or is
+ * it whole), else the pack's own. A stored name that does not reproduce the
+ * pack's is not the grant the evidence described, and is not borrowed.
+ */
+export function fullToolNameFor(packName: string, stored: string | undefined): string {
+    return stored !== undefined && packToolName(stored).toolName === packName ? stored : packName;
+}
 
 /** The most agents one campaign freezes; read one past to know it was cut off. */
 export const MAX_AGENT_SUBJECTS = 500;
@@ -104,12 +197,31 @@ export const GrantEvidenceSchema = z.object({
     heldForWholeWindow: z.boolean(),
     /** Proposals of the kind this tool queues, by outcome; null for a non-propose tool. */
     proposals: StatusCounts.nullable(),
+    /**
+     * True when `toolName` is the stored name cut at `TOOL_NAME_IN_PACK`
+     * (#5317); the grant is identified by `grantId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, for the reason `timeBoundedTruncated`
+     * gives: a pack filed before it must re-parse to the sections it was hashed
+     * over. Absent means the name is whole, which every earlier pack's was.
+     */
+    toolNameTruncated: z.boolean().optional(),
 });
 
 export const TimeBoundedGrantSchema = z.object({
     journalId: z.string().min(1),
     toolName: z.string(),
     connectionName: z.string(),
+    /**
+     * True when `connectionName` is the journal's name cut at
+     * `CONNECTION_NAME_IN_PACK` (#5317); the grant is identified by
+     * `journalId`. Written only when true.
+     *
+     * OPTIONAL, and with no default, as `toolNameTruncated`: a pack filed
+     * before it must re-parse to the sections it was hashed over. Absent means
+     * the name is whole, which every earlier pack's was.
+     */
+    connectionNameTruncated: z.boolean().optional(),
     grantedAt: Iso,
     endsAt: NullableIso,
     /** EXPIRED_VERIFIED | OUTLIVED_WINDOW | RUNNING | AWAITING_VERIFICATION | END_UNREADABLE */
@@ -122,7 +234,11 @@ export const SubjectEvidenceSchema = z.object({
     decisionId: z.string().min(1),
     agentId: z.string().min(1),
     grants: z.array(GrantEvidenceSchema),
-    /** True when the grant read hit its cap: no narrowing is proposed from a partial list. */
+    /**
+     * True when this agent's grant read found more grants than its cap (per
+     * agent since #5317; before it, when the page's shared read filled): no
+     * narrowing is proposed from a partial list.
+     */
     grantsTruncated: z.boolean(),
     /** Proposals this agent made in the window whose kind maps to no granted tool. */
     otherProposals: z.record(z.string(), StatusCounts),
@@ -140,6 +256,20 @@ export const SubjectEvidenceSchema = z.object({
         })),
     }),
     timeBoundedGrants: z.array(TimeBoundedGrantSchema),
+    /**
+     * True when this agent's time-bounded-grant read hit its cap (#5317): the
+     * list holds its outlived and undetermined grants, then the newest that
+     * ended on time, and not all of them.
+     *
+     * OPTIONAL, and with no default, on purpose. A pack filed before #5317 —
+     * and a pack-preparation run whose READ was recorded before it — carries
+     * no such key, and its stored `contentHash` is `sha256Of` its sections as
+     * they were. A default would add the key when that evidence is re-parsed,
+     * so the sections the usecase stores and hashes would no longer be the
+     * sections the read recorded. Absent means "not stated": that read
+     * shared one 500-row cap across its page and could not tell.
+     */
+    timeBoundedTruncated: z.boolean().optional(),
     guardFlags: StatusCounts,
     breaker: z.object({
         state: z.string(),
@@ -154,6 +284,17 @@ export const SubjectEvidenceSchema = z.object({
         engagedByUserId: z.string(),
         liftedByUserId: z.string().nullable(),
     })),
+    /**
+     * True when this agent's kill-engagement read hit its cap (#5317): the
+     * list holds the kill in force, if any, then the most recently lifted, and
+     * not all of them.
+     *
+     * OPTIONAL with no default, for the reason `timeBoundedTruncated` gives: a
+     * pack filed before this field, or a run whose READ was recorded before it,
+     * must re-parse to the sections it was hashed over. Absent means "not
+     * stated": that read shared one 500-row cap across its page.
+     */
+    killsTruncated: z.boolean().optional(),
     harness: z.object({
         level: z.string().nullable(),
         previousLevel: z.string().nullable(),

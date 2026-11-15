@@ -44,6 +44,8 @@ import { authOptions } from '@/auth';
 import prisma from '@/lib/prisma';
 import { claimAccountForVerifiedEmail } from '@/lib/auth/oauth-email-trust';
 import { redeemPendingInvitesByEmail } from '@/app-layer/usecases/tenant-invites';
+import { edgeLogger } from '@/lib/observability/edge-logger';
+import { hashEmailForLog } from '@/lib/auth/security-events';
 
 const signIn = authOptions.callbacks!.signIn! as any;
 const p = prisma as any;
@@ -120,5 +122,21 @@ describe('a returning sign-in', () => {
     it('claims nothing when the provider does not vouch', async () => {
         await expect(oauth('microsoft-entra-id', {}, 'existing-user')).resolves.toBe(true);
         expect(claimAccountForVerifiedEmail).not.toHaveBeenCalled();
+    });
+});
+
+describe('a provider that reports email_verified=false (#5306)', () => {
+    it('is refused, and the log line carries the hashed identifier, never the address', async () => {
+        const warn = jest.spyOn(edgeLogger, 'warn').mockImplementation(() => undefined);
+        try {
+            await expect(oauth('google', { email_verified: false })).resolves.toBe(false);
+            const call = warn.mock.calls.find(([msg]) => String(msg).includes('email_verified=false'));
+            expect(call).toBeDefined();
+            const fields = call![1] as Record<string, unknown>;
+            expect(JSON.stringify(fields)).not.toContain('owner@example.com');
+            expect(fields.identifierHash).toBe(hashEmailForLog('owner@example.com'));
+        } finally {
+            warn.mockRestore();
+        }
     });
 });

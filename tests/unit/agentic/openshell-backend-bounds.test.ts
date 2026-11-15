@@ -219,3 +219,152 @@ describe('4. all FOUR deletion outcomes are handled, not the three the issue nam
         expect(calls.awaited).toEqual(shouldWait ? ['sb-1'] : []);
     });
 });
+
+describe('5. the deletion wait is not bounded by the tool deadline it follows (#5304)', () => {
+    it('a timed-out run still waits for an ACCEPTED deletion, and records it settled', async () => {
+        // The wait used to take the tool's deadline signal. The deletion runs in
+        // the `finally`, AFTER the deadline aborted that signal, so the wait
+        // threw at once and every timed-out run recorded `settled: false` and
+        // logged a possible leak for a deletion nobody waited for.
+        const timers = makeTimers();
+        const waitSignals: AbortSignal[] = [];
+        const decisions: unknown[] = [];
+        let finished!: () => void;
+        const recorded = new Promise<void>((r) => (finished = r));
+        const { transport } = fakeTransport({
+            // Runs until the deadline aborts it, as a real exec stream does.
+            execSandbox: ({ signal }) =>
+                new Promise((_resolve, reject) => {
+                    if (signal.aborted) reject(new Error('aborted'));
+                    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+                }),
+            deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_ACCEPTED' as const }),
+            awaitDeleted: async ({ signal }) => {
+                waitSignals.push(signal);
+                if (signal.aborted) throw new Error('aborted while awaiting sandbox deletion');
+            },
+        });
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+                if (d.kind === 'sandbox-deleted') finished();
+            },
+        });
+
+        const pending = run(exec, timers);
+        const assertion = expect(pending).rejects.toThrow(ToolExecutionTimeoutError);
+        timers.fire();
+        await assertion;
+        await recorded;
+
+        expect(waitSignals).toHaveLength(1);
+        expect(waitSignals[0].aborted).toBe(false);
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_ACCEPTED',
+            settled: true,
+        });
+    });
+});
+
+describe('6. the deletion is outside the deadline race (#5304)', () => {
+    it('a tool that finishes just inside its deadline keeps its output while an ACCEPTED deletion polls', async () => {
+        // The deletion used to run inside the race, in the executor's
+        // `finally`. A tool that finished a moment before its deadline then
+        // lost to the deadline while the deletion was still polling, and its
+        // finished output was thrown away as a timeout.
+        const timers = makeTimers();
+        const decisions: unknown[] = [];
+        let releaseDeletion!: () => void;
+        let deletionPolling!: () => void;
+        const polling = new Promise<void>((r) => (deletionPolling = r));
+        const { transport } = fakeTransport({
+            execSandbox: async () => ({
+                exited: true as const,
+                exitCode: 0,
+                signal: null,
+                stdout: 'finished just in time',
+                stderr: '',
+            }),
+            deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_ACCEPTED' as const }),
+            awaitDeleted: () =>
+                new Promise<void>((resolve) => {
+                    releaseDeletion = resolve;
+                    deletionPolling();
+                }),
+        });
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+            },
+        });
+
+        const pending = run(exec, timers);
+        await polling;
+        // The deadline arrives while the deletion is still polling.
+        timers.fire();
+        releaseDeletion();
+
+        const result = await pending;
+        expect(result.stdout).toBe('finished just in time');
+        // The deletion was still waited for, and recorded, before the result
+        // reached the caller.
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_ACCEPTED',
+            settled: true,
+        });
+    });
+
+    it('a timed-out tool whose exec answers after the abort still has its sandbox deleted and recorded', async () => {
+        const timers = makeTimers();
+        let execStarted!: () => void;
+        const started = new Promise<void>((r) => (execStarted = r));
+        const { transport, calls } = fakeTransport({
+            // Answers only once the deadline has aborted it, WITH output: the
+            // late answer must not count, and must not skip the deletion.
+            execSandbox: ({ signal }) =>
+                new Promise((resolve) => {
+                    signal.addEventListener(
+                        'abort',
+                        () =>
+                            resolve({
+                                exited: true as const,
+                                exitCode: 0,
+                                signal: null,
+                                stdout: 'late',
+                                stderr: '',
+                            }),
+                        { once: true },
+                    );
+                    execStarted();
+                }),
+        });
+        let finished!: () => void;
+        const recorded = new Promise<void>((r) => (finished = r));
+        const decisions: unknown[] = [];
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+                if (d.kind === 'sandbox-deleted') finished();
+            },
+        });
+
+        const pending = run(exec, timers);
+        const assertion = expect(pending).rejects.toThrow(ToolExecutionTimeoutError);
+        await started;
+        timers.fire();
+        await assertion;
+        await recorded;
+
+        expect(calls.deleted).toEqual(['sb-1']);
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_COMPLETED',
+            settled: true,
+        });
+    });
+});

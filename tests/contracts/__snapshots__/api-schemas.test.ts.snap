@@ -1605,6 +1605,12 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
             }
           ]
         },
+        "applicabilityDecidedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "contributors": {
           "type": "array",
           "items": {
@@ -3002,7 +3008,12 @@ exports[`API contract — per-schema snapshots schema: FindingCreateRequest 1`] 
     },
     "severity": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
     },
     "type": {
       "type": "string",
@@ -3090,7 +3101,13 @@ exports[`API contract — per-schema snapshots schema: FindingUpdateRequest 1`] 
   "type": "object",
   "properties": {
     "severity": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
     },
     "type": {
       "type": "string",
@@ -4274,6 +4291,13 @@ exports[`API contract — per-schema snapshots schema: RiskCreateRequest 1`] = `
         "string",
         "null"
       ]
+    },
+    "templateId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     }
   },
   "required": [

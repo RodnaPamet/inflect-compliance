@@ -13,7 +13,8 @@
  *   - ControlTestPlan → nextDueAt
  *
  * Design principles:
- *   - Detection ONLY — no email sending, no side effects beyond audit logs
+ *   - Detection — no email sending; the one write is Phase 0's flip of
+ *     past-due treatment plans to OVERDUE (plus its audit rows)
  *   - Tenant-isolated — all queries filter by tenantId
  *   - Idempotent — same input produces same output; safe to re-run
  *   - Deterministic — output is sorted and stable
@@ -136,11 +137,11 @@ async function scanBothSides<T>(
  */
 async function scanControls(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
 
     const where: Prisma.ControlWhereInput = {
         // Shared with the calendar's `loadControlEvents`. The two surfaces
@@ -177,7 +178,7 @@ async function scanControls(
     const items: DueItem[] = [];
     for (const c of controls) {
         if (!c.tenantId || !c.nextDueAt) continue;
-        const classification = classifyUrgency(c.nextDueAt, now);
+        const classification = classifyUrgency(c.nextDueAt, now, windows);
         if (!classification) continue;
 
         items.push({
@@ -202,11 +203,11 @@ async function scanControls(
  */
 async function scanPolicies(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
 
     const where: Prisma.PolicyWhereInput = {
         deletedAt: null,
@@ -239,7 +240,7 @@ async function scanPolicies(
     const items: DueItem[] = [];
     for (const p of policies) {
         if (!p.nextReviewAt) continue;
-        const classification = classifyUrgency(p.nextReviewAt, now);
+        const classification = classifyUrgency(p.nextReviewAt, now, windows);
         if (!classification) continue;
 
         items.push({
@@ -265,11 +266,11 @@ async function scanPolicies(
  */
 async function scanTasks(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
 
     const where: Prisma.TaskWhereInput = {
         deletedAt: null,
@@ -302,7 +303,7 @@ async function scanTasks(
     const items: DueItem[] = [];
     for (const t of tasks) {
         if (!t.dueAt) continue;
-        const classification = classifyUrgency(t.dueAt, now);
+        const classification = classifyUrgency(t.dueAt, now, windows);
         if (!classification) continue;
 
         items.push({
@@ -327,11 +328,11 @@ async function scanTasks(
  */
 async function scanRisks(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
 
     const where: Prisma.RiskWhereInput = {
         deletedAt: null,
@@ -364,7 +365,7 @@ async function scanRisks(
     const items: DueItem[] = [];
     for (const r of risks) {
         if (!r.nextReviewAt) continue;
-        const classification = classifyUrgency(r.nextReviewAt, now);
+        const classification = classifyUrgency(r.nextReviewAt, now, windows);
         if (!classification) continue;
 
         items.push({
@@ -389,11 +390,11 @@ async function scanRisks(
  */
 async function scanTestPlans(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
 
     const where: Prisma.ControlTestPlanWhereInput = {
         status: 'ACTIVE',
@@ -426,7 +427,7 @@ async function scanTestPlans(
     const items: DueItem[] = [];
     for (const p of plans) {
         if (!p.nextDueAt) continue;
-        const classification = classifyUrgency(p.nextDueAt, now);
+        const classification = classifyUrgency(p.nextDueAt, now, windows);
         if (!classification) continue;
 
         items.push({
@@ -456,11 +457,11 @@ async function scanTestPlans(
  */
 async function scanTreatmentPlans(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
     const where: Prisma.RiskTreatmentPlanWhereInput = {
         deletedAt: null,
         status: { in: ['DRAFT', 'ACTIVE', 'OVERDUE'] },
@@ -493,7 +494,7 @@ async function scanTreatmentPlans(
     const items: DueItem[] = [];
     for (const p of plans) {
         if (!p.targetDate) continue;
-        const c = classifyUrgency(p.targetDate, now);
+        const c = classifyUrgency(p.targetDate, now, windows);
         if (!c) continue;
         items.push({
             entityType: 'TREATMENT_PLAN',
@@ -520,11 +521,11 @@ async function scanTreatmentPlans(
  */
 async function scanTreatmentMilestones(
     now: Date,
-    maxWindow: number,
+    windows: number[],
     tenantId: string | undefined,
     capped: string[],
 ): Promise<DueItem[]> {
-    const horizon = new Date(now.getTime() + maxWindow * 86_400_000);
+    const horizon = new Date(now.getTime() + Math.max(...windows) * 86_400_000);
     const where: Prisma.TreatmentMilestoneWhereInput = {
         completedAt: null,
         dueDate: { lte: horizon },
@@ -558,7 +559,7 @@ async function scanTreatmentMilestones(
     const items: DueItem[] = [];
     for (const m of milestones) {
         if (!m.dueDate) continue;
-        const c = classifyUrgency(m.dueDate, now);
+        const c = classifyUrgency(m.dueDate, now, windows);
         if (!c) continue;
         items.push({
             entityType: 'TREATMENT_MILESTONE',
@@ -658,10 +659,11 @@ async function transitionPlansToOverdue(
  * Run the deadline monitor — scans all entity types and returns
  * a normalized list of due/overdue items.
  *
- * This is a detection-only job. It does NOT:
- *   - Send emails
- *   - Create tasks
- *   - Modify any database records
+ * Detection, with ONE write. It does NOT send emails or create tasks.
+ * It DOES, in Phase 0 (`transitionPlansToOverdue`), move past-due risk
+ * treatment plans (DRAFT/ACTIVE) to OVERDUE, writing one
+ * TREATMENT_PLAN_MARKED_OVERDUE audit row per transition, so the scan
+ * that follows sees the post-flip status. Nothing else is modified.
  *
  * The output is suitable for downstream notification dispatch.
  */
@@ -674,8 +676,11 @@ export async function runDeadlineMonitor(
 
     return runJob('deadline-monitor', async () => {
         const now = options.now ?? new Date();
+        // The caller's windows decide BOTH the scan horizon and the urgency
+        // classification (#5307). Classifying with the defaults while scanning
+        // with the caller's windows made one digest call a 5-day item URGENT
+        // here and UPCOMING in the calendar-deadlines monitor beside it.
         const windows = options.windows ?? [...DEFAULT_REMINDER_WINDOWS];
-        const maxWindow = Math.max(...windows);
 
         // Phase 0 — flip past-due treatment plans before scanning so
         // the urgency classifier sees the post-flip status. Each
@@ -696,13 +701,13 @@ export async function runDeadlineMonitor(
             treatmentPlans,
             treatmentMilestones,
         ] = await Promise.all([
-            scanControls(now, maxWindow, options.tenantId, capped),
-            scanPolicies(now, maxWindow, options.tenantId, capped),
-            scanTasks(now, maxWindow, options.tenantId, capped),
-            scanRisks(now, maxWindow, options.tenantId, capped),
-            scanTestPlans(now, maxWindow, options.tenantId, capped),
-            scanTreatmentPlans(now, maxWindow, options.tenantId, capped),
-            scanTreatmentMilestones(now, maxWindow, options.tenantId, capped),
+            scanControls(now, windows, options.tenantId, capped),
+            scanPolicies(now, windows, options.tenantId, capped),
+            scanTasks(now, windows, options.tenantId, capped),
+            scanRisks(now, windows, options.tenantId, capped),
+            scanTestPlans(now, windows, options.tenantId, capped),
+            scanTreatmentPlans(now, windows, options.tenantId, capped),
+            scanTreatmentMilestones(now, windows, options.tenantId, capped),
         ]);
 
         const items = [

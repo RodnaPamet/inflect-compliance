@@ -184,4 +184,9 @@ export interface PickerProps extends CalendarProps {
     'aria-label'?: string;
     'aria-labelledby'?: string;
     'aria-required'?: boolean;
+    /**
+     * `FormField` injects this (with `id`) for its description and error
+     * text; it belongs on the trigger, the element the label names.
+     */
+    'aria-describedby'?: string;
 }

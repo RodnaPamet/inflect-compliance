@@ -84,24 +84,6 @@ const PLATFORM_SYNTAX_BANS = [
     },
 ];
 
-// The harness scanner package's import boundary (#3678), shared by the
-// package block and the stricter block for its `code` source (#3737), which
-// would otherwise replace it. The wire contract and the CIDR parser it once
-// took through `@/` are the `@rodnapamet/scanent-contract` package's since
-// scanent #26, so no `@/` import is left to allow: the image installs the
-// package and copies no application module.
-const HARNESS_SCANNER_IMPORT_PATTERNS = [
-    {
-        regex: '^@/',
-        message:
-            'The harness scanner imports nothing of the application: the wire contract (harness-contract, harness-findings, harness-ladder, canonical-json, cidr) comes from @rodnapamet/scanent-contract/<module>. See packages/agent-harness-scanner/README.md.',
-    },
-    {
-        group: ['@prisma/*', 'next', 'next/*', '@inflect/ui', '@inflect/ui/*'],
-        message: 'The harness scanner runs in a client estate: no database client, no Next.js, no UI.',
-    },
-];
-
 const config = [
     ...nextCoreWebVitals,
     {
@@ -378,62 +360,6 @@ const config = [
                         },
                     ],
                 },
-            ],
-        },
-    },
-    {
-        // ── The harness scanner package's boundary (#3678) ──
-        //
-        // `packages/agent-harness-scanner` runs in a CLIENT's estate, with that
-        // estate's credentials. It shares the wire contract with the ingest —
-        // it must, so the report it signs is checked by the schemas and signed
-        // through the function the ingest verifies with — and nothing else of
-        // the application: no database, no tenant, no Next.js, no usecase. A
-        // scanner that could import `@/lib/prisma` is one refactor from a
-        // scanner that writes somewhere it should only read. The contract, and
-        // the strict CIDR parser (#3738) that makes the scanner's private-range
-        // allowlist parse ranges exactly as the application's egress allowlist
-        // does, come from `@rodnapamet/scanent-contract` (scanent #26), so the
-        // scanner takes nothing through `@/` at all.
-        files: ['packages/agent-harness-scanner/src/**/*.ts'],
-        rules: {
-            'no-restricted-imports': ['error', { patterns: HARNESS_SCANNER_IMPORT_PATTERNS }],
-        },
-    },
-    {
-        // ── The `code` source READS an estate's code and never runs it (#3737) ──
-        //
-        // The LangChain and LangGraph detector parses files it did not write,
-        // from a repository a client controls. Loading one — a `require`, a
-        // dynamic `import()`, an interpreter, `eval` — would hand that
-        // repository code execution inside the scanner, beside its signing key.
-        // So nothing in the source's files can reach any of them; the
-        // side-effect test in tests/unit/agent-harness-scanner/
-        // langchain-code-source.test.ts is the behavioural half.
-        files: [
-            'packages/agent-harness-scanner/src/sources/code/**/*.ts',
-            'packages/agent-harness-scanner/src/sources/langchain.ts',
-        ],
-        rules: {
-            'no-restricted-imports': [
-                'error',
-                {
-                    paths: ['child_process', 'vm', 'worker_threads', 'module', 'cluster', 'inspector'].flatMap((name) =>
-                        [name, `node:${name}`].map((n) => ({
-                            name: n,
-                            message: 'The code source reads code and never runs it: no subprocess, VM, worker or module loader.',
-                        })),
-                    ),
-                    patterns: HARNESS_SCANNER_IMPORT_PATTERNS,
-                },
-            ],
-            'no-restricted-syntax': [
-                'error',
-                ...PLATFORM_SYNTAX_BANS,
-                { selector: 'ImportExpression', message: 'The code source never loads a module at run time.' },
-                { selector: "CallExpression[callee.name='require']", message: 'The code source never loads a module at run time.' },
-                { selector: "CallExpression[callee.name='eval']", message: 'The code source never evaluates text.' },
-                { selector: "NewExpression[callee.name='Function'], CallExpression[callee.name='Function']", message: 'The code source never evaluates text.' },
             ],
         },
     },

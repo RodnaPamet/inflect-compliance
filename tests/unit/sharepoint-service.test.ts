@@ -69,6 +69,25 @@ describe('completeSharePointConnect', () => {
             message: expect.stringMatching(/already exists/i),
         });
     });
+    it('refuses a name with a control character or a lone surrogate before exchanging the code (#5317)', async () => {
+        // This path writes the row itself, past the admin route's schema, so it
+        // asks the same rule. Refused before the code is spent and before any write.
+        const { exchangeCodeForSharePointToken } = jest.requireMock(
+            '@/app-layer/integrations/providers/sharepoint/token',
+        ) as { exchangeCodeForSharePointToken: jest.Mock };
+        for (const name of ['Share\u0000Point', 'SharePoint \uDE00']) {
+            await expect(
+                completeSharePointConnect(admin, { code: 'c', redirectUri: 'r', name }),
+            ).rejects.toMatchObject({ status: 400, details: { reason: 'CONNECTION_NAME_INVALID_CHARACTERS' } });
+        }
+        expect(exchangeCodeForSharePointToken).not.toHaveBeenCalled();
+        expect(mockDb.integrationConnection.create).not.toHaveBeenCalled();
+    });
+    it('takes an emoji name — the positive control', async () => {
+        mockDb.integrationConnection.create.mockResolvedValue({ id: 'conn2' });
+        await completeSharePointConnect(admin, { code: 'c', redirectUri: 'r', name: 'Docs 📁' });
+        expect(mockDb.integrationConnection.create.mock.calls[0][0].data.name).toBe('Docs 📁');
+    });
 });
 
 describe('getSharePointClient', () => {

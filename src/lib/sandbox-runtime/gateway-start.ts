@@ -30,7 +30,7 @@
  * direction — "a sandbox that cannot be created is a refusal".
  *
  * ═══════════════════════════════════════════════════════════════════════════
- * FIVE OUTCOMES, BECAUSE THEY ARE NOT ONE
+ * SIX OUTCOMES, BECAUSE THEY ARE NOT ONE
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * An operator debugging "the scan did not run" needs to know whether the host
@@ -51,6 +51,13 @@ export type StartOutcome =
     | 'not-permitted'
     /** Start issued, `readyz` never answered inside the budget. */
     | 'timed-out'
+    /**
+     * The API answered the start with another non-OK status: a wrong project,
+     * zone or instance name (404), a disabled API or quota (400, 429). Carries
+     * `status`. It used to be reported as `timed-out` with a near-zero wait,
+     * which sent an operator looking for a slow boot (#5316).
+     */
+    | 'start-refused'
     /** No metadata server, or it could not be reached. Local development. */
     | 'unavailable';
 
@@ -58,6 +65,8 @@ export interface StartResult {
     readonly outcome: StartOutcome;
     /** How long the caller waited, so a slow boot is visible in a log. */
     readonly waitedMs: number;
+    /** The Compute API's HTTP status, on `start-refused` only. */
+    readonly status?: number;
 }
 
 /** Measured on this VM: `instances start` to `readyz` 200 in about 45 seconds. */
@@ -146,7 +155,9 @@ export async function startGatewayAndWait(
         if (res.status === 401 || res.status === 403) {
             return { outcome: 'not-permitted', waitedMs: now() - began };
         }
-        if (!res.ok) return { outcome: 'timed-out', waitedMs: now() - began };
+        if (!res.ok) {
+            return { outcome: 'start-refused', waitedMs: now() - began, status: res.status };
+        }
     } catch {
         return { outcome: 'unavailable', waitedMs: now() - began };
     }

@@ -157,7 +157,7 @@ describe('the action list is the same in the workflow and the script', () => {
 });
 
 describe('every write is preceded by its preflight, in the same run', () => {
-    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder'];
+    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder', 'refresh-env-prod-example'];
     const isPreflight = (a: string) => a === 'preflight' || a.endsWith('-preflight');
 
     it('a preflight action never writes', () => {
@@ -195,7 +195,7 @@ describe('every write is preceded by its preflight, in the same run', () => {
 
     it('the remote actions run remote.sh, which has a branch for each and refuses anything else', () => {
         const d = dispatch();
-        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(['on_vm', 'on_vm', 'on_vm']);
+        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(['on_vm', 'on_vm', 'on_vm', 'on_vm']);
         const branches = code(REMOTE_SH)
             .map((l) => /^([a-z][a-z-]*|\*)\)\s*$/.exec(l)?.[1])
             .filter((b): b is string => b !== undefined);
@@ -836,6 +836,125 @@ describe('every call to the VM goes through deploy/lib/iap.sh', () => {
             const runs = code(rel).filter((l) => /remote\.sh/.test(l) && /sudo bash/.test(l));
             expect(runs).toHaveLength(1);
             expect(runs[0].trim().startsWith('ssh_vm_once ')).toBe(true);
+        }
+    });
+});
+
+/**
+ * `refresh-env-prod-example` (#5308): the VM keeps a copy of the PUBLIC template
+ * `deploy/.env.prod.example`, and check-drift.sh trusts that copy only while it
+ * is byte-identical to the repository's. The action replaces that one file and
+ * nothing else. Its remote.sh branch is RUN here in a scratch directory standing
+ * in for /opt/inflect, with `install` replaced by a copy (a runner is not root,
+ * so `-o root` would fail); the flags it passes are asserted separately.
+ */
+describe('refresh-env-prod-example replaces the VM copy of the public template, and nothing else', () => {
+    const ACTION = 'refresh-env-prod-example';
+    const FILE = '.env.prod.example';
+    const SECRET = 'sekret';
+
+    /** remote.sh's branch for the action, to its `;;`, comments dropped. */
+    const branch = () => {
+        const lines = code(REMOTE_SH);
+        const start = lines.findIndex((l) => l === `${ACTION})`);
+        const end = lines.findIndex((l, i) => i > start && l.trim() === ';;');
+        if (start < 0 || end < 0) throw new Error(`remote.sh has no ${ACTION} branch`);
+        return lines.slice(start + 1, end);
+    };
+
+    function runBranch(live: { content?: string; symlinkTo?: string }) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-apply-refresh-'));
+        const dir = path.join(root, 'opt-inflect');
+        const stage = path.join(root, 'stage');
+        fs.mkdirSync(dir);
+        fs.mkdirSync(stage);
+        const repoCopy = read(`deploy/${FILE}`);
+        fs.writeFileSync(path.join(stage, FILE), repoCopy);
+        if (live.content !== undefined) fs.writeFileSync(path.join(dir, FILE), live.content, { mode: 0o644 });
+        if (live.symlinkTo !== undefined) fs.symlinkSync(live.symlinkTo, path.join(dir, FILE));
+        const script = [
+            'set -euo pipefail',
+            `cd '${dir}'`,
+            `STAGE='${stage}'`,
+            'TS=20261114-120000',
+            'install() { local n=$#; cp "${@:n-1:1}" "${@:n:1}"; chmod 644 "${@:n:1}"; }',
+            ...branch(),
+        ].join('\n');
+        let status = 0;
+        let out = '';
+        try {
+            out = execFileSync('bash', ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (e) {
+            const x = e as { status: number; stdout: string; stderr: string };
+            status = x.status;
+            out = `${x.stdout}${x.stderr}`;
+        }
+        const entries = fs.readdirSync(dir).sort();
+        const liveNow = fs.existsSync(path.join(dir, FILE)) ? fs.readFileSync(path.join(dir, FILE), 'utf8') : undefined;
+        return { status, out, entries, liveNow, repoCopy, dir, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
+    }
+
+    it('vm.sh stages exactly the repo template for it, and remote.sh installs it 0644 root:root', () => {
+        const staged = code(VM_SH).filter((l) => /files\+=\(/.test(l)).map((l) => l.trim());
+        expect(staged).toEqual([
+            'files+=("$HERE/../docker-compose.legacy-mcp-proving.yml")',
+            'files+=("$HERE/../.env.prod.example")',
+        ]);
+        const installs = branch().filter((l) => /^\s*install\s/.test(l)).map((l) => l.trim());
+        expect(installs).toEqual(['install -m 0644 -o root -g root "$STAGE/$FILE" "$NEW"']);
+        expect(branch().filter((l) => l.trim().startsWith('FILE=')).map((l) => l.trim())).toEqual(['FILE=.env.prod.example']);
+    });
+
+    it('installs the repo copy when the VM has none, and keeps no backup', () => {
+        const r = runBranch({});
+        try {
+            expect(r.status).toBe(0);
+            expect(r.liveNow).toBe(r.repoCopy);
+            expect(r.entries).toEqual([FILE]);
+            expect(r.out.split('\n')).toContain('live copy: absent');
+        } finally {
+            r.cleanup();
+        }
+    });
+
+    it('replaces a differing copy, keeping the old one root-only, and prints hashes rather than content', () => {
+        const r = runBranch({ content: `AUTH_SECRET=${SECRET}\n` });
+        try {
+            expect(r.status).toBe(0);
+            expect(r.liveNow).toBe(r.repoCopy);
+            const backup = `${FILE}.bak.20261114-120000`;
+            expect(r.entries).toEqual([FILE, backup]);
+            expect(fs.statSync(path.join(r.dir, backup)).mode & 0o777).toBe(0o600);
+            expect(r.out.split('\n').filter((l) => l.includes(SECRET))).toEqual([]);
+            expect(r.out.split('\n').filter((l) => /^live copy now: sha256 [0-9a-f]{12}$/.test(l))).toHaveLength(1);
+        } finally {
+            r.cleanup();
+        }
+    });
+
+    it('changes nothing when the copy already matches', () => {
+        const r = runBranch({ content: read(`deploy/${FILE}`) });
+        try {
+            expect(r.status).toBe(0);
+            expect(r.entries).toEqual([FILE]);
+            expect(r.out.split('\n')).toContain('the live copy already matches the repo; nothing changed');
+        } finally {
+            r.cleanup();
+        }
+    });
+
+    it('refuses a symlink, writing nothing through it', () => {
+        const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-apply-refresh-target-'));
+        const target = path.join(scratch, 'target');
+        fs.writeFileSync(target, 'untouched\n');
+        const r = runBranch({ symlinkTo: target });
+        try {
+            expect(r.status).toBe(1);
+            expect(fs.readFileSync(target, 'utf8')).toBe('untouched\n');
+            expect(r.entries).toEqual([FILE]);
+        } finally {
+            r.cleanup();
+            fs.rmSync(scratch, { recursive: true, force: true });
         }
     });
 });

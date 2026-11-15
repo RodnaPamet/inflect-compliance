@@ -177,3 +177,22 @@ describe('AnimatedNumber — the primitive rejects non-finite input', () => {
         expect(container.textContent).toBe('11.2%');
     });
 });
+
+describe('HeroMetric — a percent delta is in percentage points (#5309)', () => {
+    it('renders 40% → 44% as "+4.0pp" (as KpiCard does), not "+4.0%"', () => {
+        const { container } = render(
+            <HeroMetric eyebrow="Coverage" value={44} format="percent" delta={4} />,
+        );
+        const chip = container.querySelector('[data-hero-metric-delta]')!;
+        expect(chip.textContent).toBe('+4.0pp');
+        expect(chip.textContent).not.toContain('%');
+    });
+
+    it('a count delta stays a plain number with no unit', () => {
+        const { container } = render(<HeroMetric eyebrow="Risks" value={12} delta={-3} />);
+        const chip = container.querySelector('[data-hero-metric-delta]')!;
+        expect(chip.textContent).toBe('3');
+        expect(chip.querySelector('[data-hero-metric-delta-unit]')).toBeNull();
+    });
+});
+

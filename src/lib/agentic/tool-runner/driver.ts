@@ -6,10 +6,13 @@
  * residency, and `clientForRun` makes the residency decision: a LOCAL_ONLY
  * tenant is refused before anything external is read.
  *
- * Mapped in `drivers/index.ts`, and unreachable in this build:
- * `DRIVER_IMPLEMENTED['tool-runner']` is false, so `resolveAgentDriver` never
- * permits this engine and `selectRunDriver` never chooses it. Step 2c turns it
- * on.
+ * Mapped in `drivers/index.ts`, and implemented since Step 2c (#4150):
+ * `DRIVER_IMPLEMENTED['tool-runner']` is true. That alone runs nothing.
+ * `resolveAgentDriver` permits this engine only when the Tool Runner is
+ * available to the workspace (`AGENT_DRIVER_TOOL_RUNNER`, or the
+ * organization's choice while that switch is unset) AND the tenant chose
+ * TOOL_RUNNER, and `selectRunDriver` chooses it only for a definition that
+ * asks for it — today an agent profile's.
  *
  * No dynamic-import boundary, unlike Flue: `@anthropic-ai/sdk` ships a
  * `require` condition, so this module loads in every Jest project.

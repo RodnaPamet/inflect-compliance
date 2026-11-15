@@ -122,14 +122,25 @@ describe('the per-worker marker is per run', () => {
      * gives the marker the same shared directory without building a path
      * into the installed-package tree (`dependency-paths-are-resolved`).
      *
-     * It carries REAL copies of the two files under test, jest.setup.js and
-     * the helper it requires, at their real relative paths, so what runs
-     * below is the code in this branch and not a paraphrase of it.
+     * It carries REAL copies of jest.setup.js and EVERY helper it requires, at
+     * their real relative paths, so what runs below is the code in this branch
+     * and not a paraphrase of it.
+     *
+     * THAT LIST IS LOAD-BEARING. A dependency jest.setup.js gains and this
+     * sandbox does not copy makes the `require` below throw ENOENT, and four
+     * tests here then fail on a missing module rather than on anything about
+     * naming — which is how #5567's split first surfaced in CI. Add a new
+     * require here in the same diff.
      */
     function checkout(name: string, sharedCache: string): string {
         const root = path.join(sandbox, name);
         fsx.mkdirSync(path.join(root, 'tests', 'helpers'), { recursive: true });
-        for (const rel of ['jest.setup.js', 'tests/helpers/test-db-checkout.js']) {
+        for (const rel of [
+            'jest.setup.js',
+            'tests/helpers/test-db-checkout.js',
+            // The URL decision, split out in #5567 so a test could drive it.
+            'tests/helpers/resolve-test-database-url.js',
+        ]) {
             fsx.copyFileSync(path.join(REAL_ROOT, rel), path.join(root, rel));
         }
         const cacheLink = path.join(root, 'node_modules', '.cache');
@@ -447,18 +458,26 @@ describe('every site that names a worker DB agrees', () => {
         require('node:fs').readFileSync(path.resolve(__dirname, '../..', rel), 'utf8');
     const read = (rel: string): string => codeOf(readRaw(rel));
 
-    it('jest.setup.js reads the recorded names rather than re-deriving them', () => {
-        // It is plain JS and cannot import the TS helper, so "read the
-        // record" is the only option that cannot drift.
+    it('the worker URL is built from the recorded names, not a re-derivation', () => {
+        // Plain JS that cannot import the TS helper which owns the naming
+        // scheme, so "read the record" is the only option that cannot drift.
         //
         // Assert the ASSIGNMENT, not the file. The first version of this test
         // checked that the source mentioned `marker.workerDbs` anywhere — and
         // it survived a mutation that left the lookup in place and dropped it
         // from the pathname, which is the entire bug. A mention is not a use.
-        const src = read('jest.setup.js');
-        const line = src.split('\n').find((l) => /u\.pathname\s*=/.test(l));
-        expect(line).toBeDefined();
-        expect(line).toMatch(/recorded/);
+        //
+        // THE ASSIGNMENT MOVED in #5567, out of jest.setup.js and into the
+        // resolver beside it, so that the decision could be driven by a test at
+        // all. The invariant did not move, so this follows it rather than
+        // loosening: both files are read, and the pathname must be built in one
+        // of them from `recorded`.
+        const sources = ['jest.setup.js', 'tests/helpers/resolve-test-database-url.js'].map(read);
+        const lines = sources
+            .flatMap((src) => src.split('\n'))
+            .filter((l) => /u\.pathname\s*=/.test(l));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toMatch(/recorded/);
     });
 
     it('only tests/helpers/db.ts composes the scheme', () => {

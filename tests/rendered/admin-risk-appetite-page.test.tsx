@@ -6,7 +6,17 @@
 import * as React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+let mockRole = 'ADMIN';
 jest.mock('@/lib/tenant-context-provider', () => ({
+    useTenantContext: () => {
+        const { getPermissionsForRole } = require('@/lib/permissions');
+        const p = getPermissionsForRole(mockRole);
+        return {
+            membershipRole: mockRole,
+            appPermissions: p,
+            permissions: { canRead: true, canWrite: true, canAdmin: mockRole === 'ADMIN' || mockRole === 'OWNER', canAudit: true, canExport: true },
+        };
+    },
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
     useMoneyFormatter: () => (v: number | null | undefined) => `€${v}`,
@@ -22,13 +32,20 @@ const ra = en.admin.riskAppetite;
 
 type Reply = { status: number; body: unknown };
 let puts: unknown[] = [];
+let posts: string[] = [];
 
-function stub(routes: { config?: Reply; breaches?: Reply; put?: Reply }) {
+beforeEach(() => { mockRole = 'ADMIN'; });
+
+function stub(routes: { config?: Reply; breaches?: Reply; put?: Reply; approve?: Reply }) {
     puts = [];
+    posts = [];
     global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
         const method = init?.method ?? 'GET';
         let r: Reply;
-        if (method === 'PUT') {
+        if (method === 'POST' && String(url).endsWith('/risk-appetite/approve')) {
+            posts.push(String(url));
+            r = routes.approve ?? { status: 200, body: { success: true } };
+        } else if (method === 'PUT') {
             puts.push(JSON.parse(String(init?.body)));
             r = routes.put ?? { status: 200, body: {} };
         } else if (String(url).endsWith('/breaches')) {
@@ -95,4 +112,82 @@ it('labels breach types, shows a score as a score, and marks an acknowledged bre
     expect(screen.queryByTestId('breach-ack-b1')).toBeNull();
     expect(screen.getByTestId('breach-ack-b2')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('QUAL_SCORE');
+});
+
+describe('approval (#5313 item 11)', () => {
+    const storedRow = {
+        id: 'cfg-1', tenantId: 't-1', createdAt: '2026-01-01', updatedAt: '2026-01-02',
+        totalAleThreshold: 500000, singleRiskAleMax: null, qualScoreMax: null, testedPercentile: 80,
+        appetiteStatement: 'Moderate.', reviewCadence: 'ANNUALLY', categoryOverridesJson: null,
+        nextReviewAt: '2027-01-01T00:00:00.000Z',
+        approvedByUserId: 'owner-1', approvedAt: '2026-11-01T00:00:00.000Z',
+    };
+    const configReply = (approval: unknown): Reply => ({
+        status: 200,
+        body: { config: storedRow, status: { status: 'WITHIN', portfolioAle: 1, portfolioTested: null, activeBreaches: 0 }, approval },
+    });
+
+    it('a save sends only the fields it edits: never the approval or the row\'s own columns', async () => {
+        stub({ config: configReply(null) });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        fireEvent.click(document.getElementById('appetite-save') as HTMLElement);
+        await waitFor(() => expect(puts).toHaveLength(1));
+        const body = puts[0] as Record<string, unknown>;
+        expect(Object.keys(body).sort()).toEqual([
+            'appetiteStatement', 'categoryOverridesJson', 'nextReviewAt', 'qualScoreMax',
+            'reviewCadence', 'singleRiskAleMax', 'testedPercentile', 'totalAleThreshold',
+        ]);
+        // The fields it does not edit go back as they came, so a save keeps them.
+        expect(body.nextReviewAt).toBe('2027-01-01T00:00:00.000Z');
+    });
+
+    it('shows who approved it to every viewer, and offers Approve to an ADMIN nowhere', async () => {
+        stub({ config: configReply({ approvedAt: '2026-11-01T00:00:00.000Z', approverName: 'Olga Owner' }) });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        expect(document.getElementById('appetite-approval')).toHaveTextContent('Approved by Olga Owner on');
+        expect(document.getElementById('appetite-approve')).toBeNull();
+    });
+
+    it('says when it is not approved', async () => {
+        stub({ config: configReply(null) });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        expect(document.getElementById('appetite-approval')).toHaveTextContent(ra.notApproved);
+    });
+
+    it('offers an OWNER Approve, which posts to the approve route', async () => {
+        mockRole = 'OWNER';
+        stub({ config: configReply(null) });
+        render(<RiskAppetitePage />);
+        await screen.findByDisplayValue('500000');
+        const approve = document.getElementById('appetite-approve') as HTMLButtonElement;
+        expect(approve).not.toBeDisabled();
+        fireEvent.click(approve);
+        await waitFor(() => expect(posts).toEqual(['/api/t/acme/risk-appetite/approve']));
+        expect(puts).toEqual([]);
+    });
+
+    it('holds Approve while the screen differs from what is stored', async () => {
+        mockRole = 'OWNER';
+        stub({ config: configReply(null) });
+        render(<RiskAppetitePage />);
+        fireEvent.change(await screen.findByDisplayValue('500000'), { target: { value: '600000' } });
+        expect(document.getElementById('appetite-approve')).toBeDisabled();
+        expect(document.getElementById('appetite-approve-save-first')).toHaveTextContent(ra.approveSaveFirst);
+    });
+
+    it('offers no Approve before anything is saved', async () => {
+        mockRole = 'OWNER';
+        stub({
+            config: { status: 200, body: { config: null, status: { status: 'NONE', portfolioAle: 0, portfolioTested: null, activeBreaches: 0 }, approval: null } },
+            // A breach row, so the test can see the load has finished.
+            breaches: { status: 200, body: { breaches: [{ id: 'b9', breachType: 'QUAL_SCORE', thresholdValue: 1, actualValue: 2, detectedAt: '2026-10-01', resolvedAt: null, acknowledgedAt: null, riskId: null, category: null, remediationTaskId: null }] } },
+        });
+        render(<RiskAppetitePage />);
+        await screen.findByTestId('breach-type-b9');
+        expect(document.getElementById('appetite-save')).not.toBeNull();
+        expect(document.getElementById('appetite-approve')).toBeNull();
+    });
 });

@@ -343,6 +343,25 @@ describe('AutomationExecutionRepository — tenant scoping + append-only', () =>
         expect(call.data.completedAt).toBeInstanceOf(Date);
     });
 
+    it('recordCompletionIfRunning() settles only a RUNNING row, and says whether it did (#5305)', async () => {
+        const { db, automationExecution } = makeDb();
+        automationExecution.updateMany.mockResolvedValueOnce({ count: 0 });
+
+        const settled = await AutomationExecutionRepository.recordCompletionIfRunning(
+            db,
+            makeCtx(),
+            'exec-1',
+            { status: 'FAILED', outcome: { slaBreached: true } }
+        );
+
+        expect(settled).toBe(false);
+        const call = automationExecution.updateMany.mock.calls[0][0];
+        expect(call.where).toEqual({ id: 'exec-1', tenantId: makeCtx().tenantId, status: 'RUNNING' });
+        expect(call.data.status).toBe('FAILED');
+        expect(call.data.completedAt).toBeInstanceOf(Date);
+        expect(automationExecution.update).not.toHaveBeenCalled();
+    });
+
     it('listForRule() is tenant+rule scoped', async () => {
         const { db, automationExecution } = makeDb();
         await AutomationExecutionRepository.listForRule(

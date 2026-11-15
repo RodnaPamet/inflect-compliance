@@ -94,6 +94,12 @@ export interface PolicyCardTabProps extends AgentTabProps {
 export interface ToolsTabProps extends AgentTabProps {
     /** Same shape as the policy card's flag: absent means no read either. */
     canGrantTools: boolean;
+    /**
+     * `admin.agent_registry`, which the manifest-pin read takes (#5313). The
+     * shell opens this tab on the tool-exposure key alone, so it cannot be
+     * assumed. Defaults to true for a caller that predates it.
+     */
+    canReadRegistry?: boolean;
 }
 
 /** Circuit breaker. */

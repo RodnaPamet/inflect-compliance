@@ -13,10 +13,16 @@
  *
  * ## Permission
  *
- * `admin.agent_registry`. Same key the sibling `review-quality` surface chose,
- * for the same reason: the operator's response to a quarantine finding is to
- * suspend or retire the agent that produced it, which is precisely the authority
- * that key names. It is held by OWNER and ADMIN and by nobody below them.
+ * Either inventory key at the route — `admin.agent_registry_view` or
+ * `admin.agent_registry` — and the full rule in the usecase
+ * (`mayReadOversightSurface`, `agent-oversight-settings.ts`): the register key
+ * reads the quarantine; the view key reads it only while the tenant's owner has
+ * switched on Auditors reading it (#4898). The register key is the authority to
+ * suspend or retire the agent that produced a quarantined row, which is the
+ * operator's response to one. AUDITOR holds the view key, so the route admits
+ * it and the usecase decides; with the switch off it is refused there, with an
+ * `AUTHZ_DENIED` row. (#5303 corrected this paragraph, which named the register
+ * key alone and said nobody below ADMIN was admitted.)
  *
  * `requirePermission` AT THE ROUTE and not `assertCanRead` alone in the usecase,
  * because a refusal here must write the hash-chained `AUTHZ_DENIED` row — an

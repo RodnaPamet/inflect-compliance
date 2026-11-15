@@ -809,6 +809,27 @@ describe('agent inventory', () => {
         expect(byName.get('Vendor bot')?.breakerState).toBeNull();
     });
 
+    it('counts only LIVE keys as credentials that speak for an agent (#5317)', async () => {
+        const agentId = seeded[T1].agents.A3;
+        const base = { tenantId: T1, agentId, createdById: seeded[T1].ownerUserId };
+        const day = 24 * 60 * 60 * 1000;
+        await prisma.tenantApiKey.createMany({
+            data: [
+                { ...base, name: 'live', keyPrefix: 'iflk_aa1', keyHash: 'cred-count-live' },
+                { ...base, name: 'revoked', keyPrefix: 'iflk_aa2', keyHash: 'cred-count-revoked', revokedAt: new Date() },
+                { ...base, name: 'expired', keyPrefix: 'iflk_aa3', keyHash: 'cred-count-expired', expiresAt: new Date(Date.now() - day) },
+                { ...base, name: 'future', keyPrefix: 'iflk_aa4', keyHash: 'cred-count-future', expiresAt: new Date(Date.now() + day) },
+            ],
+        });
+        try {
+            const report = await buildAgentInventoryReport(ctxFor(T1));
+            const row = report.body.agents.find((a) => a.name === 'Vendor bot');
+            expect(row?.credentialCount).toBe(2);
+        } finally {
+            await prisma.tenantApiKey.deleteMany({ where: { tenantId: T1, keyHash: { startsWith: 'cred-count-' } } });
+        }
+    });
+
     it('names the accountable human on every row', async () => {
         const report = await buildAgentInventoryReport(ctxFor(T1));
         expect(report.body.agents).toHaveLength(5);

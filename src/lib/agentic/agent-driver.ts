@@ -322,10 +322,13 @@ export interface AgentDriverTerms {
  *                             deploy, and something an operator should see.
  *   DRIVER_NOT_IMPLEMENTED  — both switches name an engine this build cannot
  *                             execute. The loudest of the four: it means
- *                             configuration is ahead of code. Today that is
- *                             only `TOOL_RUNNER`, which no writer accepts yet,
- *                             so it is reachable only after a rollback from a
- *                             build that wrote it.
+ *                             configuration is ahead of code. Reachable for no
+ *                             driver today: every `DRIVER_IMPLEMENTED` entry is
+ *                             true, and `TOOL_RUNNER` is written, chosen and
+ *                             recorded by runs since Step 2c (#4150). It stays
+ *                             as the answer for the next engine declared ahead
+ *                             of its implementation, or a flag reverted to
+ *                             false.
  */
 export type StaticDriverReason =
     | 'ENV_DISABLED'

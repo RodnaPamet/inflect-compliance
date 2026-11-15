@@ -97,6 +97,7 @@ function makePortfolioData(summary: PortfolioSummary = makeSummary()): Portfolio
         canSetMaturity: false,
         initiatives: { rows: [], inFlight: 0, atRisk: 0 },
         canManageInitiatives: false,
+        canDrillDown: true,
         summary,
         tenantHealth: [],
         trends: {
@@ -137,6 +138,7 @@ describe('PortfolioDashboard — header stats animate', () => {
                 initialWidgets={[]}
                 data={makePortfolioData()}
                 canEdit={false}
+                canManageTenants={false}
             />,
         );
         const header = container.querySelector('[data-portfolio-header-stats]');
@@ -163,6 +165,7 @@ describe('PortfolioDashboard — header stats animate', () => {
                     }),
                 )}
                 canEdit={false}
+                canManageTenants={false}
             />,
         );
         const header = container.querySelector('[data-portfolio-header-stats]');
@@ -185,6 +188,7 @@ describe('PortfolioDashboard — header stats animate', () => {
                     }),
                 )}
                 canEdit={false}
+                canManageTenants={false}
             />,
         );
         const before = container.textContent;
@@ -197,6 +201,7 @@ describe('PortfolioDashboard — header stats animate', () => {
                     }),
                 )}
                 canEdit={false}
+                canManageTenants={false}
             />,
         );
         expect(container.textContent).not.toBe(before);

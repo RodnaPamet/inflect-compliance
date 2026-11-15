@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import useSWR, { useSWRConfig } from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
 import { ProgressBar } from '@/components/ui/progress-bar';
@@ -27,6 +28,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     DECISION_TO_STRATEGY,
     type TreatmentDecisionValue,
@@ -125,7 +127,7 @@ export function RiskTreatmentPlanCard({
         apiBase,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch treatment plans');
+            if (!res.ok) throw new ApiClientError('Failed to fetch treatment plans', 'fetch_failed', res.status);
             return res.json();
         },
     );
@@ -257,7 +259,7 @@ function ActivePlanBlock({
         `${apiBase}/${planId}`,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) throw new Error('Failed to fetch plan detail');
+            if (!res.ok) throw new ApiClientError('Failed to fetch plan detail', 'fetch_failed', res.status);
             return res.json();
         },
     );
@@ -409,8 +411,8 @@ function MilestoneRowItem({
                 },
             );
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('milestoneCompleteFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('milestoneCompleteFailed')));
             }
             onMutated();
         } catch (err) {
@@ -514,8 +516,8 @@ function CreatePlanDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('createPlanFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('createPlanFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -624,8 +626,8 @@ function AddMilestoneDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('addMilestoneFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('addMilestoneFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -711,8 +713,8 @@ function CompletePlanDialog({
                 body: JSON.stringify({ closingRemark }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('completePlanFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('completePlanFailed')));
             }
             onSuccess();
         } catch (err) {

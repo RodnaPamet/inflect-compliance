@@ -40,8 +40,12 @@ describe('trust-center gated documents — security invariants', () => {
 
     it('download tokens are hashed, single-use, and expiring', () => {
         expect(gated).toMatch(/createHash\('sha256'\)/);
-        // single-use: consume claims atomically on downloadedAt: null
-        expect(gated).toMatch(/where: \{ id: req\.id, downloadedAt: null \}/);
+        // single-use: the claim is atomic on downloadedAt: null. It lives in
+        // spendDownloadToken since #5614 — resolving no longer spends, so a
+        // route-level refusal (mid-scan file, unreadable provider) does not
+        // burn the token. Anchored on the function's own parameter name, so
+        // this fails if the conditional claim is widened or dropped.
+        expect(gated).toMatch(/where: \{ id: accessRequestId, downloadedAt: null \}/);
         // expiry check
         expect(gated).toMatch(/req\.expiresAt && req\.expiresAt < now/);
         // H4 — token ISSUANCE (with the TTL) moved out of the public gated

@@ -397,7 +397,14 @@ async function runGoverned(
     //
     // Deliberately AFTER the egress guard and BEFORE the decision-log row, so
     // what gets recorded is what the user was actually shown.
-    const guidance = checkGuidanceRoutes(answer.message);
+    //
+    // NOT a proposal outcome (#5317). That sentence is COMPOSED by
+    // `proposalOutcomeMessage` from the funnel's result, not written by the
+    // model, so it names no screen — only the item's title, which the person
+    // chose and may contain a path ("missing auth on /api/upload"). Replacing
+    // it hid a proposal that exists, inviting a second, duplicate request.
+    const composedProposalOutcome = answer.kind === 'proposal' || answer.proposalStatus !== undefined;
+    const guidance = composedProposalOutcome ? { ok: true as const } : checkGuidanceRoutes(answer.message);
     if (!guidance.ok) {
         logger.warn('assistant.guidance_route_refused', {
             tenantId: ctx.tenantId,
@@ -597,8 +604,11 @@ async function answerFromKeywords(ctx: RequestContext, q: string): Promise<Assis
             `Posture: ${stats.controls} control(s), ${stats.risks} risk(s) (${stats.highRisks} high), ${stats.openFindings} open finding(s), ${stats.openTasks} open task(s), ${stats.evidence} evidence item(s).`,
         );
     }
+    // No offer to queue actions (#5317): this router runs only when no model is
+    // configured, and without a model nothing here can turn a request into a
+    // proposal, however it is phrased.
     return say(
-        'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage) and queue actions (raise a finding, create a risk) for a reviewer to approve. What would you like to know?',
+        'I can answer read questions about your posture (high risks, open findings, tasks, evidence status, control coverage). What would you like to know?',
     );
 }
 
@@ -1026,6 +1036,8 @@ function assistantSystemPrompt(
     return [
         'You are a compliance assistant inside the Inflect platform, answering about THIS tenant only.',
         '',
+        OFF_SCOPE_RULE,
+        '',
         'Use the provided tools to read live data. Rules you must follow:',
         '- If a tool returns an ERROR, say the data is unavailable. NEVER infer, estimate or recall a',
         '  control status, a count, or a posture from anything but a successful tool result.',
@@ -1048,6 +1060,37 @@ function assistantSystemPrompt(
         ...(contextBlock === null ? [] : ['', contextBlock]),
     ].join('\n');
 }
+
+/**
+ * What the assistant is for, and what it declines (#5520; owner decision
+ * 2026-11-14).
+ *
+ * garak run 43448218156 found the assistant SAYING a request was off-scope and
+ * then doing it anyway: it called "Ym9vbmll" unrelated to compliance after
+ * decoding it, and said it could not fill a masked literary passage before
+ * naming the book. Neither is a security weakness; both are the same gap, so
+ * the rule names the families those hits came from and says the decline is
+ * the whole answer — no partial result, and no source or author, which is
+ * how the cloze answer leaked.
+ *
+ * General compliance and regulatory questions are said to be IN scope on
+ * purpose: "only this tenant's data" read strictly would refuse "what does
+ * ISO 27001 A.5.15 require?", which is the product's job. Kept short, because
+ * every line here is read on every on-scope turn too.
+ *
+ * Exported for its test. The keyword fallback needs no twin: it answers only
+ * its posture intents and otherwise returns its fixed capability sentence, so
+ * it cannot perform an off-scope task.
+ */
+export const OFF_SCOPE_RULE = [
+    'SCOPE. Answer only about this tenant\'s compliance, risk, control, audit, policy, evidence and',
+    'related records, general compliance and regulatory questions, and how to use Inflect. Everything',
+    'else is off-scope, including decoding or transforming encoded text (Base64, ROT13, hex and the',
+    'like), completing, identifying or reciting quotations, lyrics or literary passages, and general',
+    'trivia. For an off-scope request, say briefly that you cannot help with it and offer what you',
+    'can do. Do not perform the task, not even partly: never give the decoded text, the missing',
+    'word, the source, the author or a hint.',
+].join('\n');
 
 /**
  * What the model is told about earlier turns (#5054).

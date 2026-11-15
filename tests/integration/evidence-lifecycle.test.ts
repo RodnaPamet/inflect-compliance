@@ -360,9 +360,64 @@ describeFn('bulkApproveEvidence (integration)', () => {
         expect(res.skippedNotSubmitted).toBe(1);
     });
 
+    it('notifies an owner only through an ACTIVE membership here — one who left gets nothing (#5317)', async () => {
+        const leftUserId = await makeUser(`left-${randomUUID().slice(0, 6)}`);
+        const membership = await globalPrisma.tenantMembership.create({
+            data: { tenantId: TENANT_ID, userId: leftUserId, role: Role.EDITOR, status: MembershipStatus.ACTIVE },
+        });
+        const gone = await newDraft({ title: 'owner left', ownerUserId: leftUserId });
+        const stays = await newDraft({ title: 'owner stays', ownerUserId });
+        await submitAsEditor(gone.id);
+        await submitAsEditor(stays.id);
+        await globalPrisma.tenantMembership.update({
+            where: { id: membership.id },
+            data: { status: MembershipStatus.DEACTIVATED },
+        });
+        // The departed user is left for the suite's tenant teardown and the
+        // harness's truncation; their membership goes with the tenant's.
+        const res = await bulkApproveEvidence(adminCtx(), [gone.id, stays.id]);
+        expect(res.approved).toBe(2);
+        const toLeft = await globalPrisma.notification.count({ where: { tenantId: TENANT_ID, userId: leftUserId } });
+        expect(toLeft).toBe(0);
+        const toActive = await globalPrisma.notification.count({
+            where: { tenantId: TENANT_ID, userId: ownerUserId, type: 'EVIDENCE_APPROVED', title: { contains: 'owner stays' } },
+        });
+        expect(toActive).toBe(1);
+    });
+
     it('returns 0 when no ids match (empty-set early return)', async () => {
         const res = await bulkApproveEvidence(adminCtx(), ['nope-1', 'nope-2']);
         expect(res.approved).toBe(0);
+    });
+});
+
+describeFn('reviewEvidence — racing reviews (integration, #5317)', () => {
+    it('an APPROVE and a REJECT racing on one SUBMITTED row: exactly one lands, the other is refused 409', async () => {
+        const ev = await newDraft({ title: 'race review', ownerUserId });
+        await reviewEvidence(editorCtx(), ev.id, { action: 'SUBMITTED' });
+        const outcomes = await Promise.allSettled([
+            reviewEvidence(adminCtx(), ev.id, { action: 'APPROVED' }),
+            reviewEvidence(adminCtx(), ev.id, { action: 'REJECTED', comment: 'missing the signature page' }),
+        ]);
+        const fulfilled = outcomes.filter(
+            (o): o is PromiseFulfilledResult<Awaited<ReturnType<typeof reviewEvidence>>> => o.status === 'fulfilled',
+        );
+        const rejected = outcomes.filter((o): o is PromiseRejectedResult => o.status === 'rejected');
+        expect(fulfilled).toHaveLength(1);
+        expect(rejected).toHaveLength(1);
+        // The loser was either beaten at the conditional move (409) or, having
+        // read after the winner committed, refused by the state machine (400).
+        expect([400, 409]).toContain(rejected[0].reason?.status);
+        const reviews = await globalPrisma.evidenceReview.findMany({
+            where: { evidenceId: ev.id, action: { in: ['APPROVED', 'REJECTED'] } },
+        });
+        expect(reviews.map((r) => r.action)).toEqual([fulfilled[0].value.status]);
+        const row = await globalPrisma.evidence.findUniqueOrThrow({ where: { id: ev.id } });
+        expect(row.status).toBe(fulfilled[0].value.status);
+        const notes = await globalPrisma.notification.count({
+            where: { tenantId: TENANT_ID, userId: ownerUserId, title: { contains: 'race review' } },
+        });
+        expect(notes).toBe(1);
     });
 });
 

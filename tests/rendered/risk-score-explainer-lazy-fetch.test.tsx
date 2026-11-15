@@ -87,4 +87,23 @@ describe('RiskScoreExplainer — lazy fetch', () => {
         expect(urls.filter((u) => u.includes('r-0'))).toHaveLength(1);
         expect(urls.filter((u) => u.includes('r-2'))).toHaveLength(1);
     });
+
+    it('re-fetches on every open, so a changed score is never shown stale (#5309)', async () => {
+        const first = { ...PAYLOAD, inherent: { ...PAYLOAD.inherent, score: 12, likelihood: 3, impact: 4 } };
+        fetchMock
+            .mockImplementationOnce(async () => ({ ok: true, json: async () => first }))
+            .mockImplementationOnce(async () => ({ ok: true, json: async () => PAYLOAD }));
+        mountRows(1);
+        const chip = screen.getByLabelText('0 · High, explain');
+
+        fireEvent.click(chip);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(document.body.textContent).toContain('= 3 × 4'));
+
+        fireEvent.click(chip); // close
+        fireEvent.click(chip); // reopen after the score changed
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(document.body.textContent).toContain('= 4 × 5'));
+        expect(document.body.textContent).not.toContain('= 3 × 4');
+    });
 });

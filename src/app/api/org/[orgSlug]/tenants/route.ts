@@ -9,7 +9,10 @@
  *     unique constraint preserves).
  *
  *   GET /api/org/[orgSlug]/tenants
- *     list every tenant under the org. Any org member can read.
+ *     list every tenant under the org. Any org member can read. Each row
+ *     carries `isMember`: whether the CALLER holds an ACTIVE membership in
+ *     that tenant, which is what opens it (#5309 item 16). An ORG_READER is
+ *     provisioned nothing, so the switcher shows them only those rows.
  */
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -61,6 +64,23 @@ export const GET = withApiErrorHandling(
             orderBy: { createdAt: 'asc' },
         });
 
-        return NextResponse.json({ tenants });
+        // One read for the caller's memberships across the listed tenants,
+        // bounded by the list itself.
+        const memberships = tenants.length === 0
+            ? []
+            : await prisma.tenantMembership.findMany({
+                where: {
+                    userId: ctx.userId,
+                    status: 'ACTIVE',
+                    tenantId: { in: tenants.map((t) => t.id) },
+                },
+                select: { tenantId: true },
+                take: tenants.length,
+            });
+        const memberOf = new Set(memberships.map((m) => m.tenantId));
+
+        return NextResponse.json({
+            tenants: tenants.map((t) => ({ ...t, isMember: memberOf.has(t.id) })),
+        });
     },
 );

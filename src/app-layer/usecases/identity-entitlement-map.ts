@@ -244,7 +244,9 @@ export async function removeDepartmentGroupRule(
  * failed. An id with no name would produce a report naming a group nobody can
  * identify at the moment they most need to.
  *
- * `null` clears both, which restores `NO_DEFAULT_GROUP`.
+ * `null` clears both, which restores `NO_DEFAULT_GROUP` for any pass in which a
+ * planned starter's department has no rule. A pass whose planned starters are
+ * all mapped does not need the fallback and plans as before.
  */
 export async function setDefaultJoinerGroup(
     ctx: RequestContext,
@@ -291,7 +293,7 @@ export async function setDefaultJoinerGroup(
             entityId: ctx.tenantId,
             details: next
                 ? `Joiner fallback group set to ${next.groupName} (${next.groupId})`
-                : 'Joiner fallback group cleared — the joiner now refuses NO_DEFAULT_GROUP for unmapped departments.',
+                : 'Joiner fallback group cleared — a joiner pass with a starter in an unmapped department now refuses NO_DEFAULT_GROUP and creates nothing.',
             detailsJson: {
                 category: 'access',
                 operation: next ? 'grant' : 'revoke',

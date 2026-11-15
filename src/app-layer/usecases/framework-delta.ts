@@ -29,6 +29,8 @@ import { createFinding } from '@/app-layer/usecases/finding';
 import { parseHistoryFromMetadata } from '@/app-layer/libraries/version-history';
 import type { RequestContext } from '@/app-layer/types';
 import { tenantPageLink } from '@/app-layer/notifications/tenant-link';
+import { buildSystemContext } from '@/app-layer/context-system';
+import { logEvent } from '@/app-layer/events/audit';
 
 const FRAMEWORK_UPDATE_SOURCE = 'FRAMEWORK_UPDATE';
 
@@ -162,15 +164,42 @@ export async function propagateFrameworkDelta(diffId: string): Promise<Propagate
                           requirement: { framework: { key: diff.frameworkKey }, code: { in: changedCodes } },
                           control: { status: { in: [...REVIEWABLE_CONTROL_STATUSES] } },
                       },
-                      select: { controlId: true },
+                      select: { controlId: true, control: { select: { status: true } } },
                   })
                 : [];
-            const flaggedIds = [...new Set(flagged.map((f) => f.controlId))];
+            // One entry per control, with the status it held BEFORE the flag —
+            // the status a reviewer may restore, and what the audit row records.
+            const previousStatus = new Map(flagged.map((f) => [f.controlId, f.control.status]));
+            const flaggedIds = [...previousStatus.keys()];
             if (flaggedIds.length) {
                 await db.control.updateMany({
                     where: { id: { in: flaggedIds }, tenantId },
                     data: { status: 'NEEDS_REVIEW' },
                 });
+                // A library update moved these controls' status with nobody at
+                // the keyboard (#5317). Each move is a STATUS_CHANGE in the
+                // control's own trail, actor JOB, naming the diff and the prior
+                // status, so a regressed control can be explained and restored.
+                const jobCtx = buildSystemContext({ tenantId, job: 'framework-delta', discriminator: diffId });
+                for (const controlId of flaggedIds) {
+                    await logEvent(db, jobCtx, {
+                        action: 'STATUS_CHANGE',
+                        entityType: 'Control',
+                        entityId: controlId,
+                        details: `Flagged for re-review: ${diff.frameworkKey} v${diff.fromVersion} → v${diff.toVersion} changed a mapped requirement`,
+                        detailsJson: {
+                            category: 'status_change',
+                            entityName: 'Control',
+                            fromStatus: previousStatus.get(controlId) ?? null,
+                            toStatus: 'NEEDS_REVIEW',
+                            reason: FRAMEWORK_UPDATE_SOURCE,
+                            diffId,
+                            frameworkKey: diff.frameworkKey,
+                            fromVersion: diff.fromVersion,
+                            toVersion: diff.toVersion,
+                        },
+                    });
+                }
             }
 
             await db.tenantFrameworkDelta.upsert({

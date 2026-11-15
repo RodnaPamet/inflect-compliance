@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { listFindings, createFinding } from '@/app-layer/usecases/finding';
+import { listFindings, createFindingFromRequest } from '@/app-layer/usecases/finding';
 import { parseJsonBody } from '@/lib/validation/route';
 import { CreateFindingSchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -39,7 +39,7 @@ export const GET = withApiErrorHandling(
 export const POST = withApiErrorHandling(
     requirePermission<{ tenantSlug: string }>('findings.create', async (req: NextRequest, _routeArgs, ctx) => {
         const body = await parseJsonBody(req, CreateFindingSchema);
-        const finding = await createFinding(ctx, body);
+        const finding = await createFindingFromRequest(ctx, body);
         return jsonResponse(finding, { status: 201 });
     }),
 );

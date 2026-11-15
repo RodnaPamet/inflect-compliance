@@ -269,3 +269,19 @@ describe('when the primary workspace changes during the session', () => {
         expect(after.mfaPending).toBe(true);
     });
 });
+
+describe('a read failure while checking a KNOWN pending challenge (#5306)', () => {
+    it('leaves the primary pending on a fail-open workspace: a failed read is not a pass', async () => {
+        db.policies = { 't-alpha': 'REQUIRED' };
+        const signedIn: any = await signIn();
+        expect(signedIn.mfaPending).toBe(true);
+        expect(signedIn.mfaFailClosed).toBe(false);
+
+        const prisma = jest.requireMock('@/lib/prisma').default;
+        prisma.userSession.findUnique.mockRejectedValueOnce(new Error('pool exhausted'));
+        const after: any = await jwtCallback({ token: { ...signedIn, userSessionId: 'sess-this' } as any } as any);
+        expect(after.mfaPending).toBe(true);
+        // #5587 (on main): the error is set for every tenant, not only fail-closed ones.
+        expect(after.error).toBe('MfaDependencyFailure');
+    });
+});

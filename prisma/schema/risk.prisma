@@ -829,7 +829,8 @@ model RiskTreatmentPlan {
   risk        Risk                 @relation(fields: [riskId, tenantId], references: [id, tenantId])
   owner       User                 @relation("RiskTreatmentPlanOwner", fields: [ownerUserId], references: [id])
   createdBy   User                 @relation("RiskTreatmentPlanCreator", fields: [createdByUserId], references: [id])
-  completedBy User?                @relation("RiskTreatmentPlanCompleter", fields: [completedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  completedBy User?                @relation("RiskTreatmentPlanCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
   deletedBy   User?                @relation("RiskTreatmentPlanDeleter", fields: [deletedByUserId], references: [id])
   milestones  TreatmentMilestone[]
 
@@ -872,7 +873,8 @@ model TreatmentMilestone {
 
   tenant        Tenant            @relation(fields: [tenantId], references: [id])
   treatmentPlan RiskTreatmentPlan @relation(fields: [treatmentPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  completedBy   User?             @relation("TreatmentMilestoneCompleter", fields: [completedByUserId], references: [id])
+  /// #5595: RESTRICT, not SetNull. A stamped decision keeps its actor (pair CHECK / one-way trigger), so a DSAR erasure of this user refuses up front.
+  completedBy   User?             @relation("TreatmentMilestoneCompleter", fields: [completedByUserId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, treatmentPlanId])
   @@index([tenantId, dueDate])

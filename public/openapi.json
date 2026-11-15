@@ -3,7 +3,7 @@
   "info": {
     "title": "Inflect Compliance API",
     "version": "3.368.4",
-    "description": "Multi-tenant compliance-management API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.\n\n**Authenticating.** To try an endpoint, click **Authorize**:\n- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n- *SessionCookie* — for the dev/staging \"Try it out\" flow, sign in first; the browser sends the `next-auth.session-token` cookie automatically (same-origin only).\n\n**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/response bodies are not yet published in this contract — only the critical-endpoint set carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, versioning, and error-contract details.",
+    "description": "Multi-tenant compliance-management API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.\n\n**Authenticating.** To try an endpoint, click **Authorize**:\n- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n- *SessionCookie* — for the dev/staging \"Try it out\" flow, sign in first; the browser sends the NextAuth session cookie automatically (same-origin only). Its name is `__Secure-next-auth.session-token` over https and `next-auth.session-token` over http.\n\n**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/response bodies are not yet published in this contract — only the critical-endpoint set carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, versioning, and error-contract details.",
     "license": {
       "name": "Proprietary"
     }
@@ -41,8 +41,8 @@
       "SessionCookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "next-auth.session-token",
-        "description": "Browser session cookie (NextAuth JWT). Sent automatically for same-origin requests; used by the dev/staging \"Try it out\" flow. Not the partner flow — prefer a Bearer API key."
+        "name": "__Secure-next-auth.session-token",
+        "description": "Browser session cookie (NextAuth JWT). Sent automatically for same-origin requests; used by the dev/staging \"Try it out\" flow. Not the partner flow — prefer a Bearer API key.\n\nThe name is scheme-dependent: `__Secure-next-auth.session-token` over **https** (every hosted deployment), and `next-auth.session-token` over **http** — next-auth v4 adds the `__Secure-` prefix when the deployment URL is https."
       }
     },
     "schemas": {
@@ -1569,6 +1569,12 @@
                   }
                 ]
               },
+              "applicabilityDecidedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "contributors": {
                 "type": "array",
                 "items": {
@@ -2906,7 +2912,12 @@
           },
           "severity": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
           },
           "type": {
             "type": "string",
@@ -2991,7 +3002,13 @@
         "type": "object",
         "properties": {
           "severity": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
           },
           "type": {
             "type": "string",
@@ -4127,6 +4144,13 @@
               "string",
               "null"
             ]
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           }
         },
         "required": [
@@ -35074,6 +35098,41 @@
       },
       "put": {
         "summary": "PUT /api/t/{tenantSlug}/risk-appetite",
+        "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
+        "tags": [
+          "risk-appetite"
+        ],
+        "x-stub": true,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response. The success schema is not yet published in the contract."
+          },
+          "default": {
+            "description": "Error — see the ErrorResponse envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/risk-appetite/approve": {
+      "post": {
+        "summary": "POST /api/t/{tenantSlug}/risk-appetite/approve",
         "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
         "tags": [
           "risk-appetite"

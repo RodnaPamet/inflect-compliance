@@ -132,17 +132,14 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // consulted it was this JSON, so the write path let a tenant climb the
         // joiner to AUTOMATIC while this same response called it unbuilt.
         // `describeRefusal` now reads the same constant, so the reason the UI
-        // prints and the refusal the PUT raises cannot drift apart. It is still
-        // false for the joiner, and #2687 narrowed the reason to ONE: a planner
-        // exists AND a dispatcher and a schedule now call it, but
-        // decision 10's map now HAS somewhere to live (#2713 —
-        // `IdentityDepartmentGroupRule` plus the singular fallback on
-        // `TenantSecuritySettings`). Somewhere to live is not somewhere to be
-        // PUT: there is no write path for either half (#2839), so no tenant
-        // can configure it and every pass still refuses `NO_DEPARTMENT_MAP`.
-        // The create VERB is also still missing (#2714), which is why
-        // `DIRECTION_IMPLEMENTED.joiner` stays false: #2713 closed neither
-        // conjunct outright.
+        // prints and the refusal the PUT raises cannot drift apart. It is TRUE
+        // for both directions: the joiner became implemented in #2949, once the
+        // create verb (#2923), the entitlement map's writer (#2839) and the
+        // Entra provisioner (#2940) had landed. With `JOINER_MAX_MODE` at the
+        // top rung (#2954), a tenant at that rung whose Entra connection grants
+        // joiner writes has its joiner pass CREATE accounts in the customer's
+        // directory (#5303 corrected this paragraph, which said the direction
+        // was still unbuilt).
         honoured: {
             leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
             joiner: { maxMode: JOINER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.joiner },

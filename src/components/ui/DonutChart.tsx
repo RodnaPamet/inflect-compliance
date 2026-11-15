@@ -127,10 +127,16 @@ export interface DonutChartProps {
      */
     loading?: boolean;
     /**
-     * Drill-through handler. When provided, each slice that carries an
-     * `href` becomes a keyboard-accessible link (Enter/Space + click)
-     * that calls this with the clicked segment. The caller owns the
-     * actual navigation so this shared primitive stays router-free.
+     * Drill-through handler. When provided, a CLICK on a slice that
+     * carries an `href` calls this with that segment; the caller owns
+     * the actual navigation so this shared primitive stays router-free.
+     *
+     * The slice is a mouse convenience only. Its keyboard focus shows the
+     * slice's value (as hover does) but Enter and Space do nothing on it:
+     * an SVG arc given a link role inside the chart's `role="img"` trips
+     * axe `nested-interactive`. A caller wanting keyboard drill-through
+     * renders a legend of real links beside the chart, as the dashboard's
+     * `DonutLegendRow` does.
      */
     onSegmentClick?: (segment: DonutSegment) => void;
 }

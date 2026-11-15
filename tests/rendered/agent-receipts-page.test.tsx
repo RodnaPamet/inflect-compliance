@@ -155,3 +155,15 @@ it('says when the list is cut, and how many it shows', async () => {
     expect(screen.getByTestId('receipts-capped')).toHaveTextContent(M.receiptsCapped.replace('{count}', '100'));
     expect(screen.getByTestId('receipts-count')).toHaveTextContent('The newest 1 receipts');
 });
+
+// #5313 — ingest stores no revision for a pin-moved receipt, so the evidence
+// line names none, rather than "revision 0", which does not exist.
+it('says the description moved without inventing a revision', async () => {
+    mockRead.mockResolvedValue({
+        rows: [row({ toolProvenance: 'pin-moved-since-action', toolManifestRevision: null })],
+        capped: null,
+    });
+    await renderPage();
+    expect(screen.getByText(M.receiptProvenanceValue.PIN_MOVED)).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/revision 0|\{revision\}/);
+});

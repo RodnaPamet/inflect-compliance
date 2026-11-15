@@ -20,6 +20,7 @@ import { EvidenceSubTable, type EvidenceTabData } from '@/components/controls-sh
 import { PanelActivityFeed } from '@/components/controls-shared/PanelActivityFeed';
 import { ControlChecksTab } from './_tabs/ControlChecksTab';
 import { EvidenceAddForm } from '@/components/EvidenceAddForm';
+import { applicabilityState } from '@/lib/controls/control-applicability';
 import { MetaStrip } from '@/components/ui/meta-strip';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
@@ -167,7 +168,7 @@ export default function ControlDetailPage() {
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, appPermissions, tenantSlug } = useTenantContext();
+    const { permissions, appPermissions, tenantSlug, userId: currentUserId } = useTenantContext();
     // Attaching evidence here links it to this control: the link route takes
     // `controls.edit`, and so does an upload that names a control (#4326).
     /**
@@ -184,6 +185,12 @@ export default function ControlDetailPage() {
      */
     const canEditControl = permissions.canWrite && appPermissions.controls.edit;
     const canAttachEvidence = canEditControl;
+    // Each half of the add-evidence form is a second write with its own key
+    // (#5313): a file goes to `/evidence/uploads` (`evidence.upload`), a link
+    // creates a library record through `/evidence` (`evidence.edit`). Both
+    // also name this control, which is the `controls.edit` above.
+    const canUploadEvidence = canAttachEvidence && appPermissions.evidence.upload;
+    const canLinkEvidence = canAttachEvidence && appPermissions.evidence.edit;
     const controlId = params?.controlId as string;
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
@@ -887,14 +894,20 @@ export default function ControlDetailPage() {
                     kind: 'status' as const,
                     id: 'control-applicability',
                     label: tx('detailPage.metaApplicability'),
+                    // The list's three states (#5313): never assessed is
+                    // stored as APPLICABLE and reads "Not assessed".
                     value:
-                        control.applicability === 'NOT_APPLICABLE'
+                        applicabilityState(control) === 'NOT_APPLICABLE'
                             ? tx('notApplicable')
-                            : tx('applicable'),
+                            : applicabilityState(control) === 'APPLICABLE'
+                              ? tx('applicable')
+                              : tx('list.notAssessed'),
                     variant:
-                        control.applicability === 'NOT_APPLICABLE'
+                        applicabilityState(control) === 'NOT_APPLICABLE'
                             ? 'warning'
-                            : 'success',
+                            : applicabilityState(control) === 'APPLICABLE'
+                              ? 'success'
+                              : 'neutral',
                 },
             ]}
         />
@@ -1267,6 +1280,8 @@ export default function ControlDetailPage() {
                             submit: 'submit-evidence-btn',
                         }}
                         canWrite={canAttachEvidence}
+                        canUpload={canUploadEvidence}
+                        canLink={canLinkEvidence}
                         show={showEvidenceForm}
                         onToggleShow={() => { setShowEvidenceForm(!showEvidenceForm); setFileUploadError(''); }}
                         file={fileToUpload}
@@ -1421,6 +1436,7 @@ export default function ControlDetailPage() {
                         // rejecting ask `admin.manage` (#4387).
                         canWrite={canEditControl}
                         canAdmin={permissions.canAdmin && appPermissions.admin.manage}
+                        currentUserId={currentUserId}
                     />
                 </div>
             )}

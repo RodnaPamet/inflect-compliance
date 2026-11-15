@@ -38,13 +38,13 @@ jest.mock('@/lib/audit', () =>
 const usecase = {
     listFindings: jest.fn(async () => []),
     getFinding: jest.fn(async () => ({ id: 'f-1' })),
-    createFinding: jest.fn(async () => ({ id: 'f-1' })),
+    createFindingFromRequest: jest.fn(async () => ({ id: 'f-1' })),
     updateFinding: jest.fn(async () => ({ id: 'f-1' })),
 };
 jest.mock('@/app-layer/usecases/finding', () => ({
     listFindings: (...a: unknown[]) => (usecase.listFindings as jest.Mock)(...a),
     getFinding: (...a: unknown[]) => (usecase.getFinding as jest.Mock)(...a),
-    createFinding: (...a: unknown[]) => (usecase.createFinding as jest.Mock)(...a),
+    createFindingFromRequest: (...a: unknown[]) => (usecase.createFindingFromRequest as jest.Mock)(...a),
     updateFinding: (...a: unknown[]) => (usecase.updateFinding as jest.Mock)(...a),
 }));
 
@@ -81,11 +81,11 @@ interface RouteCase {
 
 const ROUTES: RouteCase[] = [
     { name: 'GET /t/…/findings', method: 'GET', path: '/api/t/acme/findings', handler: tenantList.GET as unknown as Handler, params: { tenantSlug: 'acme' }, key: 'view', usecase: 'listFindings' },
-    { name: 'POST /t/…/findings', method: 'POST', path: '/api/t/acme/findings', handler: tenantList.POST as unknown as Handler, params: { tenantSlug: 'acme' }, body: BODY, key: 'create', usecase: 'createFinding' },
+    { name: 'POST /t/…/findings', method: 'POST', path: '/api/t/acme/findings', handler: tenantList.POST as unknown as Handler, params: { tenantSlug: 'acme' }, body: BODY, key: 'create', usecase: 'createFindingFromRequest' },
     { name: 'GET /t/…/findings/:id', method: 'GET', path: '/api/t/acme/findings/f-1', handler: tenantOne.GET as unknown as Handler, params: { tenantSlug: 'acme', id: 'f-1' }, key: 'view', usecase: 'getFinding' },
     { name: 'PUT /t/…/findings/:id', method: 'PUT', path: '/api/t/acme/findings/f-1', handler: tenantOne.PUT as unknown as Handler, params: { tenantSlug: 'acme', id: 'f-1' }, body: { status: 'IN_PROGRESS' }, key: 'edit', usecase: 'updateFinding' },
     { name: 'GET /findings (legacy)', method: 'GET', path: '/api/findings', handler: legacyList.GET as unknown as Handler, params: {}, key: 'view', usecase: 'listFindings' },
-    { name: 'POST /findings (legacy)', method: 'POST', path: '/api/findings', handler: legacyList.POST as unknown as Handler, params: {}, body: BODY, key: 'create', usecase: 'createFinding' },
+    { name: 'POST /findings (legacy)', method: 'POST', path: '/api/findings', handler: legacyList.POST as unknown as Handler, params: {}, body: BODY, key: 'create', usecase: 'createFindingFromRequest' },
     { name: 'GET /findings/:id (legacy)', method: 'GET', path: '/api/findings/f-1', handler: legacyOne.GET as unknown as Handler, params: { id: 'f-1' }, key: 'view', usecase: 'getFinding' },
     { name: 'PUT /findings/:id (legacy)', method: 'PUT', path: '/api/findings/f-1', handler: legacyOne.PUT as unknown as Handler, params: { id: 'f-1' }, body: { status: 'IN_PROGRESS' }, key: 'edit', usecase: 'updateFinding' },
 ];

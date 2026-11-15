@@ -266,12 +266,30 @@ export async function runIdentitySync(input: {
     const { conn, executionId } = opened;
 
     const config = (conn.configJson ?? {}) as Record<string, unknown>;
-    const secrets: Record<string, unknown> = conn.secretEncrypted
-        ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
-        : {};
-
-    // Resolve the provider (registry instance in prod; injected in tests).
-    const resolved = input.provider ?? registry.getProvider(conn.provider);
+    // The RUNNING row is committed, so every way out from here must finalise
+    // it (#5317). A secret that will not decrypt (a DEK/KEK rotation problem)
+    // or parse, or a provider that cannot be resolved, used to throw out of
+    // the usecase and leave the run RUNNING for ever. The message is fixed
+    // text: a JSON.parse error can quote the plaintext it choked on.
+    let secrets: Record<string, unknown>;
+    let resolved: ReturnType<typeof registry.getProvider> | NonNullable<typeof input.provider> | undefined;
+    try {
+        secrets = conn.secretEncrypted
+            ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
+            : {};
+        // Resolve the provider (registry instance in prod; injected in tests).
+        resolved = input.provider ?? registry.getProvider(conn.provider);
+    } catch (e) {
+        const msg = 'The connection secret could not be read; re-enter the credentials on the connection';
+        logger.warn('identity.sync_secret_unreadable', { connectionId: conn.id, error: e instanceof Error ? e.name : 'non-Error thrown' });
+        await shortTx((db) =>
+            db.integrationExecution.update({
+                where: { id: executionId },
+                data: { status: 'ERROR', errorMessage: msg, completedAt: new Date() },
+            }),
+        );
+        return { executionId, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: msg, provider: conn.provider, noRetry: true };
+    }
     if (!resolved || !isIdentitySyncProvider(resolved)) {
         await shortTx((db) =>
             db.integrationExecution.update({

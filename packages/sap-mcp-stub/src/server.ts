@@ -31,8 +31,10 @@
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:https';
 
-import { definitionsHash, DEFINITIONS_VERSION, TOOL_DEFINITIONS } from './definitions';
-import { createStubHandler } from './handler';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+
+import { definitionsHash, DEFINITIONS_VERSION } from './definitions';
+import { createStubHandler, servedTools, type StubHandler, type StubOptions } from './handler';
 
 const LOOPBACK = /^(127\.|0\.0\.0\.0$|::1$|localhost$)/i;
 
@@ -41,6 +43,50 @@ function arg(name: string): string | undefined {
     return i === -1 ? undefined : process.argv[i + 1];
 }
 const flag = (name: string): boolean => process.argv.includes(`--${name}`);
+
+/**
+ * What the stub prints on boot, so a run can state which contract and which
+ * mode it ran against. The tool line is the catalogue the handler SERVES
+ * (#5312): it used to print all three under `--empty-catalogue` too.
+ */
+export function bootBanner(at: { readonly host: string; readonly port: number }, options: StubOptions): string {
+    const tools = servedTools(options);
+    return (
+        [
+            `sap-mcp-stub listening on https://${at.host}:${at.port}`,
+            `definitions ${DEFINITIONS_VERSION} sha256=${definitionsHash()}`,
+            `tools ${tools.length === 0 ? '(empty catalogue)' : tools.map((t) => t.name).join(', ')}`,
+            options.failMode ? 'FAIL MODE: every tool call errors' : '',
+        ]
+            .filter(Boolean)
+            .join('\n') + '\n'
+    );
+}
+
+/**
+ * One request through the handler. A handler that rejects answers 500 and ends
+ * the response (#5312): an unhandled rejection used to take the whole process
+ * down, and the request with it.
+ */
+export function serveRequest(handler: StubHandler) {
+    return (req: IncomingMessage, res: ServerResponse): void => {
+        const chunks: Buffer[] = [];
+        req.on('data', (c: Buffer) => chunks.push(c));
+        req.on('end', () => {
+            void handler(req.url ?? '/', { body: Buffer.concat(chunks).toString('utf8') })
+                .then(async (response) => {
+                    res.writeHead(response.status, {
+                        'content-type': response.headers.get('content-type') ?? 'application/json',
+                    });
+                    res.end(await response.text());
+                })
+                .catch(() => {
+                    if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+                    res.end();
+                });
+        });
+    };
+}
 
 export function main(): void {
     const host = arg('host');
@@ -66,42 +112,17 @@ export function main(): void {
         process.exit(2);
     }
 
-    const handler = createStubHandler({
+    const options: StubOptions = {
         failMode: flag('fail-mode'),
         emptyCatalogue: flag('empty-catalogue'),
-    });
+    };
+    const handler = createStubHandler(options);
 
-    const server = createServer(
-        { cert: readFileSync(cert), key: readFileSync(key) },
-        (req, res) => {
-            const chunks: Buffer[] = [];
-            req.on('data', (c: Buffer) => chunks.push(c));
-            req.on('end', () => {
-                void handler(req.url ?? '/', { body: Buffer.concat(chunks).toString('utf8') }).then(
-                    async (response) => {
-                        res.writeHead(response.status, {
-                            'content-type':
-                                response.headers.get('content-type') ?? 'application/json',
-                        });
-                        res.end(await response.text());
-                    },
-                );
-            });
-        },
-    );
+    const server = createServer({ cert: readFileSync(cert), key: readFileSync(key) }, serveRequest(handler));
 
     server.listen(port, host, () => {
         // The hash on boot, so a run can state which contract it ran against.
-        process.stdout.write(
-            [
-                `sap-mcp-stub listening on https://${host}:${port}`,
-                `definitions ${DEFINITIONS_VERSION} sha256=${definitionsHash()}`,
-                `tools ${TOOL_DEFINITIONS.length === 0 ? '(empty catalogue)' : TOOL_DEFINITIONS.map((t) => t.name).join(', ')}`,
-                flag('fail-mode') ? 'FAIL MODE: every tool call errors' : '',
-            ]
-                .filter(Boolean)
-                .join('\n') + '\n',
-        );
+        process.stdout.write(bootBanner({ host, port }, options));
     });
 }
 

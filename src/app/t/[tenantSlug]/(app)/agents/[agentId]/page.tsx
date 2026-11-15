@@ -7,13 +7,14 @@ import { agentProfilesOn } from '@/app-layer/usecases/agent-profiles';
 import { isProcessCanvasEnabled } from '@/app-layer/usecases/process-canvas-module';
 import { getInteractiveAgentDesignation } from '@/app-layer/usecases/interactive-agent-designation';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
-import { listVendors } from '@/app-layer/usecases/vendor';
+import { getVendor, listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity, mayReadAgentInventory } from '@/lib/permissions';
 import {
     agentRegisterAffordances,
     edgeAdmitsAgentAdminWrite,
+    edgeAdmitsAgentTabReads,
 } from '@/lib/agentic/agent-register-affordances';
 import { AgentDetailClient } from './AgentDetailClient';
 
@@ -84,10 +85,12 @@ export default async function AgentDetailPage({
     //
     // Best-effort, and separately: a reader who may amend the agent but not list
     // vendors still gets the form, with the supplier field disabled rather than
-    // the whole page failing.
-    const [owners, vendors, session, interactiveAgentId] = await Promise.all([
+    // the whole page failing. A failed read is `null`, never an empty list
+    // (#5313): an empty list rendered an enabled picker offering only "None",
+    // and choosing it cleared a supplier the operator could not see.
+    const [owners, vendorList, session, interactiveAgentId] = await Promise.all([
         listAssignableUsers(ctx).catch(() => []),
-        listVendors(ctx, {}, { take: 200 }).catch(() => []),
+        listVendors(ctx, {}, { take: 200 }).catch(() => null),
         auth(),
         // Which agent answers on Ask (#4629). Best-effort: a failed read shows
         // no badge and offers "Use for Ask", which is the safe direction.
@@ -103,6 +106,23 @@ export default async function AgentDetailPage({
     // then offered no way to score, activate, suspend, retire or amend it.
     const edgeAdmits = edgeAdmitsAgentAdminWrite(tenantSlug, session?.user);
     const registry = agentRegisterAffordances(ctx, edgeAdmits);
+    // The register-key tabs read routes under `/api/t/:slug/admin/agents/:id/`,
+    // which the edge admits only to an OWNER, ADMIN or AI_ADMIN membership (an
+    // AUDITOR only to the inventory reads). A custom role granting the key on
+    // any other membership was offered the tabs and refused every read (#5313).
+    const edgeAdmitsTabReads = edgeAdmitsAgentTabReads(tenantSlug, agentId, session?.user);
+
+    // The supplier list is capped at 200. When the agent's own supplier is past
+    // the cap, it is read by id and offered, so the picker shows the current
+    // value; when it cannot be read, the field is disabled rather than shown
+    // blank (#5313).
+    let vendors: { id: string; name: string }[] | null = vendorList
+        ? vendorList.map((v: { id: string; name: string }) => ({ id: v.id, name: v.name }))
+        : null;
+    if (vendors && agent.vendorId && !vendors.some((v) => v.id === agent.vendorId)) {
+        const current = await getVendor(ctx, agent.vendorId).catch(() => null);
+        vendors = current ? [{ id: current.id, name: current.name }, ...vendors] : null;
+    }
 
     return (
         <AgentDetailClient
@@ -133,7 +153,7 @@ export default async function AgentDetailPage({
                 id: m.id,
                 label: m.name ?? m.email,
             }))}
-            vendors={vendors.map((v: { id: string; name: string }) => ({ id: v.id, name: v.name }))}
+            vendors={vendors}
             // Resolved on the SERVER and threaded down rather than read per
             // tab: the shell has to decide which tabs are even reachable
             // before a tab mounts, and six tabs each re-deriving the same four
@@ -144,7 +164,7 @@ export default async function AgentDetailPage({
                 // and the tool-manifest pins read under this key, so a reader
                 // holding only the view key (AUDITOR) gets them disabled rather
                 // than opened and refused.
-                canReadRegistry: ctx.appPermissions.admin.agent_registry,
+                canReadRegistry: ctx.appPermissions.admin.agent_registry && edgeAdmitsTabReads,
                 // Amend, activate, suspend, retire, and answer or complete
                 // the risk assessment: the edge, `admin.agent_registry`, and
                 // `assertAgentGovernanceWrite(ctx, 'agent_registry')` — the

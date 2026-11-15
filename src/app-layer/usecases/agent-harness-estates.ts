@@ -48,6 +48,7 @@ import { logEvent } from '../events/audit';
 import { parseStoredHarnessSources, SOURCE_KINDS } from '@/lib/agentic/harness-contract';
 import {
     computeEstateHealth,
+    freshnessWindowStart,
     type EstateScanInput,
     type HarnessEstateHealthView,
 } from '@/lib/agentic/harness-estate-health';
@@ -301,7 +302,17 @@ export async function getHarnessEstateHealth(
         const scannerIds = shown.map((e) => e.scannerAgentId);
         const ownerIds = [...new Set(shown.flatMap((e) => e.sources.map((s) => s.ownerUserId)))];
 
-        const [active, scans] = await Promise.all([
+        const scanSelect = {
+            id: true,
+            scanRef: true,
+            scannerAgentId: true,
+            asOf: true,
+            createdAt: true,
+            complete: true,
+            agentCount: true,
+            sourcesJson: true,
+        } as const;
+        const [active, scans, inWindow] = await Promise.all([
             ownerIds.length === 0
                 ? Promise.resolve([] as { userId: string }[])
                 : db.tenantMembership.findMany({
@@ -315,22 +326,35 @@ export async function getHarnessEstateHealth(
                     where: { tenantId: ctx.tenantId, scannerAgentId: { in: scannerIds } },
                     orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
                     take: scanCap + 1,
-                    select: {
-                        id: true,
-                        scanRef: true,
-                        scannerAgentId: true,
-                        asOf: true,
-                        createdAt: true,
-                        complete: true,
-                        agentCount: true,
-                        sourcesJson: true,
+                    select: scanSelect,
+                }),
+            // EACH ESTATE'S OWN FRESHNESS WINDOW, read beside the shared one
+            // (#5317). The shared newest-N window above is what shows the last
+            // complete and latest scans, but one hourly scanner can fill it and
+            // crowd out a slower estate's fresh scan, so the card called STALE
+            // an estate the daily staleness pass judged FRESH. These are the
+            // only scans that can make an estate fresh — the pass's own read —
+            // so with them merged in, the card's status is the pass's.
+            shown.length === 0
+                ? Promise.resolve([])
+                : db.agentHarnessScan.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        OR: shown.map((e) => {
+                            const start = freshnessWindowStart(e.cadenceHours, now);
+                            return { scannerAgentId: e.scannerAgentId, asOf: { gte: start }, createdAt: { gte: start } };
+                        }),
                     },
+                    orderBy: [{ asOf: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+                    take: ESTATE_SCAN_WINDOW + 1,
+                    select: scanSelect,
                 }),
         ]);
         const activeOwners = new Set(active.map((m) => m.userId));
-        const read = scans.slice(0, scanCap);
+        const read = new Map(scans.slice(0, scanCap).map((s) => [s.id, s] as const));
+        for (const s of inWindow.slice(0, ESTATE_SCAN_WINDOW)) read.set(s.id, s);
         const byScanner = new Map<string, EstateScanInput[]>();
-        for (const s of read) {
+        for (const s of read.values()) {
             const list = byScanner.get(s.scannerAgentId) ?? [];
             list.push({
                 id: s.id,
@@ -347,7 +371,7 @@ export async function getHarnessEstateHealth(
         return {
             generatedAt: now.toISOString(),
             scanWindow: scanCap,
-            windowTruncated: scans.length > scanCap,
+            windowTruncated: scans.length > scanCap || inWindow.length > ESTATE_SCAN_WINDOW,
             estates: {
                 truncated: estates.length > estateCap,
                 rows: shown.map((e) =>

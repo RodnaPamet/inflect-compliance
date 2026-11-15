@@ -13,6 +13,7 @@
  * `.openapi(...)` to every NEW request schema when you add it.
  */
 import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
+import { RISK_IMPORT_MAX_ROWS } from '@/lib/risk-import-limits';
 import { z } from '@/lib/openapi/zod';
 // `AssetType` is a Prisma enum on a NOT NULL column. Declaring it as
 // `z.string()` let any value through Zod and fail at the driver, which
@@ -20,7 +21,7 @@ import { z } from '@/lib/openapi/zod';
 // reported as a server fault. `z.nativeEnum` moves the rejection back to
 // the boundary where it belongs. Safe to import here: this module is
 // server-only (no 'use client' file imports it).
-import { AssetType, FindingType } from '@prisma/client';
+import { AssetType, FindingSeverity, FindingType } from '@prisma/client';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -148,6 +149,10 @@ export const CreateRiskSchema = z.object({
     ownerUserId: z.string().optional().nullable(),    // Real user reference — the risk owner (people picker)
     targetDate: z.string().optional().nullable(),
     nextReviewAt: z.string().optional().nullable(),
+    // The template the form started from (#5313 item 48). Provenance only:
+    // validated against the template library and recorded in the creation
+    // audit row's detailsJson. It was stripped here while the form sent it.
+    templateId: z.string().min(1).optional().nullable(),
 }).strip().openapi('RiskCreateRequest', {
     description: 'Payload for creating a risk. Inherent score = impact × likelihood; the server computes residualScore separately when treatment data lands. treatmentNotes is encrypted at rest (Epic B field-encryption manifest).',
 });
@@ -520,7 +525,9 @@ export const LinkEvidenceControlSchema = z.object({
 
 const FindingCreateFieldsSchema = z.object({
     auditId: z.string().optional().nullable(),
-    severity: z.string().min(1, 'Severity is required'),
+    // Prisma enums, as `AssetType` above (#5181, #5316): a free string passed
+    // here and failed at the driver — a 500 for what is a 400.
+    severity: z.nativeEnum(FindingSeverity, { message: 'Severity is required' }),
     // A Prisma enum, as `AssetType` above (#5181): a free string let
     // audit-prep propose findings typed 'Coverage Gap', which passed here and
     // failed at the driver when a person approved them.
@@ -575,7 +582,7 @@ export const ProposedFindingSchema = FindingCreateFieldsSchema.extend(FindingPro
 export type CreateFindingInput = z.infer<typeof ProposedFindingSchema>;
 
 export const UpdateFindingSchema = z.object({
-    severity: z.string().optional(),
+    severity: z.nativeEnum(FindingSeverity).optional(),
     type: z.nativeEnum(FindingType).optional(),
     title: z.string().min(1).optional(),
     description: z.string().optional(),
@@ -875,7 +882,7 @@ export const BulkImportRisksSchema = z.object({
         impact: z.coerce.number().int().min(1).max(10).optional(),
         owner: z.string().optional().nullable(),
         ownerUserId: z.string().optional().nullable(),
-    }).strip()).min(1).max(500),
+    }).strip()).min(1).max(RISK_IMPORT_MAX_ROWS),
 }).strip().openapi('RiskBulkImportRequest', {
     description: 'Bulk-create risks from a parsed CSV in a single request. Server dedupes by title and resolves owner names/emails to members.',
 });

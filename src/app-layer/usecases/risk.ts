@@ -229,8 +229,23 @@ export async function createRisk(ctx: RequestContext, data: {
     ownerUserId?: string | null;
     targetDate?: string | null;
     nextReviewAt?: string | null;
+    /**
+     * The template the New Risk form started from, if any (#5313 item 48,
+     * owner decision 2026-11-15). Provenance only: it changes nothing about
+     * the risk, which carries the values the person submitted, and it is
+     * recorded in the creation audit row's `detailsJson` rather than on the
+     * risk (no column, by decision).
+     */
+    templateId?: string | null;
 }) {
     assertCanCreateRisk(ctx);
+
+    // An id that names no template is refused rather than recorded: the
+    // audit row would otherwise vouch for a provenance that does not exist.
+    const templateId = data.templateId || null;
+    if (templateId && !(await RiskTemplateRepository.getById(templateId))) {
+        throw badRequest('Risk template not found', { reason: 'RISK_TEMPLATE_NOT_FOUND' });
+    }
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
@@ -283,7 +298,9 @@ export async function createRisk(ctx: RequestContext, data: {
             entityType: 'Risk',
             entityId: risk.id,
             details: `Created risk: ${risk.title} (score: ${inherentScore})`,
-            detailsJson: { category: 'custom', event: 'create' },
+            detailsJson: templateId
+                ? { category: 'custom', event: 'create', templateId }
+                : { category: 'custom', event: 'create' },
         });
 
         return risk;
@@ -446,9 +463,23 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
     const { risk: updated, previousOwnerId } = await runInTenantContext(ctx, async (db) => {
         // Each axis is bounded by the tenant's own matrix (#5080).
         const axes = await readRiskMatrixAxes(db, ctx.tenantId);
-        const inherentScore = data.likelihood && data.impact
-            ? calculateRiskScore(data.likelihood, data.impact, axes.likelihoodLevels, axes.impactLevels)
-            : undefined;
+
+        // Capture the prior row: the prior owner (so the assignment
+        // notification only fires on an actual change), and the stored axes
+        // a one-axis edit is scored against.
+        const before = await RiskRepository.getById(db, ctx, id);
+        const previousOwnerId = before?.ownerUserId ?? null;
+
+        // Either axis alone re-scores against the other's STORED value
+        // (#5318). Scoring only when both were sent left `{ likelihood: 5 }`
+        // on a 2x3 risk at score 6 with no ledger event, so the heatmap cell
+        // and the score/band disagreed.
+        const scoredLikelihood = data.likelihood ?? before?.likelihood;
+        const scoredImpact = data.impact ?? before?.impact;
+        const inherentScore =
+            (data.likelihood !== undefined || data.impact !== undefined) && scoredLikelihood && scoredImpact
+                ? calculateRiskScore(scoredLikelihood, scoredImpact, axes.likelihoodLevels, axes.impactLevels)
+                : undefined;
 
         // RQ2-1 — residual decomposition: both-or-neither, derived
         // rollup. An incomplete pair is a caller bug, not a partial
@@ -468,11 +499,6 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
         // A newly-supplied owner must be an active member; `undefined` leaves
         // it untouched and ''/null clears it — neither needs the check.
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
-
-        // Capture the prior owner so the assignment notification only
-        // fires on an actual change (not on every unrelated risk edit).
-        const before = await RiskRepository.getById(db, ctx, id);
-        const previousOwnerId = before?.ownerUserId ?? null;
 
         const risk = await RiskRepository.update(db, ctx, id, {
             // Epic D.2 — sanitise on update only when the field is
@@ -532,8 +558,8 @@ export async function updateRisk(ctx: RequestContext, id: string, data: {
             await recordScoreEvent(db, ctx.tenantId, {
                 riskId: id,
                 kind: 'INHERENT',
-                likelihood: data.likelihood as number,
-                impact: data.impact as number,
+                likelihood: scoredLikelihood as number,
+                impact: scoredImpact as number,
                 score: inherentScore,
                 source: 'USER',
                 justification: data.scoreJustification ?? null,
@@ -793,7 +819,7 @@ export async function updateRiskFair(ctx: RequestContext, id: string, input: Ris
 /** Bulk soft-delete risks selected in the table action bar. */
 export async function bulkDeleteRisk(ctx: RequestContext, riskIds: string[]) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const rows = await RiskRepository.listByIds(db, ctx, riskIds);
         if (rows.length === 0) return { deleted: 0 };
         // #5083: a treatment plan holds a risk down at the 90-day purge. One
@@ -814,6 +840,10 @@ export async function bulkDeleteRisk(ctx: RequestContext, riskIds: string[]) {
         }
         return { deleted: rows.length };
     });
+    // As deleteRisk does (#5318): without it the list re-fetch is served from
+    // the 60 s list cache and the deleted risks still appear.
+    if (result.deleted > 0) await bumpEntityCacheVersion(ctx, 'risk');
+    return result;
 }
 
 export async function deleteRisk(ctx: RequestContext, id: string) {

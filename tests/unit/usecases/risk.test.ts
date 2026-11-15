@@ -73,6 +73,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { calculateRiskScore } from '@/lib/risk-scoring';
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../../helpers/make-context';
+import { CreateRiskSchema } from '@/lib/schemas';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockCreate = RiskRepository.create as jest.MockedFunction<typeof RiskRepository.create>;
@@ -181,6 +182,52 @@ describe('createRisk', () => {
                 entityType: 'Risk',
             }),
         );
+    });
+
+    // #5313 item 48 — the template the New Risk form started from is
+    // provenance, recorded in the creation audit row, not on the risk.
+    it('records the template it started from in the CREATE audit row', async () => {
+        mockTemplateGet.mockResolvedValue({ id: 'tpl-1', title: 'Phishing' } as never);
+        const fakeDb = dbWithTenant();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), { title: 't', templateId: 'tpl-1' });
+
+        expect(mockTemplateGet).toHaveBeenCalledWith('tpl-1');
+        expect(mockLog).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.objectContaining({
+                action: 'CREATE',
+                entityType: 'Risk',
+                detailsJson: { category: 'custom', event: 'create', templateId: 'tpl-1' },
+            }),
+        );
+        expect(mockCreate.mock.calls[0][2]).not.toHaveProperty('templateId');
+    });
+
+    it('refuses a templateId that names no template, and creates nothing', async () => {
+        mockTemplateGet.mockResolvedValue(null);
+
+        await expect(
+            createRisk(makeRequestContext('EDITOR'), { title: 't', templateId: 'no-such-tpl' }),
+        ).rejects.toMatchObject({ status: 400, details: { reason: 'RISK_TEMPLATE_NOT_FOUND' } });
+        expect(mockRunInTx).not.toHaveBeenCalled();
+        expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('a risk from no template records none, and looks none up', async () => {
+        const fakeDb = dbWithTenant();
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));
+
+        await createRisk(makeRequestContext('EDITOR'), { title: 't' });
+
+        expect(mockTemplateGet).not.toHaveBeenCalled();
+        expect(mockLog.mock.calls[0][2].detailsJson).toEqual({ category: 'custom', event: 'create' });
+    });
+
+    it('the create schema keeps templateId rather than stripping it', () => {
+        expect(CreateRiskSchema.parse({ title: 't', templateId: 'tpl-1' })).toMatchObject({ templateId: 'tpl-1' });
     });
 });
 

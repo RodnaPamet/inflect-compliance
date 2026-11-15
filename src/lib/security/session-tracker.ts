@@ -20,15 +20,20 @@
  *   2. On EVERY subsequent request, the same callback calls
  *      `verifyAndTouchSession(sessionId)`. The helper:
  *        - returns `{ revoked: true }` if the row's `revokedAt` is
- *          set, prompting the JWT callback to return a `SessionRevoked`
- *          error;
+ *          set. The JWT callback then THROWS `SessionRevokedError`
+ *          (`src/lib/auth/session-revoked.ts`), so NextAuth treats the
+ *          session as invalid and every server gate refuses it. It
+ *          never returns the token with an error flag: that pattern
+ *          signed nobody out, because nothing read the flag;
  *        - otherwise touches `lastActiveAt`, throttled to once every 5
  *          minutes so we don't write on every middleware request.
  *
- *   3. Admin / self UI calls `revokeSessionById` to mark a row revoked.
- *      It also bumps `User.sessionVersion` as a defence-in-depth so a
- *      classic JWT-versioning check still invalidates the cookie even
- *      if the per-session lookup is somehow skipped.
+ *   3. Admin / self UI calls `revokeSessionById` to mark ONE row
+ *      revoked. It stamps only that row — it does NOT bump
+ *      `User.sessionVersion`. A caller that must sign out every session
+ *      of a user (Revoke All, per-user revocation) bumps the version
+ *      itself, as the coarse backstop for a token whose row was never
+ *      written.
  *
  * IP / UA capture is best-effort: NextAuth callbacks don't get the
  * request object directly, so we pull headers via `next/headers` and
@@ -495,14 +500,14 @@ export async function findOwnTenantSession(args: {
 /**
  * Mark a UserSession row revoked. Caller is responsible for the audit
  * log (the action context — admin vs self vs system — is theirs to
- * know). To prevent partial revocation, also bump `User.sessionVersion`
- * so the existing JWT-versioning check (in src/auth.ts) catches the
- * revoked token even if `verifyAndTouchSession` is somehow skipped.
+ * know).
  *
- * Per-session granularity comes from this function returning the
- * affected `userId`; the caller can choose whether to bump the global
- * sessionVersion (revokes ALL of the user's sessions) or rely solely
- * on the row-level `revokedAt` (revokes only this specific session).
+ * Stamps ONLY this row's `revokedAt`; it does not touch
+ * `User.sessionVersion`. The next JWT pass for that session reads the
+ * stamp through `verifyAndTouchSession` and throws `SessionRevokedError`.
+ * It returns the affected `userId` so a caller that means to sign out
+ * EVERY session of the user can bump `sessionVersion` itself — doing so
+ * here would turn a one-device revoke into a sign-out everywhere.
  */
 export async function revokeSessionById(input: {
     sessionId: string;

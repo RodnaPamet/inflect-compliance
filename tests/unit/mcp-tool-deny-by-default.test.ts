@@ -97,11 +97,22 @@ jest.mock('@/lib/agentic/policy-card-store', () => ({
 // assertion about the loader rather than about a throw further down.
 jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     createAgentProposal: jest.fn().mockResolvedValue({ id: 'proposal-1' }),
+    // The real schema check: the funnel validates every item before it queues
+    // any (#5304), and a stub here would let a malformed item through unseen.
+    parseProposalPayload: jest.requireActual('@/app-layer/usecases/agent-proposals').parseProposalPayload,
+    // The funnel prepares (sanitises and guards) every item before it writes
+    // any (#5304). The stub hands back a handle carrying the input it was given,
+    // so the pin assertions below read what the funnel asked to queue.
+    prepareAgentProposal: jest.fn(async (_ctx: unknown, input: { kind: string }) => ({
+        kind: input.kind,
+        quarantined: false,
+        input,
+    })),
 }));
 
 import prisma from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit';
-import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import { createAgentProposal, prepareAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import type { AgentPolicyCardValue } from '@/lib/agentic/policy-card';
 import type { PolicyCardInForce } from '@/lib/agentic/policy-card-evaluation';
@@ -127,6 +138,7 @@ const findFirst = (prisma as any).tenantApiKey.findFirst as jest.Mock;
 const auditRows = appendAuditEntry as unknown as jest.Mock;
 const reserve = reserveDailyAction as unknown as jest.Mock;
 const proposals = createAgentProposal as unknown as jest.Mock;
+const prepares = prepareAgentProposal as unknown as jest.Mock;
 
 const TENANT = 'tenant-1';
 const API_KEY_ID = 'key-1';
@@ -376,7 +388,7 @@ describe('a tool that appears after the session began is not callable', () => {
 
         const message = await refusalOf(() =>
             runProposeTool(inv, 'propose_finding', {
-                items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+                items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
             }),
         );
 
@@ -486,6 +498,21 @@ describe('the propose funnel refuses before it writes', () => {
         expect(proposals).not.toHaveBeenCalled();
     });
 
+    it('a batch with one item its schema refuses queues NONE of the items (#5304)', async () => {
+        // The loop writes as it goes. A malformed third item used to fail the
+        // call after the first two were PENDING; the agent, seeing a failure
+        // with no ids, resent all three and reviewers got two duplicates.
+        const inv = invocationFor();
+        const good = { severity: 'LOW', type: 'OBSERVATION', title: 'ok' };
+
+        await expect(
+            runProposeTool(inv, 'propose_finding', {
+                items: [good, good, { severity: 'LOW', type: 'NOT_A_TYPE', title: 'bad' }],
+            }),
+        ).rejects.toThrow(/Item 3 of 3 for "propose_finding" is invalid, so none of the 3 was proposed/);
+        expect(proposals).not.toHaveBeenCalled();
+    });
+
     it('pins NO_POLICY_CARD — not null — when no card was in force', async () => {
         // `pinFromCard(inv.policyCard?.inForce ?? null)`. `invocationFor()`
         // leaves `policyCard` null, which `assertPolicyCardAllows` ALLOWS by
@@ -499,11 +526,11 @@ describe('the propose funnel refuses before it writes', () => {
         const inv = invocationFor();
 
         await runProposeTool(inv, 'propose_finding', {
-            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+            items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
         });
 
         expect(proposals).toHaveBeenCalledTimes(1);
-        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        const [, arg] = prepares.mock.calls[0] as [unknown, { policyCardVersion: number }];
         expect(arg.policyCardVersion).toBe(NO_POLICY_CARD);
         expect(arg.policyCardVersion).not.toBeNull();
     });
@@ -515,10 +542,45 @@ describe('the propose funnel refuses before it writes', () => {
         const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
 
         await runProposeTool(inv, 'propose_finding', {
-            items: [{ severity: 'LOW', type: 'OTHER', title: 'x' }],
+            items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
         });
 
-        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        const [, arg] = prepares.mock.calls[0] as [unknown, { policyCardVersion: number }];
         expect(arg.policyCardVersion).toBeGreaterThan(NO_POLICY_CARD);
+    });
+
+    it('a batch refused while it is prepared queues nothing and spends no policy-card action (#5304)', async () => {
+        const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
+        const item = { severity: 'LOW', type: 'OBSERVATION', title: 'x' };
+        prepares
+            .mockImplementationOnce(async (_ctx: unknown, input: { kind: string }) => ({
+                kind: input.kind,
+                quarantined: false,
+            }))
+            .mockRejectedValueOnce(new Error('ai_guard_blocked: egress malicious'));
+
+        await expect(
+            runProposeTool(inv, 'propose_finding', { items: [item, item, item] }),
+        ).rejects.toThrow(/ai_guard_blocked/);
+        expect(proposals).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+    });
+
+    it('and a batch that succeeds spends exactly one action, before it writes', async () => {
+        const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
+        const item = { severity: 'LOW', type: 'OBSERVATION', title: 'x' };
+        const order: string[] = [];
+        reserve.mockImplementationOnce(async () => {
+            order.push('charge');
+            return 1;
+        });
+        proposals.mockImplementation(async () => {
+            order.push('write');
+            return { id: 'proposal-1' };
+        });
+
+        await runProposeTool(inv, 'propose_finding', { items: [item, item] });
+        expect(reserve).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['charge', 'write', 'write']);
     });
 });

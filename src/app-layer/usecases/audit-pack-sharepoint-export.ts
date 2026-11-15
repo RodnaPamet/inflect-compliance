@@ -20,7 +20,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { getStorageProvider, assertTenantKey } from '@/lib/storage';
+import { getStorageProvider, assertTenantKey, sanitizeFileName } from '@/lib/storage';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { getAuditPack, exportAuditPack } from './audit-readiness/packs';
 import { recordFileDistributions } from '../services/file-distribution';
@@ -216,7 +216,7 @@ async function bundleEvidenceBinaries(
         try {
             const buf = await streamToBuffer(provider.readStream(f.pathKey));
             if (bytes + buf.byteLength > SP_EXPORT_MAX_BYTES) { skipped.sizeCapped++; continue; }
-            let name = f.name || 'file';
+            let name = zipEntryName(f.name);
             if (usedNames.has(name)) name = `${bundled + 1}-${name}`; // de-dupe names within the ZIP
             usedNames.add(name);
             zip.file(`evidence/${name}`, buf);
@@ -235,6 +235,18 @@ async function bundleEvidenceBinaries(
         }
     }
     return { bundled, skipped, bytes, identities };
+}
+
+/**
+ * The ZIP entry name for a bundled file (#5317). The stored name is the raw
+ * upload filename, which an API caller controls: `../../.bashrc` or a name with
+ * `/` in it would become a traversal or an unexpected folder in the archive
+ * the customer extracts. Only a sanitised basename goes in, and a name that
+ * sanitises to nothing usable is `file`.
+ */
+function zipEntryName(stored: string | null | undefined): string {
+    const safe = sanitizeFileName(stored ?? '').trim();
+    return safe === '' || /^\.+$/.test(safe) ? 'file' : safe;
 }
 
 export interface SpExportDestination {

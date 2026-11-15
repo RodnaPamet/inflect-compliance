@@ -216,6 +216,134 @@ describe('syncEntraMembershipRole', () => {
  * AI_ADMIN through a group mapping (#3699 deploy 2): written on both paths,
  * never over a custom role, and never by an undecidable tie.
  */
+// ── a PREFIX of the membership decides nothing (#5600) ──────────────────
+
+describe('syncEntraMembershipRole — an incomplete group read', () => {
+    /**
+     * The issue's own scenario: a user over the 200-group overage threshold
+     * whose ADMIN-mapped group sits on page 2 and whose EDITOR-mapped group
+     * sits on page 1. Graph throttles on page 2, so only `g-editor` was read.
+     */
+    const PARTIAL_PREFIX = ['g-editor'];
+    const MAPPINGS = [
+        { aadGroupId: 'g-editor', role: 'EDITOR' as any, priority: 10 },
+        { aadGroupId: 'g-admin', role: 'ADMIN' as any, priority: 20 },
+    ];
+
+    it('does not demote the member on groups it has not read yet', async () => {
+        const { db, update } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'ADMIN' },
+            config: validConfig,
+        });
+
+        const r = await syncEntraMembershipRole(
+            { ...base, aadGroups: PARTIAL_PREFIX, aadGroupsComplete: false, signInDirectoryId: GUID, signInEmail: 'p@acme.test' },
+            { db },
+        );
+
+        // No write, and the membership keeps the role it had.
+        expect(update).not.toHaveBeenCalled();
+        expect(r).toEqual({ effectiveRole: 'ADMIN', changed: false, gateDenied: false });
+        // And nothing is audited as the directory's doing — the demotion used
+        // to arrive as `source: 'entra_group_sync'` with the prefix's
+        // `matchedGroupIds` offered as its evidence.
+        expect(mockAppend).not.toHaveBeenCalled();
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'partial_group_read' });
+    });
+
+    it('POSITIVE CONTROL — the same prefix DOES demote once the read is complete', async () => {
+        // Without this, a sync that never wrote anything at all would satisfy
+        // the test above. The only difference here is the flag.
+        const { db, update } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'ADMIN' },
+            config: validConfig,
+        });
+
+        const r = await syncEntraMembershipRole(
+            { ...base, aadGroups: PARTIAL_PREFIX, signInDirectoryId: GUID, signInEmail: 'p@acme.test' },
+            { db },
+        );
+
+        expect(update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { role: 'EDITOR' } });
+        expect(r.effectiveRole).toBe('EDITOR');
+    });
+
+    it('does NOT refuse the workspace when the gate is on and nothing matched', async () => {
+        // Owner decision, 2026-11-14: skip the gate decision rather than deny.
+        // A Graph outage must not lock a gated workspace's members out for the
+        // session — `entraGateDeniedTenantIds` holds until the next sign-in.
+        const { db, update } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'EDITOR' },
+            config: { ...validConfig, enforceGroupGate: true },
+        });
+
+        const r = await syncEntraMembershipRole(
+            { ...base, aadGroups: [], aadGroupsComplete: false, signInDirectoryId: GUID, signInEmail: 'p@acme.test' },
+            { db },
+        );
+
+        expect(r.gateDenied).toBe(false);
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it('and the gate STILL denies on a complete read that matched nothing', async () => {
+        // The control for that one: `partial_group_read` must not have become a
+        // way to never deny. Same inputs, complete read.
+        const { db } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'EDITOR' },
+            config: { ...validConfig, enforceGroupGate: true },
+        });
+
+        const r = await syncEntraMembershipRole(
+            { ...base, aadGroups: [], signInDirectoryId: GUID, signInEmail: 'p@acme.test' },
+            { db },
+        );
+
+        expect(r.gateDenied).toBe(true);
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'gate_denied' });
+    });
+
+    it('reports a FOREIGN directory rather than the partial read', async () => {
+        // Placement: the refusal sits after the checks that do not depend on
+        // the group LIST, so a sign-in refused for a more specific reason still
+        // says so. Reporting `partial_group_read` here would be alert noise on
+        // every overage sign-in into a workspace that does not map it.
+        const { db } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'EDITOR' },
+            config: { ...validConfig, aadTenantId: '99999999-9999-4999-8999-999999999999' },
+        });
+
+        await syncEntraMembershipRole(
+            { ...base, aadGroupsComplete: false, signInDirectoryId: GUID, signInEmail: 'p@acme.test' },
+            { db },
+        );
+
+        expect(mockMetric).toHaveBeenCalledWith({ outcome: 'foreign_directory' });
+    });
+
+    it('the SCIM path is untouched — its list is complete by construction', async () => {
+        // `aadGroupsComplete` defaults to true, so the push path, whose list
+        // arrives in the request body, keeps writing exactly as before.
+        const { db, update } = mockDb({
+            mappings: MAPPINGS,
+            membership: { id: 'm1', role: 'READER' },
+            config: validConfig,
+        });
+
+        await syncEntraMembershipRole(
+            { ...base, aadGroups: ['g-editor'], assignableRoles: SCIM_GROUP_ASSIGNABLE_ROLES },
+            { db },
+        );
+
+        expect(update).toHaveBeenCalledWith({ where: { id: 'm1' }, data: { role: 'EDITOR' } });
+    });
+});
+
 describe('syncEntraMembershipRole — AI_ADMIN', () => {
     // The real ceiling the SCIM Groups usecase passes (`tests/unit/scim-groups.test.ts`).
     const SCIM_GROUP_CEILING = SCIM_GROUP_ASSIGNABLE_ROLES;

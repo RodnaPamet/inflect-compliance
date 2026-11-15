@@ -110,9 +110,20 @@ export async function setProcessCanvasEnabled(
         one tenant serialise and the last can fail to START, which is the reason
         `AuditOutbox` exists at all.
 
-        So the flag and the row recording it now commit together or not at all.
-        The advisory lock is held across the upsert too: one row by primary key,
-        which is cheap beside a product that misreports its own state.
+        So the read, the upsert and the audit call now share ONE
+        `runInTenantContext`: the flag is read and written in one transaction,
+        and the audit call is made only once the upsert has succeeded.
+
+        That is NOT "the flag and its audit row commit together" (#5318, which
+        corrects an earlier version of this comment). `logEvent` ignores the
+        `db` it is handed: `appendAuditEntry` opens its OWN transaction, takes
+        the per-tenant advisory lock there and commits there. So the audit row
+        commits before this transaction does. If this transaction then fails —
+        a timeout while the append waited on the lock, or a failed commit —
+        the row records a change that rolled back. The window is narrow (the
+        upsert has already succeeded; only the commit is left), and closing it
+        would mean `appendAuditEntryWithin` on this transaction, which gives up
+        the outbound SIEM stream for the row.
     */
     const outcome = await runInTenantContext(ctx, async (db) => {
         /*

@@ -8,7 +8,7 @@ import { notFound, badRequest, ConflictError } from '@/lib/errors/types';
 import { ASSET_NAME_TAKEN } from '@/lib/asset-name-taken';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
-import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { bumpEntityCacheVersion, bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { logger } from '@/lib/observability';
 import { criticalityToEnum } from '@/lib/asset-criticality';
@@ -287,7 +287,12 @@ export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
     const createI = data.integrity ?? 3;
     const createA = data.availability ?? 3;
 
-    return runInTenantContext(ctx, async (db) => {
+    // Every asset write bumps the tenant cache version after it commits
+    // (#5316): the assets page caches its first-paint list with
+    // `cachedSsrPayload`, keyed on that version. Assets have no aggregation
+    // entity of their own, so this is the tenant-wide half of
+    // `bumpEntityCacheVersion`. It never throws.
+    const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
         await assertAssetNameFree(db, ctx, data.name);
         const asset = await AssetRepository.create(db, ctx, {
@@ -330,6 +335,8 @@ export async function createAsset(ctx: RequestContext, data: CreateAssetInput) {
 
         return asset;
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return created;
 }
 
 /**
@@ -478,6 +485,7 @@ export async function updateAsset(ctx: RequestContext, id: string, data: UpdateA
         }
     }
 
+    await bumpTenantCacheVersion(ctx.tenantId);
     return updated;
 }
 
@@ -688,6 +696,7 @@ export async function bulkImportAssets(
 
     result.created = created.length;
     result.createdIds = created.map((a) => a.id);
+    await bumpTenantCacheVersion(ctx.tenantId);
     return result;
 }
 
@@ -726,8 +735,9 @@ export async function bulkSetAssetStatus(
         }
         return rows.length;
     });
-    // Assets use React Query on the client; AssetsClient invalidates its list
-    // query after the bulk mutation. No server-side SWR cache to bump.
+    // AssetsClient invalidates its React Query list after the bulk mutation;
+    // the server-side SSR payload is invalidated here.
+    await bumpTenantCacheVersion(ctx.tenantId);
     return { updated };
 }
 
@@ -741,6 +751,9 @@ export async function bulkAssignAsset(
     const updated = await runInTenantContext(ctx, async (db) => {
         const rows = await AssetRepository.listByIds(db, ctx, assetIds);
         if (rows.length === 0) return 0;
+        // The same check every other owner write applies (#5317): a removed,
+        // inactive or other-tenant user is never written as an asset's owner.
+        if (ownerUserId) await assertActiveOwner(db, ctx.tenantId, ownerUserId);
         await AssetRepository.bulkUpdate(db, ctx, assetIds, {
             ownerUserId: ownerUserId || null,
         });
@@ -766,15 +779,16 @@ export async function bulkAssignAsset(
         }
         return rows.length;
     });
-    // Assets use React Query on the client; AssetsClient invalidates its list
-    // query after the bulk mutation. No server-side SWR cache to bump.
+    // AssetsClient invalidates its React Query list after the bulk mutation;
+    // the server-side SSR payload is invalidated here.
+    await bumpTenantCacheVersion(ctx.tenantId);
     return { updated };
 }
 
 /** Bulk soft-delete assets selected in the table action bar. */
 export async function bulkDeleteAsset(ctx: RequestContext, assetIds: string[]) {
     assertCanAdmin(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const rows = await AssetRepository.listByIds(db, ctx, assetIds);
         if (rows.length === 0) return { deleted: 0 };
         await db.asset.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
@@ -789,12 +803,14 @@ export async function bulkDeleteAsset(ctx: RequestContext, assetIds: string[]) {
         }
         return { deleted: rows.length };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return result;
 }
 
 export async function deleteAsset(ctx: RequestContext, id: string) {
     assertCanAdmin(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const deleted = await AssetRepository.delete(db, ctx, id);
         if (!deleted) throw notFound('Asset not found');
 
@@ -813,6 +829,8 @@ export async function deleteAsset(ctx: RequestContext, id: string) {
 
         return { success: true };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return result;
 }
 
 // ─── Restore / Purge / Include Deleted ───
@@ -820,11 +838,15 @@ export async function deleteAsset(ctx: RequestContext, id: string) {
 import { restoreEntity, purgeEntity } from './soft-delete-operations';
 
 export async function restoreAsset(ctx: RequestContext, id: string) {
-    return restoreEntity(ctx, 'Asset', id);
+    const result = await restoreEntity(ctx, 'Asset', id);
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return result;
 }
 
 export async function purgeAsset(ctx: RequestContext, id: string) {
-    return purgeEntity(ctx, 'Asset', id);
+    const result = await purgeEntity(ctx, 'Asset', id);
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return result;
 }
 
 export async function listAssetsWithDeleted(

@@ -7,6 +7,7 @@
  * since #4535 (#5409 moved this tool off `audits:read`); tasks map to
  * `tasks:read`.
  */
+import { FindingStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { listFindings } from '@/app-layer/usecases/finding';
@@ -14,6 +15,20 @@ import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 
 import type { McpReadTool } from './types';
+
+/**
+ * What "open" means for `list_findings`: every status but CLOSED, the reading
+ * the rest of the product uses (`status: { not: 'CLOSED' }` in the snapshot,
+ * the automation runner and the calendar). The tool's description has always
+ * promised open findings, and the workflows that read it report the count as
+ * "open findings" — but it passed no filter, so it returned the newest N
+ * findings of any status, closed ones included, and left out older open ones
+ * past the bound (#5304). Filtered here rather than by a new argument, so the
+ * tool's advertised definition, and every tenant's pin of it, is unchanged.
+ */
+export const OPEN_FINDING_STATUSES: readonly FindingStatus[] = Object.values(FindingStatus).filter(
+    (s) => s !== FindingStatus.CLOSED,
+);
 
 const findingsArgs = z
     .object({
@@ -49,7 +64,7 @@ export const listFindingsTool: McpReadTool<z.infer<typeof findingsArgs>> = {
         mirrors: 'GET /api/t/:slug/findings (requirePermission findings.view + assertCanRead)',
     },
     run: async (ctx: RequestContext, args) => {
-        return listFindings(ctx, { take: args.limit ?? 50 });
+        return listFindings(ctx, { take: args.limit ?? 50 }, { status: OPEN_FINDING_STATUSES.join(',') });
     },
 };
 

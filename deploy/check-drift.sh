@@ -33,15 +33,11 @@
 #   1 = drift in a file apply.sh can push (reconcile, then run apply.sh)
 #   2 = could not reach the VM (UNKNOWN — never read this as "no drift")
 #   3 = the only differences are in UNRECONCILED files — an outstanding
-#       decision, not something apply.sh can fix. One entry today: the
-#       Caddyfile.
-#
-#       This note used to say the array was EMPTY as of 2026-09-26 and that
-#       exit 3 was therefore unreachable. It was wrong when it was written —
-#       the entry is right there below, and on 2026-09-26 what got reconciled
-#       was the Caddyfile's CONTENT, not its entry. The two are different
-#       claims and the header collapsed them, which is how a reader ends up
-#       treating a reachable exit code as dead.
+#       decision, not something apply.sh can fix. UNREACHABLE today: the
+#       array has been EMPTY since 2026-10-15 (#3589), when the Caddyfile
+#       entry moved to APPLIABLE. A Caddyfile difference is now ordinary
+#       exit-1 drift, fixed by `CADDY_ONLY=1 deploy/apply.sh`. Add an entry
+#       to UNRECONCILED and exit 3 becomes reachable again.
 set -euo pipefail
 
 VM_NAME="${VM_NAME:-inflect-compliance}"
@@ -90,8 +86,8 @@ fi
 # tests/guards/deploy-canonical-set-is-watched.test.ts asserts this array and
 # apply.sh's two push arrays name the same files, in both directions. A file
 # pushed but unwatched drifts silently; a file watched but unpushed is a
-# standing warning nobody can action — the Caddyfile has been exactly that
-# since 2026-09-26.
+# standing warning nobody can action — the Caddyfile was exactly that from
+# 2026-09-26 until apply.sh learned to push it (2026-10-15, #3589).
 APPLIABLE=(
     "${SCRIPT_DIR}/${COMPOSE_BASENAME}:${REMOTE_DIR}/${COMPOSE_BASENAME}"
     "${SCRIPT_DIR}/init-roles.sh:${REMOTE_DIR}/init-roles.sh"
@@ -169,7 +165,12 @@ for entry in "${APPLIABLE[@]}"; do
 done
 
 UNRECONCILED_DRIFT=0
-for entry in "${UNRECONCILED[@]}"; do
+# The `+` form expands to NOTHING for an empty array. A bare
+# "${UNRECONCILED[@]}" on an empty array is an unbound-variable error under
+# `set -u` on bash older than 4.4 — stock macOS bash 3.2 — which aborted the
+# script with exit 1 ("drift apply.sh can push") after reporting every file
+# in sync (#5308).
+for entry in ${UNRECONCILED[@]+"${UNRECONCILED[@]}"}; do
     local_path="${entry%%:*}"; rest="${entry#*:}"
     remote_path="${rest%%:*}"; reason="${rest#*:}"
     lsha="$(sha256sum "$local_path" 2>/dev/null | awk '{print $1}')"
@@ -206,7 +207,14 @@ done
 # Three classes now, and only one of them is an exposure:
 #
 #   SECRET    a credential-shaped assignment whose value is a LITERAL, readable
-#             beyond root. This is the #2889 class. Exit 1.
+#             beyond root. This is the #2889 class. Exit 1. Also, BY NAME and
+#             whatever it holds, a host secret env file readable beyond root
+#             (HOST_SECRET_ENV_FILES below): `.env`, `.env.prod`, the scanner's
+#             `.env.scanner` and the pipelock overlay's `.env.pipelock` (#5308).
+#             Those files are credentials by purpose, and the content test is a
+#             heuristic over variable NAMES: a bearer key under a name it does
+#             not recognise would otherwise score TIDY. A same-named repo file
+#             never makes one of them public either.
 #   REQUIRED  bind-mounted into a container running as a NON-ROOT user, so a
 #             narrower mode breaks that container. Expected; not a finding.
 #   TIDY      neither: dead config or a non-secret file that happens to be 644.
@@ -234,9 +242,20 @@ ok "checking deploy-directory permissions"
 #   and scores the canonical compose at 4 literal credentials -- a file a
 #   guard already proves has none. The `:?` is compose's fail-fast syntax, so
 #   the very token that triggered the false positive is PROOF of interpolation.
+#
+# The host secret env files, SECRET by name. Defined once, here, and handed to
+# the remote script as its second argument (the heredoc is quoted, so it cannot
+# expand a variable of this script). The public-copy exemption below reads the
+# same list and never applies to them: their purpose is the credential, so a
+# repo file of the same name, were one ever committed, would be the leak rather
+# than proof the VM copy is public. Their public templates
+# (`.env.prod.example`, `.env.pipelock.example`) are other names, exempted by
+# hash like any other tracked file.
+HOST_SECRET_ENV_FILES=".env .env.prod .env.scanner .env.pipelock"
 CLASSIFY=$(cat <<'REMOTE'
 set -e
 REMOTE_DIR_X="$1"
+HOST_SECRET_ENV_FILES_X="$2"
 # every mount source under the deploy dir belonging to a non-root container
 required=""
 for c in $(sudo docker ps --format '{{.Names}}' 2>/dev/null); do
@@ -249,6 +268,9 @@ $src";; esac
     done
 done
 sudo find "$REMOTE_DIR_X" -maxdepth 1 -type f \( -perm /o+r -o -perm /g+r \) 2>/dev/null | sort | while read -r f; do
+    case " $HOST_SECRET_ENV_FILES_X " in
+        *" $(basename "$f") "*) echo "SECRET $f"; continue ;;
+    esac
     if printf '%s\n' "$required" | grep -qxF "$f"; then
         echo "REQUIRED $f"
     elif sudo grep -aE '^[^#]*(PASSWORD|SECRET|_KEY|TOKEN)[A-Z_]*[=:][[:space:]]*"?[^${?"[:space:]]' "$f" >/dev/null 2>&1; then
@@ -264,7 +286,7 @@ REMOTE
 CLASSIFY_FILE="$(mktemp)"
 trap 'rm -f "$CLASSIFY_FILE"' EXIT
 printf '%s\n' "$CLASSIFY" > "$CLASSIFY_FILE"
-CLASSIFIED=$(ssh_vm "sh -s '${REMOTE_DIR}'" "$CLASSIFY_FILE" 2>/dev/null || true)
+CLASSIFIED=$(ssh_vm "sh -s '${REMOTE_DIR}' '${HOST_SECRET_ENV_FILES}'" "$CLASSIFY_FILE" 2>/dev/null || true)
 
 SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
 
@@ -277,9 +299,14 @@ SECRET_CANDIDATES=$(printf '%s\n' "$CLASSIFIED" | sed -n 's/^SECRET //p')
 # Compared by HASH against the repo copy rather than by name: a same-named file
 # that has DRIFTED from the tracked one is exactly the case worth flagging, and
 # a name match alone would wave it through.
+# HOST_SECRET_ENV_FILES (defined above CLASSIFY) skip the exemption.
 SECRETS=""
 for f in $SECRET_CANDIDATES; do
     [ -n "$f" ] || continue
+    case " $HOST_SECRET_ENV_FILES " in
+        *" $(basename "$f") "*) SECRETS="${SECRETS}${f}
+"; continue ;;
+    esac
     repo_copy="${SCRIPT_DIR}/$(basename "$f")"
     if [ -f "$repo_copy" ] \
        && [ "$(sha256sum "$repo_copy" | awk '{print $1}')" = "$(remote_sha "$f")" ]; then

@@ -165,7 +165,7 @@ describe('Modal — source contract', () => {
         // the close-button gate, and Modal.Confirm passing it while its action
         // is in flight — so the bare needle was satisfied by the mere existence
         // of the prop, and would have survived the dismissal guard being cut.
-        expect(src).toMatch(/if \(preventDefaultClose && !dragged\) return;/);
+        expect(src).toMatch(/const closeModal = \(\) => \{\s*if \(preventDefaultClose\) return;/);
     });
 });
 

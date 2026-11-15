@@ -28,7 +28,7 @@ set -euo pipefail
 
 ACTION="${1:?action}"
 case "$ACTION" in
-    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder) ;;
+    preflight | apply | caddy-preflight | caddy-apply | retire-lab-vhosts-preflight | retire-lab-vhosts | host-config-preflight | host-config-apply | rollback-preflight | rollback | retire-lab-containers | recreate-legacy-mcp-proving | retire-capacity-recorder | refresh-env-prod-example) ;;
     *) echo "unknown action: $ACTION" >&2; exit 2 ;;
 esac
 
@@ -77,6 +77,9 @@ on_vm() {
     if [ "$ACTION" = recreate-legacy-mcp-proving ]; then
         files+=("$HERE/../docker-compose.legacy-mcp-proving.yml")
     fi
+    if [ "$ACTION" = refresh-env-prod-example ]; then
+        files+=("$HERE/../.env.prod.example")
+    fi
     # shellcheck disable=SC2016  # $HOME is the VM user's, expanded there
     # Its stdout is discarded: on a runner this is the first ssh, which makes a
     # key and prints ssh-keygen's banner and randomart on stdout.
@@ -99,6 +102,7 @@ case "$ACTION" in
     retire-lab-containers)       on_vm ;;
     recreate-legacy-mcp-proving) on_vm ;;
     retire-capacity-recorder)    on_vm ;;
+    refresh-env-prod-example)    on_vm ;;
 esac
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then

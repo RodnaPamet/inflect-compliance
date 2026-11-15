@@ -120,6 +120,23 @@ describe('getControlHealth', () => {
         expect(res.applicability).toBe('APPLICABLE');
     });
 
+    // #5313 — the card shows the list's three states, which need the
+    // decision timestamp: never assessed is stored as APPLICABLE.
+    it('carries when applicability was decided, and null while never assessed', async () => {
+        db.control.findFirst.mockResolvedValueOnce({
+            id: 'c-1', status: 'IMPLEMENTED', applicability: 'APPLICABLE',
+            applicabilityDecidedAt: null, lastTested: null, nextDueAt: null,
+        });
+        expect((await getControlHealth(ctx, 'c-1')).applicabilityDecidedAt).toBeNull();
+
+        db.control.findFirst.mockResolvedValueOnce({
+            id: 'c-1', status: 'IMPLEMENTED', applicability: 'APPLICABLE',
+            applicabilityDecidedAt: new Date('2026-05-01T00:00:00Z'), lastTested: null, nextDueAt: null,
+        });
+        expect((await getControlHealth(ctx, 'c-1')).applicabilityDecidedAt).toBe('2026-05-01T00:00:00.000Z');
+        expect(db.control.findFirst.mock.calls[1][0].select.applicabilityDecidedAt).toBe(true);
+    });
+
     it('deduplicates frameworks and reports coverage counts', async () => {
         const res = await getControlHealth(ctx, 'c-1');
         expect(res.coverage.requirementCount).toBe(3);

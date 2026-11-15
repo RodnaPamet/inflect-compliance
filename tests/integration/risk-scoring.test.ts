@@ -216,8 +216,11 @@ describe('Risk Scoring — Integration with usecase', () => {
         const content = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/usecases/risk.ts'), 'utf-8'
         ));
-        // updateRisk has conditional recalculation
-        expect(content).toContain('data.likelihood && data.impact');
-        expect(content).toContain('calculateRiskScore(data.likelihood, data.impact');
+        // updateRisk re-scores when EITHER axis is sent, taking the other from
+        // the stored row (#5318): requiring both left `{ likelihood: 5 }`
+        // with a stale score. Behaviour is covered in risk-score-events.
+        expect(content).toContain('data.likelihood ?? before?.likelihood');
+        expect(content).toContain('data.impact ?? before?.impact');
+        expect(content).toContain('calculateRiskScore(scoredLikelihood, scoredImpact');
     });
 });

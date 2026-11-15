@@ -135,7 +135,7 @@ is the step-by-step; this section says who does each step.
 | Issue the ingest key: `admin:harness_ingest`, plus `mcp:read`, the exchange requirement (#5004) and the `get_harness_register` grant if the register is read | Client | `/admin/api-keys` (`admin.manage`); the agent's tools (`admin.agent_tool_exposure`) | API key bound to the scanner agent; grant row |
 | Declare the estate: its cadence and each source with a client owner | Client, from the provider's estate plan | `POST …/admin/agents/harness-estates` (`admin.agent_registry`) | Estate row, audit row |
 | Provide a read-only credential per source, from the estate's secret store | Client | The estate | None in Inflect |
-| Build the container from a reviewed commit of this repository, run `scan --dry-run`, then `schedule` | Provider | The estate (`packages/agent-harness-scanner/Dockerfile`) | Signed reports |
+| Deploy scanent's signed image (`ghcr.io/rodnapamet/scanent`) pinned by a digest whose signature and build attestation were verified (`deploy/harness-scanner/README.md`), run `scan --dry-run`, then `schedule` | Provider | The estate | Signed reports |
 | Label the estate's principals so owners can be attributed | Provider proposes, client applies | The estate (onboarding doc, section 3) | The labels the scanner reads |
 
 **Whose reports count is the client's decision, at every moment.** The signing

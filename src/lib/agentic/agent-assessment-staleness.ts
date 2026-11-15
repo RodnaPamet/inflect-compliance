@@ -76,9 +76,22 @@
  *      the right thing.
  *
  * `TOOL_GRANTED` is the one trigger the re-score cannot answer, because the
- * granted-tool count is NOT a scorer input — see `grantAgentTool`, which
- * instead refuses outright any grant of a tool whose autonomy rung is above the
- * agent's tier cap.
+ * granted tools are NOT a scorer input — see `grantAgentTool`, which instead
+ * refuses outright any grant of a tool whose autonomy rung is above the agent's
+ * tier cap.
+ *
+ * ## `TOOL_GRANTED` is decided by GRANT TIME, not by a count
+ *
+ * It fires when ANY grant the agent holds now was created after the run was
+ * scored (owner decision 2026-11-14, #5304). It used to compare the granted
+ * COUNT with the count frozen at scoring, so a swap — revoke one tool, grant
+ * another, the ordinary way to replace a tool — read 3 → 3 and never fired,
+ * although the answers were given for a tool set that never held the new
+ * tool. Grant time needs no new column: the grant row's `createdAt` and the
+ * run's `completedAt` are both already stored. It is still one-directional,
+ * because a revoke creates no row. A revoke and re-grant of the SAME tool also
+ * fires, since the grant row is new; the decision accepts that, as a person
+ * re-granting a tool is a moment worth asking whether the answers still hold.
  */
 
 /** Stable codes stored in `AgentRiskAssessment.staleTriggers`. */
@@ -125,20 +138,34 @@ function reversibilityOrdinal(value: AgentReversibility): number {
  *
  * The first four fields are EXACTLY `AgentRiskScoreInput` minus `questions` —
  * the scorer's agent-side inputs — and that identity is the invariant, not a
- * coincidence. `toolCount` and `modelRef` are the two non-scorer facts a change
- * to which invalidates the ANSWERS rather than the arithmetic.
+ * coincidence. `scoredAt` and `modelRef` are the two non-scorer facts a change
+ * against which invalidates the ANSWERS rather than the arithmetic: a grant
+ * made after `scoredAt`, and a different model.
  */
 export interface AssessmentBasis {
     autonomyLevel: number;
     dataAccessScope: AgentDataAccessScope;
     reversibility: AgentReversibility;
     provenance: AgentProvenance;
-    toolCount: number;
+    /** When the run was scored (`AgentRiskAssessment.completedAt`). */
+    scoredAt: Date;
     modelRef: string | null;
 }
 
-/** The agent as it is now. */
-export type AgentCurrentState = AssessmentBasis;
+/** One tool the agent holds now, and when that grant row was created. */
+export interface CurrentGrant {
+    toolName: string;
+    grantedAt: Date;
+}
+
+/**
+ * The agent as it is now: the same axes and model as the basis, and the grants
+ * it holds in place of the scoring time. Only the grants' TIMES are compared;
+ * the names are there so the detail line can say which tool postdates the run.
+ */
+export type AgentCurrentState = Omit<AssessmentBasis, 'scoredAt'> & {
+    grants: readonly CurrentGrant[];
+};
 
 export interface StalenessVerdict {
     stale: boolean;
@@ -167,9 +194,16 @@ export function evaluateAssessmentStaleness(
         detail.push(`autonomyLevel ${basis.autonomyLevel} → ${current.autonomyLevel}`);
     }
 
-    if (current.toolCount > basis.toolCount) {
+    // Strictly LATER than the scoring: a grant written in the same instant as
+    // the score was seen by it.
+    const scoredAtMs = basis.scoredAt.getTime();
+    const grantedSince = current.grants
+        .filter((g) => g.grantedAt.getTime() > scoredAtMs)
+        .map((g) => g.toolName)
+        .sort();
+    if (grantedSince.length > 0) {
         triggers.push('TOOL_GRANTED');
-        detail.push(`granted tools ${basis.toolCount} → ${current.toolCount}`);
+        detail.push(`granted since scoring: ${grantedSince.join(', ')}`);
     }
 
     if (dataAccessOrdinal(current.dataAccessScope) > dataAccessOrdinal(basis.dataAccessScope)) {

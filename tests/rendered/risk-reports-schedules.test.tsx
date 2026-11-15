@@ -52,7 +52,10 @@ jest.mock('@/components/UpgradeGate', () => ({ UpgradeGate: ({ children }: { chi
 // The risk picker is a "clear" button here: choosing "Whole portfolio".
 jest.mock('../../src/app/t/[tenantSlug]/(app)/risks/_shared/RiskPicker', () => ({
     RiskPicker: ({ id, onChange }: { id: string; onChange: (v: string | null) => void }) => (
-        <button type="button" data-testid={`picker-${id}`} onClick={() => onChange(null)}>clear</button>
+        <>
+            <button type="button" data-testid={`picker-${id}`} onClick={() => onChange(null)}>clear</button>
+            <button type="button" data-testid={`pick-${id}`} onClick={() => onChange('r9')}>pick</button>
+        </>
     ),
 }));
 
@@ -80,9 +83,12 @@ const SCHEDULES = [
 ];
 const RUNS = [
     { id: 'run-1', format: 'PDF', status: 'COMPLETED', createdAt: '2026-10-31T00:00:00.000Z', templateId: 'tpl-p', errorMessage: null, parametersJson: null },
+    // A failed deep dive run for the whole portfolio (no risk in its scope).
+    { id: 'run-2', format: 'PDF', status: 'FAILED', createdAt: '2026-10-31T01:00:00.000Z', templateId: 'tpl-d', errorMessage: 'boom', parametersJson: null },
 ];
 
 let patches: Array<{ url: string; body: Record<string, unknown> }> = [];
+let posts: Array<{ url: string; body: Record<string, unknown> }> = [];
 let patchStatus = 200;
 let patchBody: unknown = {};
 
@@ -90,6 +96,7 @@ beforeEach(() => {
     tier = { canRead: true, canWrite: true, canAdmin: false, canAudit: false, canExport: true };
     appPermissions = { risks: { edit: true }, reports: { view: true, export: true } };
     patches = [];
+    posts = [];
     patchStatus = 200;
     patchBody = {};
     Object.values(toast).forEach((f) => f.mockReset());
@@ -103,6 +110,10 @@ beforeEach(() => {
         if (method === 'PATCH') {
             patches.push({ url: u, body: JSON.parse(String(init?.body ?? '{}')) });
             return reply(patchStatus, patchBody);
+        }
+        if (method === 'POST') {
+            posts.push({ url: u, body: JSON.parse(String(init?.body ?? '{}')) });
+            return reply(201, {});
         }
         if (u.includes('/risks/reports/schedules')) return reply(200, { schedules: SCHEDULES });
         if (u.includes('/integrations/sharepoint/connections')) return reply(200, []);
@@ -170,6 +181,15 @@ describe('Risk reports — schedules', () => {
         expect(screen.queryByTestId('schedule-edit-btn-sch-sp')).toBeNull();
         expect(screen.queryByTestId('schedule-delete-sch-sp')).toBeNull();
         expect(document.getElementById('schedule-create-btn')).not.toBeNull();
+    });
+
+    // #5313 — a retry runs the failed run's own scope, not the picker's.
+    it('retries a whole-portfolio deep dive for the whole portfolio, whatever the picker holds', async () => {
+        mount();
+        fireEvent.click(await screen.findByTestId('pick-deepdive-risk-tpl-d'));
+        await act(async () => { fireEvent.click(await screen.findByTestId('run-retry-run-2')); });
+        await waitFor(() => expect(posts).toHaveLength(1));
+        expect(posts[0].body).toEqual({ templateId: 'tpl-d', format: 'PDF' });
     });
 
     it('words a run’s status', async () => {

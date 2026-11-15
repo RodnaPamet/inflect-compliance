@@ -1366,3 +1366,27 @@ describe('the harness shortfall acceptance expiry', () => {
         expect(CALENDAR_BASELINE_PERMISSIONS).toContain('admin.agent_registry');
     });
 });
+
+describe('a cancelled audit is never overdue (#5317)', () => {
+    it('reads as done, like a completed one', async () => {
+        const { loadAuditEvents } = await import('@/app-layer/usecases/compliance-calendar/loaders-asset-audit');
+        const past = new Date('2026-01-05T00:00:00Z');
+        const db = {
+            audit: {
+                findMany: jest.fn(async () => [
+                    { id: 'a-c', title: 'Cancelled', schedule: past, status: 'CANCELLED' },
+                    { id: 'a-p', title: 'Planned', schedule: past, status: 'PLANNED' },
+                ]),
+            },
+        } as unknown as Parameters<typeof loadAuditEvents>[0];
+        const res = await loadAuditEvents(
+            db,
+            makeCtx() as never,
+            { from: new Date('2026-01-01T00:00:00Z'), to: new Date('2026-02-01T00:00:00Z') },
+            new Date('2026-01-20T00:00:00Z'),
+            50,
+        );
+        const byId = Object.fromEntries(res.events.map((e) => [e.entityId, e.status]));
+        expect(byId).toEqual({ 'a-c': 'done', 'a-p': 'overdue' });
+    });
+});

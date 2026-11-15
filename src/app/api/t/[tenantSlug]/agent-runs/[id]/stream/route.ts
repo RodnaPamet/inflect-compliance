@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 
+import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import {
     getRunStepFeed,
@@ -59,6 +60,11 @@ import { logger } from '@/lib/observability/logger';
  * through `runInTenantContext` with `tenantId` in the predicate, so a run in
  * another tenant is `notFound`, not `forbidden` — the same anti-enumeration
  * shape the rest of the surface uses.
+ *
+ * `withApiErrorHandling` is OUTSIDE the gate, as on every sibling (#5303): a
+ * denial and an unreadable run both throw before the stream is built, and
+ * without the wrapper they escaped as an unhandled 500 with no error envelope,
+ * so a client could not tell "not found" or "forbidden" from a server fault.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,7 +80,7 @@ function sse(event: string, data: unknown): string {
     return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
-export const GET = requirePermission<{ tenantSlug: string; id: string }>(
+export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string; id: string }>(
     { keys: ['admin.view', 'admin.agent_registry_view'], mode: 'any' },
     async (req: NextRequest, routeArgs, ctx) => {
         const params = await routeArgs.params;
@@ -98,6 +104,12 @@ export const GET = requirePermission<{ tenantSlug: string; id: string }>(
                 let poll: ReturnType<typeof setInterval> | undefined;
                 let heartbeat: ReturnType<typeof setInterval> | undefined;
                 let deadline: ReturnType<typeof setTimeout> | undefined;
+                // One poll at a time (#5303). Under database load a feed read
+                // can outlast the interval; a second tick reading the same
+                // cursor would send every step twice, and whichever read
+                // returned last would set the cursor, possibly backwards. A
+                // tick that finds a poll in flight is skipped.
+                let polling = false;
 
                 const safeEnqueue = (chunk: string) => {
                     if (closed) return;
@@ -158,7 +170,8 @@ export const GET = requirePermission<{ tenantSlug: string; id: string }>(
                 }
 
                 poll = setInterval(() => {
-                    if (closed) return;
+                    if (closed || polling) return;
+                    polling = true;
                     void (async () => {
                         try {
                             const next = await getRunStepFeed(ctx, runId, {
@@ -186,6 +199,8 @@ export const GET = requirePermission<{ tenantSlug: string; id: string }>(
                                 error: err instanceof Error ? err.message : String(err),
                             });
                             end('error');
+                        } finally {
+                            polling = false;
                         }
                     })();
                 }, POLL_INTERVAL_MS);
@@ -214,4 +229,4 @@ export const GET = requirePermission<{ tenantSlug: string; id: string }>(
             },
         });
     },
-);
+));

@@ -42,8 +42,16 @@ export function aggregateTree(
     aleByRisk: Map<string, number>,
     titleByRisk: Map<string, string> = new Map(),
 ): HierarchyAggregation[] {
+    // The nodes on the current path. A parent cycle stored before updateNode
+    // refused one (#5318) would otherwise recurse until RangeError; a child
+    // already on the path is not descended into again.
+    const onPath = new Set<string>();
     function visit(node: NodeLite): { agg: HierarchyAggregation; riskIds: Set<string> } {
-        const childResults = (childrenByParent.get(node.id) ?? []).map(visit);
+        onPath.add(node.id);
+        const childResults = (childrenByParent.get(node.id) ?? [])
+            .filter((c) => !onPath.has(c.id))
+            .map(visit);
+        onPath.delete(node.id);
         const riskIds = new Set<string>(riskIdsByNode.get(node.id) ?? []);
         for (const cr of childResults) cr.riskIds.forEach((id) => riskIds.add(id));
         let totalAle = 0;
@@ -77,12 +85,47 @@ export async function createNode(ctx: RequestContext, input: { name: string; typ
 export async function updateNode(ctx: RequestContext, nodeId: string, patch: { name?: string; parentId?: string | null; sortOrder?: number }) {
     assertCanWrite(ctx);
     if (patch.parentId === nodeId) throw badRequest('A node cannot be its own parent');
-    await runInTenantContext(ctx, (db) =>
-        db.riskHierarchyNode.updateMany({
+    await runInTenantContext(ctx, async (db) => {
+        if (patch.parentId) await assertParentMakesNoCycle(db, ctx, nodeId, patch.parentId);
+        await db.riskHierarchyNode.updateMany({
             where: { id: nodeId, tenantId: ctx.tenantId },
             data: { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}), ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}) },
-        }),
-    );
+        });
+    });
+}
+
+/**
+ * Refuse a parent that is the node's own descendant (#5318). Such a move
+ * leaves neither node a root, so both subtrees vanish from the treemap. The
+ * proposed parent must also be a node of the same tenant and hierarchy type:
+ * the tree is read per type. One read of the type's nodes, walked in memory.
+ */
+async function assertParentMakesNoCycle(
+    db: import('@/lib/db-context').PrismaTx,
+    ctx: RequestContext,
+    nodeId: string,
+    parentId: string,
+): Promise<void> {
+    const node = await db.riskHierarchyNode.findFirst({
+        where: { id: nodeId, tenantId: ctx.tenantId },
+        select: { type: true },
+    });
+    if (!node) throw notFound('Hierarchy node not found');
+    const nodes = await db.riskHierarchyNode.findMany({
+        where: { tenantId: ctx.tenantId, type: node.type },
+        select: { id: true, parentId: true },
+        take: 5000,
+    });
+    const parentOf = new Map(nodes.map((n) => [n.id, n.parentId]));
+    if (!parentOf.has(parentId)) {
+        throw badRequest('The parent must be a node of the same hierarchy');
+    }
+    const seen = new Set<string>();
+    for (let cur: string | null | undefined = parentId; cur; cur = parentOf.get(cur)) {
+        if (cur === nodeId) throw badRequest('A node cannot be moved under its own descendant');
+        if (seen.has(cur)) break; // an existing cycle above; not this move's to report
+        seen.add(cur);
+    }
 }
 
 export async function deleteNode(ctx: RequestContext, nodeId: string) {

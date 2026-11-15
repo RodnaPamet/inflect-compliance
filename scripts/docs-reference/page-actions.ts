@@ -12,7 +12,9 @@
  * Its URL is resolved from the expression that builds it: literals, template
  * strings (a `${…}` becomes a run-time segment), `apiUrl(…)` and
  * `buildApiUrl(…)` (the tenant prefix), string concatenation, a conditional's
- * two branches, and a `const` in the same file. Anything else is UNRESOLVED,
+ * two branches, and a `const` an enclosing scope declares before the call. A
+ * PARAMETER is not resolved — its value is whatever the caller passed, and this
+ * reads one file at a time. Anything else is UNRESOLVED,
  * and is listed with its file and line rather than dropped: a scanner that
  * silently skips what it cannot read reports full coverage of the part it
  * understands.
@@ -20,7 +22,7 @@
 import * as path from 'node:path';
 import ts from 'typescript';
 import { type ApiRoute, type CallSegment, type HttpMethod, HTTP_METHODS, matchRoutes } from './api-routes';
-import { lineOf, literalText, routeSegments, walk } from './source';
+import { enclosingConst, enclosingParam, lineOf, literalText, routeSegments, topLevelConst, walk } from './source';
 
 /** Product code a page's reach may include; platform code it may not. */
 export function inReach(file: string): boolean {
@@ -129,6 +131,64 @@ function isSwrFetcherParam(arg: ts.Expression): boolean {
     return false;
 }
 
+/**
+ * The component whose PROPS destructure `name`, if `at` sits inside one, and
+ * the attribute that supplies it — `{ apiBase: base }` is read as `base`
+ * locally and `apiBase` in JSX.
+ *
+ * A prop is the one name a use site legitimately cannot resolve on its own:
+ * its value is written at the render site. In this codebase a panel computes
+ * `const apiBase` and hands it to sibling components in the same file under
+ * the same name, so refusing the name outright costs the reference a dozen
+ * calls it can read — and resolving it from a same-named `const` elsewhere in
+ * the file, as the old resolver did, is a guess that happened to be right.
+ * Reading the render site is neither.
+ */
+function destructuredProp(name: string, at: ts.Node): { component: string; attribute: string } | null {
+    for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
+        if (!ts.isFunctionLike(n)) continue;
+        let attribute: string | null = null;
+        for (const p of n.parameters) {
+            if (!ts.isObjectBindingPattern(p.name)) continue;
+            const el = p.name.elements.find((x) => ts.isIdentifier(x.name) && x.name.text === name);
+            if (el) attribute = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : name;
+        }
+        if (!attribute) continue;
+        // Only a NAMED component can be found again in JSX.
+        if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) return { component: n.name.text, attribute };
+        if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
+            const d = n.parent;
+            return ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) ? { component: d.name.text, attribute } : null;
+        }
+        return null;
+    }
+    return null;
+}
+
+/**
+ * Every expression a render site in THIS file passes for one attribute of one
+ * component. Fail-closed: a render that spreads its props, or omits the
+ * attribute, or a component this file never renders, means at least one value
+ * is unknown — and a union missing one of its members is not a union, so the
+ * call is reported rather than answered from the rest.
+ */
+function propValues(sf: ts.SourceFile, component: string, attribute: string): ts.Expression[] | null {
+    const values: ts.Expression[] = [];
+    let unknown = false;
+    walk(sf, (n) => {
+        if (!ts.isJsxSelfClosingElement(n) && !ts.isJsxOpeningElement(n)) return;
+        if (!ts.isIdentifier(n.tagName) || n.tagName.text !== component) return;
+        const attr = n.attributes.properties.find((a) => ts.isJsxAttribute(a) && ts.isIdentifier(a.name) && a.name.text === attribute);
+        const init = attr && ts.isJsxAttribute(attr) ? attr.initializer : undefined;
+        if (!init || !ts.isJsxExpression(init) || !init.expression) {
+            unknown = true;
+            return;
+        }
+        values.push(init.expression);
+    });
+    return unknown || values.length === 0 ? null : values;
+}
+
 const TENANT_URL_BUILDERS = new Set(['apiUrl', 'buildApiUrl', 'tenantApiUrl']);
 
 /**
@@ -148,40 +208,42 @@ interface KeyEntry {
 
 /**
  * Resolves the expression that builds a URL into the paths it can take,
- * following `const`s in the same file, `const`s a file imports by name, and
- * the `CACHE_KEYS` table. Each path is text with `\u0000` standing for a value
+ * following `const`s an ENCLOSING scope declares before the use site, `const`s
+ * a file imports by name, and the `CACHE_KEYS` table. Each path is text with `\u0000` standing for a value
  * only known at run time; null means the expression could not be read.
  */
 export class UrlResolver {
-    private consts = new Map<ts.SourceFile, Map<string, ts.Expression[]>>();
     private swrKeys: Map<string, KeyEntry> | null = null;
 
     constructor(private readonly src: Source) {}
 
-    private localConsts(sf: ts.SourceFile): Map<string, ts.Expression[]> {
-        let m = this.consts.get(sf);
-        if (!m) {
-            m = new Map();
-            const map = m;
-            walk(sf, (n) => {
-                if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer) {
-                    const list = map.get(n.name.text) ?? [];
-                    list.push(n.initializer);
-                    map.set(n.name.text, list);
-                }
-            });
-            this.consts.set(sf, m);
-        }
-        return m;
-    }
-
-    /** The initialiser a name refers to: a const in this file, or one it imports. */
+    /**
+     * The initialiser a name refers to AT THIS USE SITE: a `const` an
+     * enclosing scope declares before it, or one the file imports by name. A
+     * PARAMETER resolves to nothing — its value is the caller's, which this
+     * resolver does not follow — so the call is reported UNRESOLVED.
+     *
+     * It used to read a flat map of EVERY `const` in the file by name, built by
+     * walking the whole tree, and take the last one positionally before the use
+     * site in any scope — falling back, via `?? local[0]`, to a declaration
+     * AFTER it. So in `AccessReviewDetailClient.tsx` the `url` parameter of
+     * `postJson` (line 292) resolved to the file's only `const url`, at line
+     * 1114 inside an unrelated callback, and the fetch on line 293 was
+     * attributed to that route. The page guide then said the page called an
+     * endpoint it does not call, and the one it does call went uncounted — a
+     * resolver that answers from a declaration the use site cannot see does not
+     * report less, it reports something else.
+     *
+     * `enclosingParam` / `enclosingConst` are `source.ts`'s, and `refusals.ts`
+     * resolves identifiers through the same two. Two resolvers for one question
+     * is what let this one be wrong on its own.
+     */
     private identifier(name: string, sf: ts.SourceFile, at: ts.Node): { sf: ts.SourceFile; expr: ts.Expression } | null {
-        const local = this.localConsts(sf).get(name);
-        if (local) {
-            const before = local.filter((e) => e.pos < at.pos);
-            return { sf, expr: before[before.length - 1] ?? local[0] };
-        }
+        if (enclosingParam(name, at)) return null;
+
+        const scoped = enclosingConst(name, at);
+        if (scoped) return { sf, expr: scoped };
+
         for (const st of sf.statements) {
             if (!ts.isImportDeclaration(st) || !st.importClause?.namedBindings) continue;
             const nb = st.importClause.namedBindings;
@@ -193,8 +255,8 @@ export class UrlResolver {
             if (!target) return null;
             const tsf = this.src.parsed(target);
             const exported = (el.propertyName ?? el.name).text;
-            const found = this.localConsts(tsf).get(exported);
-            return found ? { sf: tsf, expr: found[0] } : null;
+            const found = topLevelConst(tsf, exported);
+            return found ? { sf: tsf, expr: found } : null;
         }
         return null;
     }
@@ -204,7 +266,7 @@ export class UrlResolver {
         this.swrKeys = new Map();
         if (!this.src.exists(SWR_KEYS_FILE)) return this.swrKeys;
         const sf = this.src.parsed(SWR_KEYS_FILE);
-        const table = this.localConsts(sf).get('CACHE_KEYS')?.[0];
+        const table = topLevelConst(sf, 'CACHE_KEYS');
         const unwrap = (e: ts.Expression): ts.Expression => (ts.isAsExpression(e) || ts.isSatisfiesExpression(e) ? unwrap(e.expression) : e);
         const add = (prefix: string, e: ts.Expression) => {
             const v = unwrap(e);
@@ -324,6 +386,12 @@ export class UrlResolver {
         if (ts.isIdentifier(e)) {
             const target = this.identifier(e.text, sf, e);
             if (target && !ts.isObjectLiteralExpression(target.expr)) return this.paths(target.expr, target.sf, depth + 1);
+            const prop = destructuredProp(e.text, e);
+            const values = prop ? propValues(sf, prop.component, prop.attribute) : null;
+            if (values) {
+                const each = values.map((v) => this.paths(v, sf, depth + 1));
+                if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];
+            }
         }
         // `useMemo(() => …, deps)`: the key is what the factory returns —
         // every `return` of a block body.

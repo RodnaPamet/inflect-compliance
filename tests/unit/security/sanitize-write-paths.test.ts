@@ -184,6 +184,7 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
     EvidenceRepository: {
         getById: (...a: unknown[]) => mockEvidenceGetById(...a),
         update: (...a: unknown[]) => mockEvidenceUpdate(...a),
+        transitionStatus: jest.fn(async () => true),
         addReview: (...a: unknown[]) => mockEvidenceAddReview(...a),
         getLatestSubmitters: (...a: unknown[]) => mockEvidenceGetLatestSubmitters(...a),
     },
@@ -209,6 +210,7 @@ jest.mock('@/app-layer/policies/evidence.policies', () => ({
 jest.mock('@/lib/cache/list-cache', () => ({
     cachedListRead: jest.fn(async (_k: unknown, fn: () => unknown) => fn()),
     bumpEntityCacheVersion: jest.fn(async () => undefined),
+    bumpTenantCacheVersion: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/app-layer/usecases/nis2-readiness', () => ({

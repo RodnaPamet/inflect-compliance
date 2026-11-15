@@ -56,6 +56,13 @@ export interface EntitySearchState {
     loading: boolean;
     results: EntitySearchResult[];
     disabled: boolean;
+    /**
+     * The last search did not answer: a non-2xx (a 500, a read-tier 429) or
+     * a network failure. Distinct from an empty answer, so the palette never
+     * reports "no results" for a search that never ran (#5309). An abort is
+     * neither — a newer query superseded it.
+     */
+    failed: boolean;
 }
 
 // ─── Tunables ─────────────────────────────────────────────────────────
@@ -98,6 +105,7 @@ export function useEntitySearch(
         loading: false,
         results: [],
         disabled: tenantSlug === null,
+        failed: false,
     });
     // Track requests so a stale debounce doesn't overwrite a fresh
     // result even if AbortController fires after the new request
@@ -107,12 +115,12 @@ export function useEntitySearch(
     useEffect(() => {
         if (tenantSlug === null) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
-            setState({ loading: false, results: [], disabled: true });
+            setState({ loading: false, results: [], disabled: true, failed: false });
             return;
         }
         const trimmed = query.trim();
         if (trimmed.length < MIN_QUERY_LENGTH) {
-            setState({ loading: false, results: [], disabled: false });
+            setState({ loading: false, results: [], disabled: false, failed: false });
             return;
         }
 
@@ -123,11 +131,14 @@ export function useEntitySearch(
             setState((prev) => ({ ...prev, loading: true, disabled: false }));
             const url = `/api/t/${encodeURIComponent(tenantSlug)}/search?q=${encodeURIComponent(trimmed)}`;
             let payload: SearchResponse | null = null;
+            let failed = false;
             try {
                 const res = await fetch(url, { signal, credentials: 'same-origin' });
                 if (res.ok) payload = (await res.json()) as SearchResponse;
+                else failed = true;
             } catch {
-                // Aborted or network — leave payload null, render empty.
+                // Network failure, or an abort — which the check below drops.
+                failed = true;
             }
             if (signal.aborted || seq !== seqRef.current) return;
 
@@ -136,6 +147,7 @@ export function useEntitySearch(
                 loading: false,
                 disabled: false,
                 results: hits.map(adaptHit),
+                failed,
             });
         }, DEBOUNCE_MS);
 

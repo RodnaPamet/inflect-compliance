@@ -88,7 +88,11 @@ function request(): { req: unknown; abort: () => void } {
     const controller = new AbortController();
     return {
         req: {
-            nextUrl: { searchParams: new URLSearchParams() },
+            // `method`, `headers` and `pathname` are what `withApiErrorHandling`
+            // reads for its request id, rate-limit scope and telemetry.
+            method: 'GET',
+            headers: new Headers(),
+            nextUrl: { pathname: '/api/t/acme/agent-runs/run-1/stream', searchParams: new URLSearchParams() },
             signal: controller.signal,
         },
         abort: () => controller.abort(),
@@ -359,5 +363,54 @@ describe('the shutdown drain', () => {
         await jest.advanceTimersByTimeAsync(10_000);
         jest.useRealTimers();
         expect(feed.mock.calls.length).toBe(before);
+    });
+});
+
+describe('one poll at a time (#5303)', () => {
+    it('a tick that finds a poll in flight is skipped, so no step is sent twice', async () => {
+        // Under load one feed read outlasts the 2s interval. Two reads from the
+        // same cursor would each send the same steps, and whichever returned
+        // last would set the cursor.
+        jest.useFakeTimers();
+        let release: (v: unknown) => void = () => {};
+        const slow = new Promise((r) => { release = r; });
+        const step = { id: 's1', seq: 1, kind: 'SYNTHESIS' };
+        feed
+            .mockResolvedValueOnce(page({ live: true }))
+            // The first poll hangs until released...
+            .mockReturnValueOnce(slow)
+            // ...and a read from the SAME cursor would return the same step.
+            .mockImplementation(async (_ctx: unknown, _id: unknown, opts: { sinceSeq: number }) =>
+                opts.sinceSeq < 1 ? page({ live: true, cursor: 1, steps: [step] }) : page({ live: true, cursor: opts.sinceSeq }),
+            );
+
+        const { req } = request();
+        const res = (await GET(req as never, ARGS as never)) as Response;
+        await jest.advanceTimersByTimeAsync(2_000); // poll 1 starts and hangs
+        await jest.advanceTimersByTimeAsync(4_000); // two ticks while it is in flight
+        expect(feed).toHaveBeenCalledTimes(2);
+
+        release(page({ live: true, cursor: 1, steps: [step] }));
+        await jest.advanceTimersByTimeAsync(0);
+        // The next tick reads FROM THE ADVANCED cursor.
+        await jest.advanceTimersByTimeAsync(2_000);
+        expect(feed).toHaveBeenCalledTimes(3);
+        expect((feed.mock.calls[2][2] as { sinceSeq: number }).sinceSeq).toBe(1);
+        jest.useRealTimers();
+        const text = await drain(res.body as ReadableStream<Uint8Array>);
+        expect(eventsIn(text).filter((e) => e === 'step')).toHaveLength(1);
+    });
+});
+
+describe('a refusal before the stream opens (#5303)', () => {
+    it('an unreadable run is the 404 envelope, not an unhandled throw', async () => {
+        const { notFound } = jest.requireActual('@/lib/errors/types') as typeof import('@/lib/errors/types');
+        feed.mockRejectedValueOnce(notFound('Run not found'));
+        const { req } = request();
+        const res = (await GET(req as never, ARGS as never)) as Response;
+        expect(res.status).toBe(404);
+        const body = (await res.json()) as { error: { code: string } };
+        expect(body.error.code).toBe('NOT_FOUND');
+        expect(openRunStreamCount()).toBe(0);
     });
 });

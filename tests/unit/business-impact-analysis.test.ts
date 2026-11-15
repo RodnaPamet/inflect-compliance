@@ -20,6 +20,7 @@ import {
     listBiaDependencyOptions, addBiaDependency, removeBiaDependency,
 } from '@/app-layer/usecases/business-impact-analysis';
 import { runInTenantContext } from '@/lib/db-context';
+import { logEvent } from '../../src/app-layer/events/audit';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -230,14 +231,35 @@ describe('linkBiaToControl', () => {
         withDb({ businessImpactAnalysis: { findFirst: jest.fn().mockResolvedValue({ id: 'b1', name: 'P' }) }, control: { findFirst: jest.fn().mockResolvedValue(null) } });
         await expect(linkBiaToControl(ctx(), 'b', 'c')).rejects.toThrow(/INVALID_CONTROL/);
     });
-    it('upserts the evidence link', async () => {
+    it('upserts the evidence link and audits the new relationship (#5317)', async () => {
         const upsert = jest.fn().mockResolvedValue({ id: 'link1' });
         withDb({
             businessImpactAnalysis: { findFirst: jest.fn().mockResolvedValue({ id: 'b1', name: 'P' }) },
             control: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
-            controlEvidenceLink: { upsert },
+            controlEvidenceLink: { findUnique: jest.fn().mockResolvedValue(null), upsert },
         });
         await expect(linkBiaToControl(ctx(), 'b1', 'c1')).resolves.toEqual({ id: 'link1' });
+        expect(logEvent).toHaveBeenCalledTimes(1);
+        expect(logEvent).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({
+            action: 'BIA_CONTROL_LINKED',
+            entityId: 'b1',
+            detailsJson: expect.objectContaining({
+                category: 'relationship', operation: 'linked',
+                sourceEntity: 'BusinessImpactAnalysis', sourceId: 'b1',
+                targetEntity: 'Control', targetId: 'c1',
+            }),
+        }));
+    });
+    it('re-linking an existing pair returns it and writes no second audit row', async () => {
+        const upsert = jest.fn();
+        withDb({
+            businessImpactAnalysis: { findFirst: jest.fn().mockResolvedValue({ id: 'b1', name: 'P' }) },
+            control: { findFirst: jest.fn().mockResolvedValue({ id: 'c1' }) },
+            controlEvidenceLink: { findUnique: jest.fn().mockResolvedValue({ id: 'link1' }), upsert },
+        });
+        await expect(linkBiaToControl(ctx(), 'b1', 'c1')).resolves.toEqual({ id: 'link1' });
+        expect(upsert).not.toHaveBeenCalled();
+        expect(logEvent).not.toHaveBeenCalled();
     });
 });
 

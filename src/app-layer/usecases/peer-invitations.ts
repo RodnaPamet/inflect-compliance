@@ -74,6 +74,7 @@ import { issuePeerInboundCredential, revokePeerInboundCredential } from './a2a-p
 import { ownA2aIdentity } from './a2a-agent-card';
 import { resolveTenantA2aSigningKey } from './a2a-signing-key';
 import { upsertIntegrationConnection } from './integrations';
+import { savableConnectionName } from '@/lib/text/connection-name';
 import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
@@ -379,7 +380,14 @@ async function storeOutboundConnection(ctx: RequestContext, peerId: string, peer
         provider: A2A_PEER_PROVIDER_ID,
         // Connection names are unique per provider in a tenant; the card's
         // address makes this one unique, because one peer is registered per card.
-        name: `A2A → ${peerName} (${peerCardLabel(cardUrl)})`.slice(0, 200),
+        //
+        // Made savable, not refused (#5317): the name carries another
+        // organisation's card text, and on the accepting side this runs AFTER
+        // the acceptance was sent, so a refusal here would leave the peer
+        // connected with no outbound route. `savableConnectionName` drops what
+        // the save refuses and cuts without splitting a surrogate pair, which a
+        // plain `.slice(0, 200)` could.
+        name: savableConnectionName(`A2A → ${peerName} (${peerCardLabel(cardUrl)})`, 200),
         configJson: { peerId },
         secrets: { authorization: `Bearer ${token}` },
     });

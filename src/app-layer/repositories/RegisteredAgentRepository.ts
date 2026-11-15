@@ -16,6 +16,12 @@ import { RequestContext } from '../types';
 import { parseEnumListFilter } from '../domain/list-filter';
 
 /**
+ * How many of an agent's grants, newest first, the scoring state reads. See
+ * `getScoringState`: the newest grant alone decides `TOOL_GRANTED`.
+ */
+const SCORING_STATE_GRANTS_READ = 100;
+
+/**
  * The register's LIST FILTERS, as the page's own filter keys.
  *
  * Parsed from the query string by `parseAgentListFilters` below and applied in
@@ -397,8 +403,15 @@ export class RegisteredAgentRepository {
     }
 
     /**
-     * The five scorer inputs plus the granted-tool count — everything the agent
-     * risk assessment needs to score and to detect staleness, in ONE read.
+     * The five scorer inputs plus the granted tools — their count, and the
+     * newest grants with their times — everything the agent risk assessment
+     * needs to score and to detect staleness, in ONE read.
+     *
+     * The grants are read NEWEST first and bounded by
+     * `SCORING_STATE_GRANTS_READ`. That bound cannot hide a `TOOL_GRANTED`:
+     * the trigger fires when any grant postdates the scoring, and if any does,
+     * the newest does (#5304). It can only shorten the list of names the
+     * detail line quotes.
      *
      * A separate selection from `listSelect` on purpose: that one is the
      * OPERATOR's view of an agent (owner name, AI-Act tier, credential count)
@@ -427,6 +440,11 @@ export class RegisteredAgentRepository {
                 riskTier: true,
                 riskTierScoredAt: true,
                 _count: { select: { tools: true } },
+                tools: {
+                    select: { toolName: true, createdAt: true },
+                    orderBy: { createdAt: 'desc' },
+                    take: SCORING_STATE_GRANTS_READ,
+                },
             },
         });
     }

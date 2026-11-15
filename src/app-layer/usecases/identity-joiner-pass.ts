@@ -280,7 +280,11 @@ export interface JoinerPlanInput {
     readonly observedAddresses: readonly string[];
     /** Decision 10's map: department → security group id. Null when unconfigured. */
     readonly departmentGroups: Readonly<Record<string, string>> | null;
-    /** Decision 5's configured fallback. Null is a refusal, not a silent skip. */
+    /**
+     * Decision 5's configured fallback. Null refuses the pass `NO_DEFAULT_GROUP`
+     * when a planned starter's department is unmapped — a refusal, never a
+     * silent skip — and is not needed while every planned starter is mapped.
+     */
     readonly defaultGroupId: string | null;
     /**
      * The fallback's display name, stored beside its id rather than resolved
@@ -847,13 +851,24 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
             decisions,
         );
     }
-    if (!input.defaultGroupId) {
+    // NO_DEFAULT_GROUP only when a PLANNED starter needs the fallback (owner
+    // decision 2026-11-14, #5317 item 41). It used to refuse whenever the
+    // fallback was unset, so clearing it refused every pass even with every
+    // department mapped. A starter who is not planned (another day, already
+    // provisioned, refused on identity) is never created and so never needs
+    // a group. Still one refusal for the whole pass, in its place in the
+    // order, never a per-starter skip: decision 5 makes a missing fallback a
+    // refusal, and a pass that created the mapped half would hide it.
+    const needingFallback = planned.filter((d) => d.groupIsDefaultFallback).length;
+    if (!input.defaultGroupId && needingFallback > 0) {
         return refuse(
             'NO_DEFAULT_GROUP',
-            'No default security group is configured. Decision 5 accepts falling back to a ' +
+            `No default security group is configured, and ${needingFallback} planned starter(s) ` +
+                'are in a department no rule maps. Decision 5 accepts falling back to a ' +
                 'default for an unmapped department, on the binding condition that the fallback ' +
                 'has a name — a typo\'d or brand-new department is otherwise indistinguishable ' +
-                'from a mapped one. Configure the default, or the fallback is a silent guess.',
+                'from a mapped one. Map the department, or configure the default; otherwise the ' +
+                'fallback is a silent guess.',
             decisions,
         );
     }
@@ -862,9 +877,16 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
         mode: input.mode,
         clamp: JOINER_MAX_MODE,
         refusal: null,
+        // The sentence depends on the mode (#5317). Above DRY_RUN the pass
+        // goes on to create, so "nothing was written" would be false on the
+        // very row that records the creates; the row's `execution` block says
+        // what was actually done once the creates have run.
         detail:
-            `${planned.length} of ${starters} starter(s) would be provisioned. Nothing was written ` +
-            'to any directory, to the HRIS, or to this database: DRY_RUN plans and stops.',
+            input.mode === 'DRY_RUN'
+                ? `${planned.length} of ${starters} starter(s) would be provisioned. Nothing was written ` +
+                  'to any directory, to the HRIS, or to this database: DRY_RUN plans and stops.'
+                : `${planned.length} of ${starters} starter(s) planned for provisioning at ${input.mode}. ` +
+                  'What was created is recorded with the pass once the creates have run.',
         starters,
         wouldCreate: planned.length,
         decisions,

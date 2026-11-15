@@ -389,6 +389,38 @@ describeFn('Epic G-4 reminder — DB integration', () => {
         expect(otherTenantOutbox).toHaveLength(0);
     });
 
+    it('a REMOVED (soft-deleted) tenant\'s campaign is not reminded (#5307)', async () => {
+        // The reviewer's ACTIVE membership survives the tenant's removal, so
+        // the reviewer-is-member check passes; only the tenant's own
+        // `deletedAt` can stop the mail.
+        await makeCampaign({
+            tenantId: TENANT_B_ID,
+            reviewerUserId: bReviewer.userId,
+            dueAt: new Date('2026-05-10T12:00:00Z'),
+            decisions: [{ subjectUserId: bAdmin.userId, snapshotRole: Role.ADMIN }],
+        });
+        await globalPrisma.tenant.update({
+            where: { id: TENANT_B_ID },
+            data: { deletedAt: new Date('2026-05-01T00:00:00Z') },
+        });
+        try {
+            const r = await processAccessReviewReminders(globalPrisma, {
+                now: new Date('2026-05-07T12:00:00Z'),
+                tenantId: TENANT_B_ID,
+            });
+            expect(r.scanned).toBe(0);
+            expect(r.enqueued).toBe(0);
+            expect(await globalPrisma.notificationOutbox.count({
+                where: { tenantId: TENANT_B_ID, type: 'ACCESS_REVIEW_REMINDER' },
+            })).toBe(0);
+        } finally {
+            await globalPrisma.tenant.update({
+                where: { id: TENANT_B_ID },
+                data: { deletedAt: null },
+            });
+        }
+    });
+
     it('respects tenant notifications-disabled setting', async () => {
         await globalPrisma.tenantNotificationSettings.upsert({
             where: { tenantId: TENANT_A_ID },

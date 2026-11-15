@@ -134,4 +134,17 @@ describe('htmlToLines', () => {
     it('strips arbitrary HTML tags', () => {
         expect(htmlToLines('<strong>bold</strong> text')).toBe('bold text');
     });
+    it('ends a line at every block, so a heading never glues to the paragraph after it (#5309)', () => {
+        const out = htmlToLines(
+            '<h2>Scope</h2><p>Applies to staff.</p><ul><li>One</li><li>Two</li></ul><blockquote>Quoted</blockquote><hr><p>End</p>',
+        );
+        expect(out.split('\n').filter(Boolean)).toEqual([
+            'Scope',
+            'Applies to staff.',
+            'One',
+            'Two',
+            'Quoted',
+            'End',
+        ]);
+    });
 });

@@ -156,10 +156,31 @@ export async function runAgentProposalSampleAudit(
             reviewedAt: { gte: new Date(now.getTime() - SAMPLE_LOOKBACK_DAYS * MS_PER_DAY) },
             sampleAudits: { none: {} },
         },
-        select: { id: true, tenantId: true, agentId: true },
+        select: {
+            id: true,
+            tenantId: true,
+            agentId: true,
+            // Who APPROVED it — the final signer and every counted signature —
+            // so step 3 never assigns the review to a person the answer path
+            // refuses (#5307). Same population `recordSampleAuditOutcome`
+            // bars: `reviewedByUserId` plus ACCEPTED/EDITED approvals.
+            reviewedByUserId: true,
+            approvals: {
+                where: { outcome: { in: ['ACCEPTED', 'EDITED'] } },
+                select: { approverUserId: true },
+            },
+        },
         orderBy: { reviewedAt: 'desc' },
         take: CANDIDATE_READ_LIMIT,
     });
+
+    // The approvers of each candidate, for step 3.
+    const approversOf = new Map<string, Set<string>>();
+    for (const candidate of candidates) {
+        const approvers = new Set(candidate.approvals.map((a) => a.approverUserId));
+        if (candidate.reviewedByUserId) approvers.add(candidate.reviewedByUserId);
+        approversOf.set(candidate.id, approvers);
+    }
 
     // ── 2. Group in memory, draw per tenant. Both pure. ──
     const byTenant = new Map<string, { id: string; agentId: string | null }[]>();
@@ -208,6 +229,23 @@ export async function runAgentProposalSampleAudit(
         : [];
     const ownerByAgent = new Map(owners.map((o) => [o.id, o.ownerUserId]));
 
+    /**
+     * The owner — unless the owner APPROVED the proposal (#5307).
+     *
+     * In a small tenant the agent's owner often approves its proposals too,
+     * and `recordSampleAuditOutcome` refuses any approver (403 + AUTHZ_DENIED).
+     * Assigning the review to them routed it to the one person who cannot
+     * answer it, and the AGENT_PROPOSAL_SAMPLED row named them as the
+     * assignee. Such an audit is opened UNASSIGNED instead, the same value a
+     * proposal with no agent gets: "nobody was named" rather than a name the
+     * answer path will refuse.
+     */
+    const assigneeFor = (d: { proposalId: string; agentId: string | null }): string | null => {
+        const owner = d.agentId ? (ownerByAgent.get(d.agentId) ?? null) : null;
+        if (!owner) return null;
+        return approversOf.get(d.proposalId)?.has(owner) ? null : owner;
+    };
+
     // ── 4. Open them. `skipDuplicates` leans on the unique index, which is
     // the durable idempotency key a scheduled job needs — BullMQ's jobId
     // dedupe holds only inside the completed-job retention window.
@@ -217,7 +255,7 @@ export async function runAgentProposalSampleAudit(
             proposalId: d.proposalId,
             samplingEpoch: epoch,
             sampledAt: now,
-            assignedToUserId: d.agentId ? (ownerByAgent.get(d.agentId) ?? null) : null,
+            assignedToUserId: assigneeFor(d),
         })),
         skipDuplicates: true,
     });

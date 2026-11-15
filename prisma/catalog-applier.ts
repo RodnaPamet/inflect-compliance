@@ -14,13 +14,18 @@
  *   6. FrameworkPack           (upsert on `key`)
  *   7. PackTemplateLink[]      (upsert on composite key)
  *
+ * Plus one narrowing step, between 5 and 6: an `outOfScopeRequirements`
+ * entry re-categorises a requirement row the file no longer declares and
+ * removes its links to the templates the entry names. It is the only delete
+ * this file makes, and it never touches a tenant's rows.
+ *
  * Idempotent — safe to re-run. Rows are upsert-or-skip-if-exists, so
  * a re-run of the same catalog file is a no-op apart from updating
  * mutable fields (titles, descriptions, sortOrder).
  *
  * @module prisma/catalog-applier
  */
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
     type CatalogFile,
     assertCatalogConsistency,
@@ -131,7 +136,11 @@ export async function reconcileTemplateTasks(
             description: task.description.en,
             phase: task.phase,
             sortOrder: task.sortOrder,
-            stepsJson: task.steps ? (task.steps as unknown as object) : undefined,
+            // DbNull, not `undefined`: this object also drives the in-place
+            // update below, where `undefined` leaves the column alone — so a
+            // task re-authored WITHOUT steps kept its old ones, and install and
+            // the checklist backfill went on handing them out (#5314).
+            stepsJson: task.steps ? (task.steps as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
             evidenceHint: task.evidenceHint?.en ?? null,
             suggestedRole: task.suggestedRole ?? null,
             contentHash: hash,
@@ -178,6 +187,12 @@ export interface ApplyCatalogResult {
      * keeps producing.
      */
     tasks: TaskReconcileResult;
+    /**
+     * What the `outOfScopeRequirements` entries changed: rows whose category
+     * moved, and template links removed. Both 0 on a second apply, and on a
+     * database that never held the rows.
+     */
+    outOfScope: { recategorised: number; linksRemoved: number };
     /** The first (for a single-`pack` file, the only) pack applied. */
     pack?: AppliedPack;
     /** Every pack applied, in file order — several for a `packs` file. */
@@ -426,6 +441,36 @@ export async function applyCatalogFile(
 
     }
 
+    // ── 5b. Requirements that left this file's scope ──────────
+    // See CatalogOutOfScopeRequirementSchema. Only an EXISTING row is touched:
+    // the file does not create a requirement it no longer declares. Links are
+    // removed from the named templates only, never from a template the entry
+    // does not name, and ControlRequirementLink (a tenant's own control) is not
+    // read at all.
+    let recategorised = 0;
+    let linksRemoved = 0;
+    for (const o of file.outOfScopeRequirements) {
+        const row = await prisma.frameworkRequirement.findUnique({
+            where: { frameworkId_code: { frameworkId: framework.id, code: o.code } },
+            select: { id: true, category: true },
+        });
+        if (!row) continue;
+        if (row.category !== o.category) {
+            await prisma.frameworkRequirement.update({
+                where: { id: row.id },
+                data: { category: o.category },
+            });
+            recategorised++;
+        }
+        const templateIds = o.unlinkTemplateCodes
+            .map((code) => templateMap[code])
+            .filter((id): id is string => Boolean(id));
+        const removed = await prisma.controlTemplateRequirementLink.deleteMany({
+            where: { requirementId: row.id, templateId: { in: templateIds } },
+        });
+        linksRemoved += removed.count;
+    }
+
     // ── 6. + 7. Packs + PackTemplateLinks ──────────────────────
     // One pack for most files; several for a framework whose packs are its
     // subcategories. Each is upserted and linked the same way.
@@ -490,6 +535,7 @@ export async function applyCatalogFile(
             templateFieldsFilled,
         },
         tasks: tasksReconciled,
+        outOfScope: { recategorised, linksRemoved },
         pack: appliedPacks[0],
         packs: appliedPacks,
     };

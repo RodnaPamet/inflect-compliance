@@ -34,7 +34,11 @@ import { CopyText } from '@/components/ui/copy-text';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { normaliseHref } from '@/lib/security/safe-url';
 import { apiErrorMessage, validationIssueMessages } from '@/lib/api-error';
-import { isVendorActivationNeedsReview, isVendorNameTaken } from '@/lib/vendor-refusal-reasons';
+import {
+    isVendorActivationNeedsReview,
+    isVendorNameTaken,
+    isVendorReassessmentInProgress,
+} from '@/lib/vendor-refusal-reasons';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { Heading } from '@/components/ui/typography';
@@ -244,7 +248,12 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
     // so stepping walks the sequence the user just saw.
     const vendorIds = useEntityListIds(CACHE_KEYS.vendors.list());
     const { permissions, appPermissions } = useTenantContext();
-    const canWrite = permissions?.canWrite;
+    // Every vendor write on this page — edit, enrich, documents, assessments
+    // (send and resend), monitoring, links, bundles, sub-processors — asks
+    // `vendors.edit` alone (`vendor.policies.ts`). The coarse write tier is a
+    // custom role's BASE, so it offered a role without the key buttons the
+    // server refused, and refused one holding it (#5313).
+    const canWrite = !!appPermissions?.vendors?.edit;
     const triggerUndoToast = useToastWithUndo();
     const toast = useToast();
 
@@ -501,13 +510,18 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             setBundleItemId('');
             void fetchBundleDetail(bundleId);
             void fetchBundles();
+            return;
         }
+        const err: unknown = await res.json().catch(() => null);
+        toast.error(apiErrorMessage(err, tx('detail.addBundleItemFailed')));
     };
 
     const removeBundleItem = useCallback(async (bundleId: string, itemId: string) => {
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles/${bundleId}?itemId=${itemId}`), { method: 'DELETE' });
-        if (res.ok) { void fetchBundleDetail(bundleId); void fetchBundles(); }
-    }, [apiUrl, params.vendorId, fetchBundleDetail, fetchBundles]);
+        if (res.ok) { void fetchBundleDetail(bundleId); void fetchBundles(); return; }
+        const err: unknown = await res.json().catch(() => null);
+        toast.error(apiErrorMessage(err, tx('detail.removeBundleItemFailed')));
+    }, [apiUrl, params.vendorId, fetchBundleDetail, fetchBundles, toast, tx]);
 
     // Freeze waits for the confirm dialog (#4989); it used the browser's own
     // `confirm()`. A refused freeze says why — it used to say nothing.
@@ -568,12 +582,14 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             });
             if (res.ok) { setVendor(await res.json()); setEditing(false); return; }
             const err = await res.json().catch(() => ({}));
-            // The two named refusals get the page's own sentence: the
+            // The three named refusals get the page's own sentence: the
             // server's is English. Anything else shows the server's reason.
             if (isVendorNameTaken(err)) {
                 setEditError({ field: 'name', message: tx('form.nameTaken') });
             } else if (isVendorActivationNeedsReview(err)) {
                 setEditError({ field: null, message: tx('detail.activationNeedsReview') });
+            } else if (isVendorReassessmentInProgress(err)) {
+                setEditError({ field: null, message: tx('detail.activationReassessmentInProgress') });
             } else {
                 const issues = validationIssueMessages(err);
                 setEditError({
@@ -605,7 +621,11 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
             setDocForm({ type: 'CONTRACT', title: '', externalUrl: '', notes: '', folder: '' });
             // Also call fetchDocs just in case we need uploadedBy info, but state already has the doc
             void fetchDocs();
+            return;
         }
+        // A refused add used to do nothing; the form stays as typed.
+        const err: unknown = await res.json().catch(() => null);
+        toast.error(apiErrorMessage(err, tx('detail.addDocFailed')));
     };
 
     // Epic 67 — delayed-commit doc removal. The 5-second undo window
@@ -744,6 +764,10 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
         setEnriching(true);
         const res = await fetch(apiUrl(`/vendors/${params.vendorId}/enrich`), { method: 'POST' });
         if (res.ok) { setVendor(await res.json()); }
+        else {
+            const err: unknown = await res.json().catch(() => null);
+            toast.error(apiErrorMessage(err, tx('detail.enrichFailed')));
+        }
         setEnriching(false);
     };
 
@@ -1271,9 +1295,11 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                                 <span className="text-xs text-content-subtle">
                                                     {tx(vendorAssessmentStatusLabelKey(a.status))}
                                                 </span>
-                                                <Button variant="secondary" size="xs" onClick={() => handleResend(a.id)} id={`resend-assessment-${a.id}`}>
-                                                    {tx('detail.resendInvite')}
-                                                </Button>
+                                                {canWrite && (
+                                                    <Button variant="secondary" size="xs" onClick={() => handleResend(a.id)} id={`resend-assessment-${a.id}`}>
+                                                        {tx('detail.resendInvite')}
+                                                    </Button>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
@@ -1548,10 +1574,16 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                             <Input className="w-48" placeholder={tx('detail.bundleNamePlaceholder')} value={bundleName}
                                 onChange={e => setBundleName(e.target.value)} id="bundle-name-input" />
                             <Button variant="primary" disabled={!bundleName} id="create-bundle-btn" onClick={async () => {
-                                await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`), {
+                                const res = await fetch(apiUrl(`/vendors/${params.vendorId}/bundles`), {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ name: bundleName }),
                                 });
+                                // A refused create keeps the name and says why (#5313).
+                                if (!res.ok) {
+                                    const err: unknown = await res.json().catch(() => null);
+                                    toast.error(apiErrorMessage(err, tx('detail.createBundleFailed')));
+                                    return;
+                                }
                                 setBundleName(''); void fetchBundles();
                             }}>{tx('detail.createBundle')}</Button>
                         </div>
@@ -1734,10 +1766,17 @@ export default function VendorDetailPage(props: { params: Promise<{ tenantSlug: 
                                     onChange={e => setSubForm(p => ({ ...p, country: e.target.value }))} id="sub-country" placeholder={tx('detail.subCountryPlaceholder')} />
                             </div>
                             <Button variant="primary" disabled={!subForm.subprocessorVendorId} id="add-subprocessor-btn" onClick={async () => {
-                                await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors`), {
+                                const res = await fetch(apiUrl(`/vendors/${params.vendorId}/subprocessors`), {
                                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(subForm),
                                 });
+                                // A refused add used to clear the form as if it
+                                // had worked; it now keeps it and says why (#5313).
+                                if (!res.ok) {
+                                    const err: unknown = await res.json().catch(() => null);
+                                    toast.error(apiErrorMessage(err, tx('detail.addSubFailed')));
+                                    return;
+                                }
                                 setSubForm({ subprocessorVendorId: '', purpose: '', dataTypes: '', country: '' }); void fetchSubs();
                             }}>{tx('detail.add')}</Button>
                         </div>

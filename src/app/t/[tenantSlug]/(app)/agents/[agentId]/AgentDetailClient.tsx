@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import type { AgentDetailTabKey } from './agent-detail-tabs';
 
 export interface AgentSummary {
     id: string;
@@ -144,10 +145,10 @@ export interface AgentDetailPermissions {
 // `behaviour` (Step 1b, #4144) sits after `skills`: what the agent should DO,
 // written in terms of the tools and skills the two tabs before it govern. It is
 // in the list only while AGENT_PROFILES is on (`profilesEnabled`).
-const TAB_KEYS = [
-    'overview', 'risk', 'policy', 'tools', 'skills', 'behaviour', 'coverage', 'runs', 'breaker',
-] as const;
-type TabKey = (typeof TAB_KEYS)[number];
+//
+// The list lives in `agent-detail-tabs.ts`, which the loading skeleton reads
+// too (#5313).
+type TabKey = AgentDetailTabKey;
 
 /**
  * The stored codes the header shows, each with its label (#4937). An unknown
@@ -190,7 +191,12 @@ export function AgentDetailClient({
     agent: AgentSummary;
     perms: AgentDetailPermissions;
     owners: OwnerChoice[];
-    vendors: VendorChoice[];
+    /**
+     * The supplier picker's options, or `null` when the vendors could not be
+     * read (or the agent's own supplier could not be named): the field is then
+     * disabled rather than offering "None" over a value nobody can see (#5313).
+     */
+    vendors: VendorChoice[] | null;
     /** The signed-in person; the transfer card says which side of an open transfer they are on. */
     viewerUserId?: string;
     /**
@@ -469,7 +475,12 @@ export function AgentDetailClient({
                 />
             )}
             {tab === 'tools' && (
-                <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
+                <ToolsTab
+                    {...props}
+                    onChanged={refresh}
+                    canGrantTools={perms.canGrantTools}
+                    canReadRegistry={perms.canReadRegistry}
+                />
             )}
             {tab === 'skills' && <SkillsTab
                     {...props}

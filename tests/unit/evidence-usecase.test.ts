@@ -60,6 +60,8 @@ jest.mock('@/app-layer/repositories/EvidenceRepository', () => ({
         getById: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        // #5317 — the review's status move is conditional on the read status.
+        transitionStatus: jest.fn(async () => true),
         addReview: jest.fn(),
         // SoD source (ep1 review gate). Empty map ⇒ submitter falls back
         // to Evidence.ownerUserId; tests set ownerUserId ≠ acting user so
@@ -258,7 +260,7 @@ describe('reviewEvidence — author flow (SUBMITTED requires write/EDITOR)', () 
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue({ id: 'ev-1', status: 'DRAFT', title: 'X' });
         const res = await reviewEvidence(editorCtx, 'ev-1', { action: 'SUBMITTED' });
         expect(res).toEqual({ success: true, status: 'SUBMITTED' });
-        expect(EvidenceRepository.update).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-1', { status: 'SUBMITTED' });
+        expect(EvidenceRepository.transitionStatus).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-1', 'DRAFT', 'SUBMITTED');
         expect(EvidenceRepository.addReview).toHaveBeenCalledWith(mockDb, editorCtx, 'ev-1', 'SUBMITTED', undefined);
     });
 
@@ -327,7 +329,7 @@ describe('reviewEvidence — illegal transitions', () => {
     it('rejects DRAFT → APPROVED (bypasses SUBMITTED)', async () => {
         (EvidenceRepository.getById as jest.Mock).mockResolvedValue({ id: 'ev-1', status: 'DRAFT', title: 'X' });
         await expect(reviewEvidence(adminCtx, 'ev-1', { action: 'APPROVED' })).rejects.toThrow(/Illegal evidence transition DRAFT . APPROVED/);
-        expect(EvidenceRepository.update).not.toHaveBeenCalled();
+        expect(EvidenceRepository.transitionStatus).not.toHaveBeenCalled();
     });
 
     it('rejects APPROVED → REJECTED (terminal state)', async () => {

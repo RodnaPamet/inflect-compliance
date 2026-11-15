@@ -45,6 +45,7 @@ const {
 
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { assertNoUnknownArgs, readValueFlag } from './lib/value-flag';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -109,15 +110,32 @@ export async function backfillTenantDeks(
     };
 
     // SELECT excludes tenants that already have a DEK — that's the
-    // idempotency gate. ORDER BY id keeps batches stable across a
-    // crash-resume so we don't re-scan the same range.
+    // idempotency gate.
+    //
+    // KEYSET PAGINATION, and the cursor is what makes the dry run terminate
+    // (#5648). This read was `ORDER BY id LIMIT $1` with no cursor, under a
+    // comment claiming ORDER BY "keeps batches stable across a crash-resume so
+    // we don't re-scan the same range" — which is the opposite of what it did:
+    // with no cursor, ORDER BY guarantees the SAME range comes back.
+    //
+    // Under `--execute` that was survivable, because the UPDATE shrinks the
+    // predicate until a short page breaks the loop. In a DRY RUN nothing is
+    // written, so with a full page every pass the only exit (`rows.length <
+    // batchSize`) never fired: at 100 or more DEK-less tenants the default
+    // batch looped for ever with a rising "would backfill" count. The dry run
+    // is the default, and `docs/epic-b-encryption.md` tells an operator to run
+    // it first.
     const selectSql = `
         SELECT id
         FROM "Tenant"
         WHERE "encryptedDek" IS NULL
+          AND id > $2
         ORDER BY id
         LIMIT $1
     `;
+
+    // Sorts before every cuid/uuid, so the first page starts at the beginning.
+    let cursor = '';
 
     while (true) {
         let rows: Array<{ id: string }>;
@@ -125,6 +143,7 @@ export async function backfillTenantDeks(
             rows = await deps.prisma.$queryRawUnsafe<Array<{ id: string }>>(
                 selectSql,
                 batchSize,
+                cursor,
             );
         } catch (err) {
             deps.log('error', 'backfill-tenant-deks.select_failed', {
@@ -136,6 +155,8 @@ export async function backfillTenantDeks(
 
         if (rows.length === 0) break;
         result.scanned += rows.length;
+        // Advance whether or not anything was written — the whole point.
+        cursor = rows[rows.length - 1].id;
 
         for (const row of rows) {
             let wrapped: string;
@@ -204,10 +225,14 @@ function parseArgs(argv: readonly string[]): TenantDekBackfillOptions {
     const args = argv.slice(2);
     const execute = args.includes('--execute');
 
+    // Refused rather than ignored, and either spelling accepted (#5647) —
+    // the usage block documents `--batch-size 50`.
+    assertNoUnknownArgs(args, ['execute'], ['batch-size']);
+
     let batchSize = 100;
-    const batchArg = args.find((a) => a.startsWith('--batch-size='));
-    if (batchArg) {
-        const n = parseInt(batchArg.split('=')[1], 10);
+    const batchArg = readValueFlag(args, 'batch-size');
+    if (batchArg !== undefined) {
+        const n = parseInt(batchArg, 10);
         if (!Number.isFinite(n) || n < 1) {
             throw new Error(`Invalid --batch-size: ${batchArg}`);
         }

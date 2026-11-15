@@ -3,7 +3,9 @@
  *
  * Per-plan execution worker. The scheduler (`control-test-scheduler`)
  * claims due `ControlTestPlan` rows and enqueues one of these jobs
- * per claim, deduplicated by `ctr:{planId}:{scheduledForIso}`. The
+ * per claim, deduplicated by the BullMQ job id
+ * `scheduledJobId('ctr', planId, scheduledForMs)` — `ctr-{planId}-{epochMs}`,
+ * colon-free (#3554). The
  * runner turns the queued job into a durable `ControlTestRun` row
  * with auto-attached evidence and, on automated FAIL, a linked
  * `Finding`.
@@ -52,17 +54,27 @@
  *
  * The runner has no HTTP request context — it's a queued job. To
  * reuse the existing repository + audit-event surface (which all
- * take a `RequestContext`) we synthesize one:
+ * take a `RequestContext`) we synthesize one with
+ * `buildDelegatedJobContext` (see `buildRunnerCtx` below):
  *
- *   userId    ← plan.createdByUserId   (audit attribution to plan author)
- *   tenantId  ← plan.tenantId
- *   requestId ← schedulerJobRunId       (breadcrumb back to the tick)
- *   role      ← ADMIN                   (write + create finding/evidence)
+ *   userId         ← plan.createdByUserId  (attribution to plan author)
+ *   actorType      ← JOB                   (the scheduler ran it, not them)
+ *   tenantId       ← plan.tenantId
+ *   requestId      ← schedulerJobRunId     (breadcrumb back to the tick)
+ *   permissions    ← canRead + canWrite only — NOT canAdmin, canAudit
+ *                    or canExport
+ *   appPermissions ← EDITOR's granular set (#4388) — no `admin.*`,
+ *                    `audits.*` or approve keys
  *
- * Audit log entries appear under the plan author's identity with the
- * scheduler's job-run id in `requestId` — auditors can grep one id
- * to reconstruct: tick → claim → enqueue → run-creation → evidence
- * → (optional) finding.
+ * The context's `role` field still reads `ADMIN`, because
+ * `buildDelegatedJobContext` fixes it; the authority checks this path
+ * makes read the narrower `permissions` / `appPermissions` above, so
+ * a scheduled run executes with EDITOR authority, not ADMIN.
+ *
+ * Audit log entries appear under the plan author's identity, as a JOB,
+ * with the scheduler's job-run id in `requestId` — auditors can grep
+ * one id to reconstruct: tick → claim → enqueue → run-creation →
+ * evidence → (optional) finding.
  *
  * ═══════════════════════════════════════════════════════════════════
  * LINKAGE TRACE

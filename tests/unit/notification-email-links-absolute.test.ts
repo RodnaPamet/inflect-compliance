@@ -30,6 +30,11 @@ import {
     buildVendorRenewalDigestEmail,
 } from '@/app-layer/notifications/digest-templates';
 import type { DueItem } from '@/app-layer/jobs/types';
+import {
+    buildIdentityLeaverDisabledEmail,
+    buildIdentityLeaverNeedsActionEmail,
+    buildIdentityLeaverUnconfirmedEmail,
+} from '@/app-layer/notifications/leaver-templates';
 
 const ORIGIN = 'https://app.example.test';
 
@@ -76,6 +81,15 @@ const overdue = (over: Partial<Parameters<typeof buildAccessReviewOverdueEscalat
         ...over,
     });
 
+const leaver = {
+    recipientName: 'IT',
+    audience: 'IT' as const,
+    workerName: 'Dana Okafor',
+    provider: 'entra-id',
+    occurredAt: '2026-11-01T05:00:00.000Z',
+    tenantSlug: 'acme',
+};
+
 describe('every in-app link in an email body is absolute against APP_URL', () => {
     it.each([
         ['task assigned', () => buildTaskAssignedEmail({ taskTitle: 'T', taskType: 'TASK', assigneeName: 'A', tenantSlug: 'acme' })],
@@ -88,6 +102,10 @@ describe('every in-app link in an email body is absolute against APP_URL', () =>
         ['deadline digest', () => buildDeadlineDigestEmail({ recipientName: 'A', tenantSlug: 'acme', items: [item()], audience: 'OWNER' })],
         ['evidence expiry digest', () => buildEvidenceExpiryDigestEmail({ recipientName: 'A', tenantSlug: 'acme', items: [item({ entityType: 'EVIDENCE' })], audience: 'OWNER' })],
         ['vendor renewal digest', () => buildVendorRenewalDigestEmail({ recipientName: 'A', tenantSlug: 'acme', items: [item({ entityType: 'VENDOR' })], audience: 'OWNER' })],
+        // The leaver mails' roster link to IT (#5305) — it was the one link left relative.
+        ['leaver disabled', () => buildIdentityLeaverDisabledEmail({ ...leaver, journalRef: 'j-1', confirmation: 'DIRECT' })],
+        ['leaver unconfirmed', () => buildIdentityLeaverUnconfirmedEmail({ ...leaver, journalRef: 'j-1', detail: 'timeout' })],
+        ['leaver needs action', () => buildIdentityLeaverNeedsActionEmail({ ...leaver, outcome: 'FAILED', detail: 'refused', journalRef: 'j-1' })],
     ] as const)('%s', (_label, build) => {
         expectAllAbsolute(build());
     });

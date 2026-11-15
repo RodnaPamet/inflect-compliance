@@ -677,7 +677,8 @@ describe('an image push is gated by a scan that ran before it', () => {
         // renamed step, new push mechanism — shows up here as a shrinking
         // list rather than as a silently-green ordering check below.
         expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual([
-            // ONE SITE, and it was two until 2026-10-14.
+            // ONE SITE, and it was two until 2026-10-14 and again from
+            // 2026-10-20 to 2026-11-15.
             // `laya-image.yml:build-scan-push` — Step 6d's model-server publish,
             // which pushed by digest with the same blocking Trivy gate — was
             // deleted when the owner retired the Laya estate.
@@ -691,10 +692,9 @@ describe('an image push is gated by a scan that ran before it', () => {
             // site stopped being recognised", which is why the deletion is
             // written down.
             'ghcr-publish.yml:build-push',
-            // TWO again from 2026-10-20: the harness scanner's image, published
-            // by dispatch only and pinned by digest, so Inflect's own estate can
-            // run it on the production VM (owner decision on #3659).
-            'scanner-image.yml:build-scan-push',
+            // `scanner-image.yml:build-scan-push`, the harness scanner's
+            // dispatch-only publish (2026-10-20 to 2026-11-15), was deleted with
+            // the in-repo scanner: the VM runs scanent's own image (scanent #26).
         ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });

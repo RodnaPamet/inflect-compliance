@@ -8,8 +8,13 @@
  * fresh (cheap) so auth context / breadcrumbs stay correct.
  *
  * Invalidation is COARSE on purpose: the key embeds the tenant-WIDE
- * version counter (`tenantVersionKey`), which `bumpEntityCacheVersion`
- * bumps on EVERY entity write in the tenant. So a Control write
+ * version counter (`tenantVersionKey`). `bumpEntityCacheVersion` bumps it
+ * on every write to an aggregation entity (control, risk, evidence, task,
+ * test, vendor, …), and the asset and policy usecases bump it directly with
+ * `bumpTenantCacheVersion`, since neither has an aggregation entity of its
+ * own (#5316). A write path that does neither leaves a cached payload stale
+ * for up to its TTL — so a new SSR-cached page needs its entity's writes to
+ * bump before its list can be trusted. So a Control write
  * invalidates the dashboard SSR payload (control counts) AND the risks
  * page SSR payload (risk-coverage figures derived from controls) — the
  * right granularity for cross-entity SSR pages. The bump fires before the

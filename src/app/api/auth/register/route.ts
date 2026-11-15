@@ -19,6 +19,7 @@
  * `/api/auth/callback/credentials`.
  */
 import { cookies } from 'next/headers';
+import { Prisma, type Role } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { previewInviteByToken } from '@/app-layer/usecases/tenant-invites';
 import type { RegisterRefusal } from '@/lib/auth/register-refusals';
@@ -26,7 +27,7 @@ import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { hashForLookup } from '@/lib/security/encryption';
-import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { withValidatedBody } from '@/lib/validation/route';
 import { AuthActionSchema } from '@/lib/schemas';
 import { env } from '@/env';
@@ -76,6 +77,27 @@ const POLICY_REFUSAL = {
     too_short: 'PASSWORD_TOO_SHORT',
     too_long: 'PASSWORD_TOO_LONG',
 } as const satisfies Record<string, RegisterRefusal>;
+
+/**
+ * The unique violation a racing duplicate registration loses on: the
+ * user's `emailHash` (GAP-21), the column the `existing` check reads.
+ */
+function isEmailHashUniqueViolation(err: unknown): boolean {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false;
+    // The pg driver adapter names the index and its fields; the classic
+    // engine names the columns in `target`. Anything else is not recognised
+    // and stays a 500, rather than being reported as a clash it may not be.
+    const meta = err.meta as
+        | { target?: unknown; driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } } }
+        | undefined;
+    const constraint = meta?.driverAdapterError?.cause?.constraint;
+    const names: unknown[] = [
+        constraint?.index,
+        ...(Array.isArray(constraint?.fields) ? constraint.fields : []),
+        ...(Array.isArray(meta?.target) ? meta.target : [meta?.target]),
+    ];
+    return names.some((n) => typeof n === 'string' && n.includes('emailHash'));
+}
 
 /** Every refusal carries its code beside the English sentence (#4686). */
 function refuse(code: RegisterRefusal, error: string, status = 400) {
@@ -145,9 +167,19 @@ async function handleRegister(body: { email: string; password: string; name: str
         if (!invite.matchesSession) {
             return refuse('INVITE_EMAIL_MISMATCH', 'Register with the email address the invitation was sent to.');
         }
-        const user = await prisma.user.create({
-            data: { email, emailHash: hashForLookup(email), passwordHash: await hashPassword(password), name },
-        });
+        const invitedPasswordHash = await hashPassword(password);
+        let user: { id: string; email: string; name: string | null };
+        try {
+            user = await prisma.user.create({
+                data: { email, emailHash: hashForLookup(email), passwordHash: invitedPasswordHash, name },
+            });
+        } catch (err) {
+            // A racing duplicate passed the `existing` check above (#5303).
+            if (isEmailHashUniqueViolation(err)) {
+                return refuse('EMAIL_ALREADY_REGISTERED', 'Email already registered', 409);
+            }
+            throw err;
+        }
         recordUserSignup({ signupSource: 'credentials' });
         await issueEmailVerification(email, { userId: user.id }).catch(() => undefined);
         return jsonResponse({
@@ -159,42 +191,67 @@ async function handleRegister(body: { email: string; password: string; name: str
         });
     }
 
-    // Create tenant (Epic B.2: with a wrapped per-tenant DEK primed
-    // into the manager's cache — no unwrap round-trip on first use).
+    // Tenant, user and OWNER membership are ONE transaction (#5303). They
+    // used to be three statements, tenant first: a racing duplicate
+    // registration (a double-submitted form) passed the `existing` check
+    // above, lost on the user's `emailHash` unique, and left its tenant —
+    // with a wrapped DEK and no member at all — behind for good, as did any
+    // other failure after the tenant insert. Now the loser rolls back whole
+    // and is told the email is registered. The DEK is wrapped as
+    // `createTenantWithDek` wraps it (Epic B.2), inside the transaction, as
+    // `createTenantUnderOrg` does; its first use unwraps it.
     const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
-    const tenant = await createTenantWithDek({
-        name: orgName,
-        slug,
-    });
-
-    // Create user (no role/tenantId — membership is sole authority)
+    // Hashed before the transaction opens: a slow hash must not hold it.
     const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-        data: {
-            email,
-            emailHash: hashForLookup(email),
-            passwordHash,
-            name,
-        },
-    });
+    let created: {
+        tenant: { id: string; name: string; slug: string };
+        user: { id: string; email: string; name: string | null };
+        membership: { role: Role };
+    };
+    try {
+        created = await prisma.$transaction(async (tx) => {
+            const { wrapped } = generateAndWrapDek();
+            const tenant = await tx.tenant.create({
+                data: { name: orgName, slug, encryptedDek: wrapped },
+                select: { id: true, name: true, slug: true },
+            });
 
-    // Create TenantMembership (sole source of role + tenant binding)
-    const membership = await prisma.tenantMembership.create({
-        data: {
-            tenantId: tenant.id,
-            userId: user.id,
-            // OWNER, not ADMIN. OWNER is strictly superior: it alone carries
-            // admin.tenant_lifecycle (delete tenant, rotate DEK, transfer
-            // ownership) and admin.owner_management (invite/remove OWNERs).
-            // Creating the tenant's first member as ADMIN left every
-            // self-service tenant with ZERO owners, so those two capability
-            // sets were permanently unreachable for it — it could never
-            // delete itself, rotate its own key, or hand ownership on.
-            // createTenantWithOwner (the platform-admin path) has always
-            // made this member an OWNER; this path had drifted.
-            role: 'OWNER',
-        },
-    });
+            // Create user (no role/tenantId — membership is sole authority)
+            const user = await tx.user.create({
+                data: {
+                    email,
+                    emailHash: hashForLookup(email),
+                    passwordHash,
+                    name,
+                },
+            });
+
+            // Create TenantMembership (sole source of role + tenant binding)
+            const membership = await tx.tenantMembership.create({
+                data: {
+                    tenantId: tenant.id,
+                    userId: user.id,
+                    // OWNER, not ADMIN. OWNER is strictly superior: it alone carries
+                    // admin.tenant_lifecycle (delete tenant, rotate DEK, transfer
+                    // ownership) and admin.owner_management (invite/remove OWNERs).
+                    // Creating the tenant's first member as ADMIN left every
+                    // self-service tenant with ZERO owners, so those two capability
+                    // sets were permanently unreachable for it — it could never
+                    // delete itself, rotate its own key, or hand ownership on.
+                    // createTenantWithOwner (the platform-admin path) has always
+                    // made this member an OWNER; this path had drifted.
+                    role: 'OWNER',
+                },
+            });
+            return { tenant, user, membership };
+        });
+    } catch (err) {
+        if (isEmailHashUniqueViolation(err)) {
+            return refuse('EMAIL_ALREADY_REGISTERED', 'Email already registered', 409);
+        }
+        throw err;
+    }
+    const { tenant, user, membership } = created;
 
     // Business KPIs — credentials self-service signup creates BOTH a
     // tenant (always FREE on this path) and its first user.

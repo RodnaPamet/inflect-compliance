@@ -102,12 +102,12 @@ export async function getFrameworkTree(
     // on this framework's own requirement ids alone decorated every node as
     // uncovered for such a tenant — while `computeCoverage` reported a
     // percentage for the same tenant off the same links. `control.id` is
-    // selected because the collapse keys the dedupe on it. That dedupe cannot
-    // change THIS surface's verdict today — the decorator below reads
-    // `Control.applicability`, the global column, so two links for one control
-    // carry identical values — which is precisely why it is the seam's job and
-    // not this file's assumption. See
-    // `services/framework-representation-aliases.ts`.
+    // selected because the collapse keys the dedupe on it, and the dedupe now
+    // decides this surface's verdict: the decorator reads the link's
+    // per-framework `applicability` override first and the control's global
+    // column only when the link inherits (#5317) — as the SoA, coverage and
+    // the readiness report do — and the collapse keeps the own-framework
+    // link's override on a tie. See `services/framework-representation-aliases.ts`.
     //
     // A framework with several packs is scoped to the packs this workspace
     // chose, as `computeCoverage` is (`pack-scope.ts`): its other requirements
@@ -123,6 +123,7 @@ export async function getFrameworkTree(
                   where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds }, control: { deletedAt: null } },
                   select: {
                       requirementId: true,
+                      applicability: true,
                       control: { select: { id: true, status: true, applicability: true } },
                   },
               });
@@ -139,7 +140,8 @@ export async function getFrameworkTree(
         const list = controlsByReqId.get(l.requirementId) ?? [];
         list.push({
             status: l.control.status,
-            applicability: l.control.applicability,
+            // The per-framework override wins; NULL inherits the global column.
+            applicability: l.applicability ?? l.control.applicability,
         });
         controlsByReqId.set(l.requirementId, list);
     }

@@ -134,6 +134,9 @@ export default function ConnectionOutcomePage() {
     };
 
     const providerId = connection?.provider ?? rows[0]?.provider ?? null;
+    // What the legacy cards decide from (#5313): `undefined` while loading,
+    // `null` when the read failed, else the connection's own provider.
+    const connectionProvider = loading ? undefined : error ? null : (connection?.provider ?? null);
     // The provider's translated name, as the Integrations page shows it — not
     // the id (`mcp-server`) in the page title (#4466).
     const provider = providerId && LABELLED_PROVIDERS.has(providerId)
@@ -243,7 +246,10 @@ export default function ConnectionOutcomePage() {
               * from the connection's PROVIDER rather than from whether it happens
               * to carry an endpoint, so every other provider's page is unchanged.
               */}
-            <LegacyAccessMappingCard connectionId={connectionId} />
+            <LegacyAccessMappingCard
+                connectionId={connectionId}
+                provider={connectionProvider}
+            />
 
             {/*
               * Reading the accounts and matching them to people, for a
@@ -253,6 +259,7 @@ export default function ConnectionOutcomePage() {
               */}
             <LegacyAccessRunsCard
                 connectionId={connectionId}
+                provider={connectionProvider}
                 runs={rows}
                 runsLoading={loading}
                 runsError={error}

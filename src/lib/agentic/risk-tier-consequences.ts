@@ -2,11 +2,12 @@
  * What a scored `AgentRiskTier` MAKES TRUE elsewhere in the product.
  *
  * The autonomy cap (`MAX_AUTONOMY_BY_TIER`, in `agent-risk-scoring.ts`) is the
- * consequence that is already wired, at the MCP tool boundary. Two more are
- * declared here because their consumers do not exist yet, and a consequence
- * that waits to be invented alongside its consumer is a consequence that gets
+ * consequence wired at the MCP tool boundary. Two more are declared here. They
+ * were declared before their consumers existed, because a consequence that
+ * waits to be invented alongside its consumer is a consequence that gets
  * invented differently — which is how "the assessment says HIGH" ends up
- * meaning one thing on the approval queue and another on the policy card.
+ * meaning one thing on the approval queue and another on the policy card. Both
+ * consumers now exist (see below), and both read these functions.
  *
  * ## The house style for an unbuilt seam, copied from 2/10
  *
@@ -17,8 +18,11 @@
  * could only be undone by deleting a line.
  *
  * Both functions below follow that exactly. `defaultPolicyCardForRiskTier` was
- * wired by 5/10 and is now the seeding of every policy card;
- * `reviewRequirementForRiskTier` still waits for 8/10. Both resolve an UNSCORED
+ * wired by 5/10 and is the seeding of every policy card;
+ * `reviewRequirementForRiskTier` was wired by 8/10 and is the RISK_TIER term of
+ * `resolveApprovalRequirement` (`approval-tiering.ts`), which decides how many
+ * people must approve a live proposal. Changing its threshold or its fail
+ * direction changes the approvals real proposals need. Both resolve an UNSCORED
  * or UNKNOWN tier to the STRICTEST answer they can express, so a caller that
  * forgets to handle the null gets the safe result rather than the convenient
  * one.
@@ -74,11 +78,14 @@ export interface AgentReviewRequirement {
 /**
  * ── SEAM (Agentic 8/10) — APPROVER TIERING. ─────────────────────────
  *
- * 8/10 builds the human review queue over `AgentProposal`. When it does, THIS
- * is the function that decides how many people have to sign, and the queue must
- * read it rather than growing a second opinion about what HIGH means.
+ * The human review queue over `AgentProposal` reads THIS for the tier's say in
+ * how many people have to sign, rather than growing a second opinion about what
+ * HIGH means.
  *
- * Wired by: 8/10, at the proposal-approval usecase. Nothing calls it today.
+ * Wired by 8/10: `resolveApprovalRequirement` in `approval-tiering.ts` calls it
+ * as its RISK_TIER term, and the proposal usecases (`agent-proposals.ts`) apply
+ * the strictest of that function's terms to every proposal. A change here is a
+ * change to how many approvers live proposals need, never a no-op.
  *
  * Fails CLOSED: an unscored agent (NULL) — and any tier this build does not
  * recognise — requires two approvers and can never be auto-approved. An

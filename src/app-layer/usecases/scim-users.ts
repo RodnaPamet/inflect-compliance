@@ -49,6 +49,7 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hashEmailForLog } from '@/lib/auth/security-events';
 import { parseScimEqFilter } from '@/lib/scim/filter';
 import { ScimForbiddenError, type ScimContext } from '@/lib/scim/auth';
 import {
@@ -323,12 +324,17 @@ export async function scimCreateUser(
     const { role, blocked, requestedRole } = resolveScimRole(roleInput);
 
     if (blocked) {
+        // A hash of the address, never the address (#5318): these lines go to
+        // the shared operational logs, where nothing redacts them. The
+        // tenant-scoped audit row keeps the values.
         logger.warn('SCIM role mapping blocked', {
-            component: 'scim', requestedRole, assignedRole: role, email,
+            component: 'scim', requestedRole, assignedRole: role, identifierHash: hashEmailForLog(email),
         });
     }
 
-    logger.info('SCIM create user', { component: 'scim', email, tenantId: ctx.tenantId, role });
+    logger.info('SCIM create user', {
+        component: 'scim', identifierHash: hashEmailForLog(email), tenantId: ctx.tenantId, role,
+    });
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -603,8 +609,10 @@ export async function scimPatchUser(
         tokenLabel: ctx.tokenLabel,
     });
 
+    // Attribute NAMES only (#5318): `changes` carries the values, a person's
+    // display, given and family name among them, and stays in the audit row.
     logger.info('SCIM patched user', {
-        component: 'scim', userId, changes,
+        component: 'scim', userId, changedAttributes: changes.map((c) => c.split('=')[0]),
     });
 
     return scimGetUser(ctx, userId, baseUrl);

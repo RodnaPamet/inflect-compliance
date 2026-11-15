@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { AppIcon } from '@/components/icons/AppIcon';
 import useSWR, { useSWRConfig } from 'swr';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
 import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -181,7 +182,12 @@ export default function TraceabilityPanel({ apiBase: apiBaseRaw, entityType, ent
         entityId && tenantSlug ? traceUrl : null,
         async (url: string) => {
             const res = await fetch(url);
-            if (!res.ok) return null;
+            if (!res.ok) {
+                // The empty fallback carries no status for the SWR 401 seam
+                // to read, so a lapsed session is reported here (#5313).
+                noteUnauthorized(res.status, url);
+                return null;
+            }
             return res.json();
         },
     );

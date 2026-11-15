@@ -132,6 +132,10 @@ export const TASK_SEVERITY_VARIANT: Record<string, StatusBadgeVariant> = {
 export const POLICY_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
     DRAFT: 'neutral',
     IN_REVIEW: 'info',
+    // Approved but not yet published (#5305). Absent, it fell to the detail
+    // page's neutral default and read like a DRAFT; `success`, as the policy
+    // list's own badge map has it.
+    APPROVED: 'success',
     PUBLISHED: 'success',
     ARCHIVED: 'warning',
 };

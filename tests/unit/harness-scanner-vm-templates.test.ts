@@ -4,16 +4,17 @@
  * beside it, and the egress allowlist the overlay confines it to.
  *
  * Since scanent #26 the VM runs scanent's image (`ghcr.io/rodnapamet/scanent`,
- * pinned by digest in deploy/docker-compose.harness-scanner.yml), not this
- * repository's `packages/agent-harness-scanner`, so these templates are
- * scanent's configuration and are no longer parsed with that package's code.
+ * pinned by digest in deploy/docker-compose.harness-scanner.yml), not the
+ * in-repo `packages/agent-harness-scanner`, which was then removed (2026-11-15),
+ * so these templates are scanent's configuration and are no longer parsed with
+ * that package's code.
  * scanent's parser is not a dependency of this repository (only its contract
  * package is). Two checks therefore stand where the parse stood:
  *
  *  - HERE, the properties a template can quietly lose: it stays credential
  *    free by the contract's own `looksLikeSecret` (the rule scanent's parser
- *    applies before its schema), it names the four pilot sources and the one
- *    output, the environment file names exactly its variables, and the
+ *    applies before its schema), it names the pilot's six sources (four for
+ *    the agent report, two for the integrations report) and the one output, the environment file names exactly its variables, and the
  *    allowlist is exactly the hosts those sources and the ingest reach.
  *  - ON THE VM, before anything is installed, `remote.sh configure` has the
  *    PINNED image parse the staged configuration and print its hosts
@@ -33,7 +34,7 @@ const DIR = path.resolve(__dirname, '../../deploy/harness-scanner');
 
 type PilotConfig = {
     scanner: { agentId: string; signingKeyEnv: string };
-    inflect: { baseUrl: string; tenantSlug: string; apiKeyEnv: string };
+    inflect: { baseUrl: string; tenantSlug: string; apiKeyEnv: string; integrationsApiKeyEnv?: string };
     outputs?: Array<{ kind: string }>;
     egress?: { proxyUrl: string; canaryHost: string };
     sources: Array<{ kind: string } & Record<string, unknown>>;
@@ -43,7 +44,7 @@ const config = (): PilotConfig => raw() as PilotConfig;
 
 /**
  * The hosts scanent fixes for each source kind the pilot reads, as its
- * `packages/scanner/src/hosts.ts` derives them (0.15.0). The Inflect origin
+ * `packages/scanner/src/hosts.ts` derives them (0.16.0). The Inflect origin
  * comes from the configuration. A kind not listed here fails the test that
  * reads this table rather than contributing no host.
  */
@@ -51,6 +52,8 @@ const SCANENT_FIXED_HOSTS: Readonly<Record<string, readonly string[]>> = {
     'entra-sp': ['login.microsoftonline.com', 'graph.microsoft.com'],
     cicd: ['api.github.com'],
     'gcp-sa': ['oauth2.googleapis.com', 'iam.googleapis.com'],
+    'entra-integrations': ['login.microsoftonline.com', 'graph.microsoft.com'],
+    'github-integrations': ['api.github.com'],
     // Read from the configuration's own `inflect.baseUrl`.
     'inflect-register': [],
 };
@@ -103,14 +106,32 @@ describe('the pilot configuration template', () => {
         expect(names.filter((n) => !/^[A-Z][A-Z0-9_]{0,63}$/.test(n))).toEqual([]);
     });
 
-    it('reads the pilot estate\'s four sources and no other', () => {
+    it('reads the pilot estate\'s six sources and no other', () => {
         // Roadmap decision 10, and #3785 for gcp-sa. Vault, Okta and runtime are
         // not in the pilot, and a code root would need a checkout on the VM.
         // The `mcp` source left on 2026-11-08 (#5004 part C, owner decision):
         // its one server was Inflect's own `/api/mcp`, listed for no agent, and
         // the register source already reads that endpoint on a tool-scoped
         // token, where the raw key it read with is now refused.
-        expect(config().sources.map((s) => s.kind).sort()).toEqual(['cicd', 'entra-sp', 'gcp-sa', 'inflect-register'].sort());
+        expect(config().sources.map((s) => s.kind).sort()).toEqual(['cicd', 'entra-integrations', 'entra-sp', 'gcp-sa', 'github-integrations', 'inflect-register']);
+    });
+
+    it('posts the integrations report on a key of its own, not the agent report\'s', () => {
+        // Owner decision 2026-11-14: a key minted for one report does not post
+        // the other. scanent refuses the same variable for both.
+        const c = config();
+        expect(c.inflect.integrationsApiKeyEnv).toBe('INFLECT_INTEGRATIONS_KEY');
+        expect(c.inflect.integrationsApiKeyEnv).not.toBe(c.inflect.apiKeyEnv);
+    });
+
+    it('reads the integrations sources from the agent sources\' own directory and with no sign-in read', () => {
+        // The Entra integrations source shares the entra-sp application and its
+        // secret; stage-config.sh fills both from the same two ids. Sign-in
+        // activity needs AuditLog.Read.All, which the pilot does not grant.
+        const byKind = Object.fromEntries(config().sources.map((s) => [s.kind, s]));
+        expect(byKind['entra-integrations'].clientSecretEnv).toBe(byKind['entra-sp'].clientSecretEnv);
+        expect(byKind['entra-integrations'].readSignInActivity).toBe(false);
+        expect(byKind['github-integrations'].tokenEnv).not.toBe(byKind.cicd.tokenEnv);
     });
 
     it('delivers to the tenant\'s ingest and nowhere else', () => {

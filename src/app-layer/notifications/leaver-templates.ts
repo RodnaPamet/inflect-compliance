@@ -38,6 +38,7 @@
  * @module notifications/leaver-templates
  */
 import type { EmailTemplateResult } from './templates';
+import { appLink } from './app-link';
 
 /** Who is reading. The two audiences get materially different bodies. */
 export type LeaverAudience = 'IT' | 'MANAGER';
@@ -97,9 +98,14 @@ export interface IdentityLeaverNeedsActionPayload extends LeaverPayloadBase {
     journalRef: string | null;
 }
 
-/** Where an operator can see the account's current synced state. */
+/**
+ * Where an operator can see the account's current synced state.
+ *
+ * Absolute, through `appLink` (#4130, #5305): a relative href in an email
+ * resolves against nothing in the mail client, so the link did not open.
+ */
 function rosterLink(tenantSlug: string | null): string | null {
-    return tenantSlug ? `/t/${tenantSlug}/admin/integrations/identity-accounts` : null;
+    return tenantSlug ? appLink(`/t/${tenantSlug}/admin/integrations/identity-accounts`) : null;
 }
 
 /**

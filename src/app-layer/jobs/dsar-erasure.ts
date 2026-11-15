@@ -40,6 +40,7 @@ import {
     buildErasureRecordDetails,
 } from '@/lib/audit/erasure-record';
 import type { ErasureRecordRow } from '@/lib/audit/erasure-record';
+import { ConflictError } from '@/lib/errors/types';
 
 /** Hours that must elapse after VERIFIED before erasure may fire. */
 export const COOLING_OFF_HOURS = DSAR_COOLING_OFF_HOURS;
@@ -139,6 +140,36 @@ export interface ErasureReceipt {
 }
 
 /**
+ * The erasure was refused BEFORE anything was written, because the plan found
+ * references that refuse the hard delete (#5595). Nothing was pseudonymized,
+ * no erasure record was appended, and the subject still exists.
+ *
+ * A `ConflictError` (409): the request is well-formed and the subject exists,
+ * but the state of other records forbids it. `blockers` carries each
+ * reference with its `reason`, so a caller can tell a row it may resolve
+ * (`RESTRICT_REFERENCE`) from a record the product keeps naming this person
+ * (`IMMUTABLE_AUDIT_TRAIL`, `STAMPED_DECISION_ACTOR`).
+ */
+export class ErasureBlockedError extends ConflictError {
+    readonly userId: string;
+    readonly blockers: readonly ErasureReference[];
+
+    constructor(userId: string, blockers: readonly ErasureReference[]) {
+        const named = blockers
+            .map((b) => `${b.table}.${b.column} (${b.rows} row(s), ${b.reason ?? 'RESTRICT_REFERENCE'})`)
+            .join(', ');
+        super(
+            `dsar-erasure: refusing to erase ${JSON.stringify(userId)}: ${blockers.length} reference(s) `
+                + `refuse the hard delete — ${named}. Nothing was written.`,
+            { userId, blockers },
+        );
+        this.name = 'ErasureBlockedError';
+        this.userId = userId;
+        this.blockers = blockers;
+    }
+}
+
+/**
  * Prisma error codes for "a reference refuses this delete".
  *
  * P2003 is the FK-constraint failure Postgres raises for ON DELETE RESTRICT /
@@ -186,11 +217,19 @@ function isReferenceRefusal(error: unknown): boolean {
  * a gate that is off by default is worse than an absent one. A caller that
  * cannot show the window elapsed must not call this.
  *
- * IT DOES NOT CHECK THE SESSION'S ROLE. `planErasure` does, because it is a
- * READ whose partial view would produce a confidently wrong answer; here the
- * database is the enforcement point and it is not silent — `app_user` has
- * UPDATE on "AuditLog" revoked, so an erasure mistakenly run on a tenant-path
- * connection fails loudly on privilege rather than half-succeeding.
+ * IT CHECKS THE SESSION'S ROLE ONLY THROUGH `planErasure` (#5595), which it
+ * runs first and which refuses a view RLS has narrowed. That refusal is about
+ * the READ — a narrowed plan would miss blockers. The write side has its own
+ * loud enforcement anyway: `app_user` has UPDATE on "AuditLog" revoked.
+ *
+ * ── IT REFUSES UP FRONT WHEN THE PLAN HAS BLOCKERS (#5595) ─────────
+ *
+ * Before writing anything it runs `planErasure` on the same transaction and
+ * throws `ErasureBlockedError` if any reference would refuse the hard delete
+ * — in particular the immutable `OrgAuditLog` and the stamped decisions in
+ * `IMMUTABLE_USER_REFERENCES` (owner decision 2026-11-14: refuse up front,
+ * leave the audit chain untouched). Nothing is pseudonymized, no erasure
+ * record is appended.
  *
  * IT DOES NOT DECIDE WHETHER THE ERASURE IS ALLOWED. `evaluateDsarRejection`
  * (`src/lib/dsar.ts`) owns LAST_OWNER / OUTSTANDING_BALANCE / LEGAL_HOLD.
@@ -199,8 +238,9 @@ function isReferenceRefusal(error: unknown): boolean {
  *
  * The pseudonymization and the hard delete are ONE transaction. Several
  * `User`-referencing FKs are `ON DELETE RESTRICT`, so the delete genuinely
- * can be refused (that is the question `planErasure` answers per subject). If
- * it is, the pseudonymization must go back too — because it cannot be undone
+ * can be refused. The up-front plan catches the ordinary case before any
+ * write; a blocking row committed after that read is still refused by the
+ * FK at the delete. If it is, the pseudonymization must go back too — because it cannot be undone
  * afterwards: the trigger permits `userId` value -> NULL and nothing else, so
  * a half-run erasure would leave the trail permanently de-attributed for a
  * user who still exists, with no statement that could restore it. All or
@@ -389,6 +429,24 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
             );
         }
 
+        // ── REFUSE UP FRONT (#5595) ────────────────────────────────
+        //
+        // The plan, read through THIS transaction, before the first write.
+        // Owner decision 2026-11-14: a subject the immutable audit tables or
+        // a stamped decision still name is refused cleanly rather than
+        // pseudonymized and then rolled back when the delete fails — and the
+        // same answer covers every other RESTRICT reference, because "the
+        // plan said it would succeed" must mean the delete does.
+        //
+        // The RESTRICT FKs remain the enforcement. A blocking row committed
+        // after this read still refuses the delete below, and the whole
+        // transaction rolls back as before; this check is what makes the
+        // ordinary case a refusal with nothing written and a named reason.
+        const plan = await planErasure(userId, { db: tx });
+        if (plan.blockers.length > 0) {
+            throw new ErasureBlockedError(userId, plan.blockers);
+        }
+
         // ── PSEUDONYMIZE ───────────────────────────────────────────
         //
         // `where` carries the subject id and nothing else: the trigger grades
@@ -502,8 +560,9 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
 //
 // `eraseUser` executes now. That does NOT make this redundant: it answers,
 // before anything irreversible is attempted, which references would refuse the
-// hard delete — the question `eraseUser` can otherwise only answer by trying
-// it and rolling back. Nothing calls either of them yet.
+// hard delete — and since #5595 `eraseUser` asks it first, inside its own
+// transaction, and refuses when it lists any blocker. Nothing outside this
+// module calls either of them yet.
 //
 // WHY IT READS THE CATALOG RATHER THAN THE PRISMA SCHEMA. The question this
 // answers — "which FKs would refuse the Stage 2 hard-delete" — must be
@@ -519,6 +578,62 @@ export type FkDeleteAction = 'CASCADE' | 'RESTRICT' | 'SET NULL' | 'SET DEFAULT'
 const DELETE_ACTION: Record<string, FkDeleteAction> = {
     c: 'CASCADE', r: 'RESTRICT', n: 'SET NULL', d: 'SET DEFAULT', a: 'NO ACTION',
 };
+
+/**
+ * Why a reference refuses the hard delete. Named so an operator reading a
+ * refused plan knows whether "resolve the blockers first" is something they
+ * can do (`RESTRICT_REFERENCE`: reassign or remove the row) or something the
+ * product deliberately will not let them do (the other two: the row is a
+ * record that must keep naming this person).
+ */
+export type ErasureBlockReason =
+    /**
+     * The hash-chained, append-only org audit trail names the subject. Its
+     * trigger refuses every UPDATE and both user columns are hashed into the
+     * chain. Erasing this person needs a pseudonymisation feature that is not
+     * built (owner decision, #5595, 2026-11-14).
+     */
+    | 'IMMUTABLE_AUDIT_TRAIL'
+    /**
+     * A stamped decision (an access-review verdict or execution, a control
+     * exception's approval or rejection, a treatment plan's or milestone's
+     * completion) names the subject as its actor, and a pair CHECK or a
+     * one-way trigger requires that actor to stay set once stamped.
+     */
+    | 'STAMPED_DECISION_ACTOR'
+    /** Any other `ON DELETE RESTRICT` / `NO ACTION` reference. */
+    | 'RESTRICT_REFERENCE';
+
+/**
+ * The references into `User` from immutable or stamped records, keyed
+ * `Table.column`. Since migration
+ * 20261114140000_dsar_erasure_audit_references_restrict every one of them is
+ * `ON DELETE RESTRICT`, so the catalog alone would already report them as
+ * blockers. They are named here as well for two reasons:
+ *
+ *   1. THE REASON. A bare RESTRICT says "something points at this subject";
+ *      these say why it must keep pointing.
+ *   2. THE PLAN MUST MATCH THE DELETE EVEN WHERE THE MIGRATION HAS NOT RUN.
+ *      On a database that still declares one of these SET NULL (an image
+ *      newer than its schema, a restore), the delete still fails — on the
+ *      trigger or the CHECK, part-way through — so a SET NULL edge here is a
+ *      blocker too. Counting it as `ATTRIBUTION_ANONYMIZED` was #5595.
+ *
+ * `AuditLog.userId` is deliberately NOT here: its trigger permits exactly the
+ * value -> NULL shape (20260917130000) and `eraseUser` pseudonymizes it
+ * explicitly, with an ERASURE_EXECUTED record, before the delete.
+ */
+export const IMMUTABLE_USER_REFERENCES: Readonly<Record<string, ErasureBlockReason>> = Object.freeze({
+    'OrgAuditLog.actorUserId': 'IMMUTABLE_AUDIT_TRAIL',
+    'OrgAuditLog.targetUserId': 'IMMUTABLE_AUDIT_TRAIL',
+    'AccessReviewConnectedDecision.decidedByUserId': 'STAMPED_DECISION_ACTOR',
+    'AccessReviewDecision.decidedByUserId': 'STAMPED_DECISION_ACTOR',
+    'AccessReviewDecision.executedByUserId': 'STAMPED_DECISION_ACTOR',
+    'ControlException.approvedByUserId': 'STAMPED_DECISION_ACTOR',
+    'ControlException.rejectedByUserId': 'STAMPED_DECISION_ACTOR',
+    'RiskTreatmentPlan.completedByUserId': 'STAMPED_DECISION_ACTOR',
+    'TreatmentMilestone.completedByUserId': 'STAMPED_DECISION_ACTOR',
+});
 
 export type ReferenceEffect =
     /** Goes with the User row automatically. */
@@ -536,6 +651,8 @@ export interface ErasureReference {
     onDelete: FkDeleteAction;
     rows: number;
     effect: ReferenceEffect;
+    /** Set exactly when `effect` is `BLOCKS_DELETE`. */
+    reason: ErasureBlockReason | null;
 }
 
 export interface ErasurePlan {
@@ -669,15 +786,24 @@ export async function planErasure(userId: string, options: { db: ErasurePlanDb }
             userId,
         );
         const rows = Number(counted[0]?.n ?? 0);
+        // Checked BEFORE the delete action (#5595): a reference from an
+        // immutable or stamped record refuses the delete whatever the
+        // catalog's action says — as RESTRICT it refuses up front, as a
+        // leftover SET NULL it fails on the trigger or the CHECK part-way.
+        const immutable = IMMUTABLE_USER_REFERENCES[`${fk.table_name}.${fk.column_name}`];
         const effect: ReferenceEffect =
             rows === 0
                 ? 'NO_ROWS'
-                : onDelete === 'CASCADE'
-                  ? 'DELETED_WITH_USER'
-                  : onDelete === 'SET NULL' || onDelete === 'SET DEFAULT'
-                    ? 'ATTRIBUTION_ANONYMIZED'
-                    : 'BLOCKS_DELETE';
-        references.push({ table: fk.table_name, column: fk.column_name, onDelete, rows, effect });
+                : immutable
+                  ? 'BLOCKS_DELETE'
+                  : onDelete === 'CASCADE'
+                    ? 'DELETED_WITH_USER'
+                    : onDelete === 'SET NULL' || onDelete === 'SET DEFAULT'
+                      ? 'ATTRIBUTION_ANONYMIZED'
+                      : 'BLOCKS_DELETE';
+        const reason: ErasureBlockReason | null =
+            effect === 'BLOCKS_DELETE' ? (immutable ?? 'RESTRICT_REFERENCE') : null;
+        references.push({ table: fk.table_name, column: fk.column_name, onDelete, rows, effect, reason });
     }
 
     const audit = references.find((r) => r.table === 'AuditLog');

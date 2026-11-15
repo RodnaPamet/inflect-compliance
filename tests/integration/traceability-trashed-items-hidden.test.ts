@@ -174,4 +174,19 @@ describeFn('traceability lists hide items in the trash (real DB)', () => {
         expect(hotIds).not.toContain(id.trashedControl);
         expect(summary.hotControls.every((h) => typeof (h as { name?: string }).name === 'string')).toBe(true);
     });
+
+    // The asset numerator is drawn from the denominator's own population
+    // (#5318): ACTIVE and out of the trash. A RETIRED asset's control links
+    // used to count, so coverage could exceed 100%.
+    it('the coverage dashboard counts only ACTIVE assets as covered', async () => {
+        const retired = await prisma.asset.create({
+            data: { tenantId: A, name: `${SUITE} retired asset`, type: 'SYSTEM', status: 'RETIRED' },
+        });
+        await prisma.controlAsset.create({ data: { tenantId: A, controlId: id.liveControl, assetId: retired.id } });
+
+        const summary = await coverageSummary(ctx);
+        expect(summary.totalAssets).toBe(2);
+        expect(summary.assetsWithControlsCount).toBe(2);
+        expect(summary.assetsWithControlsPct).toBe(100);
+    });
 });

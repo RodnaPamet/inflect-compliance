@@ -801,7 +801,21 @@ export function ParameterSetsClient({
                                     selected={
                                         connectionOptions.find((o) => o.value === connectionId) ?? null
                                     }
-                                    setSelected={(o) => o && setConnectionId(String(o.value))}
+                                    setSelected={(o) => {
+                                        if (!o) return;
+                                        const next = String(o.value);
+                                        if (next === connectionId) return;
+                                        setConnectionId(next);
+                                        // The new-baseline form belongs to ONE
+                                        // connection's tools (#5313): a tool
+                                        // left over from the last connection
+                                        // would be saved as an unreviewed
+                                        // baseline for it, out of sight of the
+                                        // list now filtered to this one.
+                                        setNewToolName('');
+                                        setCreateProblems([]);
+                                        setCreateError(null);
+                                    }}
                                 />
                             </FormField>
                         </div>

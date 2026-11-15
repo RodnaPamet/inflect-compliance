@@ -90,6 +90,29 @@ describeFn('org-maturity + org-threat-level — branch coverage (integration)', 
             .rejects.toThrow(/admin/i);
     });
 
+    it('org-maturity trend seeds each domain with its rating before the window (#5318)', async () => {
+        const ctx = orgCtx();
+        // Isolated from the earlier test's ratings by dating these well
+        // outside them: six domains at REPEATABLE fourteen months ago.
+        await globalPrisma.orgMaturityRating.deleteMany({ where: { organizationId: ORG_ID } });
+        const old = new Date();
+        old.setMonth(old.getMonth() - 14);
+        await globalPrisma.orgMaturityRating.createMany({
+            data: ['GOVERN', 'IDENTIFY', 'PROTECT', 'DETECT', 'RESPOND', 'RECOVER'].map((domain) => ({
+                organizationId: ORG_ID, domain: domain as never, level: 'REPEATABLE' as never,
+                ratedByUserId: userId, ratedAt: old,
+            })),
+        });
+        await setOrgMaturityRating(ctx, { domain: 'GOVERN', level: 'OPTIMIZING' });
+
+        const current = await getCurrentOrgMaturity(ctx);
+        const trend = await getOrgMaturityTrend(ctx, 12);
+        expect(trend).toHaveLength(1);
+        // (5 + 2*5) / 6 = 2.5 — the same figure the current overall shows.
+        expect(trend[0].overall).toBe(2.5);
+        expect(trend[0].overall).toBe(current.overall);
+    });
+
     it('org-threat-level: default GUARDED, set (valid + invalid + empty summary), history, perm gates', async () => {
         const ctx = orgCtx();
         const d0 = await getCurrentOrgThreatLevel(ctx);

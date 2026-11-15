@@ -139,8 +139,10 @@ export async function loadAuditEvents(
                 title: `Audit: ${r.title}`,
                 entityName: r.title,
                 date: date.toISOString(),
-                // A completed audit has no scheduled start left to meet.
-                status: classifyStatus(date, now, r.status === 'COMPLETED'),
+                // A completed audit has no scheduled start left to meet, and
+                // neither has a cancelled one (#5317): its fieldwork will never
+                // happen, so it is never overdue.
+                status: classifyStatus(date, now, r.status === 'COMPLETED' || r.status === 'CANCELLED'),
                 entityType: 'AUDIT',
                 entityId: r.id,
                 // The hub is a master-detail page with a ?selected= deep link;

@@ -17,6 +17,9 @@
  * silent change to what somebody reads while being told their PR failed.
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
     attributionBody,
     failingTestFiles,
@@ -110,6 +113,69 @@ describe('verdictOf', () => {
         expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: [], logsReadable: true })).toBe('NO_FAIL_LINE');
     });
 
+    it('never says OUTSIDE_DIFF when the PR\'s files could not be listed (#5308)', () => {
+        // The workflow passes `changedFiles: null` when pulls.listFiles throws.
+        // An empty list there would read as "none of the failing suites is in
+        // the 0 file(s) this PR changes" — an exoneration built on a read that
+        // failed.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/integration/bowtie-api.test.ts'],
+            changedFiles: null,
+            logsReadable: true,
+        })).toBe('DIFF_UNREADABLE');
+        // Cancellation and the log verdicts still take precedence.
+        expect(verdictOf({ cancelled: true, failingFiles: ['tests/a.test.ts'], changedFiles: null, logsReadable: true })).toBe('CANCELLED');
+        expect(verdictOf({ cancelled: false, failingFiles: [], changedFiles: null, logsReadable: false })).toBe('UNREADABLE');
+    });
+
+    // #5630: the negative verdict needs EVERY log read. These sit before the
+    // case below, whose name claims "only when NO failing suite is in the
+    // diff" — true of the dimension it drove, and silent about this one.
+    it('refuses OUTSIDE_DIFF when some logs could not be read', () => {
+        // Two shards failed: one log unreadable, the other naming an
+        // out-of-diff suite. Saying "not this diff" here is an exoneration
+        // drawn from the half that was not read.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: false,
+        })).toBe('INCOMPLETE');
+    });
+
+    it('still says OUTSIDE_DIFF when every log WAS read', () => {
+        // The control: without it, a verdictOf that always answered
+        // INCOMPLETE would pass the case above.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: true,
+        })).toBe('OUTSIDE_DIFF');
+    });
+
+    it('still says IN_DIFF with unreadable logs — positive evidence is not weakened', () => {
+        // The asymmetry. An in-diff failure that WAS read is yours whatever
+        // else could not be fetched, and demoting it would bury the one
+        // actionable signal the comment exists to surface.
+        expect(verdictOf({
+            cancelled: false,
+            failingFiles: ['tests/unit/mine.test.ts', 'tests/unit/elsewhere.test.ts'],
+            changedFiles: ['tests/unit/mine.test.ts'],
+            logsReadable: false,
+        })).toBe('IN_DIFF');
+    });
+
+    it('a cancellation still wins over an incomplete read', () => {
+        expect(verdictOf({
+            cancelled: true,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: [],
+            logsReadable: false,
+        })).toBe('CANCELLED');
+    });
+
     it('says OUTSIDE_DIFF only when NO failing suite is in the diff', () => {
         expect(verdictOf({
             cancelled: false,
@@ -198,6 +264,23 @@ describe('attributionBody', () => {
         expect(body).not.toContain('outside this PR');
     });
 
+    it('never claims "not this diff" when a log could not be read (#5630)', () => {
+        const body = attributionBody({
+            ...base,
+            failingFiles: ['tests/unit/elsewhere.test.ts'],
+            changedFiles: ['docs/readme.md'],
+            logsReadable: false,
+        });
+        // The sentence that must not appear, asserted as an absence because it
+        // is the claim that misleads.
+        expect(body).not.toContain('Every failing suite is outside');
+        expect(body).not.toContain('not this diff');
+        expect(body).toContain('incomplete');
+        expect(body).toContain('not** evidence either way');
+        // It still names what it DID read, so the comment stays useful.
+        expect(body).toContain('tests/unit/elsewhere.test.ts');
+    });
+
     it('distinguishes unreadable logs from a clean log with no FAIL line', () => {
         const unreadable = attributionBody({ ...base, failingFiles: [], changedFiles: [], logsReadable: false });
         expect(unreadable).toContain("**The failed jobs' logs could not be read**");
@@ -206,6 +289,20 @@ describe('attributionBody', () => {
         const noFail = attributionBody({ ...base, failingFiles: [], changedFiles: [], logsReadable: true });
         expect(noFail).toContain('**No `FAIL <path>` line was found');
         expect(noFail).toContain('an OOM (exit 134), a setup step, or an infrastructure error');
+    });
+
+    it('says no comparison was possible when the PR\'s files could not be listed (#5308)', () => {
+        const body = attributionBody({
+            ...base,
+            failingFiles: ['tests/integration/bowtie-api.test.ts'],
+            changedFiles: null,
+        });
+        expect(body).toContain("**This PR's changed files could not be listed**, so no comparison against your diff was possible.");
+        expect(body).toContain('This is not evidence either way about your changes.');
+        expect(body).toContain('- `tests/integration/bowtie-api.test.ts`');
+        expect(body).not.toContain('outside this PR');
+        expect(body).not.toContain('file(s) this PR changes');
+        expect(body).not.toContain('not this diff');
     });
 
     it('reports jobs still running, because a candidate can be ejected before its siblings finish', () => {
@@ -231,6 +328,17 @@ describe('attributionBody', () => {
         const body = attributionBody({ ...base, failingFiles: many, changedFiles: [] });
         expect(body).toContain('- `tests/f9.test.ts`');
         expect(body).not.toContain('- `tests/f10.test.ts`');
+    });
+});
+
+describe('the workflow hands a failed file listing over as null (#5308)', () => {
+    it('starts changedFiles at null, so a pulls.listFiles throw cannot read as an empty diff', () => {
+        const yml = fs.readFileSync(
+            path.resolve(__dirname, '../../.github/workflows/queue-failure-attribution.yml'),
+            'utf8',
+        );
+        expect(yml).toContain('let changedFiles = null;');
+        expect(yml).not.toContain('let changedFiles = [];');
     });
 });
 

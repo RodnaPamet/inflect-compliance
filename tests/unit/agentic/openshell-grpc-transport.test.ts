@@ -423,6 +423,34 @@ describe('failure arms map onto this product error vocabulary', () => {
         ).rejects.toThrow(/sbx-6[\s\S]*after 5 byte/);
     });
 
+    it('a multi-byte character split across chunks survives decoding (#5304)', async () => {
+        // A gRPC chunk boundary can fall inside a UTF-8 character. Decoding
+        // each chunk on its own turned both halves into U+FFFD, so evidence
+        // naming a non-ASCII resource no longer matched the resource.
+        const text = '{"name":"Zürich-東京"}';
+        const bytes = Buffer.from(text, 'utf8');
+        const cut = bytes.indexOf(Buffer.from('東', 'utf8')) + 1;
+        const client = injected({
+            ExecSandbox: () =>
+                stubStream((s) => {
+                    s.data({ stdout: { data: bytes.subarray(0, cut) } });
+                    s.data({ stdout: { data: bytes.subarray(cut) } });
+                    s.data({ stderr: { data: Buffer.from('ü', 'utf8').subarray(0, 1) } });
+                    s.data({ stderr: { data: Buffer.from('ü', 'utf8').subarray(1) } });
+                    s.data({ exit: { exit_code: 0 } });
+                    s.end();
+                }),
+        });
+        const res = await t(client).execSandbox({
+            sandboxId: 'sbx-utf8',
+            file: 'x',
+            args: [],
+            signal: new AbortController().signal,
+        });
+        expect(res.stdout).toBe(text);
+        expect(res.stderr).toBe('ü');
+    });
+
     it('a signal aborted before the call cancels the stream at once (#5289)', async () => {
         // With no deadline on the stream, the signal is its only bound, and an
         // already-aborted signal never fires 'abort'.

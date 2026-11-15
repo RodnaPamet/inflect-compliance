@@ -49,6 +49,7 @@
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Xmark } from '@inflect/ui/components/ui/icons/nucleo/xmark';
 
 import { Button } from '@/components/ui/button';
@@ -199,6 +200,11 @@ export function CheckpointReviewPanel() {
 
     const rows = (data?.proposals ?? []).filter((p) => !decided.has(p.id));
 
+    /** The run's status by its label; a value this client does not know is shown as stored. */
+    function runStatusLabel(status: string): string {
+        return ta.has?.(`runs.status.${status}`) ? ta(`runs.status.${status}`) : status;
+    }
+
     /**
      * "Risk (new)": the kind and operation as labels, never as stored codes
      * (#5053). A value this client does not know is shown as stored.
@@ -233,7 +239,7 @@ export function CheckpointReviewPanel() {
                         >
                             {tp('checkpoint.subtitle', {
                                 workflowKey: data.workflowKey,
-                                status: data.status,
+                                status: runStatusLabel(data.status),
                             })}
                         </span>
                     ) : null}
@@ -287,7 +293,7 @@ export function CheckpointReviewPanel() {
                         discovered. */}
                     {data?.approvalExpiresAt ? (
                         <p className="text-xs text-content-subtle" data-testid="checkpoint-window">
-                            {tp('checkpoint.windowCloses', { at: data.approvalExpiresAt })}
+                            {tp('checkpoint.windowCloses', { at: formatDateTime(data.approvalExpiresAt) })}
                         </p>
                     ) : null}
 
@@ -303,7 +309,7 @@ export function CheckpointReviewPanel() {
                             <p className="text-sm text-content-muted">
                                 {data.awaitingHuman
                                     ? tp('checkpoint.noneAwaiting')
-                                    : tp('checkpoint.noneSettled', { status: data.status })}
+                                    : tp('checkpoint.noneSettled', { status: runStatusLabel(data.status) })}
                             </p>
                             <a
                                 className="text-xs text-content-link underline"

@@ -25,8 +25,13 @@
  *                catalogue (Step 2d), then the pinned profile instructions,
  *                fenced and labelled as the operator's text, with a cache
  *                breakpoint after them.
- *   thinking     adaptive, `display: 'summarized'`, so the decision log's
- *                output summary and the egress scan have readable text.
+ *   thinking     adaptive, `display: 'summarized'`. The summarised thinking
+ *                blocks travel in the conversation and a deferral's parked
+ *                transcript as returned. They are NOT egress-scanned and NOT
+ *                in the decision log's output summary: both read the call's
+ *                TEXT blocks only (`textOf` in `execute.ts`), so a turn whose
+ *                only output is thinking plus a tool call records an empty
+ *                summary and runs no scan (#5304).
  *   effort       from the profile, explicit: the models' default is not ours to
  *                assume.
  *   fallbacks    'default': a policy decline reroutes inside the call, and

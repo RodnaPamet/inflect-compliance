@@ -193,14 +193,28 @@ describe('createAssignmentNotification', () => {
     });
 });
 
+/**
+ * `findMany` by `dedupeKey`, as the helper reads the inserted rows back
+ * (#5305): each key gets a row id that is NOT the key, so an event still
+ * carrying the dedupe key as its id fails the assertions below.
+ */
+const insertedRows = () =>
+    jest.fn(async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
+        where.dedupeKey.in.map((dedupeKey, i) => ({
+            id: `notif-row-${i + 1}`,
+            dedupeKey,
+            createdAt: new Date('2026-05-28T12:00:05Z'),
+        })),
+    );
+
 describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', () => {
     let createManyMock: jest.Mock;
-    let db: { notification: { createMany: jest.Mock } };
+    let db: { notification: { createMany: jest.Mock; findMany: jest.Mock } };
 
     beforeEach(() => {
         __resetNotificationBusForTests();
         createManyMock = jest.fn();
-        db = { notification: { createMany: createManyMock } };
+        db = { notification: { createMany: createManyMock, findMany: insertedRows() } };
     });
 
     it('fans the event to the SSE bus when the row inserts (count > 0)', async () => {
@@ -229,11 +243,16 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
         expect(received).toHaveLength(1);
         expect(received[0].type).toBe('TASK_ASSIGNED');
         expect(received[0].linkUrl).toBe('/t/acme/tasks/task-1');
-        // The publish uses the dedupeKey as the event id (the
-        // helper doesn't have the DB-assigned id from createMany).
-        expect(received[0].id).toBe(
-            'tenant-1:TASK_ASSIGNED:task-1:user-1:2026-05-28',
+        // The event carries the ROW's id (#5305), read back by the
+        // dedupe key — the id the bell's mark-read PATCH must name. It
+        // used to carry the dedupe key itself, which names no row.
+        expect(db.notification.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: 'tenant-1', dedupeKey: { in: ['tenant-1:TASK_ASSIGNED:task-1:user-1:2026-05-28'] } },
+            }),
         );
+        expect(received[0].id).toBe('notif-row-1');
+        expect(received[0].createdAt).toBe('2026-05-28T12:00:05.000Z');
     });
 
     it('SKIPS the bus publish when skipDuplicates collapses the insert', async () => {

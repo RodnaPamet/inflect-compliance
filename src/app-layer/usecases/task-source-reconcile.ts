@@ -65,7 +65,7 @@
  * A reconciler that finds nothing used to `return;` with no log, no
  * metric, and no trace on the response — so closing a policy-review task
  * whose policy had been purged reported full success. Every one of the
- * twelve early exits now goes through `recordSkip`, which logs, counts
+ * fourteen early exits now goes through `recordSkip`, which logs, counts
  * (in-process + OTel), and records the skip on the returned
  * `ReconcileOutcome`. `MISSING_TARGET` skips (provenance says this
  * reconciler applies, but the target could not be reconciled) log at
@@ -105,6 +105,7 @@ export type ReconcilerName =
  */
 export type ReconcileSkipReason =
     | 'status_not_terminal'
+    | 'already_reconciled_on_resolve'
     | 'task_not_found'
     | 'control_missing_or_not_applicable'
     | 'vulnerability_pointer_absent'
@@ -114,6 +115,7 @@ export type ReconcileSkipReason =
     | 'kri_reading_pointer_absent'
     | 'policy_link_absent'
     | 'policy_missing'
+    | 'policy_archived'
     | 'evidence_link_absent'
     | 'evidence_missing';
 
@@ -130,6 +132,7 @@ export type ReconcileSkipReason =
  */
 export const SKIP_SEVERITY: Readonly<Record<ReconcileSkipReason, 'MISSING_TARGET' | 'NOT_APPLICABLE'>> = {
     status_not_terminal: 'NOT_APPLICABLE',
+    already_reconciled_on_resolve: 'NOT_APPLICABLE',
     task_not_found: 'MISSING_TARGET',
     control_missing_or_not_applicable: 'MISSING_TARGET',
     vulnerability_pointer_absent: 'NOT_APPLICABLE',
@@ -139,6 +142,7 @@ export const SKIP_SEVERITY: Readonly<Record<ReconcileSkipReason, 'MISSING_TARGET
     kri_reading_pointer_absent: 'NOT_APPLICABLE',
     policy_link_absent: 'MISSING_TARGET',
     policy_missing: 'MISSING_TARGET',
+    policy_archived: 'NOT_APPLICABLE',
     evidence_link_absent: 'MISSING_TARGET',
     evidence_missing: 'MISSING_TARGET',
 } as const;
@@ -252,12 +256,23 @@ export async function reconcileTaskSource(
     ctx: RequestContext,
     taskId: string,
     status: string,
+    fromStatus?: string,
 ): Promise<ReconcileOutcome> {
     const out: ReconcileOutcome = { taskId, applied: [], skipped: [] };
 
-    // [exit 1/12]
+    // [exit 1/14]
     if (!RECONCILE_STATUSES.has(status)) {
         recordSkip(out, 'dispatch', 'status_not_terminal', { status });
+        return out;
+    }
+
+    // [exit 2/14] RESOLVED → CLOSED is bookkeeping, not a second remediation
+    // (#5318). The source was reconciled when the task reached RESOLVED, and
+    // three reconcilers are not idempotent: a second close would queue a
+    // second control-test run and attestation, or write a second
+    // POLICY_REVIEWED and move the review clock to the close date.
+    if (fromStatus !== undefined && RECONCILE_STATUSES.has(fromStatus)) {
+        recordSkip(out, 'dispatch', 'already_reconciled_on_resolve', { fromStatus, status });
         return out;
     }
 
@@ -274,7 +289,7 @@ export async function reconcileTaskSource(
             metadataJson: true,
         },
     });
-    // [exit 2/12]
+    // [exit 3/14]
     if (!task) {
         recordSkip(out, 'dispatch', 'task_not_found');
         return out;
@@ -368,7 +383,7 @@ async function reconcileControlGap(
     });
     // NOT_APPLICABLE controls (or a foreign/missing control) get no
     // re-attestation — nothing to reflect.
-    // [exit 3/12]
+    // [exit 4/14]
     if (!control || control.applicability === 'NOT_APPLICABLE') {
         recordSkip(out, 'control_gap', 'control_missing_or_not_applicable', {
             controlId,
@@ -451,14 +466,14 @@ async function reconcileVulnerability(
         where: { remediationTaskId: taskId, tenantId: ctx.tenantId },
         select: { id: true, status: true },
     });
-    // [exit 4/12]
+    // [exit 5/14]
     if (!vuln) {
         recordSkip(out, 'vulnerability', 'vulnerability_pointer_absent');
         return;
     }
     // Only advance from an active state — never regress ACCEPTED /
     // FALSE_POSITIVE / already-MITIGATED.
-    // [exit 5/12]
+    // [exit 6/14]
     if (vuln.status !== 'OPEN' && vuln.status !== 'MITIGATING') {
         recordSkip(out, 'vulnerability', 'vulnerability_not_active', {
             vulnerabilityId: vuln.id,
@@ -506,7 +521,7 @@ async function reconcileFinding(
         where: { id: findingId, tenantId: ctx.tenantId },
         select: { id: true, status: true },
     });
-    // [exit 6/12]
+    // [exit 7/14]
     if (!finding || finding.status === 'CLOSED') {
         recordSkip(out, 'finding', 'finding_missing_or_already_closed', {
             findingId,
@@ -565,7 +580,7 @@ async function reconcileRiskAppetiteBreach(
         where: { remediationTaskId: taskId, tenantId: ctx.tenantId, resolvedAt: null },
         select: { id: true, breachType: true },
     });
-    // [exit 7/12]
+    // [exit 8/14]
     if (!breach) {
         recordSkip(out, 'risk_appetite_breach', 'appetite_breach_pointer_absent');
         return;
@@ -614,7 +629,7 @@ async function reconcileKriBreach(
         where: { remediationTaskId: taskId, tenantId: ctx.tenantId, addressedAt: null },
         select: { id: true, kriId: true },
     });
-    // [exit 8/12]
+    // [exit 9/14]
     if (!reading) {
         recordSkip(out, 'kri_breach', 'kri_reading_pointer_absent');
         return;
@@ -671,7 +686,7 @@ async function reconcilePolicyReview(
         where: { taskId, tenantId: ctx.tenantId, entityType: 'POLICY' },
         select: { entityId: true },
     });
-    // [exit 9/12]
+    // [exit 10/14]
     if (!link) {
         recordSkip(out, 'policy_review', 'policy_link_absent');
         return;
@@ -679,11 +694,18 @@ async function reconcilePolicyReview(
 
     const policy = await db.policy.findFirst({
         where: { id: link.entityId, tenantId: ctx.tenantId },
-        select: { id: true, reviewFrequencyDays: true, nextReviewAt: true },
+        select: { id: true, status: true, reviewFrequencyDays: true, nextReviewAt: true },
     });
-    // [exit 10/12]
+    // [exit 11/14]
     if (!policy) {
         recordSkip(out, 'policy_review', 'policy_missing', { policyId: link.entityId });
+        return;
+    }
+    // [exit 12/14] A retired policy is not reviewed (#5318): markPolicyReviewed
+    // refuses an ARCHIVED one, and closing a leftover reminder task must not
+    // stamp it reviewed and put it back into the review-due population.
+    if (policy.status === 'ARCHIVED') {
+        recordSkip(out, 'policy_review', 'policy_archived', { policyId: policy.id });
         return;
     }
 
@@ -720,7 +742,7 @@ async function reconcileEvidenceExpiry(
         where: { taskId, tenantId: ctx.tenantId, entityType: 'EVIDENCE' },
         select: { entityId: true },
     });
-    // [exit 11/12]
+    // [exit 13/14]
     if (!link) {
         recordSkip(out, 'evidence_expiry', 'evidence_link_absent');
         return;
@@ -730,7 +752,7 @@ async function reconcileEvidenceExpiry(
         where: { id: link.entityId, tenantId: ctx.tenantId },
         select: { id: true, reviewCycle: true },
     });
-    // [exit 12/12]
+    // [exit 14/14]
     if (!evidence) {
         recordSkip(out, 'evidence_expiry', 'evidence_missing', { evidenceId: link.entityId });
         return;

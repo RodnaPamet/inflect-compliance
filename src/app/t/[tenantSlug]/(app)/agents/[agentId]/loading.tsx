@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { SkeletonDetailTabs } from '@/components/ui/skeleton';
+import { AGENT_DETAIL_SKELETON_TAB_COUNT } from './agent-detail-tabs';
 
 /**
  * Agent detail loading skeleton — header + meta strip + tab bar.
@@ -19,11 +20,12 @@ export default async function AgentDetailLoading() {
             aria-label={t('agentDetail.loadingAria')}
             className="space-y-section animate-fadeIn"
         >
-            {/* Six, not the default four — the skeleton is a promise about
-                the shape that is about to arrive, and a tab bar that grows by
-                two on hydration is the layout shift a skeleton exists to
-                prevent. */}
-            <SkeletonDetailTabs tabCount={6} />
+            {/* Counted from the page's own tab list, not the default four —
+                the skeleton is a promise about the shape that is about to
+                arrive, and a tab bar that grows on hydration is the layout
+                shift a skeleton exists to prevent. It said six while the page
+                rendered eight or nine (#5313). */}
+            <SkeletonDetailTabs tabCount={AGENT_DETAIL_SKELETON_TAB_COUNT} />
         </div>
     );
 }

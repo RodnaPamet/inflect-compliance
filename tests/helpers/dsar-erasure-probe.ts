@@ -353,10 +353,26 @@ export function makeErasureClient(store: ProbeStore, ops: ProbeOp[]): unknown {
                 // `appendAuditEntryWithin`'s chain-tip read treats as "no
                 // predecessor", which is exactly true of a store that holds
                 // no committed chain.
+                //
+                // THREE READS ARE ANSWERED (#5595), because `eraseUser` now
+                // runs `planErasure` before it writes and the plan refuses an
+                // empty answer as an unobservable subject. The answers are
+                // the store's truth, not a pass: an unconstrained session, the
+                // subject's own `user` row counted from the store, and a
+                // catalog with no User-referencing FK (the store models no
+                // constraints, so it holds no blocker to report). Nothing
+                // else is answered, so a plan that grew a new read would
+                // still see `[]` there.
                 const isQuery = prop.startsWith('$queryRaw');
                 return async (...args: unknown[]) => {
                     ops.push({ table: '$raw', method: prop, args, matched: 0 });
-                    return isQuery ? [] : 0;
+                    if (!isQuery) return 0;
+                    const sql = typeof args[0] === 'string' ? args[0] : '';
+                    if (sql.includes('current_user')) return [{ role: 'probe', tenant: null }];
+                    if (sql.includes('FROM "User" WHERE')) {
+                        return [{ n: rowsOf('user').filter((r) => r.id === args[1]).length }];
+                    }
+                    return [];
                 };
             }
             if (!(prop in target)) target[prop] = delegate(prop);

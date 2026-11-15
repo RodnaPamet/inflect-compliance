@@ -59,6 +59,19 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
         AD_HOC: tr('controls.freq.adHoc'), DAILY: tr('controls.freq.daily'), WEEKLY: tr('controls.freq.weekly'),
         MONTHLY: tr('controls.freq.monthly'), QUARTERLY: tr('controls.freq.quarterly'), ANNUALLY: tr('controls.freq.annually'),
     }), [tr]);
+    // Status, method and result are enum values; each is shown by its label,
+    // falling back to the stored value only for one this list does not know.
+    const PLAN_STATUS_LABELS = useMemo<Record<string, string>>(() => ({
+        ACTIVE: tr('controlTests.filterEnums.status.ACTIVE'), PAUSED: tr('controlTests.filterEnums.status.PAUSED'),
+        ARCHIVED: tr('controlTests.filterEnums.status.ARCHIVED'),
+    }), [tr]);
+    const METHOD_LABELS = useMemo<Record<string, string>>(() => ({
+        MANUAL: t('manual'), AUTOMATED: t('automated'),
+    }), [t]);
+    const RESULT_LABELS = useMemo<Record<string, string>>(() => ({
+        PASS: tr('controlTests.filterEnums.result.PASS'), FAIL: tr('controlTests.filterEnums.result.FAIL'),
+        INCONCLUSIVE: tr('controlTests.filterEnums.result.INCONCLUSIVE'),
+    }), [tr]);
 
     const [plans, setPlans] = useState<TestPlan[]>([]);
     const [loading, setLoading] = useState(true);
@@ -205,11 +218,11 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                                     </Link>
                                     <div className="flex items-center gap-tight mt-0.5 flex-wrap">
                                         <StatusBadge variant={STATUS_BADGE[plan.status] || 'neutral'} size="sm">
-                                            {plan.status}
+                                            {PLAN_STATUS_LABELS[plan.status] ?? plan.status}
                                         </StatusBadge>
                                         <span className="text-xs text-content-subtle">{FREQ_LABELS[plan.frequency] || plan.frequency}</span>
                                         <span className="text-xs text-content-subtle">•</span>
-                                        <span className="text-xs text-content-subtle">{plan.method}</span>
+                                        <span className="text-xs text-content-subtle">{METHOD_LABELS[plan.method] ?? plan.method}</span>
                                         {plan.nextDueAt && (
                                             <>
                                                 <span className="text-xs text-content-subtle">•</span>
@@ -229,7 +242,7 @@ export default function TestPlansPanel({ controlId }: { controlId: string }) {
                                 <div className="flex items-center gap-tight ml-4">
                                     {lastRun?.result && (
                                         <StatusBadge variant={RESULT_BADGE[lastRun.result] || 'neutral'} size="sm">
-                                            {lastRun.result}
+                                            {RESULT_LABELS[lastRun.result] ?? lastRun.result}
                                         </StatusBadge>
                                     )}
                                     <span className="text-xs text-content-subtle">

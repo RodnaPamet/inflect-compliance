@@ -32,7 +32,7 @@ describe('resolveEntraGroupClaims — inline groups claim', () => {
     it('returns the token groups verbatim with overage=false', async () => {
         const profile = buildEntraProfile(['g-1', 'g-2']);
         const res = await resolveEntraGroupClaims({ profile, accessToken: 'tok' });
-        expect(res).toEqual({ groups: ['g-1', 'g-2'], overage: false });
+        expect(res).toEqual({ groups: ['g-1', 'g-2'], overage: false, complete: true });
     });
 
     it('records source=token, outcome=resolved with the group count', async () => {
@@ -47,7 +47,7 @@ describe('resolveEntraGroupClaims — inline groups claim', () => {
 
     it('an empty/absent groups claim resolves to [] with outcome=empty', async () => {
         const res = await resolveEntraGroupClaims({ profile: {} });
-        expect(res).toEqual({ groups: [], overage: false });
+        expect(res).toEqual({ groups: [], overage: false, complete: true });
         expect(mockRecord).toHaveBeenCalledWith({
             source: 'token',
             outcome: 'empty',
@@ -73,7 +73,7 @@ describe('resolveEntraGroupClaims — overage Graph fetch', () => {
             { profile: buildEntraOverageProfile(), accessToken: 'graph-tok' },
             { fetchImpl: fetchImpl as unknown as typeof fetch, now: makeClock([100, 180]) },
         );
-        expect(res).toEqual({ groups: ['g-1', 'g-2', 'g-3'], overage: true });
+        expect(res).toEqual({ groups: ['g-1', 'g-2', 'g-3'], overage: true, complete: true });
         expect(fetchImpl).toHaveBeenCalledTimes(2);
     });
 
@@ -91,16 +91,22 @@ describe('resolveEntraGroupClaims — overage Graph fetch', () => {
         });
     });
 
-    it('fails open to [] on a Graph error — outcome=empty is the outage signal', async () => {
+    it('fails open to [] on a Graph error — outcome=PARTIAL is the outage signal', async () => {
         const fetchImpl = graphFailFetch();
         const res = await resolveEntraGroupClaims(
             { profile: buildEntraOverageProfile(), accessToken: 'graph-tok' },
             { fetchImpl: fetchImpl as unknown as typeof fetch, now: makeClock([100, 120]) },
         );
-        expect(res).toEqual({ groups: [], overage: true });
+        // `complete: false`, and the metric outcome is now `partial` rather
+        // than `empty` (#5600). `empty` should mean the directory SAID this
+        // user is in no groups — a fact. A failed read is not that fact, and
+        // labelling it `empty` was the same conflation as returning a prefix
+        // as the whole membership: the one signal this docblock offered
+        // operators could not tell an outage from a user with no groups.
+        expect(res).toEqual({ groups: [], overage: true, complete: false });
         expect(mockRecord).toHaveBeenCalledWith({
             source: 'graph_overage',
-            outcome: 'empty',
+            outcome: 'partial',
             groupCount: 0,
             graphFetchDurationMs: 20,
         });
@@ -109,7 +115,7 @@ describe('resolveEntraGroupClaims — overage Graph fetch', () => {
     it('falls back to the inline path when overage is signalled but no access token exists', async () => {
         // No token ⇒ cannot call Graph ⇒ treat as the (absent) inline claim.
         const res = await resolveEntraGroupClaims({ profile: buildEntraOverageProfile() });
-        expect(res).toEqual({ groups: [], overage: false });
+        expect(res).toEqual({ groups: [], overage: false, complete: true });
         expect(mockRecord).toHaveBeenCalledWith({
             source: 'token',
             outcome: 'empty',

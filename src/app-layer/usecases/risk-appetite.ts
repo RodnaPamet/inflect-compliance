@@ -14,13 +14,14 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { assertCanRead, assertCanAdmin, assertCanWrite } from '../policies/common';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { resolveALE } from './fair-calculator';
 import { getLatestSimulation } from './monte-carlo';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { createTask, addTaskLink } from './task';
+import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 
 export type BreachType = 'PORTFOLIO_ALE' | 'SINGLE_RISK_ALE' | 'QUAL_SCORE' | 'CATEGORY_ALE';
 
@@ -154,10 +155,52 @@ export interface UpsertAppetiteInput {
     testedPercentile?: 50 | 80 | 90 | 95 | 99;
     categoryOverridesJson?: Record<string, CategoryOverride> | null;
     appetiteStatement?: string | null;
-    approvedByUserId?: string | null;
-    approvedAt?: string | null;
     reviewCadence?: 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUALLY' | 'ANNUALLY';
     nextReviewAt?: string | null;
+    // NO approval fields (#5313 item 11, owner decision 2026-11-15). The
+    // approval is stamped only by `approveAppetiteConfig`, from the caller's
+    // own identity: a save that carried `approvedByUserId` stored whatever the
+    // client sent, including somebody else's name.
+}
+
+/** Key-order-independent JSON, to compare a stored Json column with input. */
+function stableJson(value: unknown): string {
+    if (value === null || value === undefined) return 'null';
+    if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+    if (typeof value === 'object') {
+        const entries = Object.entries(value as Record<string, unknown>)
+            .filter(([, v]) => v !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
+/** What an approval approves: the statement and every limit. */
+export interface ApprovedTerms {
+    appetiteStatement: string | null;
+    totalAleThreshold: number | null;
+    singleRiskAleMax: number | null;
+    qualScoreMax: number | null;
+    testedPercentile: number;
+    categoryOverridesJson: unknown;
+}
+
+/**
+ * Whether a save changes what was approved. The review cadence and the next
+ * review date are bookkeeping, not the appetite, so they do not count. The
+ * tested percentile does: it decides which figure the portfolio ceiling is
+ * compared with.
+ */
+export function approvedTermsChanged(before: ApprovedTerms, after: ApprovedTerms): boolean {
+    return (
+        (before.appetiteStatement ?? null) !== (after.appetiteStatement ?? null)
+        || (before.totalAleThreshold ?? null) !== (after.totalAleThreshold ?? null)
+        || (before.singleRiskAleMax ?? null) !== (after.singleRiskAleMax ?? null)
+        || (before.qualScoreMax ?? null) !== (after.qualScoreMax ?? null)
+        || before.testedPercentile !== after.testedPercentile
+        || stableJson(before.categoryOverridesJson) !== stableJson(after.categoryOverridesJson)
+    );
 }
 
 export async function upsertAppetiteConfig(ctx: RequestContext, input: UpsertAppetiteInput) {
@@ -171,24 +214,126 @@ export async function upsertAppetiteConfig(ctx: RequestContext, input: UpsertApp
             testedPercentile: input.testedPercentile,
             categoryOverridesJson: (input.categoryOverridesJson ?? undefined) as Prisma.InputJsonValue | undefined,
             appetiteStatement: input.appetiteStatement ?? null,
-            approvedByUserId: input.approvedByUserId ?? null,
-            approvedAt: input.approvedAt ? new Date(input.approvedAt) : null,
             reviewCadence: input.reviewCadence,
             nextReviewAt: input.nextReviewAt ? new Date(input.nextReviewAt) : null,
         };
-        const existing = await db.riskAppetiteConfig.findFirst({ where: { tenantId: ctx.tenantId }, select: { id: true } });
+        const existing = await db.riskAppetiteConfig.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                appetiteStatement: true,
+                totalAleThreshold: true,
+                singleRiskAleMax: true,
+                qualScoreMax: true,
+                testedPercentile: true,
+                categoryOverridesJson: true,
+                approvedAt: true,
+            },
+        });
+        // An approval is of the statement and its limits. A save that changes
+        // either clears it (#5313 item 11): an approval must never vouch for
+        // terms nobody approved.
+        const approvalCleared = !!existing?.approvedAt && approvedTermsChanged(existing, {
+            appetiteStatement: data.appetiteStatement,
+            totalAleThreshold: data.totalAleThreshold,
+            singleRiskAleMax: data.singleRiskAleMax,
+            qualScoreMax: data.qualScoreMax,
+            // `undefined` keeps the stored value, so it is not a change.
+            testedPercentile: data.testedPercentile ?? existing.testedPercentile,
+            categoryOverridesJson: data.categoryOverridesJson === undefined
+                ? existing.categoryOverridesJson
+                : data.categoryOverridesJson,
+        });
         const saved = existing
-            ? await db.riskAppetiteConfig.update({ where: { id: existing.id }, data })
+            ? await db.riskAppetiteConfig.update({
+                where: { id: existing.id },
+                data: approvalCleared ? { ...data, approvedByUserId: null, approvedAt: null } : data,
+            })
             : await db.riskAppetiteConfig.create({ data: { tenantId: ctx.tenantId, ...data } });
         await logEvent(db, ctx, {
             action: 'RISK_APPETITE_CONFIGURED',
             entityType: 'RiskAppetiteConfig',
             entityId: saved.id,
-            details: 'Updated risk appetite configuration',
-            detailsJson: { category: 'custom', event: 'risk_appetite_configured', summary: 'Risk appetite updated' },
+            details: approvalCleared
+                ? 'Updated risk appetite configuration; the approval was cleared because the statement or a limit changed'
+                : 'Updated risk appetite configuration',
+            detailsJson: {
+                category: 'custom',
+                event: 'risk_appetite_configured',
+                summary: 'Risk appetite updated',
+                approvalCleared,
+            },
         });
         return saved;
     });
+}
+
+/**
+ * Approve the risk appetite as it stands (#5313 item 11, owner decisions
+ * 2026-11-15). OWNER-only: the route gates on a literal
+ * `requirePermission('admin.tenant_lifecycle')`, and this asserts the same
+ * key, so a caller reaching the usecase another way is refused too.
+ *
+ * The approval names the CALLER and the server's clock, never a value from
+ * the request. A credential is refused: an approval is a person's act, and an
+ * API key's context names the person who minted the key, not one who read the
+ * statement. A later save that changes the statement or a limit clears it
+ * (`upsertAppetiteConfig`).
+ */
+export async function approveAppetiteConfig(ctx: RequestContext) {
+    assertCanAdmin(ctx);
+    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+        throw forbidden('Approving the risk appetite requires admin.tenant_lifecycle', {
+            reason: 'RISK_APPETITE_APPROVAL_IS_OWNER_TIER',
+        });
+    }
+    if (ctx.apiKeyId) {
+        throw forbidden('An API key cannot approve the risk appetite; a person must', {
+            reason: 'RISK_APPETITE_APPROVAL_NEEDS_PERSON',
+        });
+    }
+    return runInTenantContext(ctx, async (db) => {
+        const existing = await db.riskAppetiteConfig.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!existing) throw notFound('There is no risk appetite to approve; save one first');
+        const approvedAt = new Date();
+        const saved = await db.riskAppetiteConfig.update({
+            where: { id: existing.id },
+            data: { approvedByUserId: ctx.userId, approvedAt },
+        });
+        await logEvent(db, ctx, {
+            action: 'RISK_APPETITE_APPROVED',
+            entityType: 'RiskAppetiteConfig',
+            entityId: saved.id,
+            details: 'Approved the risk appetite statement and its limits',
+            detailsJson: {
+                category: 'custom',
+                event: 'risk_appetite_approved',
+                summary: 'Risk appetite approved',
+                approvedAt: approvedAt.toISOString(),
+            },
+        });
+        return saved;
+    });
+}
+
+/**
+ * Who approved the stored appetite, and when, for the page. `approverName` is
+ * null when the approver's user row is gone; the approval still stands.
+ */
+export async function getAppetiteApproval(
+    ctx: RequestContext,
+    config: { approvedByUserId: string | null; approvedAt: Date | null } | null,
+): Promise<{ approvedAt: string; approverName: string | null } | null> {
+    assertCanRead(ctx);
+    if (!config?.approvedAt || !config.approvedByUserId) return null;
+    const approverId = config.approvedByUserId;
+    const user = await runInTenantContext(ctx, (db) =>
+        db.user.findUnique({ where: { id: approverId }, select: { name: true, email: true } }),
+    );
+    return { approvedAt: config.approvedAt.toISOString(), approverName: user?.name ?? user?.email ?? null };
 }
 
 // ── Checks ────────────────────────────────────────────────────────────
@@ -358,8 +503,8 @@ const BREACH_TASK_TITLE: Record<BreachType, (b: { thresholdValue: number; actual
  *
  * Idempotent: each breach claims at most ONE task — the claim is a
  * conditional update (`remediationTaskId: null` → task id), so a
- * double-click or a concurrent admin gets the existing task back
- * instead of a duplicate. The task is linked to the breached risk
+ * double-click or a concurrent admin gets the existing task back, and
+ * the task the losing request created is removed. The task is linked to the breached risk
  * (TaskLink RISK) when the breach is risk-attributed; portfolio /
  * category breaches produce an unlinked task. Composes the existing
  * `createTask` / `addTaskLink` usecases — no parallel task-creation
@@ -426,6 +571,29 @@ export async function createBreachRemediationTask(
                 select: { remediationTaskId: true },
             }),
         );
+        // The loser's task is a duplicate nothing records (#5318): two
+        // concurrent requests both passed the `remediationTaskId` check above
+        // and both created one. Remove it (Task is soft-deleted) rather than
+        // leave an orphan P1 on the task board.
+        if (winner?.remediationTaskId && winner.remediationTaskId !== task.id) {
+            await runInTenantContext(ctx, async (db) => {
+                await db.task.delete({ where: { id: task.id } });
+                await logEvent(db, ctx, {
+                    action: 'TASK_DELETED',
+                    entityType: 'Task',
+                    entityId: task.id,
+                    details: `Deleted duplicate remediation task for breach ${breachId}`,
+                    detailsJson: {
+                        category: 'entity_lifecycle',
+                        entityName: 'Task',
+                        operation: 'deleted',
+                        summary: 'Duplicate breach remediation task removed: a concurrent request claimed the breach first',
+                    },
+                    metadata: { breachId, keptTaskId: winner.remediationTaskId },
+                });
+            });
+            await bumpEntityCacheVersion(ctx, 'task');
+        }
         return { taskId: winner?.remediationTaskId ?? task.id, created: false };
     }
 

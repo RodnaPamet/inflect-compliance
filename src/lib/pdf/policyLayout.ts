@@ -239,6 +239,13 @@ export function addPolicyToc(
     // Rows.
     for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
+        // Continue on a fresh page rather than writing a row over the
+        // footer — the same guard `addPolicyBodyParagraph` uses. Without
+        // it a template with ~20+ headings lost its later entries (#5316).
+        if (doc.y + 30 > SAFE_BOTTOM_Y) {
+            doc.addPage();
+            doc.y = MARGINS.top + 20;
+        }
         const lineY = doc.y;
         const rowText = `${i + 1}. ${entry.title}`;
 

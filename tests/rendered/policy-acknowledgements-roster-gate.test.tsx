@@ -11,7 +11,7 @@
  * present, so the test cannot pass against a panel that renders nothing.
  */
 import * as React from 'react';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 
 jest.mock('next-intl', () => {
     const en = require('../../messages/en.json');
@@ -35,6 +35,12 @@ jest.mock('next-intl', () => {
     };
     return { useTranslations: (ns: string) => make(ns), useLocale: () => 'en' };
 });
+
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
+    usePathname: () => '/t/acme/policies/p1',
+    useSearchParams: () => new URLSearchParams(),
+}));
 
 // The builder must be STABLE across renders, as the real `useCallback` one is:
 // the panel's fetch effects depend on it, and a fresh function per render
@@ -130,5 +136,25 @@ describe('policy acknowledgement roster — who may see it', () => {
         expect(screen.queryByTestId('policy-ack-roster')).toBeNull();
         expect(rosterRequested()).toBe(false);
         expect(screen.queryByTestId('policy-request-ack-button')).toBeNull();
+    });
+});
+
+describe('requesting acknowledgement by role (#5309)', () => {
+    it('offers AI admin, which the server accepts, and sends it', async () => {
+        renderPanel({ canAdmin: true, canViewRoster: true });
+        fireEvent.click(await screen.findByTestId('policy-request-ack-button'));
+
+        fireEvent.click(document.getElementById('policy-ack-audience') as HTMLElement);
+        fireEvent.click(await screen.findByRole('option', { name: 'Members with a role' }));
+
+        fireEvent.click(document.getElementById('policy-ack-role') as HTMLElement);
+        fireEvent.click(await screen.findByRole('option', { name: 'AI admin' }));
+
+        fireEvent.click(screen.getByTestId('policy-ack-request-submit'));
+        await waitFor(() =>
+            expect(fetchMock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toBe(true),
+        );
+        const [, init] = fetchMock.mock.calls.find(([, i]) => (i as RequestInit | undefined)?.method === 'POST')!;
+        expect(JSON.parse((init as RequestInit).body as string)).toEqual({ audience: { type: 'role', role: 'AI_ADMIN' } });
     });
 });

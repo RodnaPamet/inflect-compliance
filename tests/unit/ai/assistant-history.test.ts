@@ -352,6 +352,7 @@ describe("the server's own sentences scan clean, so a genuine answer does not re
         'halted-iterations',
         'halted-tool-calls',
         'halted-wall-clock',
+        'halted-output-limit',
         'halted-provider-unavailable',
         'halted-guard-review',
     ];

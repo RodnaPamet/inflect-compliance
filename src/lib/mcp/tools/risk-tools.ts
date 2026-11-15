@@ -7,17 +7,27 @@ import { z } from 'zod';
 
 import { listRisks } from '@/app-layer/usecases/risk';
 import type { RequestContext } from '@/app-layer/types';
+import { RISK_MATRIX_MAX_SCORE } from '@/lib/risk-matrix/schema';
 
 import type { McpReadTool } from './types';
 
+/**
+ * The score filter reaches the largest score a matrix can give — 100 on a
+ * 10x10 — not the 5x5 default's 25 (#5304, owner decision 2026-11-14).
+ *
+ * The bound is part of the advertised `inputSchema`, so it is part of the
+ * tool's `schemaHash`: raising it withholds `list_risks` from every tenant that
+ * pinned the old definition until a person re-approves it. The owner accepted
+ * that, and nothing keeps an old pin valid.
+ */
 const listRisksArgs = z
     .object({
         status: z.string().optional(),
         category: z.string().optional(),
         ownerUserId: z.string().optional(),
         q: z.string().optional(),
-        scoreMin: z.number().int().min(1).max(25).optional(),
-        scoreMax: z.number().int().min(1).max(25).optional(),
+        scoreMin: z.number().int().min(1).max(RISK_MATRIX_MAX_SCORE).optional(),
+        scoreMax: z.number().int().min(1).max(RISK_MATRIX_MAX_SCORE).optional(),
         limit: z.number().int().min(1).max(200).optional(),
     })
     .strict();
@@ -35,8 +45,8 @@ export const listRisksTool: McpReadTool<z.infer<typeof listRisksArgs>> = {
             category: { type: 'string' },
             ownerUserId: { type: 'string' },
             q: { type: 'string', description: 'Free-text search over title/description.' },
-            scoreMin: { type: 'integer', minimum: 1, maximum: 25 },
-            scoreMax: { type: 'integer', minimum: 1, maximum: 25 },
+            scoreMin: { type: 'integer', minimum: 1, maximum: RISK_MATRIX_MAX_SCORE },
+            scoreMax: { type: 'integer', minimum: 1, maximum: RISK_MATRIX_MAX_SCORE },
             limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Max rows (default 50).' },
         },
         additionalProperties: false,

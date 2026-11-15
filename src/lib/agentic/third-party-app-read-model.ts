@@ -89,6 +89,15 @@ export interface ThirdPartyAppRow {
     readonly signIn: ThirdPartyKnownState;
     readonly daysSinceSignIn: number | null;
     readonly openFindings: readonly ThirdPartyOpenFinding[];
+    /**
+     * Where an administrator manages or deactivates it, in the directory's own
+     * console; null when no link can be built from validated parts. Built on the
+     * server by `thirdPartyAppLinks` (`third-party-app-links.ts`). A link, never
+     * a write: Inflect stays read-only.
+     */
+    readonly manageUrl: string | null;
+    /** The publisher's public page about it ("What is this?"); null when none can be built. */
+    readonly aboutUrl: string | null;
 }
 
 export interface ThirdPartyScanView {

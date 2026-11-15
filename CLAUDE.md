@@ -456,9 +456,10 @@ HIGH+, highest observed risk Medium. Removing `continue-on-error`
 matters beyond findings: `action-baseline` calls `core.setFailed` on
 zap-baseline.py exit 3 ("could not scan the target") REGARDLESS of
 `fail_action`, so it was also masking a scan that never ran as a green
-nightly. The weekly ACTIVE scan stays non-blocking on a real dated
-deferral (it mutates requests and has a younger baseline), but its
-HIGH+ gate runs today.
+nightly. The weekly ACTIVE scan is blocking too, since 2026-10-12: its
+dated deferral expired, the guard failed the next day as designed, and
+it was flipped the same way (a red Sunday run expects triage, not
+dismissal). Its HIGH+ gate was never deferred.
 
 The guard no longer accepts a non-blocking scan silently: a deferral
 must carry `DAST-NON-BLOCKING-UNTIL: <YYYY-MM-DD>`, which
@@ -1923,8 +1924,8 @@ properties that are each one careless edit from being undone:
 `docs/agent-harness-contract.md`, `src/lib/agentic/harness-contract.ts`) is
 verified in one order: size, JSON, signature by a TRUSTED key, then the strict
 schema OF THE ID THE REPORT NAMES. `/3` (#3785) is `/2` plus the `gcp-sa`
-source kind and nothing else, so a `/2` report naming `gcp-sa` is refused; the
-reference scanner speaks `/3`. `/1` was retired with the scanner container
+source kind and nothing else, so a `/2` report naming `gcp-sa` is refused.
+`/1` was retired with the scanner container
 (#3686), and a report naming it is a `SCHEMA` refusal that writes nothing. A
 new id is a new strict schema beside the others, never a lenient one that reads
 either — and a new kind also widens the estate CHECK, and must be classified in
@@ -2037,6 +2038,14 @@ are easy to undo:
 - **Not known is not none.** Okta and GitHub expose no owner, publisher or
   sign-in; those are stored NULL and read "not exposed" (`NOT_EXPOSED_BY_PRODUCT`),
   never "no owner".
+- **Links, not writes.** Each row links out ("What is this?", "Manage /
+  deactivate") to the vendor's own console, built on the server by the pure
+  `thirdPartyAppLinks` (`src/lib/agentic/third-party-app-links.ts`) from the
+  application id and the publisher ids the ingest stores
+  (`publisherAppId`, `publisherAppSlug`); every part is validated first, any
+  mismatch is no link, and the only hosts produced are `github.com`,
+  `entra.microsoft.com` and an Okta org's `-admin` host. Deactivation happens
+  there and the next scan shows it: do not add a write path or a permission.
 
 **The stale-estate alert** (`usecases/agent-harness-estate-staleness.ts`, a
 daily job since #3741) judges each estate with `computeEstateHealth` and nothing
@@ -2096,86 +2105,33 @@ through their own routes. Rules that are easy to undo:
   pointer, credential reference, tool server or agent name (DPIA condition 8),
   and the level never decides the status: the ladder is report-only.
 
-**The reference scanner** (`packages/agent-harness-scanner`, #3678) runs in a
-client's estate and posts what the ingest above verifies. Okta, Azure Key Vault,
-LangSmith (the `runtime` source, #3738) and the `code` source (LangChain and
-LangGraph, #3737; the Claude Agent SDK, #4156; a model provider's own SDK)
-today; Entra, MCP, the register and the container are #3686.
+**The scanner is scanent's, not this repository's** (scanent #26). The scanner
+that runs in a client's estate and posts what the ingest above verifies is the
+standalone scanent product (github.com/RodnaPamet/scanent), shipped as its image
+`ghcr.io/rodnapamet/scanent`. Its sources and its rules (the read-only wire, the
+declared request surface, never requesting a secret's value, no register link
+from an estate's own labels, the `code` source that reads code and never runs
+it, the scanner's own Okta token) live and are tested in scanent's repository.
+The in-repo copy, `packages/agent-harness-scanner` (#3678, #3686), was removed
+on 2026-11-15. What stays here is the ingest side, and two facts about
+Inflect's own scanner on the production VM (`deploy/harness-scanner/`, the
+`Scanner VM` workflow):
 
-- **Read-only is the wire's shape.** A source holds `ReadOnlyHttp`, whose only
-  verb is GET — do not give `getJson` a method parameter. The OAuth token
-  exchange is the one POST, behind its own interface. Every request is declared
-  in `scanner-surface.ts`, whose hash is the report's manifest hash, and the
-  tests hold each fake's request log to it: a new endpoint goes there first.
 - **The register read is on an exchanged token, and its H2/H3 verdicts are the
-  register's facts** (#5004). The wire trades the ingest key at the tenant's
-  `/api/mcp/token` for a token naming `get_harness_register` alone and refuses
-  any answer that is not an `ifxt_` token. `get_harness_register` decides
-  every fact (per-key `mcpCapable` / `requiresTokenExchange`, and an
-  `enforcement` block built with the funnel's own ceiling and pin checks); the
-  source only maps them. The four no-write H3 criteria are met on the WHOLE
-  read-only bound only and are otherwise unanswered, never "no";
-  `H3.payloads_guarded` is "met" on the scanner's own agent only. Extend that one
-  tool rather than add a second: DPIA condition 2 allows one.
-- **Inflect's own scanner runs behind its own egress proxy** (#5004 part C).
-  On the VM that scanner is scanent's image since scanent #26
-  (`ghcr.io/rodnapamet/scanent`, pinned by index digest), and the proxy is the
-  one it ships (`/app/packages/scanner/dist/egress-proxy.js`; CONNECT-only,
-  exact hosts on 443, empty refuses all); the scanner's only network is
-  internal. Each scan proves it (`egress-proof.ts`: proxy admits Inflect,
-  refuses the canary, a direct dial fails) as its own `H3.egress_enforced`. A
-  source added to the pilot needs its host on `EGRESS_ALLOW`, which a test
-  holds equal to the configuration's hosts and `remote.sh configure` checks
-  against the pinned image's own `hosts --format egress-allow`.
-- **A secret's value is never requested.** Okta's `/apps/{id}/credentials/secrets`
-  and Key Vault's `/secrets/{name}` return values; credentials are reported by
-  reference.
-- **It imports the contract, never a copy.** It checks its report with the
-  ingest's schema and `firstSecretShapedMember` before it signs, through
-  `harnessSignedMessage`. It takes them from `@rodnapamet/scanent-contract`,
-  which its image installs, and `eslint.config.mjs` refuses every `@/`,
-  `@prisma/*`, `next` and `@inflect/ui` import.
-- **No register link from the estate's own labels.** `registeredAgentId` is
-  `null` from these sources: an Okta profile or a vault tag is written by the
-  estate's administrator, who could use it to hide a shadow agent.
-- **An unreadable source is in the report**, `INCOMPLETE` with its reason —
-  including one whose credential is missing (`AUTH_FAILED`).
-- **Every Okta API token is a principal except the scanner's own**, which is
-  identified by id from `GET /api/v1/api-tokens/current` — never by its name,
-  which any administrator can give any token. A scanner that cannot identify
-  its token stops the read before the list, with the request's reason.
-- **The labels are documented defaults** (`profile.owner`, the tags
-  `inflect-principal` and `owner`), overridable per estate in the configuration;
-  `docs/agent-harness-scanner-onboarding.md` is where a client is told them.
-- **The `code` source reads code and never runs it.** Static parsing only
-  (`sources/code/`): a scanned repository must not be able to run anything
-  beside the signing key. `eslint.config.mjs` refuses `child_process`, `vm`, a
-  module loader, `require()`, `import()` and `eval` there, and the side-effect
-  test proves it. An agent counts only when its names resolve through the
-  file's imports to a `langchain`/`langgraph` or Claude Agent SDK module, and
-  anything that does not resolve is `UNPARSEABLE` — never dropped, and never
-  guessed into a value. A file that names none of those modules is not parsed
-  (`FRAMEWORK_MARKERS` in `sources/code/files.ts`): a framework recognised
-  without its marker there finds nothing, silently. A file over 1 MiB is not
-  parsed; up to `MAX_MARKER_SCAN_BYTES` it is read only to look for a marker,
-  and is `BYTE_CAP` only when it names one. Anything else a reader or the
-  recogniser throws on a file makes that file `UNPARSEABLE` and the read goes
-  on. The places not read go to the scanner's log (`notReadOf`, at most 25,
-  through `codeLocator`) and never into the signed report. An agent built
-  directly on the Anthropic, OpenAI (and Azure OpenAI), Gemini or Bedrock SDK
-  is read by
-  `sources/code/provider-sdk.ts`, on unless the `code` source says
-  `providerSdks: false`: a call counts when the file imports the provider's
-  package (for its types alone included) AND has one of that package's method
-  shapes, and its packages' names are `PROVIDER_SDK_MARKERS`, which a test
-  holds to the module list. An agent is a model call that is GIVEN TOOLS:
-  tools the reader cannot follow make an agent and an `UNPARSEABLE` place, an
-  empty list or options read in full with no tools is a completion and records
-  nothing, and options that cannot be read at all make an agent only for a
-  tool loop (`toolRunner`, `tool_runner`, `runTools`) and an `UNPARSEABLE`
-  place either way. It reads through the recogniser's seam (`RecognizerSeam`),
-  and evaluates nothing until a call has both the import and the shape, so
-  ordinary code never becomes an unresolved place.
+  register's facts** (#5004). The scanner trades the ingest key at the tenant's
+  `/api/mcp/token` for a token naming `get_harness_register` alone.
+  `get_harness_register` decides every fact (per-key `mcpCapable` /
+  `requiresTokenExchange`, and an `enforcement` block built with the funnel's
+  own ceiling and pin checks); the scanner only maps them. Extend that one tool
+  rather than add a second: DPIA condition 2 allows one.
+- **Inflect's own scanner runs behind its own egress proxy** (#5004 part C). On
+  the VM it is scanent's image, pinned by index digest in
+  `deploy/docker-compose.harness-scanner.yml`, and the proxy is the one the
+  image ships (`/app/packages/scanner/dist/egress-proxy.js`); the scanner's only
+  network is internal. A source added to the pilot needs its host on
+  `EGRESS_ALLOW`, which a test holds equal to the configuration's hosts and
+  `remote.sh configure` checks against the pinned image's own
+  `hosts --format egress-allow`.
 
 **Client estates** (`usecases/agent-harness-estates.ts`, the only writer of
 `AgentHarnessEstate` and `AgentHarnessEstateSource`; health in the pure

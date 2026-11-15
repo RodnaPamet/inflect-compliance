@@ -210,7 +210,10 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
         // call sites for the connected table — five positions, at which the
         // needle stops naming the gate it is about.
         expect(detailClient).toMatch(/const isReviewer\s*=/);
-        expect(detailClient).toMatch(/const canDecide\s*=\s*\(isReviewer \|\| isAdmin\)/);
-        expect(detailClient).toMatch(/const canClose\s*=\s*isAdmin/);
+        // #5313 item 5: each gate also asks the granular key its route takes —
+        // `access_reviews.decide` (holdsDecide) and `access_reviews.close`
+        // (canCloseCampaign) — not the bare admin tier.
+        expect(detailClient).toMatch(/const canDecide\s*=\s*holdsDecide && \(isReviewer \|\| isAdmin\)/);
+        expect(detailClient).toMatch(/const canClose\s*=\s*canCloseCampaign && /);
     });
 });

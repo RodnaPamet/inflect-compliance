@@ -5,6 +5,8 @@
  *      given here, a scanner naming another agent, a key revoked.
  *   2. A VERIFIED REPORT IS STORED AS PLANNED, and a REPLAY is a conflict —
  *      the usecase's read and, behind it, the `(tenantId, scanRef)` unique.
+ *      Each application's publisher ids are written, and the inventory builds
+ *      its vendor-console links from them.
  *   3. TWO TENANTS. One tenant's scanner key is not trusted by the other, and
  *      the usecases of one tenant read nothing of the other's: the inventory,
  *      the scan list and the findings.
@@ -18,7 +20,15 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { createFakeScanner, validV3ReportBody, type FakeScanner } from '../helpers/agent-harness-fake-scanner';
-import { integrationsBody, quietEntraApp, threeProductBody } from '../helpers/third-party-app-fake-report';
+import {
+    entraApp,
+    githubInstallation,
+    guid,
+    integrationsBody,
+    oktaApp,
+    quietEntraApp,
+    threeProductBody,
+} from '../helpers/third-party-app-fake-report';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { addHarnessScannerKey, revokeHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
 import {
@@ -154,6 +164,38 @@ describe('2. a verified report is stored as planned, and a replay is a conflict'
             where: { tenantId: T1, action: 'THIRD_PARTY_APP_SCAN_INGESTED', entityId: scan.id },
         });
         expect(audit).not.toBeNull();
+    });
+
+    it('writes each application\'s publisher ids, and the inventory links out from them', async () => {
+        const apps = await prisma.discoveredThirdPartyApp.findMany({
+            where: { tenantId: T1 },
+            select: { applicationId: true, publisherAppId: true, publisherAppSlug: true },
+            orderBy: { applicationId: 'asc' },
+        });
+        expect(apps).toEqual(
+            [
+                { applicationId: entraApp(1).id, publisherAppId: entraApp(1).appId, publisherAppSlug: null },
+                { applicationId: githubInstallation().id, publisherAppId: '9001', publisherAppSlug: 'acme-deploy-bot' },
+                { applicationId: oktaApp().id, publisherAppId: oktaApp().appId, publisherAppSlug: null },
+            ].sort((a, b) => (a.applicationId < b.applicationId ? -1 : 1)),
+        );
+
+        const rows = (await getThirdPartyAppInventory(ctxFor(T1))).sections[0].rows;
+        const linksOf = (id: string) => {
+            const r = rows.find((x) => x.applicationId === id);
+            return { manageUrl: r?.manageUrl, aboutUrl: r?.aboutUrl };
+        };
+        expect(linksOf(githubInstallation().id)).toEqual({
+            manageUrl: 'https://github.com/organizations/acme/settings/installations/41',
+            aboutUrl: 'https://github.com/apps/acme-deploy-bot',
+        });
+        expect(linksOf(entraApp(1).id)).toEqual({
+            manageUrl:
+                'https://entra.microsoft.com/#view/Microsoft_AAD_IAM/ManagedAppMenuBlade/~/Properties'
+                + `/objectId/${guid(1)}/appId/${entraApp(1).appId}`,
+            aboutUrl: null,
+        });
+        expect(linksOf(oktaApp().id)).toEqual({ manageUrl: 'https://acme-admin.okta.com/admin/apps/active', aboutUrl: null });
     });
 
     it('refuses a replay of the same scan id, and writes nothing more', async () => {

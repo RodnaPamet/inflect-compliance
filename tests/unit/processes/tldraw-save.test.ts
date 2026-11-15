@@ -21,6 +21,7 @@
  * Every one of those is a branch here rather than a comment.
  */
 import { saveTldrawCanvas, VersionConflictError } from '@/lib/processes/tldraw-save';
+import en from '../../../messages/en.json';
 import type { EditorCanvas } from '@/components/processes/tldraw/editor-canvas';
 import type { ToastApi } from '@inflect/ui/components/ui/hooks/use-toast';
 
@@ -72,6 +73,12 @@ function input(over: Partial<Parameters<typeof saveTldrawCanvas>[0]> = {}) {
         expectedVersion: 4,
         canvas: CANVAS,
         toast: api,
+        conflictCopy: {
+            title: en.automation.canvas.versionConflictTitle,
+            lostOnReloadAtVersion: en.automation.canvas.versionConflictLostOnReloadAtVersion,
+            lostOnReload: en.automation.canvas.versionConflictLostOnReload,
+            reload: en.automation.canvas.versionConflictReload,
+        },
         onConflict: jest.fn(),
         onSaved: jest.fn(),
         fetchImpl: responder(200, SAVED),

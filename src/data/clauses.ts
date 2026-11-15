@@ -4,8 +4,12 @@
  * This file is retained as a fallback for the YAML-backed framework library system.
  * New code should use `getISO27001Clauses()` from `@/app-layer/libraries` instead.
  *
- * Note: This file contains enriched fields (artifacts, checklist) not yet in the
- * YAML schema. It will be removed once the YAML schema supports extended fields.
+ * The YAML library is the source served today: the ISO27001-2022 clause nodes
+ * (`4`–`10` in `src/data/libraries/iso27001-2022.yaml`) carry `artifacts` and
+ * `checklist`, and `getISO27001Clauses()` returns them. `CLAUSES` is read only
+ * when that library fails to load, or when any of the seven clause nodes is
+ * missing or lacks those fields. An edit here therefore does NOT reach the
+ * clause pages — edit the YAML. This file stays only as that fallback.
  *
  * Original description:
  * ISO 27001:2022 Clauses 4–10 — Original paraphrases (NOT verbatim ISO text).

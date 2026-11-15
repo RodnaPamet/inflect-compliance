@@ -13,7 +13,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -52,8 +52,11 @@ describe('Bulk action rollout — Evidence (assign-only)', () => {
     it('repository bulkUpdate is one updateMany filtered by tenantId', () => {
         const repo = read('src/app-layer/repositories/EvidenceRepository.ts');
         expect(repo).toMatch(/static async bulkUpdate/);
-        expect(repo).toMatch(/updateMany/);
-        expect(repo).toMatch(/tenantId: ctx\.tenantId/);
+        // Bound to bulkUpdate's own body: the file holds other updateMany
+        // calls (#5317's conditional status transition among them).
+        const bulkUpdate = braceBlockAfter(repo, 'static async bulkUpdate');
+        expect(bulkUpdate).toMatch(/updateMany/);
+        expect(bulkUpdate).toMatch(/tenantId: ctx\.tenantId/);
     });
 
     it('schema exists + caps the batch', () => {

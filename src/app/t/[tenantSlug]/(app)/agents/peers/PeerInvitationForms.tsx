@@ -21,6 +21,7 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { AsyncCombobox, type AsyncOption } from '@/components/ui/async-combobox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { CopyText } from '@/components/ui/copy-text';
 import { FormField } from '@/components/ui/form-field';
@@ -31,7 +32,7 @@ import { Heading } from '@/components/ui/typography';
 import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
-import type { PeerChoice } from './RegisterPeerForm';
+import { useVendorSearch, type PeerChoice } from './RegisterPeerForm';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
 
@@ -47,7 +48,10 @@ export interface InvitationChoices {
 function useGrantFields(choices: InvitationChoices) {
     const t = useTranslations('agents');
     const [owner, setOwner] = useState<ComboboxOption | null>(null);
-    const [vendor, setVendor] = useState<ComboboxOption | null>(null);
+    const [vendor, setVendor] = useState<AsyncOption | null>(null);
+    // The vendor register is searched, not cut at the page the server rendered
+    // (#5313): a supplier past it could not be picked, and vendor is required.
+    const { vendorOptions, searchVendors } = useVendorSearch(choices.vendors);
     const [riskTier, setRiskTier] = useState<ComboboxOption | null>(null);
     const [agent, setAgent] = useState<ComboboxOption | null>(null);
     const [workflows, setWorkflows] = useState<ComboboxOption[]>([]);
@@ -76,16 +80,15 @@ function useGrantFields(choices: InvitationChoices) {
                 />
             </FormField>
             <FormField label={t('peers.register.vendor')} description={t('peers.invite.vendorHint')} required>
-                <Combobox
+                <AsyncCombobox
                     id={`${prefix}-vendor`}
-                    options={opts(choices.vendors)}
-                    selected={vendor}
-                    setSelected={setVendor}
+                    value={vendor?.value ?? null}
+                    onChange={(o) => setVendor(o)}
+                    onSearch={searchVendors}
+                    initialOptions={vendorOptions}
                     placeholder={t('peers.register.vendorPlaceholder')}
+                    searchPlaceholder={t('peers.register.search')}
                     matchTriggerWidth
-                    forceDropdown
-                    buttonProps={{ className: 'w-full' }}
-                    caret
                 />
             </FormField>
             <FormField label={t('peers.register.riskTier')} required>

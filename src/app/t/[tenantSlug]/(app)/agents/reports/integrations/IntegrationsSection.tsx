@@ -11,9 +11,16 @@
  * Okta application's or a GitHub App's owner, publisher and sign-in) reads
  * "not exposed", and one the read did not establish reads "not known": neither
  * is ever shown as "none".
+ *
+ * Each row links OUT, never writes: "What is this?" to the publisher's page and
+ * "Manage / deactivate" to the application in its vendor's own console (owner
+ * decision). The URLs are built on the server from validated parts
+ * (`src/lib/agentic/third-party-app-links.ts`); a row whose parts do not
+ * validate shows no link rather than a guessed one.
  */
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
+import { ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo/arrow-up-right';
 
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -83,6 +90,43 @@ function SourceLine({ source }: { source: ThirdPartyAppSourceView }) {
                 </StatusBadge>
             ))}
         </li>
+    );
+}
+
+/** A link out to the vendor's site, in a new tab, marked as such for sight and for screen readers. */
+function VendorLink({ href, testId, children }: { href: string; testId: string; children: ReactNode }) {
+    const t = useTranslations('agents');
+    return (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-tight text-content-link underline-offset-2 hover:underline"
+            data-testid={testId}
+        >
+            {children}
+            <ArrowUpRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span className="sr-only">{t('reports.integrations.opensInNewTab')}</span>
+        </a>
+    );
+}
+
+function VendorLinksCell({ row }: { row: ThirdPartyAppRow }) {
+    const t = useTranslations('agents');
+    if (row.aboutUrl === null && row.manageUrl === null) return null;
+    return (
+        <div className="flex flex-col items-start gap-tight text-xs" data-testid={`integrations-links-${row.appId}`}>
+            {row.aboutUrl !== null && (
+                <VendorLink href={row.aboutUrl} testId={`integrations-about-${row.appId}`}>
+                    {t('reports.integrations.aboutLink')}
+                </VendorLink>
+            )}
+            {row.manageUrl !== null && (
+                <VendorLink href={row.manageUrl} testId={`integrations-manage-${row.appId}`}>
+                    {t('reports.integrations.manageLink')}
+                </VendorLink>
+            )}
+        </div>
     );
 }
 
@@ -222,6 +266,12 @@ export function IntegrationsSection({ section }: { section: ThirdPartyScanSectio
                             </div>
                         ),
                 },
+                {
+                    id: 'vendor',
+                    header: t('reports.integrations.colVendor'),
+                    enableSorting: false,
+                    cell: ({ row }) => <VendorLinksCell row={row.original} />,
+                },
             ]),
         [t],
     );
@@ -285,17 +335,24 @@ export function IntegrationsSection({ section }: { section: ThirdPartyScanSectio
                 </InlineNotice>
             ) : (
                 section.rows.length > 0 && (
-                    <DataTable<ThirdPartyAppRow>
-                        data={[...section.rows]}
-                        columns={columns}
-                        getRowId={(r) => r.appId}
-                        selectionEnabled={false}
-                        resourceName={(plural) =>
-                            plural ? t('reports.integrations.resourceApps') : t('reports.integrations.resourceApp')
-                        }
-                        emptyState={t('reports.integrations.emptyScan')}
-                        data-testid={`integrations-apps-table-${scan.id}`}
-                    />
+                    <>
+                        {/* Links out, never a write: deactivation happens in the
+                            vendor's own console, and the next scan shows it. */}
+                        <p className="text-xs text-content-muted" data-testid={`integrations-vendor-note-${scan.id}`}>
+                            {t('reports.integrations.vendorConsoleNote')}
+                        </p>
+                        <DataTable<ThirdPartyAppRow>
+                            data={[...section.rows]}
+                            columns={columns}
+                            getRowId={(r) => r.appId}
+                            selectionEnabled={false}
+                            resourceName={(plural) =>
+                                plural ? t('reports.integrations.resourceApps') : t('reports.integrations.resourceApp')
+                            }
+                            emptyState={t('reports.integrations.emptyScan')}
+                            data-testid={`integrations-apps-table-${scan.id}`}
+                        />
+                    </>
                 )
             )}
             {section.rowsTruncated && (

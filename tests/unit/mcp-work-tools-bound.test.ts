@@ -35,15 +35,30 @@ beforeEach(() => {
     jest.clearAllMocks();
 });
 
+const OPEN = { status: 'OPEN,IN_PROGRESS,READY_FOR_VERIFICATION' };
+
 describe('list_findings is bounded', () => {
     it('defaults to 50 when no limit is given', async () => {
         await listFindingsTool.run(CTX, {});
-        expect(findingsMock).toHaveBeenCalledWith(CTX, { take: 50 });
+        expect(findingsMock).toHaveBeenCalledWith(CTX, { take: 50 }, OPEN);
     });
 
     it('honours an explicit limit', async () => {
         await listFindingsTool.run(CTX, { limit: 7 });
-        expect(findingsMock).toHaveBeenCalledWith(CTX, { take: 7 });
+        expect(findingsMock).toHaveBeenCalledWith(CTX, { take: 7 }, OPEN);
+    });
+});
+
+describe('list_findings returns the OPEN findings its description promises (#5304)', () => {
+    it('asks for every status but CLOSED, so the bound counts open findings only', async () => {
+        // It passed no status, so an agent asking for open findings got the
+        // newest 50 of ANY status, closed ones included, and lost older open
+        // ones past the bound. The workflows that read it report the count as
+        // "open findings".
+        await listFindingsTool.run(CTX, {});
+        const filters = findingsMock.mock.calls[0][2];
+        expect(filters?.status?.split(',').sort()).toEqual(['IN_PROGRESS', 'OPEN', 'READY_FOR_VERIFICATION']);
+        expect(filters?.status).not.toContain('CLOSED');
     });
 });
 

@@ -56,7 +56,7 @@ import {
     SYNC_WRITE_TX_OPTIONS,
 } from '@/app-layer/integrations/sync-transaction';
 import { acquireSyncLock, releaseSyncLock } from '@/app-layer/integrations/connection-lock';
-import { markAuthFailure } from '@/app-layer/integrations/connection-health';
+import { clearAuthFailure, markAuthFailure } from '@/app-layer/integrations/connection-health';
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
 import { LEGACY_MCP_PROVIDER_ID } from '@/app-layer/integrations/providers/legacy-mcp';
 import { decryptField } from '@/lib/security/encryption';
@@ -268,6 +268,14 @@ async function pullUnderLock(
                 conn.provider
             )
         );
+    } else if (pull.manifest) {
+        // The server answered the manifest read, so the credential was
+        // accepted. Clear a failure an earlier 401 recorded (#5318): without
+        // this, rotating the token left the connection reading "credential
+        // rejected" for ever, however many later pulls succeeded. Cleared here,
+        // before the refusal branches, because a drift or torn-read refusal
+        // still proves the token works.
+        await bookkeeping((db) => clearAuthFailure(db, conn.id, conn.provider));
     }
 
     // ── 3b. Oversharing, split by severity ──────────────────────────────────

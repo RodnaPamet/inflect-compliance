@@ -23,7 +23,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { createTask, setTaskStatus, addTaskLink } from '@/app-layer/usecases/task';
+import { createTask, setTaskStatus, addTaskLink, bulkSetTaskStatus } from '@/app-layer/usecases/task';
 // Direct import satisfies the usecase-test-coverage guardrail for the
 // new task-source-reconcile.ts module (exercised via setTaskStatus).
 import { reconcileTaskSource } from '@/app-layer/usecases/task-source-reconcile';
@@ -314,6 +314,73 @@ describeFn('task-source reconciliation (integration)', () => {
         // Review cycle rolled forward ~90 days into the future.
         expect(after.nextReviewAt).not.toBeNull();
         expect(after.nextReviewAt!.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('closing a POLICY_REVIEW reminder task leaves an ARCHIVED policy unreviewed (#5318)', async () => {
+        const policy = await db.policy.create({
+            data: {
+                tenantId: TENANT_A,
+                slug: `pol-arch-${TAG}`,
+                title: 'Retired Policy',
+                status: 'ARCHIVED',
+                reviewFrequencyDays: 90,
+                nextReviewAt: null,
+            },
+        });
+        const task = await createTask(ctxA, { title: 'Review policy: Retired', type: 'TASK', source: 'POLICY_REVIEW' });
+        await addTaskLink(ctxA, task.id, 'POLICY', policy.id);
+
+        await setTaskStatus(ctxA, task.id, 'CLOSED', 'Reviewed');
+
+        const after = await db.policy.findUniqueOrThrow({ where: { id: policy.id } });
+        expect(after.lastReviewedAt).toBeNull();
+        expect(after.nextReviewAt).toBeNull();
+        expect(await db.auditLog.count({
+            where: { tenantId: TENANT_A, entityId: policy.id, action: 'POLICY_REVIEWED' },
+        })).toBe(0);
+    });
+
+    it('RESOLVED → CLOSED does not reconcile the source a second time (#5318)', async () => {
+        const control = await db.control.create({
+            data: { tenantId: TENANT_A, code: `C-${TAG}-rc`, name: 'Resolve-then-close control', frequency: 'DAILY' },
+        });
+        const plan = await db.controlTestPlan.create({
+            data: {
+                tenantId: TENANT_A, controlId: control.id, name: 'Automated check (rc)',
+                method: 'AUTOMATED', automationType: 'INTEGRATION', createdByUserId: userAId,
+            },
+        });
+        const task = await createTask(ctxA, {
+            title: 'Automated test failed (rc)', type: 'CONTROL_GAP', controlId: control.id,
+            source: 'INTEGRATION', metadataJson: { testPlanId: plan.id },
+        });
+
+        await setTaskStatus(ctxA, task.id, 'RESOLVED', 'Remediated');
+        await setTaskStatus(ctxA, task.id, 'CLOSED', 'Verified');
+
+        expect(await db.controlTestRun.count({
+            where: { tenantId: TENANT_A, testPlanId: plan.id, status: 'PLANNED' },
+        })).toBe(1);
+    });
+
+    it('a bulk status change naming one task twice reconciles it once (#5318)', async () => {
+        const policy = await db.policy.create({
+            data: {
+                tenantId: TENANT_A, slug: `pol-dup-${TAG}`, title: 'Duplicate Id Policy',
+                reviewFrequencyDays: 90, nextReviewAt: new Date(Date.now() - 86_400_000),
+            },
+        });
+        const task = await createTask(ctxA, { title: 'Review policy: Duplicate', type: 'TASK', source: 'POLICY_REVIEW' });
+        await addTaskLink(ctxA, task.id, 'POLICY', policy.id);
+
+        await bulkSetTaskStatus(ctxA, [task.id, task.id], 'CLOSED', 'Reviewed');
+
+        expect(await db.auditLog.count({
+            where: { tenantId: TENANT_A, entityId: policy.id, action: 'POLICY_REVIEWED' },
+        })).toBe(1);
+        expect(await db.auditLog.count({
+            where: { tenantId: TENANT_A, entityId: task.id, action: 'TASK_STATUS_CHANGED' },
+        })).toBe(1);
     });
 
     // ─── Reconciler 7 — evidence-expiry reminder → review serviced ──

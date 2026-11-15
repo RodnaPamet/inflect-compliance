@@ -79,7 +79,7 @@ npm run e2e:local -- --headed
 | Setting | Value |
 |---------|-------|
 | Image | `postgres:16-alpine` |
-| Port | `5434` (avoids collision with dev DB on 5433) |
+| Port | `5434` — the test stack's own; the dev stack publishes 5433 (PgBouncer) and 5436 (direct Postgres), so the two run side by side |
 | User | `test` |
 | Password | `test` |
 | Database | `inflect_test` |
@@ -91,9 +91,18 @@ The DB uses `tmpfs` so data is stored in RAM — fast and always clean on restar
 
 ### Port 5434 already in use
 
+The dev stack no longer publishes 5434: its direct Postgres moved to 5436
+(#5308). A dev stack started from a checkout older than that still holds
+5434 until it is recreated (`docker compose up -d` from a current checkout).
+Otherwise the holder is usually an earlier test container or a Postgres
+installed on the host.
+
 ```bash
 # Stop any existing test container
 npm run db:test:down
+
+# Or recreate the dev stack, so its direct Postgres moves to 5436
+docker compose up -d
 
 # Or kill the process on port 5434
 # Windows: netstat -ano | findstr :5434

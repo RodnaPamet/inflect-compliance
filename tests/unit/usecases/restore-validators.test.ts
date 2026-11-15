@@ -16,12 +16,16 @@ import { makeRequestContext } from '../../helpers/make-context';
 
 function mockDb(overrides: Partial<{
     asset: { findFirst: jest.Mock };
+    policy: { findFirst: jest.Mock };
+    vendor: { findFirst: jest.Mock };
     control: { findFirst: jest.Mock };
     auditCycle: { findFirst: jest.Mock };
     tenantMembership: { findFirst: jest.Mock };
 }> = {}): PrismaTx {
     return {
         asset: { findFirst: jest.fn() },
+        policy: { findFirst: jest.fn() },
+        vendor: { findFirst: jest.fn() },
         control: { findFirst: jest.fn() },
         auditCycle: { findFirst: jest.fn() },
         tenantMembership: { findFirst: jest.fn() },
@@ -195,6 +199,64 @@ describe('Asset restore validator (#4324)', () => {
                     deletedAt: null,
                     id: { not: 'as-gone' },
                 },
+            }),
+        );
+    });
+});
+
+describe('Policy restore validator (#5305)', () => {
+    const ctx = makeRequestContext('ADMIN');
+    const validator = getRestoreValidator('Policy');
+    const deleted = { id: 'pol-gone', slug: 'access-control' };
+
+    it('refuses with a named 409 when a live policy now holds the slug', async () => {
+        const findFirst = jest.fn().mockResolvedValueOnce({ id: 'pol-new' });
+        const db = mockDb({ policy: { findFirst } });
+
+        const err = await validator(ctx, db, deleted).catch((e) => e);
+
+        expect(err).toMatchObject({ status: 409, code: 'CONFLICT', details: { reason: 'POLICY_SLUG_TAKEN' } });
+        const { status, payload } = toApiErrorResponse(err);
+        expect(status).toBe(409);
+        expect(payload.error.details).toEqual({ reason: 'POLICY_SLUG_TAKEN' });
+    });
+
+    it("asks the partial index's own question: same tenant, exact slug, live, not itself", async () => {
+        const findFirst = jest.fn().mockResolvedValueOnce(null);
+        const db = mockDb({ policy: { findFirst } });
+
+        await expect(validator(ctx, db, deleted)).resolves.toBeUndefined();
+        expect(findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: ctx.tenantId, slug: 'access-control', deletedAt: null, id: { not: 'pol-gone' } },
+            }),
+        );
+    });
+});
+
+describe('Vendor restore validator (#5305)', () => {
+    const ctx = makeRequestContext('ADMIN');
+    const validator = getRestoreValidator('Vendor');
+    const deleted = { id: 'ven-gone', name: 'Acme Hosting' };
+
+    it('refuses with the VENDOR_NAME_TAKEN 409 a create already gets', async () => {
+        const findFirst = jest.fn().mockResolvedValueOnce({ id: 'ven-new' });
+        const db = mockDb({ vendor: { findFirst } });
+
+        const err = await validator(ctx, db, deleted).catch((e) => e);
+
+        expect(err).toMatchObject({ status: 409, code: 'CONFLICT', details: { reason: 'VENDOR_NAME_TAKEN' } });
+        expect(err.message).toMatch(/another vendor now has this name/);
+    });
+
+    it("asks the partial index's own question: same tenant, exact name, live, not itself", async () => {
+        const findFirst = jest.fn().mockResolvedValueOnce(null);
+        const db = mockDb({ vendor: { findFirst } });
+
+        await expect(validator(ctx, db, deleted)).resolves.toBeUndefined();
+        expect(findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { tenantId: ctx.tenantId, name: 'Acme Hosting', deletedAt: null, id: { not: 'ven-gone' } },
             }),
         );
     });

@@ -374,7 +374,7 @@ export function CalendarHeatmap({
                 <ChartLegend
                     variant="gradient"
                     heatScale={heat}
-                    label="Activity"
+                    label={t('heatmapLegendLabel')}
                     unit=""
                 />
             </figcaption>

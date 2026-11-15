@@ -94,10 +94,19 @@ export function useColumnsDropdown({
     // dropped from the order the moment the gear added it, so it could never
     // be shown: the click stored the id and the table ignored it (#4462).
     // Ids of columns that no longer exist are still dropped.
-    const order = useMemo(
-        () => reconcileOrder(stored, hideable),
-        [stored, hideable],
+    //
+    // A non-array stored value is a pre-gear TanStack VisibilityState object
+    // under the same key. It reads as the DEFAULTS, never through
+    // `reconcileOrder`'s own fallback, which returns every def it is given —
+    // and since it is now given every toggleable column, that un-hid each
+    // `defaultVisible: false` column for those browsers (#5309). The sibling
+    // `useFilterCardVisibility` guards the same way.
+    const reconcileLive = useCallback(
+        (prev: unknown): string[] =>
+            Array.isArray(prev) ? reconcileOrder(prev as string[], hideable) : defaults,
+        [hideable, defaults],
     );
+    const order = useMemo(() => reconcileLive(stored), [stored, reconcileLive]);
     const orderSet = useMemo(() => new Set(order), [order]);
 
     // Include EVERY column: always-visible columns are explicitly `true`
@@ -131,22 +140,14 @@ export function useColumnsDropdown({
 
     const onToggle = useCallback(
         (id: string) =>
-            setStored((prev) =>
-                toggleOrder(reconcileOrder(prev, hideable), id),
-            ),
-        [setStored, hideable],
+            setStored((prev) => toggleOrder(reconcileLive(prev), id)),
+        [setStored, reconcileLive],
     );
     const onReset = useCallback(() => setStored(defaults), [setStored, defaults]);
     const onReorder = useCallback(
         (fromId: string, toId: string) =>
-            setStored((prev) =>
-                reorderOrder(
-                    reconcileOrder(prev, hideable),
-                    fromId,
-                    toId,
-                ),
-            ),
-        [setStored, hideable],
+            setStored((prev) => reorderOrder(reconcileLive(prev), fromId, toId)),
+        [setStored, reconcileLive],
     );
 
     // Back-compat: if a consumer drives visibility from the DataTable side
@@ -155,14 +156,14 @@ export function useColumnsDropdown({
     const setColumnVisibility = useCallback(
         (v: ColumnVisibilityState) =>
             setStored((prev) => {
-                const cur = reconcileOrder(prev, hideable);
+                const cur = reconcileLive(prev);
                 const kept = cur.filter((id) => v[id] !== false);
                 const newly = hideable
                     .filter((c) => v[c.id] === true && !cur.includes(c.id))
                     .map((c) => c.id);
                 return [...kept, ...newly];
             }),
-        [setStored, hideable],
+        [setStored, hideable, reconcileLive],
     );
 
     const orderColumns = useCallback(

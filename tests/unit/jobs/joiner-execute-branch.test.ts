@@ -20,6 +20,8 @@ const mockCreateAccount = jest.fn();
 const mockDisable = jest.fn(async (_id: string, _prior: unknown) => undefined);
 const mockPolicy = jest.fn();
 const mockStarters = jest.fn();
+/** The stubbed plan's refusal. Null unless a test says otherwise. */
+let mockPlanRefusal: string | null = null;
 
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -57,7 +59,11 @@ const fakeDb = {
         ]),
     },
     tenantSecuritySettings: { findUnique: jest.fn(async () => ({})) },
-    integrationExecution: { create: jest.fn(async () => ({ id: 'x' })), findMany: jest.fn(async () => []) },
+    integrationExecution: {
+        create: jest.fn(async () => ({ id: 'x' })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findMany: jest.fn(async () => []),
+    },
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (db: unknown) => unknown) => fn(fakeDb),
@@ -80,8 +86,11 @@ jest.mock('@/app-layer/usecases/identity-joiner-pass', () => ({
     planJoinerPass: (args: { mode: string; starters: readonly { employeeId: string }[] }) => ({
         mode: args.mode,
         clamp: 'AUTOMATIC',
-        refusal: null,
+        refusal: mockPlanRefusal,
         detail: 'fixture plan',
+        // Present so the plan's record can be written: without it the row
+        // write threw inside `safeRecordPlan` and the record was silently lost.
+        predictionLimits: [],
         starters: args.starters.length,
         wouldCreate: args.starters.length,
         decisions: args.starters.map((c) => ({
@@ -94,6 +103,7 @@ jest.mock('@/app-layer/usecases/identity-joiner-pass', () => ({
             department: 'Engineering',
             groupId: 'CN=Eng,DC=corp,DC=example,DC=test',
             groupIsDefaultFallback: false,
+            namespacesChecked: [],
         })),
     }),
 }));
@@ -268,6 +278,26 @@ it('CREATES for a planned decision — the call nothing in src/ made before', as
         expect(mockResolveProvisioner).not.toHaveBeenCalled();
         expect(mockCreateAccount).not.toHaveBeenCalled();
     });
+
+    it('does not act on a plan carrying ANY refusal, including one the planner does not have yet', async () => {
+        // The gate is `refusal === null`, not a list of today's kinds
+        // (owner decision 2026-11-14). The three real refusals are proved
+        // with the real planner in `joiner-refused-plan-creates-nothing`;
+        // this one is a kind no list could have named, with a PLANNED
+        // decision in it, at AUTOMATIC.
+        mockPlanRefusal = 'A_REFUSAL_ADDED_LATER';
+        try {
+            const r = await run();
+
+            expect(r.refusal).toBe('A_REFUSAL_ADDED_LATER');
+            expect(mockResolveProvisioner).not.toHaveBeenCalled();
+            expect(mockResolveWriter).not.toHaveBeenCalled();
+            expect(mockCreateAccount).not.toHaveBeenCalled();
+            expect(r.created).toBe(0);
+        } finally {
+            mockPlanRefusal = null;
+        }
+    });
 });
 
 /**
@@ -352,5 +382,71 @@ describe('the create asks the directory whether the identifier is free', () => {
 
         expect(closeWriter).toHaveBeenCalled();
         expect(closeProv).toHaveBeenCalled();
+    });
+});
+
+/**
+ * #5317 — at AUTOMATIC the pass's only durable record said "would be
+ * provisioned … Nothing was written to any directory", whatever the creates did.
+ * The row now carries what they DID.
+ */
+describe('the pass records what its creates did, not only what it planned', () => {
+    const recorded = () => {
+        const calls = fakeDb.integrationExecution.updateMany.mock.calls as unknown as Array<[{
+            where: { id: string };
+            data: { status: string; resultJson: Record<string, unknown> };
+        }]>;
+        expect(calls).toHaveLength(1);
+        return calls[0][0];
+    };
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockPolicy.mockResolvedValue({
+            joiner: { mode: 'AUTOMATIC', dryRunSince: null },
+            leaver: { mode: 'DISABLED', dryRunSince: null },
+        });
+        mockResolveProvisioner.mockResolvedValue(liveProvisioner());
+        mockResolveWriter.mockResolvedValue(liveWriter());
+        mockCreateAccount.mockResolvedValue({ kind: 'APPLIED', externalUserId: 'ext-1' });
+        mockProbe.mockResolvedValue({ kind: 'free', namespacesChecked: ['userPrincipalName'] });
+    });
+
+    it('a create that landed: PASSED, created 1, and no claim that nothing was written', async () => {
+        await run();
+        const { where, data } = recorded();
+        expect(where.id).toBe('x');
+        expect(data.status).toBe('PASSED');
+        expect(data.resultJson.created).toBe(1);
+        expect(data.resultJson.execution).toMatchObject({ planned: 1, attempted: 1, created: 1, refused: 0 });
+        expect(String(data.resultJson.detail)).toMatch(/1 of 1 planned account\(s\) created/);
+        expect(String(data.resultJson.detail)).not.toMatch(/Nothing was written/);
+    });
+
+    it('every create refused before acting (no undo writer): NOT_APPLICABLE, with the refusal named', async () => {
+        mockResolveWriter.mockResolvedValue({ kind: 'none', refusal: 'WRITES_NOT_ENABLED', detail: 'no leaver grant' });
+        await run();
+        const { data } = recorded();
+        expect(data.status).toBe('NOT_APPLICABLE');
+        expect(data.resultJson.created).toBe(0);
+        expect(data.resultJson.execution).toMatchObject({ attempted: 0, created: 0, refused: 1 });
+        expect(String((data.resultJson.execution as { refusalDetail: string }).refusalDetail)).toMatch(/cannot disable/);
+    });
+
+    it('an identifier already taken: PARTIAL, the collision counted', async () => {
+        mockProbe.mockResolvedValue({ kind: 'taken', namespace: 'sAMAccountName', externalUserId: 'e', detail: 'held' });
+        await run();
+        const { data } = recorded();
+        expect(data.status).toBe('PARTIAL');
+        expect(data.resultJson.execution).toMatchObject({ attempted: 1, created: 0, collided: 1 });
+    });
+
+    it('adds nothing at DRY_RUN, where the plan is the whole record', async () => {
+        mockPolicy.mockResolvedValue({
+            joiner: { mode: 'DRY_RUN', dryRunSince: new Date('2026-09-01T00:00:00.000Z') },
+            leaver: { mode: 'DISABLED', dryRunSince: null },
+        });
+        await run();
+        expect(fakeDb.integrationExecution.updateMany).not.toHaveBeenCalled();
     });
 });

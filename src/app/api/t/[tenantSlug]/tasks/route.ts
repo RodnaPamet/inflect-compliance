@@ -64,8 +64,9 @@ export const GET = withApiErrorHandling(requirePermission<{ tenantSlug: string }
             linkedEntityId: query.linkedEntityId,
         });
         // Same `{ rows, truncated }` envelope the live list returns, so
-        // the client can swap datasets without a second shape.
-        return jsonResponse({ rows: deleted, truncated: false });
+        // the client can swap datasets without a second shape. `truncated`
+        // is measured by the repository's one-past-the-cap read (#5303).
+        return jsonResponse(deleted);
     }
 
     const hasPagination = query.limit || query.cursor;

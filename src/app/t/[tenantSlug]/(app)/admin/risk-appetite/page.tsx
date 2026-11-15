@@ -11,6 +11,11 @@
  * - A failed read says so, with a retry, rather than showing the defaults and
  *   "No breaches recorded." as if nothing were configured.
  * - Saving, acknowledging and creating a task say why they failed.
+ * - The approval is its own act (#5313 item 11): a save sends only the fields
+ *   it edits and never an approval, the server clears an approval when the
+ *   statement or a limit changes, and Approve is offered only to a viewer the
+ *   server would let approve (`admin.tenant_lifecycle`, OWNER-only), and only
+ *   when what is on screen is what is stored.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
@@ -29,6 +34,7 @@ import { useTenantApiUrl, useTenantHref, useMoneyFormatter, useCurrencySymbol } 
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { parseLimit } from '@/lib/risk-appetite-limit';
 import { useTranslations } from 'next-intl';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
 
 type Cadence = 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUALLY' | 'ANNUALLY';
 type TestedPercentile = 50 | 80 | 90 | 95 | 99;
@@ -40,7 +46,11 @@ interface Config {
     testedPercentile: TestedPercentile;
     appetiteStatement: string | null;
     reviewCadence: Cadence;
+    /** Not edited here, but sent back so a save keeps them. */
+    categoryOverridesJson: Record<string, unknown> | null;
+    nextReviewAt: string | null;
 }
+interface Approval { approvedAt: string; approverName: string | null }
 interface Breach {
     id: string; breachType: string; thresholdValue: number; actualValue: number;
     detectedAt: string; resolvedAt: string | null; acknowledgedAt: string | null; riskId: string | null; category: string | null;
@@ -57,7 +67,25 @@ async function refusalOf(res: Response, fallback: string): Promise<string> {
     return apiRefusalMessage(body, fallback);
 }
 
-const DEFAULT_CONFIG: Config = { totalAleThreshold: null, singleRiskAleMax: null, qualScoreMax: null, testedPercentile: 80, appetiteStatement: null, reviewCadence: 'ANNUALLY' };
+const DEFAULT_CONFIG: Config = { totalAleThreshold: null, singleRiskAleMax: null, qualScoreMax: null, testedPercentile: 80, appetiteStatement: null, reviewCadence: 'ANNUALLY', categoryOverridesJson: null, nextReviewAt: null };
+
+/**
+ * The PUT body: the fields this page saves, and nothing else. The server's
+ * schema is strict, so the row's own columns (id, the approval, timestamps)
+ * must not be spread back into it.
+ */
+function bodyOf(c: Config): Config {
+    return {
+        totalAleThreshold: c.totalAleThreshold,
+        singleRiskAleMax: c.singleRiskAleMax,
+        qualScoreMax: c.qualScoreMax,
+        testedPercentile: c.testedPercentile,
+        appetiteStatement: c.appetiteStatement,
+        reviewCadence: c.reviewCadence,
+        categoryOverridesJson: c.categoryOverridesJson,
+        nextReviewAt: c.nextReviewAt,
+    };
+}
 
 export default function RiskAppetitePage() {
     const t = useTranslations('admin');
@@ -81,6 +109,12 @@ export default function RiskAppetitePage() {
     const [breachesFailed, setBreachesFailed] = useState(false);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+    const [approval, setApproval] = useState<Approval | null>(null);
+    // What is stored, as a PUT body: null until a configuration has been saved.
+    const [stored, setStored] = useState<string | null>(null);
+    const [approving, setApproving] = useState(false);
+    // The route's key and the usecase's floor (#5313 item 11): OWNER-only.
+    const mayApprove = useOffersAdminApiWrite({ key: 'admin.tenant_lifecycle', floor: 'canAdmin' });
 
     const load = useCallback(async () => {
         const [c, b] = await Promise.all([
@@ -93,8 +127,9 @@ export default function RiskAppetitePage() {
         setBreachesFailed(b === null);
         if (c !== null) {
             if (c.config) {
-                const next = { ...DEFAULT_CONFIG, ...c.config } as Config;
+                const next = bodyOf({ ...DEFAULT_CONFIG, ...c.config } as Config);
                 setCfg(next);
+                setStored(JSON.stringify(next));
                 setTyped({
                     totalAleThreshold: next.totalAleThreshold == null ? '' : String(next.totalAleThreshold),
                     singleRiskAleMax: next.singleRiskAleMax == null ? '' : String(next.singleRiskAleMax),
@@ -102,6 +137,7 @@ export default function RiskAppetitePage() {
                 });
             }
             setStatus(c.status ?? null);
+            setApproval(c.approval ?? null);
         }
         if (b !== null) setBreaches(b.breaches ?? []);
     }, [apiUrl]);
@@ -113,6 +149,20 @@ export default function RiskAppetitePage() {
 
     const parsed = Object.fromEntries(LIMIT_KEYS.map((k) => [k, parseLimit(typed[k])])) as Record<LimitKey, ReturnType<typeof parseLimit>>;
     const invalid = LIMIT_KEYS.filter((k) => !parsed[k].ok);
+
+    /** The body a save would send, or null while a limit does not parse. */
+    const pendingBody = (): Config | null => {
+        if (invalid.length > 0) return null;
+        const body = bodyOf(cfg);
+        for (const k of LIMIT_KEYS) {
+            const p = parsed[k];
+            if (p.ok) body[k] = p.value;
+        }
+        return body;
+    };
+    const pending = pendingBody();
+    // Approve approves what is STORED, so it waits until the screen matches it.
+    const unsaved = stored === null || pending === null || JSON.stringify(pending) !== stored;
 
     const numField = (label: string, k: LimitKey, hint: string) => (
         <label className="block">
@@ -132,14 +182,10 @@ export default function RiskAppetitePage() {
     );
 
     const save = async () => {
-        if (invalid.length > 0) return;
+        const body = pendingBody();
+        if (body === null) return;
         setSaving(true); setMsg(null);
         try {
-            const body: Config = { ...cfg };
-            for (const k of LIMIT_KEYS) {
-                const p = parsed[k];
-                if (p.ok) body[k] = p.value;
-            }
             const res = await fetch(apiUrl('/risk-appetite'), {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
             });
@@ -148,6 +194,17 @@ export default function RiskAppetitePage() {
         } catch {
             setMsg({ text: t('riskAppetite.saveFailed'), ok: false });
         } finally { setSaving(false); }
+    };
+
+    const approve = async () => {
+        setApproving(true); setMsg(null);
+        try {
+            const res = await fetch(apiUrl('/risk-appetite/approve'), { method: 'POST' });
+            if (res.ok) { setMsg({ text: t('riskAppetite.approvedMsg'), ok: true }); await load(); }
+            else setMsg({ text: await refusalOf(res, t('riskAppetite.approveFailed')), ok: false });
+        } catch {
+            setMsg({ text: t('riskAppetite.approveFailed'), ok: false });
+        } finally { setApproving(false); }
     };
 
     const acknowledge = async (id: string) => {
@@ -240,8 +297,23 @@ export default function RiskAppetitePage() {
                             {t('riskAppetite.percentileHint')}
                         </span>
                     </div>
+                    <p className="text-sm text-content-muted" id="appetite-approval">
+                        {approval
+                            ? approval.approverName
+                                ? t('riskAppetite.approvedBy', { name: approval.approverName, date: formatDate(new Date(approval.approvedAt)) })
+                                : t('riskAppetite.approvedOn', { date: formatDate(new Date(approval.approvedAt)) })
+                            : t('riskAppetite.notApproved')}
+                    </p>
                     {msg && <InlineNotice variant={msg.ok ? 'success' : 'error'}><span data-testid="appetite-save-msg">{msg.text}</span></InlineNotice>}
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap items-center justify-end gap-tight">
+                        {mayApprove && stored !== null && unsaved && (
+                            <span className="text-xs text-content-muted" id="appetite-approve-save-first">{t('riskAppetite.approveSaveFirst')}</span>
+                        )}
+                        {mayApprove && stored !== null && (
+                            <Button variant="secondary" onClick={approve} disabled={approving || saving || unsaved} id="appetite-approve">
+                                {approving ? t('riskAppetite.approving') : t('riskAppetite.approve')}
+                            </Button>
+                        )}
                         <Button variant="primary" onClick={save} disabled={saving || invalid.length > 0} id="appetite-save">{saving ? t('riskAppetite.saving') : t('riskAppetite.saveConfig')}</Button>
                     </div>
                 </Card>

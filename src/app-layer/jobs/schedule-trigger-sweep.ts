@@ -119,7 +119,16 @@ async function queryGroupEntities(
             rows = await prisma.evidence.findMany({ where, select, take: GROUP_QUERY_TAKE });
             break;
         case 'ControlException':
-            rows = await prisma.controlException.findMany({ where, select, take: GROUP_QUERY_TAKE });
+            // Only exceptions that are IN FORCE (#5307) — the predicate
+            // `exception-expiry-monitor` uses. ControlException is not a
+            // soft-delete-extension model, so nothing filters a deleted row
+            // for us, and a REJECTED or already-EXPIRED exception never took
+            // effect, so "N days before it expires" means nothing for it.
+            rows = await prisma.controlException.findMany({
+                where: { ...where, deletedAt: null, status: 'APPROVED' },
+                select,
+                take: GROUP_QUERY_TAKE,
+            });
             break;
         case 'ControlTestPlan':
             rows = await prisma.controlTestPlan.findMany({ where, select, take: GROUP_QUERY_TAKE });

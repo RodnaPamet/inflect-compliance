@@ -153,6 +153,19 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         }
     });
 
+    // The NAME alone proves nothing: LegacyMatchVerdict once carried a
+    // `superuser_bypass` keyed on an unset `app.tenant_id`, which admitted an
+    // app_user session with no tenant bound to every tenant's rows (#5314).
+    // The bypass must be keyed on the ROLE, and nothing else.
+    test('every superuser_bypass policy is keyed on the role, in the canonical shape', () => {
+        const CANONICAL = "(current_setting('role'::text) <> 'app_user'::text)";
+        const offenders = policies
+            .filter((p) => p.policyname === 'superuser_bypass')
+            .filter((p) => p.qual !== CANONICAL || p.with_check !== null)
+            .map((p) => `${p.tablename}: USING ${p.qual} WITH CHECK ${p.with_check}`);
+        expect(offenders).toEqual([]);
+    });
+
     test('every tenant-scoped model has FORCE ROW LEVEL SECURITY enabled', () => {
         const missing: string[] = [];
         for (const model of TENANT_SCOPED_MODELS) {

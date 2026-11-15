@@ -17,22 +17,44 @@
 import {
     STALENESS_TRIGGERS,
     evaluateAssessmentStaleness,
+    type AgentCurrentState,
     type AssessmentBasis,
 } from '@/lib/agentic/agent-assessment-staleness';
 import type { AgentRiskScoreInput } from '@/lib/agentic/agent-risk-scoring';
 
 /** The state a completed assessment froze. Deliberately mid-ladder on every
  *  axis so an edit can move in either direction from here. */
+const SCORED_AT = new Date('2026-11-01T12:00:00.000Z');
+const BEFORE = new Date('2026-10-30T09:00:00.000Z');
+const AFTER = new Date('2026-11-02T09:00:00.000Z');
+
 const BASIS: AssessmentBasis = {
     autonomyLevel: 3,
     dataAccessScope: 'READ_TENANT_DATA',
     reversibility: 'COMPENSABLE',
     provenance: 'FIRST_PARTY',
-    toolCount: 2,
+    scoredAt: SCORED_AT,
     modelRef: 'model-a',
 };
 
-const unchanged = () => ({ ...BASIS });
+/** The two tools the agent held when it was scored. */
+const GRANTS_AT_SCORING = [
+    { toolName: 'list_controls', grantedAt: BEFORE },
+    { toolName: 'list_risks', grantedAt: BEFORE },
+];
+
+/** The agent as it was scored: the basis's axes and model, the same grants. */
+function stateOf(basis: AssessmentBasis, grants = GRANTS_AT_SCORING): AgentCurrentState {
+    const { scoredAt: _scoredAt, ...rest } = basis;
+    return { ...rest, grants };
+}
+
+const unchanged = (): AgentCurrentState => stateOf(BASIS);
+
+/** A tool granted after the scoring, on top of the grants the run saw. */
+const withGrantAfter = (toolName = 'propose_finding') => ({
+    grants: [...GRANTS_AT_SCORING, { toolName, grantedAt: AFTER }],
+});
 
 describe('each trigger fires on its own change', () => {
     it('AUTONOMY_RAISED', () => {
@@ -43,10 +65,10 @@ describe('each trigger fires on its own change', () => {
     });
 
     it('TOOL_GRANTED', () => {
-        const v = evaluateAssessmentStaleness(BASIS, { ...unchanged(), toolCount: 3 });
+        const v = evaluateAssessmentStaleness(BASIS, { ...unchanged(), ...withGrantAfter() });
         expect(v.stale).toBe(true);
         expect(v.triggers).toEqual(['TOOL_GRANTED']);
-        expect(v.detail).toEqual(['granted tools 2 → 3']);
+        expect(v.detail).toEqual(['granted since scoring: propose_finding']);
     });
 
     it('DATA_SCOPE_WIDENED', () => {
@@ -95,7 +117,7 @@ describe('each trigger fires on its own change', () => {
         const seen = new Set<string>();
         for (const current of [
             { ...unchanged(), autonomyLevel: 6 },
-            { ...unchanged(), toolCount: 9 },
+            { ...unchanged(), ...withGrantAfter() },
             { ...unchanged(), dataAccessScope: 'EXTERNAL_EGRESS' as const },
             { ...unchanged(), reversibility: 'TERMINAL' as const },
             { ...unchanged(), provenance: 'THIRD_PARTY' as const },
@@ -122,8 +144,8 @@ describe('an unrelated edit does NOT mark the assessment stale', () => {
      */
     it.each([
         ['autonomy lowered', { autonomyLevel: 1 }],
-        ['a tool revoked', { toolCount: 1 }],
-        ['every tool revoked', { toolCount: 0 }],
+        ['a tool revoked', { grants: GRANTS_AT_SCORING.slice(1) }],
+        ['every tool revoked', { grants: [] }],
         ['data scope narrowed', { dataAccessScope: 'READ_METADATA' as const }],
         ['data scope narrowed to NONE', { dataAccessScope: 'NONE' as const }],
         ['reversibility improved', { reversibility: 'REVERSIBLE' as const }],
@@ -153,7 +175,7 @@ describe('an unrelated edit does NOT mark the assessment stale', () => {
             'modelRef',
             'provenance',
             'reversibility',
-            'toolCount',
+            'scoredAt',
         ]);
     });
 
@@ -179,7 +201,7 @@ describe('an unrelated edit does NOT mark the assessment stale', () => {
 
         // And each of them, moved in the risk-RAISING direction, is detected.
         // Presence in the type is not detection; this is the behavioural half.
-        const raised: Array<Partial<AssessmentBasis>> = [
+        const raised: Array<Partial<AgentCurrentState>> = [
             { autonomyLevel: BASIS.autonomyLevel + 1 },
             { dataAccessScope: 'EXTERNAL_EGRESS' },
             { reversibility: 'TERMINAL' },
@@ -198,12 +220,12 @@ describe('the model reference, where NULL is a real state', () => {
     const noModel: AssessmentBasis = { ...BASIS, modelRef: null };
 
     it('never declared, still not declared, is NOT a change', () => {
-        const v = evaluateAssessmentStaleness(noModel, { ...noModel });
+        const v = evaluateAssessmentStaleness(noModel, stateOf(noModel));
         expect(v.stale).toBe(false);
     });
 
     it('declaring a model for the first time IS a change', () => {
-        const v = evaluateAssessmentStaleness(noModel, { ...noModel, modelRef: 'model-a' });
+        const v = evaluateAssessmentStaleness(noModel, { ...stateOf(noModel), modelRef: 'model-a' });
         expect(v.triggers).toEqual(['MODEL_CHANGED']);
         expect(v.detail).toEqual(['modelRef (none) → model-a']);
     });
@@ -227,7 +249,7 @@ describe('the model reference, where NULL is a real state', () => {
     ])('%s is NOT a model change', (_label, before, after) => {
         const v = evaluateAssessmentStaleness(
             { ...BASIS, modelRef: before },
-            { ...BASIS, modelRef: after },
+            { ...unchanged(), modelRef: after },
         );
         expect(v.triggers).toEqual([]);
         expect(v.stale).toBe(false);
@@ -241,11 +263,55 @@ describe('several changes at once are all reported', () => {
             dataAccessScope: 'EXTERNAL_EGRESS',
             reversibility: 'TERMINAL',
             provenance: 'THIRD_PARTY',
-            toolCount: 7,
             modelRef: 'model-b',
+            ...withGrantAfter(),
         });
         expect(v.stale).toBe(true);
         expect([...v.triggers].sort()).toEqual([...STALENESS_TRIGGERS].sort());
         expect(v.detail).toHaveLength(STALENESS_TRIGGERS.length);
+    });
+});
+
+/**
+ * #5304, owner decision 2026-11-14: TOOL_GRANTED is decided by GRANT TIME. The
+ * count it used to compare could not see a swap, and a swap is the ordinary way
+ * to replace a tool.
+ */
+describe('TOOL_GRANTED is decided by grant time, not by the tool count', () => {
+    it('a swap — one tool revoked, another granted — fires although the count is unchanged', () => {
+        const v = evaluateAssessmentStaleness(BASIS, {
+            ...unchanged(),
+            grants: [GRANTS_AT_SCORING[0], { toolName: 'propose_finding', grantedAt: AFTER }],
+        });
+        expect(v.triggers).toEqual(['TOOL_GRANTED']);
+        expect(v.detail).toEqual(['granted since scoring: propose_finding']);
+    });
+
+    it('a re-grant of a tool the run already saw fires too — accepted by the decision', () => {
+        const v = evaluateAssessmentStaleness(BASIS, {
+            ...unchanged(),
+            grants: [GRANTS_AT_SCORING[0], { toolName: 'list_risks', grantedAt: AFTER }],
+        });
+        expect(v.triggers).toEqual(['TOOL_GRANTED']);
+    });
+
+    it('a grant made in the same instant as the scoring was seen by it, and does not fire', () => {
+        const v = evaluateAssessmentStaleness(BASIS, {
+            ...unchanged(),
+            grants: [...GRANTS_AT_SCORING, { toolName: 'list_findings', grantedAt: SCORED_AT }],
+        });
+        expect(v.stale).toBe(false);
+    });
+
+    it('names every postdating grant, sorted, and none of the earlier ones', () => {
+        const v = evaluateAssessmentStaleness(BASIS, {
+            ...unchanged(),
+            grants: [
+                { toolName: 'propose_risk', grantedAt: AFTER },
+                ...GRANTS_AT_SCORING,
+                { toolName: 'list_findings', grantedAt: AFTER },
+            ],
+        });
+        expect(v.detail).toEqual(['granted since scoring: list_findings, propose_risk']);
     });
 });

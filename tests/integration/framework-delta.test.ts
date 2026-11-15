@@ -113,6 +113,22 @@ describeFn('Framework delta-gap engine (real DB)', () => {
         expect(control!.status).toBe('NEEDS_REVIEW');
     });
 
+    it('records the flag as a JOB STATUS_CHANGE on the control, with its prior status (#5317)', async () => {
+        const rows = await prisma.auditLog.findMany({
+            where: { tenantId: TENANT_A, entity: 'Control', entityId: controlAId, action: 'STATUS_CHANGE' },
+            take: 5,
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].actorType).toBe('JOB');
+        expect(rows[0].detailsJson).toMatchObject({
+            category: 'status_change',
+            fromStatus: 'IMPLEMENTED',
+            toStatus: 'NEEDS_REVIEW',
+            reason: 'FRAMEWORK_UPDATE',
+            diffId,
+        });
+    });
+
     it('notifies the installed tenant\'s members', async () => {
         const notes = await prisma.notification.count({ where: { tenantId: TENANT_A, title: { contains: FW_KEY } } });
         expect(notes).toBeGreaterThanOrEqual(1);

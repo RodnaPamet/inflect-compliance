@@ -885,7 +885,14 @@ const SINK_FLOOR = 30;
 // values: the proposal id, the deferral id, the decision (`ACCEPTED`,
 // `EDITED`, `REJECTED`, read off the proposal row) and the hook's own named
 // failure message. No model text and no transcript reaches any of them.
-const MEASURED_HOLES = 229;
+// 229 -> 231 on 2026-11-14 (#5304 item 7, the clean-up wait moved outside the
+// deadline race). Two holes in one new sink in `bounded-exec.ts` — the warn
+// logged when an executor's clean-up fails AFTER its result was captured:
+// `tool`, the registered tool name every other sink in that file already
+// logs, and the clean-up's error message. The clean-up is the sandbox
+// deletion; its error comes from the delete call and its transport, never
+// from the tool's output, which is already captured and is not on the error.
+const MEASURED_HOLES = 231;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -997,13 +1004,28 @@ describe('the agentic path is swept, and the sweep is real', () => {
     it.each(AGENTIC_PATH_GLOBS_ANTICIPATORY as string[])(
         'the anticipatory glob %s points at a directory that exists',
         (glob) => {
-            // These deliberately match NOTHING today — they exist so the first
-            // `src/app-layer/jobs/agent-*.ts` is in scope on its first commit
-            // rather than whenever somebody notices. What can still go wrong is
-            // a typo'd directory, which would sit here forever matching nothing
-            // for a reason nobody intended. So the directory is what is pinned.
+            // These match nothing yet — they exist so the first file of their
+            // shape is in scope on its first commit rather than whenever
+            // somebody notices. What can still go wrong is a typo'd directory,
+            // which would sit here forever matching nothing for a reason nobody
+            // intended. So the directory is what is pinned.
             const dir = glob.slice(0, glob.lastIndexOf('/', glob.indexOf('*')) + 1);
             expect(repoRelativeFiles().some((rel) => rel.startsWith(dir))).toBe(true);
+        },
+    );
+
+    it.each(AGENTIC_PATH_GLOBS_ANTICIPATORY as string[])(
+        'the anticipatory glob %s still matches nothing — once it does, it is LIVE',
+        (glob) => {
+            // An anticipatory glob is pinned only by its directory, so a glob
+            // that HAS real files but sits on this list is unguarded: a typo in
+            // its prefix would match nothing and nothing would notice. That is
+            // how `src/app-layer/jobs/agent-*.ts` sat here with ten real job
+            // files under it (#5308). The first file of a glob's shape moves
+            // the glob to AGENTIC_PATH_GLOBS_LIVE, where "matches a real file"
+            // is asserted.
+            const re = globToRegExp(glob);
+            expect(repoRelativeFiles().filter((rel) => re.test(rel))).toEqual([]);
         },
     );
 

@@ -113,7 +113,12 @@ export function computeColumnProfiles(
         // column's accumulator: the row count here is ONE page, and per-column
         // keeps each `Set` scoped so a wide table does not hold every column's
         // distinct values at once.
-        const distinct = new Set<string>();
+        // A COUNTED map rather than a Set (#5620): the exposure gate needs the
+        // least frequent value's count, and an average over the whole column
+        // cannot see that eleven of twelve values describe one row each. Same
+        // memory bound as the Set it replaced — both are bounded by the rows in
+        // one page, not by the table.
+        const counts = new Map<string, number>();
         let nonNull = 0;
         let emails = 0;
         let dates = 0;
@@ -126,13 +131,21 @@ export function computeColumnProfiles(
             if (raw === null) continue;
             nonNull += 1;
             if (raw.length > maxLength) maxLength = Math.min(raw.length, MAX_MEASURED_LENGTH);
-            // Bounded: a page is capped by the transport, so this Set is bounded
+            // Bounded: a page is capped by the transport, so this map is bounded
             // by rows-per-page and not by the table.
-            distinct.add(raw);
+            counts.set(raw, (counts.get(raw) ?? 0) + 1);
             if (looksLikeEmail(raw)) emails += 1;
             if (looksLikeDate(raw)) dates += 1;
             if (looksLikeInteger(raw)) integers += 1;
             if (looksLikeBoolean(raw)) booleans += 1;
+        }
+
+        // The least frequent value's count. A loop rather than
+        // `Math.min(...counts.values())` so the argument list cannot grow with
+        // the page size.
+        let minValueCount = 0;
+        for (const n of counts.values()) {
+            if (minValueCount === 0 || n < minValueCount) minValueCount = n;
         }
 
         const share = (n: number): number => (nonNull === 0 ? 0 : n / nonNull);
@@ -140,7 +153,8 @@ export function computeColumnProfiles(
             name: column,
             rowsSampled: rows.length,
             nonNullCount: nonNull,
-            distinctCount: distinct.size,
+            distinctCount: counts.size,
+            minValueCount,
             emailShare: share(emails),
             dateShare: share(dates),
             integerShare: share(integers),
@@ -152,7 +166,7 @@ export function computeColumnProfiles(
         // cannot ask for them; it gets them only when the statistics say they are
         // a vocabulary.
         if (!mayExposeValueSet(base)) return base;
-        return { ...base, valueSet: [...distinct].sort() };
+        return { ...base, valueSet: [...counts.keys()].sort() };
     });
 }
 

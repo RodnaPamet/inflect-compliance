@@ -97,6 +97,19 @@ describe('starting the gateway', () => {
         );
     });
 
+    it('any other refusal of the start is START-REFUSED with its status, never timed-out (#5316)', async () => {
+        // A wrong instance name (404), a disabled API (400) or quota (429):
+        // the API answered at once, so reporting a timeout sent an operator
+        // looking for a slow boot.
+        for (const status of [400, 404, 429, 500]) {
+            const { fetchImpl, counts } = scripted({ readyz: ['refused'], start: status });
+            const r = await startGatewayAndWait(TARGET, { fetchImpl, ...fakeClock() });
+            expect(r).toEqual({ outcome: 'start-refused', waitedMs: 0, status });
+            // No polling after a refused start.
+            expect(counts.readyz).toBe(1);
+        }
+    });
+
     it('no metadata server is UNAVAILABLE, not a refusal', async () => {
         // Local development. Nobody was asked, so reporting a refusal would be
         // a claim about a credential that was never offered.

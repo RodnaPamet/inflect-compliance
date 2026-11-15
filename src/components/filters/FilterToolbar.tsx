@@ -55,14 +55,17 @@ export interface FilterToolbarProps {
      */
     searchId?: string;
     /**
-     * Placeholder text (usually "Search {entityPlural}…").
+     * Placeholder text, `Search {entityPlural}…` (one `…`, no "(Enter)"
+     * hint — the search is live).
      *
-     * **Omit to hide the search input entirely.** The toolbar's
-     * other slots (filters, primary action, etc.) still render.
-     * Pages should default to omitting it — the global ⌘K palette
-     * is the canonical cross-page search; per-page text-search is
-     * legacy. Locked by
-     * `tests/guards/r14-no-page-searchbars.test.ts`.
+     * **Every standard list page passes it**, with `searchId`. It turns
+     * the Filter popover's top input into a live content search, with
+     * the filter categories still listed below it; there is no separate
+     * search bar. Presence is locked by
+     * `tests/guards/r14-no-page-searchbars.test.ts`, the wording by
+     * `tests/guards/search-placeholder-vocabulary.test.ts`. Omitted, the
+     * popover offers no search — only for a toolbar that is not a list
+     * page's.
      */
     searchPlaceholder?: string;
     /** Optional label for the FilterSelect trigger button. Defaults to "Filter". */

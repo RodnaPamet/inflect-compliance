@@ -10,6 +10,7 @@
  */
 import * as React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -170,5 +171,35 @@ describe('accepting an invitation', () => {
         fireEvent.change(document.getElementById('peer-accept-code')!, { target: { value: 'nonsense' } });
         fireEvent.click(screen.getByTestId('peer-accept-read'));
         expect(await screen.findByTestId('peer-accept-error')).toHaveTextContent('not an A2A peer invitation');
+    });
+});
+
+// #5313 — the invite form's supplier picker searches the vendor register; it
+// is not cut at the page the server rendered, and vendor is required.
+describe('the supplier on an invitation', () => {
+    it('can be one past the first page, found by searching the vendor register', async () => {
+        const calls: Call[] = [];
+        global.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+            calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+            if (url.startsWith('/api/t/acme/vendors?q=')) {
+                return { ok: true, json: async () => ({ items: [{ id: 'v_far', name: 'Far Supplier' }] }) } as Response;
+            }
+            return { ok: true, json: async () => ({ invitation: { id: 'inv_1' }, code: CODE }) } as Response;
+        }) as unknown as typeof fetch;
+        render(<InvitePeerForm choices={choices} onCreated={jest.fn()} onCancel={jest.fn()} />);
+
+        await choose('peer-invite-owner', 'Olga Owner');
+        const user = userEvent.setup();
+        await user.click(document.getElementById('peer-invite-vendor')!);
+        await user.type(await screen.findByPlaceholderText('Search…'), 'Far');
+        fireEvent.click(await screen.findByText('Far Supplier', {}, { timeout: 3000 }));
+        await choose('peer-invite-risk-tier', 'Moderate');
+        await choose('peer-invite-agent', 'Receiver');
+        await choose('peer-invite-workflows', 'Diagnostic');
+
+        expect(calls.some((c) => c.url === '/api/t/acme/vendors?q=Far&limit=20')).toBe(true);
+        fireEvent.click(screen.getByTestId('peer-invite-submit'));
+        await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+        expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ ...GRANT, vendorId: 'v_far' });
     });
 });

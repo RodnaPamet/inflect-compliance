@@ -5,11 +5,17 @@
 # under CC BY-SA 4.0 — no ASVS descriptive text is reproduced here). Target identifiers are NIST SSDF practice/task references.
 # Mappings are structural traceability guidance, not guarantees of compliance or
 # equivalence.
+#
+# Sources are exactly the ASVS Level 1 requirements
+# (tests/guardrails/asvs-starter-pack-coverage.test.ts). Entries marked
+# [curated] were judged against both texts when V3.7.1, V7.1.1 and V7.1.2
+# became Level 1 (#5316, version 2); version 2 also dropped V2.6.1 and V11.1.6,
+# which became Level 2.
 urn: urn:inflect:mappingset:asvs-to-ssdf
 name: "OWASP ASVS 4.0.3 → NIST SSDF (SP 800-218)"
 description: >
   Cross-framework traceability mapping from OWASP ASVS 4.0.3 Level 1 requirements to NIST SSDF (SP 800-218) references.
-version: 1
+version: 2
 source_framework_ref: OWASP-ASVS-4.0.3
 target_framework_ref: NIST-SSDF-800-218
 
@@ -103,10 +109,6 @@ mapping_entries:
     target_ref: PW.5.1
     strength: RELATED
     rationale: "ASVS V2.5.6 supports NIST SSDF task PW.5.1."
-  - source_ref: "V2.6.1"
-    target_ref: PW.5.1
-    strength: RELATED
-    rationale: "ASVS V2.6.1 supports NIST SSDF task PW.5.1."
   - source_ref: "V2.7.1"
     target_ref: PW.5.1
     strength: RELATED
@@ -172,6 +174,10 @@ mapping_entries:
     target_ref: PW.5.1
     strength: RELATED
     rationale: "ASVS V3.4.5 supports NIST SSDF task PW.5.1."
+  - source_ref: "V3.7.1"
+    target_ref: PW.5.1
+    strength: SUBSET
+    rationale: "[curated] Requiring re-authentication before a sensitive operation is one secure coding practice among the full set PW.5.1 asks developers to follow; it meets PW.5.1 only in part."
   # ── ASVS V4: Access Control ──
   - source_ref: "V4.1.1"
     target_ref: PW.5.1
@@ -316,6 +322,14 @@ mapping_entries:
     strength: RELATED
     rationale: "ASVS V6.2.1 supports NIST SSDF task PW.5.1."
   # ── ASVS V7: Error Handling and Logging ──
+  - source_ref: "V7.1.1"
+    target_ref: PW.5.1
+    strength: SUBSET
+    rationale: "[curated] Keeping credentials and payment details out of logs, and session tokens out except in hashed form, is one secure coding practice within PW.5.1; it meets PW.5.1 only in part."
+  - source_ref: "V7.1.2"
+    target_ref: PW.5.1
+    strength: SUBSET
+    rationale: "[curated] Keeping other sensitive data, as the organization's privacy and security requirements classify it, out of logs is one secure coding practice within PW.5.1, which follows those requirements; it meets PW.5.1 only in part."
   - source_ref: "V7.4.1"
     target_ref: PW.1.1
     strength: RELATED
@@ -396,10 +410,6 @@ mapping_entries:
     target_ref: PW.1.1
     strength: RELATED
     rationale: "ASVS V11.1.5 supports NIST SSDF task PW.1.1."
-  - source_ref: "V11.1.6"
-    target_ref: PW.1.1
-    strength: RELATED
-    rationale: "ASVS V11.1.6 supports NIST SSDF task PW.1.1."
   # ── ASVS V12: Files and Resources ──
   - source_ref: "V12.1.1"
     target_ref: PW.5.1

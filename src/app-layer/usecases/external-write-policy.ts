@@ -207,8 +207,14 @@ export interface ExternalWritePolicy extends ExternalWriteState {
  * negation silently COUNTS the unknown outcome as evidence and widens
  * authority, a list silently EXCLUDES it and keeps the gate shut until somebody
  * decides what it means. Shut is the safe half.
+ *
+ * `ACCEPTED` (#3324, the far end took an asynchronous request and will deliver
+ * it later) was decided when it arrived and left off this list (#5317): it is a
+ * dispatched outcome of a write a human approved, exactly as `FAILED` is, and
+ * an async-grant connection's approvals — some of which stay `ACCEPTED` for
+ * ever — read as no evidence at all without it.
  */
-const DISPATCHED_OUTCOMES = ['PENDING', 'APPLIED', 'FAILED', 'INDETERMINATE'] as const;
+const DISPATCHED_OUTCOMES = ['PENDING', 'APPLIED', 'FAILED', 'INDETERMINATE', 'ACCEPTED'] as const;
 
 /**
  * What counts as EVIDENCE for each rung that has a requirement.

@@ -194,6 +194,13 @@ export function HeroMetric({
         const sign = delta > 0 ? "+" : "";
         return { semantic, Arrow, sign, magnitude: Math.abs(delta) };
     })();
+    // A percent metric's delta is a change in percentage POINTS: 40% → 44% is
+    // "+4.0 pp", never "+4.0%", which reads as a 4% relative rise (#5309). So
+    // the delta takes the digits without the value's percent sign, and the
+    // "pp" unit after them — as KpiCard's trend does.
+    const deltaFormat: AnimatedNumberFormat =
+        format === "percent" ? { kind: "decimal", fractionDigits: 1 } : animatedFormat;
+    const deltaUnit = format === "percent" ? "pp" : "";
 
     return (
         <section
@@ -304,8 +311,9 @@ export function HeroMetric({
                         {deltaInfo.sign}
                         <AnimatedNumber
                             value={deltaInfo.magnitude}
-                            format={animatedFormat}
+                            format={deltaFormat}
                         />
+                        {deltaUnit && <span data-hero-metric-delta-unit>{deltaUnit}</span>}
                         {deltaLabel && (
                             <span className="text-content-subtle ml-1">
                                 {deltaLabel}

@@ -249,6 +249,22 @@ describe('approving one opens the journal row, and sends nothing', () => {
         await expect(approveAgentProposal(ctx(), id)).rejects.toThrow(/now at DRY_RUN/);
     });
 
+    it('REFUSES an approval WITH EDITS, leaving the proposal PENDING and nothing opened (#5317)', async () => {
+        // The journal row is opened from the stored payload, so edits would be
+        // recorded as EDITED and then dropped from the write actually sent.
+        await seedConnection('PROPOSE_ONLY');
+        const id = await queue();
+        const journalBefore = await prisma.externalWriteJournal.count({ where: { tenantId: T } });
+
+        await expect(
+            approveAgentProposal(ctx(), id, { edits: { arguments: { empNumber: 7, workEmail: 'other@example.test' } } }),
+        ).rejects.toThrow(/EXTERNAL_WRITE_PROPOSAL_NOT_EDITABLE/);
+
+        const row = await prisma.agentProposal.findUniqueOrThrow({ where: { id }, select: { status: true } });
+        expect(row.status).toBe('PENDING');
+        expect(await prisma.externalWriteJournal.count({ where: { tenantId: T } })).toBe(journalBefore);
+    });
+
     it('REFUSES a payload that is no longer well-formed', async () => {
         // Seeded directly with a payload that does not satisfy its own schema.
         // Dispatching on a guess is the one thing that must not happen.

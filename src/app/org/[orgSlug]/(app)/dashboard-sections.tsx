@@ -26,14 +26,52 @@ import type {
 
 // ─── Tenant coverage list ──────────────────────────────────────────
 
+function TenantRowBody({ row }: { row: TenantHealthRow }) {
+    const t = useTranslations('org');
+    return (
+        <>
+            <RagPill rag={row.rag} />
+            <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-tight">
+                    <span className="text-sm font-medium text-content-emphasis truncate">
+                        {row.name}
+                    </span>
+                    <span className="text-xs tabular-nums text-content-muted">
+                        {row.coveragePercent !== null ? (
+                            <AnimatedNumber
+                                value={row.coveragePercent}
+                                format={{ kind: 'percent', fractionDigits: 1 }}
+                            />
+                        ) : (
+                            '—'
+                        )}
+                    </span>
+                </div>
+                <CoverageBar percent={row.coveragePercent} rag={row.rag} />
+                <div className="mt-1.5 flex items-center gap-default text-xs text-content-muted">
+                    <span>{row.openRisks ?? '—'} {t('dashboard.openRisksLower')}</span>
+                    <span>{row.criticalRisks ?? 0} {t('dashboard.criticalLower')}</span>
+                    <span>{row.overdueEvidence ?? 0} {t('dashboard.overdueEvidenceLower')}</span>
+                </div>
+            </div>
+        </>
+    );
+}
+
 export function TenantCoverageList({
     rows,
     sortBy = 'rag',
     limit,
+    canDrillDown = true,
 }: {
     rows: TenantHealthRow[];
     sortBy?: 'rag' | 'name' | 'coverage';
     limit?: number;
+    /**
+     * False for a viewer without `canDrillDown` (ORG_READER): a row is then
+     * text, not a link to a workspace that would refuse them (#5313).
+     */
+    canDrillDown?: boolean;
 }) {
     const t = useTranslations('org');
     if (rows.length === 0) {
@@ -73,40 +111,26 @@ export function TenantCoverageList({
         >
             {visible.map((row) => (
                 <li key={row.tenantId} className="py-2">
-                    <Link
-                        href={row.drillDownUrl}
-                        className="flex items-center gap-default hover:bg-bg-muted -mx-3 px-3 py-2 rounded-lg transition-colors group"
-                        data-testid={`org-tenant-row-${row.slug}`}
-                    >
-                        <RagPill rag={row.rag} />
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-tight">
-                                <span className="text-sm font-medium text-content-emphasis truncate">
-                                    {row.name}
-                                </span>
-                                <span className="text-xs tabular-nums text-content-muted">
-                                    {row.coveragePercent !== null ? (
-                                        <AnimatedNumber
-                                            value={row.coveragePercent}
-                                            format={{ kind: 'percent', fractionDigits: 1 }}
-                                        />
-                                    ) : (
-                                        '—'
-                                    )}
-                                </span>
-                            </div>
-                            <CoverageBar percent={row.coveragePercent} rag={row.rag} />
-                            <div className="mt-1.5 flex items-center gap-default text-xs text-content-muted">
-                                <span>{row.openRisks ?? '—'} {t('dashboard.openRisksLower')}</span>
-                                <span>{row.criticalRisks ?? 0} {t('dashboard.criticalLower')}</span>
-                                <span>{row.overdueEvidence ?? 0} {t('dashboard.overdueEvidenceLower')}</span>
-                            </div>
+                    {canDrillDown ? (
+                        <Link
+                            href={row.drillDownUrl}
+                            className="flex items-center gap-default hover:bg-bg-muted -mx-3 px-3 py-2 rounded-lg transition-colors group"
+                            data-testid={`org-tenant-row-${row.slug}`}
+                        >
+                            <TenantRowBody row={row} />
+                            <ChevronRight
+                                className="w-4 h-4 text-content-subtle group-hover:text-content-emphasis transition-colors"
+                                aria-hidden="true"
+                            />
+                        </Link>
+                    ) : (
+                        <div
+                            className="flex items-center gap-default -mx-3 px-3 py-2"
+                            data-testid={`org-tenant-row-${row.slug}`}
+                        >
+                            <TenantRowBody row={row} />
                         </div>
-                        <ChevronRight
-                            className="w-4 h-4 text-content-subtle group-hover:text-content-emphasis transition-colors"
-                            aria-hidden="true"
-                        />
-                    </Link>
+                    )}
                 </li>
             ))}
         </ul>
@@ -162,10 +186,17 @@ export function DrillDownCtas({
     summary,
     orgSlug,
     entries,
+    canDrillDown = true,
 }: {
     summary: PortfolioSummary;
     orgSlug: string;
     entries?: ReadonlyArray<'controls' | 'risks' | 'evidence'>;
+    /**
+     * False for a viewer without `canDrillDown` (ORG_READER): the three
+     * lists name items inside the workspaces and refuse them, so a card
+     * shows its count as text and links nowhere (#5313).
+     */
+    canDrillDown?: boolean;
 }) {
     const t = useTranslations('org');
     const all = [
@@ -203,37 +234,54 @@ export function DrillDownCtas({
             className="grid grid-cols-1 sm:grid-cols-3 gap-compact h-full"
             data-testid="org-drilldown-ctas"
         >
-            {visible.map((cta) => (
-                <Link
-                    key={cta.href}
-                    href={cta.href}
-                    className="rounded-lg border border-border-subtle hover:border-border-default hover:bg-bg-muted/50 transition-colors duration-150 ease-out p-3 group"
-                    data-testid={`org-drilldown-${cta.key}`}
-                >
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-tight text-content-emphasis">
-                            <cta.icon
-                                className={`w-4 h-4 text-${cta.tone}-500`}
-                                aria-hidden="true"
-                            />
-                            <span className="font-medium text-xs">{cta.label}</span>
+            {visible.map((cta) => {
+                const body = (
+                    <>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-tight text-content-emphasis">
+                                <cta.icon
+                                    className={`w-4 h-4 text-${cta.tone}-500`}
+                                    aria-hidden="true"
+                                />
+                                <span className="font-medium text-xs">{cta.label}</span>
+                            </div>
+                            {canDrillDown && (
+                                <ChevronRight
+                                    className="w-4 h-4 text-content-subtle group-hover:text-content-emphasis transition-colors"
+                                    aria-hidden="true"
+                                />
+                            )}
                         </div>
-                        <ChevronRight
-                            className="w-4 h-4 text-content-subtle group-hover:text-content-emphasis transition-colors"
-                            aria-hidden="true"
-                        />
+                        <p className="mt-2 text-xl font-bold text-content-emphasis tabular-nums">
+                            <AnimatedNumber
+                                value={cta.count}
+                                format={{ kind: 'integer' }}
+                            />
+                        </p>
+                        <p className="text-xs text-content-muted">
+                            {cta.count === 1 ? t('dashboard.item') : t('dashboard.items')} {t('dashboard.acrossThePortfolio')}
+                        </p>
+                    </>
+                );
+                return canDrillDown ? (
+                    <Link
+                        key={cta.href}
+                        href={cta.href}
+                        className="rounded-lg border border-border-subtle hover:border-border-default hover:bg-bg-muted/50 transition-colors duration-150 ease-out p-3 group"
+                        data-testid={`org-drilldown-${cta.key}`}
+                    >
+                        {body}
+                    </Link>
+                ) : (
+                    <div
+                        key={cta.href}
+                        className="rounded-lg border border-border-subtle p-3"
+                        data-testid={`org-drilldown-${cta.key}`}
+                    >
+                        {body}
                     </div>
-                    <p className="mt-2 text-xl font-bold text-content-emphasis tabular-nums">
-                        <AnimatedNumber
-                            value={cta.count}
-                            format={{ kind: 'integer' }}
-                        />
-                    </p>
-                    <p className="text-xs text-content-muted">
-                        {cta.count === 1 ? t('dashboard.item') : t('dashboard.items')} {t('dashboard.acrossThePortfolio')}
-                    </p>
-                </Link>
-            ))}
+                );
+            })}
         </div>
     );
 }

@@ -19,11 +19,20 @@ import type { RiskMatrixBand } from './types';
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
+/** The most levels a matrix axis may have (the DB CHECK holds the same). */
+export const RISK_MATRIX_MAX_LEVELS = 10;
+
+/**
+ * The largest score any matrix can give: likelihood × impact at the top of
+ * the largest matrix. What a score filter is bounded by (`list_risks`, #5304).
+ */
+export const RISK_MATRIX_MAX_SCORE = RISK_MATRIX_MAX_LEVELS * RISK_MATRIX_MAX_LEVELS;
+
 const dimensionSchema = z
     .number()
     .int()
     .min(2, 'must be at least 2')
-    .max(10, 'must be at most 10');
+    .max(RISK_MATRIX_MAX_LEVELS, `must be at most ${RISK_MATRIX_MAX_LEVELS}`);
 
 const axisTitleSchema = z.string().min(1).max(64);
 

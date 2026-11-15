@@ -447,6 +447,35 @@ export function recordAgentReviewAttribution(attrs: { outcome: string }): void {
     _agentReviewAttribution.add(1, { outcome: attrs.outcome.toLowerCase() });
 }
 
+let _agentRecertPackPreparation: Counter | null = null;
+
+/**
+ * One preparation of an AGENT access review's reviewer packs (#5317), by how
+ * it ended and where it ran: `request` for a campaign small enough to prepare
+ * inside the request, `job` for one handed to `agent-recert-packs-prepare`.
+ *
+ * `queued` is the request handing a campaign to the job; the job then counts
+ * `prepared`, `refused` (a named refusal: the requester no longer qualifies, a
+ * preparer stopped qualifying, a run failed) or `error` (anything else).
+ *
+ * ALERT ON — `path="job"` `outcome="error"` at any rate, and a `queued` rate
+ * with no matching `prepared` + `refused` + `error` from the job: the worker is
+ * not taking the work, and the page will say "queued" for ever. No tenant
+ * label and no identifier.
+ */
+export function recordAgentRecertPackPreparation(attrs: {
+    outcome: 'prepared' | 'queued' | 'refused' | 'error';
+    path: 'request' | 'job';
+}): void {
+    if (!_agentRecertPackPreparation) {
+        _agentRecertPackPreparation = getMeter().createCounter('agentic.recert_pack_preparation.outcome', {
+            description: 'Agent recertification pack preparations by outcome and where they ran',
+            unit: '1',
+        });
+    }
+    _agentRecertPackPreparation.add(1, { outcome: attrs.outcome, path: attrs.path });
+}
+
 /**
  * Audit narrative runs by what became of their narratives (#3749): `recorded`,
  * `already_recorded`, a refusal of the answer or of the record check by name,

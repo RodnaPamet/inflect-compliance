@@ -8,6 +8,7 @@ import { assertBundleTargetInTenant } from './vendor-link-targets';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest } from '@/lib/errors/types';
+import { withDeleted } from '@/lib/soft-delete';
 
 // ─── Evidence Bundles ───
 
@@ -25,6 +26,16 @@ export async function listEvidenceBundles(ctx: RequestContext, vendorId: string)
 export async function createEvidenceBundle(ctx: RequestContext, vendorId: string, input: { name: string; description?: string }) {
     assertCanManageVendorDocs(ctx);
     return runInTenantContext(ctx, async (db) => {
+        // The URL's vendor must be this tenant's (#5318). The composite FK
+        // already refused another tenant's id, but as an FK error (500); a
+        // vendor that is not here is a 404, as every other vendor read says.
+        // `withDeleted`: this check adds the tenant boundary and nothing else,
+        // so a vendor in the trash is still accepted, as it was before.
+        const vendor = await db.vendor.findFirst(withDeleted({
+            where: { id: vendorId, tenantId: ctx.tenantId },
+            select: { id: true },
+        }));
+        if (!vendor) throw notFound('Vendor not found');
         const bundle = await db.vendorEvidenceBundle.create({
             data: { tenantId: ctx.tenantId, vendorId, name: input.name, description: input.description, createdByUserId: ctx.userId },
         });

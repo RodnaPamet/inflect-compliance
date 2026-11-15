@@ -3,12 +3,14 @@
  *
  *   1. THREE ESTATES, A SCHEDULE EACH, A NAMED OWNER PER SOURCE. The three
  *      fixture estates are declared through the usecase and stored with their
- *      cadence and an ACTIVE member owning every source — the cadence the
- *      scanner's own configuration runs at.
- *   2. HEALTH FROM REAL SCANS. The reference scanner (the package) reads the
- *      HTTP fakes, signs, and its reports go through the real ingest; the health
- *      view then shows the last complete scan per estate and per source, and a
- *      STALE estate as stale — overdue, incomplete, or missing a declared source.
+ *      cadence and an ACTIVE member owning every source.
+ *   2. HEALTH FROM SIGNED SCANS. Each estate's scanner signs its reports with
+ *      the reference fake (`agent-harness-fake-scanner.ts`) and they go through
+ *      the real ingest; the health view then shows the last complete scan per
+ *      estate and per source, and a STALE estate as stale — overdue,
+ *      incomplete, or missing a declared source. (These scans were made by the
+ *      in-repo scanner reading HTTP fakes until it was removed, scanent #26;
+ *      what the scanner reads and leaves out is scanent's to test now.)
  *   3. THE WRITES REFUSE what would make an estate unaccountable or ambiguous.
  *   4. AUTHORITY. Declaring is the register key's; reading is the inventory's.
  *   5. ISOLATION. Through the usecases one tenant cannot see or change another's
@@ -16,25 +18,13 @@
  *   6. THE DATABASE holds the cadence bounds and the source vocabulary below
  *      the usecase.
  */
-import { generateKeyPairSync } from 'crypto';
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
 
 import { prismaTestClient } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
-import {
-    AZURE_CLIENT_SECRET_VALUE,
-    createSourceFakes,
-    NEVER_REPORTED,
-    OKTA_TOKEN_VALUE,
-    oktaFixture,
-    SCANNER_OKTA_TOKEN_ID,
-    vaultFixture,
-    VAULT,
-    type Fakes,
-} from '../helpers/agent-harness-source-fakes';
-import { CLIENT_ESTATES, GLOBEX_OKTA_ORG, INITECH_VAULT } from '../helpers/agent-harness-estate-fixtures';
+import { createFakeScanner, validReportBody, type FakeScanner } from '../helpers/agent-harness-fake-scanner';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { ingestHarnessReport } from '@/app-layer/usecases/agent-harness-scans';
 import { addHarnessScannerKey } from '@/app-layer/usecases/agent-harness-scanner-keys';
@@ -44,12 +34,8 @@ import {
     getHarnessEstateHealth,
     updateHarnessEstate,
 } from '@/app-layer/usecases/agent-harness-estates';
-import { parseScannerConfig } from '../../packages/agent-harness-scanner/src/config';
-import { jsonLineLog } from '../../packages/agent-harness-scanner/src/log';
-import { rawPublicKeyHex } from '../../packages/agent-harness-scanner/src/report';
-import { runScan } from '../../packages/agent-harness-scanner/src/scan';
 import type { RequestContext } from '@/app-layer/types';
-import { SOURCE_KINDS } from '@/lib/agentic/harness-contract';
+import { SOURCE_KINDS, type HarnessReportBodyV2 } from '@/lib/agentic/harness-contract';
 import type { EstateHealthRow } from '@/lib/agentic/harness-estate-health';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -60,12 +46,34 @@ const T2 = 'harness-estates-two';
 const ALL_TENANTS = [T1, T2];
 const HOUR = 3_600_000;
 
+/**
+ * Three fixture client estates (#3678): the name and cadence each is declared
+ * with, and which seeded member owns each source. Inlined from the fixture
+ * module the in-repo scanner's configuration shared, removed with it.
+ */
+const CLIENT_ESTATES: readonly {
+    readonly name: string;
+    readonly cadenceHours: number;
+    readonly sources: readonly { readonly kind: 'okta-app' | 'vault'; readonly ownerRole: 'identity' | 'secrets' }[];
+}[] = [
+    {
+        name: 'Acme production',
+        cadenceHours: 24,
+        sources: [
+            { kind: 'okta-app', ownerRole: 'identity' },
+            { kind: 'vault', ownerRole: 'secrets' },
+        ],
+    },
+    { name: 'Globex identity', cadenceHours: 12, sources: [{ kind: 'okta-app', ownerRole: 'identity' }] },
+    { name: 'Initech secrets', cadenceHours: 24, sources: [{ kind: 'vault', ownerRole: 'secrets' }] },
+];
+
 interface Seeded {
     ownerUserId: string;
     identityOwnerId: string;
     secretsOwnerId: string;
     departedUserId: string;
-    scanners: { agentId: string; pem: string }[];
+    scanners: { agentId: string; signer: FakeScanner }[];
 }
 const seeded: Record<string, Seeded> = {};
 
@@ -124,9 +132,9 @@ async function seedTenant(tenantId: string): Promise<void> {
             provenance: 'FIRST_PARTY',
             ownerUserId,
         });
-        const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-        await addHarnessScannerKey(ctxFor(tenantId), { agentId: agent.id, publicKey: rawPublicKeyHex(publicKey) });
-        seeded[tenantId].scanners.push({ agentId: agent.id, pem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() });
+        const signer = createFakeScanner();
+        await addHarnessScannerKey(ctxFor(tenantId), { agentId: agent.id, publicKey: signer.publicKeyHex });
+        seeded[tenantId].scanners.push({ agentId: agent.id, signer });
     }
 }
 
@@ -142,44 +150,65 @@ const declare = (tenantId: string, i: number) =>
         sources: CLIENT_ESTATES[i].sources.map((s) => ({ kind: s.kind, ownerUserId: ownerFor(tenantId, s.ownerRole) })),
     });
 
-/** Rewrite a fixture's ids so two estates' principals never collide in the tenant's discovered-agent namespace. */
-function distinct<T>(fixture: T, tag: string): T {
-    return JSON.parse(
-        JSON.stringify(fixture)
-            .replace(/0oa/g, `0oa${tag}`)
-            .replace(/00T/g, `00T${tag}`)
-            .replace(/entra:sp:/g, `entra:sp:${tag}-`)
-            .replace(/okta:app:/g, `okta:app:${tag}`),
-    ) as T;
-}
-
-let fakes: Fakes;
+let scanSeq = 0;
 const START = Date.now();
 
-/** Run the real scanner for estate `i` as of `hoursAgo`, and post its report through the real ingest. */
-async function scanAndIngest(tenantId: string, i: number, hoursAgo: number, env: Record<string, string | undefined> = {}) {
-    const fixture = CLIENT_ESTATES[i];
-    const config = parseScannerConfig({
-        ...fixture.scannerConfig,
-        scanner: { ...(fixture.scannerConfig.scanner as object), agentId: seeded[tenantId].scanners[i].agentId },
+/** An Okta API token, as a scanner reports one: a principal with no sign of a model. */
+const oktaToken = (id: string): HarnessReportBodyV2['agents'][number] => ({
+    discoveredId: `okta:api-token:${id}`,
+    discoveredVia: ['okta-app'],
+    registeredAgentId: null,
+    owner: null,
+    credentials: [],
+    tools: [],
+    skills: [],
+    verdicts: [],
+});
+
+/** A vault principal: an identity found by its tagged secret, again with no sign of a model. */
+const vaultPrincipal = (id: string): HarnessReportBodyV2['agents'][number] => ({
+    ...oktaToken(id),
+    discoveredId: `vault:${id}`,
+    discoveredVia: ['vault'],
+});
+
+/**
+ * What each fixture estate's scanner reads, as its report body: the sources it
+ * declares, read in full, and the principals it finds. Every id is the
+ * estate's own, so two estates never collide in the tenant's namespace. With
+ * `vaultUnreadable`, the vault answered nothing (its credential failed): the
+ * source is INCOMPLETE `AUTH_FAILED` and its principals are absent.
+ */
+function estateReport(i: number, opts: { vaultUnreadable?: boolean } = {}): Pick<HarnessReportBodyV2, 'population' | 'agents'> {
+    const vault = (ids: string[]) =>
+        opts.vaultUnreadable
+            ? { source: { kind: 'vault' as const, status: 'INCOMPLETE' as const, reason: 'AUTH_FAILED' as const, rows: 0 }, agents: [] }
+            : { source: { kind: 'vault' as const, status: 'COMPLETE' as const, rows: ids.length }, agents: ids.map(vaultPrincipal) };
+    const okta = (ids: string[]) => ({
+        source: { kind: 'okta-app' as const, status: 'COMPLETE' as const, rows: ids.length },
+        agents: ids.map(oktaToken),
     });
-    const lines: string[] = [];
-    const { raw } = await runScan({
-        config,
-        env: {
-            SCANNER_SIGNING_KEY: seeded[tenantId].scanners[i].pem,
-            ACME_OKTA_API_TOKEN: OKTA_TOKEN_VALUE,
-            ACME_AZURE_CLIENT_SECRET: AZURE_CLIENT_SECRET_VALUE,
-            GLOBEX_OKTA_API_TOKEN: OKTA_TOKEN_VALUE,
-            INITECH_AZURE_CLIENT_SECRET: AZURE_CLIENT_SECRET_VALUE,
-            ...env,
-        },
-        log: jsonLineLog((l) => lines.push(l)),
-        fetchImpl: fakes.fetchImpl,
-        now: () => START - hoursAgo * HOUR,
-    });
-    for (const secret of NEVER_REPORTED) expect(lines.join('')).not.toContain(secret);
-    return ingestHarnessReport(ctxFor(tenantId), raw);
+    const parts =
+        i === 0 ? [okta(['00TToken1', '00TToken2']), vault(['acme-reporting'])]
+        : i === 1 ? [okta(['00TGToken1', '00TGToken2'])]
+        : [vault(['initech-billing', 'initech-ledger'])];
+    return { population: { sources: parts.map((p) => p.source) }, agents: parts.flatMap((p) => p.agents) };
+}
+
+/** Sign estate `i`'s report as of `hoursAgo` with its scanner's key, and post it through the real ingest. */
+async function scanAndIngest(tenantId: string, i: number, hoursAgo: number, opts: { vaultUnreadable?: boolean } = {}) {
+    const { scanners } = seeded[tenantId];
+    const body: HarnessReportBodyV2 = {
+        ...validReportBody(),
+        ...estateReport(i, opts),
+        findings: [],
+    };
+    body.scan = {
+        id: `scan_estate_${++scanSeq}`,
+        asOf: new Date(START - hoursAgo * HOUR).toISOString(),
+        scanner: { ...body.scan.scanner, agentId: scanners[i].agentId },
+    };
+    return ingestHarnessReport(ctxFor(tenantId), scanners[i].signer.serialise(body));
 }
 
 async function asTenant<T>(tenantId: string | null, fn: (tx: PrismaClient) => Promise<T>): Promise<T> {
@@ -200,11 +229,6 @@ const rowNamed = (rows: readonly EstateHealthRow[], name: string) => {
 beforeAll(async () => {
     await clearOwnRows();
     for (const t of ALL_TENANTS) await seedTenant(t);
-    fakes = createSourceFakes({
-        okta: oktaFixture(),
-        oktaOrgs: { [GLOBEX_OKTA_ORG]: distinct(oktaFixture(), 'G') },
-        vaults: { [VAULT]: vaultFixture(), [INITECH_VAULT]: distinct(vaultFixture(INITECH_VAULT), 'I') },
-    });
 });
 
 afterAll(async () => {
@@ -233,10 +257,10 @@ describe('1. three estates, a schedule each, a named owner per source', () => {
         });
         expect(active).toBe(new Set(owners).size);
 
-        // The estate's cadence is the schedule its scanner runs at.
+        // Each estate is stored with the cadence it was declared with.
         for (const fixture of CLIENT_ESTATES) {
             const estate = stored.find((e) => e.name === fixture.name)!;
-            expect(parseScannerConfig(fixture.scannerConfig).schedule.everyHours).toBe(estate.cadenceHours);
+            expect(estate.cadenceHours).toBe(fixture.cadenceHours);
         }
 
         const audits = await prisma.auditLog.findMany({ where: { tenantId: T1, action: 'AGENT_HARNESS_ESTATE_DECLARED' } });
@@ -253,7 +277,7 @@ describe('1. three estates, a schedule each, a named owner per source', () => {
     });
 });
 
-describe('2. the health view, from real scans through the real ingest', () => {
+describe('2. the health view, from signed scans through the real ingest', () => {
     beforeAll(async () => {
         // Acme: a complete scan two hours ago, inside its 24-hour cadence.
         await scanAndIngest(T1, 0, 2);
@@ -261,15 +285,17 @@ describe('2. the health view, from real scans through the real ingest', () => {
         await scanAndIngest(T1, 1, 30);
         // Initech: complete 60 hours ago; the latest, three hours ago, could not read the vault.
         await scanAndIngest(T1, 2, 60);
-        await scanAndIngest(T1, 2, 3, { INITECH_AZURE_CLIENT_SECRET: undefined });
+        await scanAndIngest(T1, 2, 3, { vaultUnreadable: true });
     });
 
-    it('every Okta API token is raised through the real ingest as an unregistered identity, except the scanner\'s own', async () => {
+    it('every Okta API token is raised through the real ingest as an unregistered identity', async () => {
         // An API token is a principal on no list, and nothing an Okta read
         // reports shows it to run a model: it lists no tool and no model
         // endpoint, and was not found in code, a tracing system or an MCP
         // server. So it is an UNREGISTERED_IDENTITY, not a shadow agent (owner
-        // decisions, 2026-11-13), and it has no shortfall finding.
+        // decisions, 2026-11-13), and it has no shortfall finding. (That the
+        // scanner leaves its OWN token out is the scanner's rule, tested in
+        // scanent since the in-repo scanner was removed.)
         const refsOf = async (prefix: string) =>
             (
                 await prisma.finding.findMany({
@@ -279,7 +305,7 @@ describe('2. the health view, from real scans through the real ingest', () => {
             )
                 .map((f) => f.sourceRef as string)
                 .sort();
-        // Acme's org and Globex's, each with two tokens beside the scanner's own.
+        // Acme's org and Globex's, each with two tokens.
         expect(await refsOf('UNREGISTERED_IDENTITY')).toEqual([
             'UNREGISTERED_IDENTITY:okta:api-token:00TGToken1',
             'UNREGISTERED_IDENTITY:okta:api-token:00TGToken2',
@@ -288,10 +314,6 @@ describe('2. the health view, from real scans through the real ingest', () => {
         ]);
         expect(await refsOf('SHADOW_AGENT')).toEqual([]);
         expect(await refsOf('HARNESS_SHORTFALL')).toEqual([]);
-        const own = await prisma.discoveredAgent.count({
-            where: { tenantId: T1, discoveredId: { in: [`okta:api-token:${SCANNER_OKTA_TOKEN_ID}`, 'okta:api-token:00TGScannerOwn'] } },
-        });
-        expect(own).toBe(0);
     });
 
     it('a fresh estate shows its last complete scan, per estate and per source', async () => {
@@ -376,11 +398,16 @@ describe('2. the health view, from real scans through the real ingest', () => {
         expect(view).toMatchObject({ scanWindow: 1, windowTruncated: true });
     });
 
-    it('no credential reached a stored scan or an estate audit row', async () => {
-        const scans = await prisma.agentHarnessScan.findMany({ where: { tenantId: T1 }, select: { sourcesJson: true, signature: true } });
-        const audits = await prisma.auditLog.findMany({ where: { tenantId: T1, action: { startsWith: 'AGENT_HARNESS_' } } });
-        const text = JSON.stringify([scans, audits]);
-        for (const secret of NEVER_REPORTED) expect(text).not.toContain(secret);
+    it('a busier scanner filling the shared window does not turn a fresh estate STALE (#5317)', async () => {
+        // Globex now scans an hour ago, the newest scan of all. With the shared
+        // window narrowed to one scan, Acme's fresh scan (two hours ago) is
+        // crowded out of it — and the card must still judge Acme as the daily
+        // staleness pass does, over Acme's own freshness window.
+        await scanAndIngest(T1, 1, 1);
+        const view = await getHarnessEstateHealth(ctxFor(T1), { now: new Date(START + 60_000), limits: { scans: 1 } });
+        expect(view.windowTruncated).toBe(true);
+        expect(rowNamed(view.estates.rows, 'Acme production').status).toBe('FRESH');
+        expect(rowNamed(view.estates.rows, 'Globex identity').status).toBe('FRESH');
     });
 });
 

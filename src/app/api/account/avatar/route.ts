@@ -27,21 +27,73 @@ import {
 } from '@/lib/account/avatar';
 import { assertAccountWideWriteInScope } from '@/lib/account/sso-scope';
 
+/**
+ * Room for the multipart envelope around the one file part: the boundary
+ * lines, the part headers and the filename. Generous on purpose: the cap is
+ * there to stop a multi-hundred-MB body, not to measure the envelope.
+ */
+const MULTIPART_OVERHEAD_BYTES = 16 * 1024;
+const AVATAR_BODY_CAP = AVATAR_MAX_BYTES + MULTIPART_OVERHEAD_BYTES;
+
+const TOO_LARGE = 'Processed avatar is too large — re-select a smaller image.';
+
+/**
+ * Read the request body through a byte cap that ABORTS at the cap (#5303).
+ * `req.formData()` buffers the whole body before anything can measure it,
+ * so a size check on the parsed file refused an oversized upload only after
+ * it had been held in memory. A declared `content-length` over the cap is
+ * refused before a byte is read; one that is absent or understated is
+ * caught while streaming.
+ */
+async function readCappedBody(req: NextRequest, cap: number): Promise<Uint8Array<ArrayBuffer>> {
+    const declared = Number(req.headers.get('content-length') ?? '');
+    if (Number.isFinite(declared) && declared > cap) throw badRequest(TOO_LARGE);
+    const reader = req.body?.getReader();
+    if (!reader) return new Uint8Array(0);
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > cap) {
+            await reader.cancel().catch(() => undefined);
+            throw badRequest(TOO_LARGE);
+        }
+        chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        out.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    return out;
+}
+
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) throw unauthorized();
     await assertAccountWideWriteInScope({ userId: session.user.id, ssoTenantId: session.user.ssoTenantId });
 
-    const formData = await req.formData();
+    // The body is capped while it is read; only then is it parsed as a form.
+    const body = await readCappedBody(req, AVATAR_BODY_CAP);
+    let formData: FormData;
+    try {
+        formData = await new Response(body, {
+            headers: { 'content-type': req.headers.get('content-type') ?? '' },
+        }).formData();
+    } catch {
+        throw badRequest('Missing avatar file in form data.');
+    }
     const file = formData.get('file');
     if (!(file instanceof File)) {
         throw badRequest('Missing avatar file in form data.');
     }
-    // Reject oversized payloads before buffering them into memory.
+    // The envelope allowance above lets a file slightly over the limit
+    // through the body cap; the file itself is held to the limit here.
     if (file.size > AVATAR_MAX_BYTES) {
-        throw badRequest(
-            'Processed avatar is too large — re-select a smaller image.',
-        );
+        throw badRequest(TOO_LARGE);
     }
 
     const buf = Buffer.from(await file.arrayBuffer());

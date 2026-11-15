@@ -35,6 +35,10 @@ export function UpgradeGate({
 }) {
     const { plan } = useTenantContext();
     const tenantHref = useTenantHref();
+    // Every hook before the first early return: the plan can change while the
+    // gate is mounted, and a hook called only on the locked path would change
+    // the hook count between renders (#5309).
+    const t = useTranslations('billing.upgradeGate');
 
     // No billing configured → all features available (ungated)
     if (!plan || hasFeature(plan, feature)) {
@@ -46,7 +50,6 @@ export function UpgradeGate({
     }
 
     const requiredPlan = getRequiredPlan(feature);
-    const t = useTranslations('billing.upgradeGate');
     // FEATURE_LABELS is English-only. Prefer a localized label keyed on the
     // feature and fall back to it, so a new FEATURE_KEY renders in English
     // rather than as a missing-key crash.

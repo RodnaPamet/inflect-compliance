@@ -42,10 +42,11 @@ paths:
     - src
     - tests
     - scripts
-    # The workspace packages (#5086). `packages/agent-harness-scanner` runs in
-    # a client's estate holding a signing key and credentials, and
-    # `packages/ui` is imported by every page; neither was scanned, so the
-    # merge-queue SAST gate (#4047) saw no alert in them whatever they held.
+    # The workspace packages (#5086). `packages/ui` is imported by every page
+    # and `packages/sap-mcp-stub` is a stub SAP MCP server; before this entry no
+    # package was scanned (nor the in-repo harness scanner, removed in scanent
+    # #26), so the merge-queue SAST gate (#4047) saw no alert in them whatever
+    # they held.
     - packages
 
 paths-ignore:

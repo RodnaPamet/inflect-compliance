@@ -44,8 +44,8 @@ not a shard), `Build`, `Security` and `Ratchets`. Read it there, not here.
   pull request is a failing test whether or not it is required: root-cause it,
   and if the pull request merged first, follow up with the fix.
 - **On a merge-queue run, some jobs skip on purpose.** `E2E`, `Docker Build`,
-  `Trivy Image Scan`, `Load Smoke`, `CodeQL SAST`, `E2E bundle` and
-  `Scanner image` report `skipped` there, and branch protection counts a skip
+  `Trivy Image Scan`, `Load Smoke`, `CodeQL SAST` and `E2E bundle` report
+  `skipped` there, and branch protection counts a skip
   as a pass. That is the lean gate, not a missing run.
   `tests/guardrails/merge-queue-trigger-coverage.test.ts` holds which jobs skip.
 

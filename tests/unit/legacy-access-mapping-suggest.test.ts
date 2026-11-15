@@ -18,17 +18,29 @@ import {
 } from '@/lib/legacy-access/mapping-suggest';
 import { CANONICAL_FIELDS } from '@/lib/legacy-access/canonical';
 
-const profile = (over: Partial<ColumnProfile> & { name: string }): ColumnProfile => ({
+/**
+ * A profile fixture describing a UNIFORMLY distributed column, where the least
+ * frequent value's count equals the average — so `minValueCount` is derived
+ * rather than hand-set, and every case below keeps meaning what it says after
+ * #5620 added the per-value floor. A test about a SKEWED column (one dominant
+ * value carrying the mean) sets `minValueCount` explicitly.
+ */
+const profile = (over: Partial<ColumnProfile> & { name: string }): ColumnProfile => {
+    const nonNullCount = over.nonNullCount ?? 100;
+    const distinctCount = over.distinctCount ?? 100;
+    return {
     rowsSampled: 100,
-    nonNullCount: 100,
-    distinctCount: 100,
+    nonNullCount,
+    distinctCount,
+    minValueCount: distinctCount === 0 ? 0 : Math.floor(nonNullCount / distinctCount),
     emailShare: 0,
     dateShare: 0,
     integerShare: 0,
     booleanShare: 0,
     maxLength: 32,
     ...over,
-});
+    };
+};
 
 const suggest = (p: ColumnProfile) => suggestMapping([p])[0];
 
@@ -148,7 +160,7 @@ describe('name and profile together', () => {
 });
 
 describe('mayExposeValueSet — each condition blocks on its own', () => {
-    const ok = { distinctCount: 4, nonNullCount: 100, emailShare: 0 };
+    const ok = { distinctCount: 4, nonNullCount: 100, emailShare: 0, minValueCount: 25 };
 
     it('accepts a genuine vocabulary', () => {
         expect(mayExposeValueSet(ok)).toBe(true);
@@ -165,7 +177,7 @@ describe('mayExposeValueSet — each condition blocks on its own', () => {
     it('refuses values that do not recur — a short list of different people', () => {
         // 20 rows, 10 distinct: each value appears twice, below the repetition
         // floor. This is the case that keeps a tiny tenant's name column out.
-        expect(mayExposeValueSet({ distinctCount: 10, nonNullCount: 20, emailShare: 0 })).toBe(false);
+        expect(mayExposeValueSet({ distinctCount: 10, nonNullCount: 20, emailShare: 0, minValueCount: 2 })).toBe(false);
         expect(VALUE_SET_MIN_REPETITION).toBe(4);
     });
 
@@ -174,7 +186,7 @@ describe('mayExposeValueSet — each condition blocks on its own', () => {
     });
 
     it('refuses an empty column', () => {
-        expect(mayExposeValueSet({ distinctCount: 0, nonNullCount: 0, emailShare: 0 })).toBe(false);
+        expect(mayExposeValueSet({ distinctCount: 0, nonNullCount: 0, emailShare: 0, minValueCount: 0 })).toBe(false);
     });
 
     it('a high-cardinality identity column can NEVER qualify, at any sample size', () => {
@@ -182,8 +194,42 @@ describe('mayExposeValueSet — each condition blocks on its own', () => {
         // high-cardinality by definition, so they fail the repetition test however
         // the sample is chosen.
         for (const n of [20, 100, 1000, 50_000]) {
-            expect(mayExposeValueSet({ distinctCount: n, nonNullCount: n, emailShare: 0 })).toBe(false);
+            expect(mayExposeValueSet({ distinctCount: n, nonNullCount: n, emailShare: 0, minValueCount: 1 })).toBe(false);
         }
+    });
+
+    // ── #5620: the repetition term is a FLOOR, not an average ───────────
+    it('refuses the column one dominant value used to pay for', () => {
+        // 48 rows: 'sysadmin' 37 times and eleven different people's logins once
+        // each. distinct=12 passes the cardinality cap, and the AVERAGE passes
+        // exactly — 12 * 4 = 48, and 48 > 48 is false — so before #5620 all four
+        // terms passed and eleven individual person values were rendered on the
+        // mapping screen. Eleven of the twelve described one row apiece.
+        expect(mayExposeValueSet({
+            distinctCount: 12, nonNullCount: 48, emailShare: 0, minValueCount: 1,
+        })).toBe(false);
+    });
+
+    it('the average alone is NOT sufficient — the arithmetic that made it pass', () => {
+        // Stated as the arithmetic rather than as a verdict, so this reads as a
+        // fact about the old test rather than a claim about the new one.
+        expect(12 * VALUE_SET_MIN_REPETITION > 48).toBe(false);
+    });
+
+    it('refuses a set whose least frequent value is one short of the floor', () => {
+        expect(mayExposeValueSet({
+            distinctCount: 3, nonNullCount: 100, emailShare: 0,
+            minValueCount: VALUE_SET_MIN_REPETITION - 1,
+        })).toBe(false);
+    });
+
+    it('accepts one whose least frequent value exactly reaches it', () => {
+        // The boundary, from the admitting side: a floor that refused this would
+        // be a different rule from the one the docblock states.
+        expect(mayExposeValueSet({
+            distinctCount: 3, nonNullCount: 100, emailShare: 0,
+            minValueCount: VALUE_SET_MIN_REPETITION,
+        })).toBe(true);
     });
 });
 

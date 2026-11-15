@@ -20,7 +20,7 @@ import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { usePublishDisplayedOrder } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantMutation } from '@/lib/hooks/use-tenant-mutation';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import type { CappedList } from '@/lib/list-backfill-cap';
+import { TASK_DELETED_LIST_CAP, type CappedList } from '@/lib/list-backfill-cap';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { useThresholdLoadMore, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
@@ -1414,7 +1414,11 @@ function TasksPageInner({
                 action + value + Apply. */}
 
             <ListPageShell.Body aside={taskQuickViewAside}>
-                <TruncationBanner truncated={truncated} />
+                {/* The Deleted view has its own, smaller cap (#5303). */}
+                <TruncationBanner
+                    truncated={truncated}
+                    cap={showDeleted ? TASK_DELETED_LIST_CAP : undefined}
+                />
                 <DataTable<TaskListItem>
                     fillBody
                     onReachEnd={hasMoreTasks ? loadMoreTasks : undefined}

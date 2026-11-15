@@ -11,15 +11,18 @@
  *
  * The sections, and the table each reads:
  *
- *   grants with grantor and date             RegisteredAgentTool
+ *   grants with grantor and date             RegisteredAgentTool, per agent, capped and flagged;
+ *                                            a long tool name cut at TOOL_NAME_IN_PACK (#5317)
  *   granted tools called in the window       AgentBehaviourWindow (tool names per hour)
  *   proposals and outcomes per grant         AgentProposal, by the kind a propose tool queues
  *   card versions since the last campaign    AgentPolicyCardVersion, after the agent's
  *                                            last CLOSED AGENT campaign
- *   time-bounded grants, expired on time?    ExternalWriteJournal (`GRANT_EXPIRY_ARGS` tools)
+ *   time-bounded grants, expired on time?    ExternalWriteJournal (`GRANT_EXPIRY_ARGS` tools),
+ *                                            per agent, capped and flagged; a long connection
+ *                                            name cut at CONNECTION_NAME_IN_PACK (#5317)
  *   guard flags                              AgentProposal.guardVerdict
  *   breaker trips                            AgentCircuitBreaker
- *   kill engagements                         AgentKillSwitch
+ *   kill engagements                         AgentKillSwitch, per agent, capped and flagged (#5317)
  *   harness level and drift                  DiscoveredAgent + AgentHarnessScanItem
  *
  * The window is the 90 days before the campaign was CREATED — not before the
@@ -52,6 +55,8 @@ import {
     PACK_PAGE_SIZE,
     PROPOSAL_KIND_BY_PROPOSE_TOOL,
     observationWindow,
+    packConnectionName,
+    packToolName,
     type RecertificationEvidence,
     type SubjectEvidence,
 } from '@/lib/agentic/agent-recertification';
@@ -59,14 +64,42 @@ import { GRANT_EXPIRY_ARGS } from './external-write-reconcile';
 import { assertCanRead } from '../policies/common';
 import type { RequestContext } from '../types';
 
-/** Grants read per agent before the read is called truncated (the catalogue is a handful). */
-const GRANTS_PER_AGENT = 200;
+// The per-agent caps below and `PACK_PAGE_SIZE` are ONE budget: a page of
+// evidence is held in its pack run's sealed context, which may not weigh more
+// than `MAX_CONTEXT_BYTES`. `tests/unit/agent-recertification-pack-budget.test.ts`
+// builds the worst page — every section at its cap, every row at its largest —
+// and fails when it does not fit, so raising a cap or the page size fails a
+// test rather than a campaign's preparation. The arithmetic is at
+// `PACK_PAGE_SIZE`.
+
+/**
+ * Grants read per AGENT before its section is called truncated (#5317). 100 by
+ * the owner's decision of 2026-11-15; it was 200, read for the whole page in
+ * one shared read. Per agent, read one past the cap, so `grantsTruncated` is
+ * this agent's own fact: an agent with exactly 100 grants is read whole and
+ * may be narrowed, one with 101 is truncated and plans no narrowing — and one
+ * agent with many grants no longer truncates every other agent on its page.
+ * The built-in catalogue is a few dozen tools; an agent over the cap is one
+ * granted most of several external servers' tools.
+ */
+export const GRANTS_PER_AGENT = 100;
 /** Card versions read per agent since its last campaign. */
-const CARD_VERSIONS_PER_AGENT = 50;
-/** Time-bounded grants read per page of agents. */
-const TIME_BOUNDED_PER_PAGE = 500;
-/** Kill engagements read per page of agents. */
-const KILLS_PER_PAGE = 500;
+export const CARD_VERSIONS_PER_AGENT = 50;
+/**
+ * Time-bounded grants read per AGENT before its section is called truncated
+ * (#5317). Per agent, so one agent issuing daily JIT grants cannot take the
+ * rows of every other agent on its page. 100 by the owner's decision of
+ * 2026-11-14; it was 25, the old 500-row page read spread over 20 agents.
+ */
+export const TIME_BOUNDED_PER_AGENT = 100;
+/**
+ * Kill engagements read per AGENT before its section is called truncated
+ * (#5317). It was one 500-row read shared by the page and unflagged, so an
+ * agent killed and lifted often could leave the others' lists empty with
+ * nothing to say so. 25 is chosen as #5646 first chose the time-bounded cap:
+ * the old 500-row page read spread over the old page of 20 agents.
+ */
+export const KILLS_PER_AGENT = 25;
 /** Harness items read per discovered agent (only the latest two are used). */
 const HARNESS_ITEMS_PER_AGENT = 10;
 
@@ -163,13 +196,30 @@ export async function readAgentRecertificationEvidence(
         }
 
         // ── Grants ───────────────────────────────────────────────────────
-        const grants = await db.registeredAgentTool.findMany({
-            where: { tenantId: ctx.tenantId, agentId: { in: agentIds } },
-            select: { id: true, agentId: true, toolName: true, grantedByUserId: true, createdAt: true },
-            orderBy: [{ agentId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-            take: agentIds.length * GRANTS_PER_AGENT + 1,
-        });
-        const grantsTruncatedOverall = grants.length > agentIds.length * GRANTS_PER_AGENT;
+        //
+        // One read PER AGENT, capped and read one past the cap (#5317), as the
+        // time-bounded and kill reads below. It was one read for the whole page,
+        // `pageSize × cap + 1` rows: one agent holding more than its share
+        // marked every agent on the page truncated, and so stopped every
+        // narrowing on the page, and a single agent could carry the whole
+        // page's rows into the pack.
+        const grantsByAgent = new Map<string, {
+            rows: Array<{ id: string; agentId: string; toolName: string; grantedByUserId: string; createdAt: Date }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read let one agent truncate the rest (#5317)
+            const read = await db.registeredAgentTool.findMany({
+                where: { tenantId: ctx.tenantId, agentId },
+                select: { id: true, agentId: true, toolName: true, grantedByUserId: true, createdAt: true },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                take: GRANTS_PER_AGENT + 1,
+            });
+            grantsByAgent.set(agentId, {
+                rows: read.slice(0, GRANTS_PER_AGENT),
+                truncated: read.length > GRANTS_PER_AGENT,
+            });
+        }
+        const grants = [...grantsByAgent.values()].flatMap((g) => g.rows);
 
         // ── Observed use, one bounded read per grant ─────────────────────
         //
@@ -257,21 +307,63 @@ export async function readAgentRecertificationEvidence(
         const cardByAgent = new Map(cards.map((c) => [c.agentId, c]));
 
         // ── Time-bounded grants ──────────────────────────────────────────
-        const timeBounded = await db.externalWriteJournal.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                agentId: { in: agentIds },
-                advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
-                outcome: 'APPLIED',
-                attemptedAt: { lt: window.end },
-            },
-            select: {
-                id: true, agentId: true, advertisedToolName: true, connectionName: true,
-                argumentsJson: true, attemptedAt: true, expiryVerifiedAt: true, expiryRaisedAt: true,
-            },
-            orderBy: [{ attemptedAt: 'desc' }, { id: 'asc' }],
-            take: TIME_BOUNDED_PER_PAGE,
-        });
+        //
+        // One read PER AGENT, capped, read one past the cap so truncation is a
+        // fact the pack states (`timeBoundedTruncated`) rather than one nobody
+        // can observe. It was one 500-row read over all history for the whole
+        // page, newest first and unflagged (#5317): a single busy agent filled
+        // it, every other agent on the page was filed with an empty list, and
+        // the busy agent's oldest rows were dropped with nothing to say so.
+        //
+        // Bounded to the grants still relevant to the window: made in it, or
+        // made before it and not verified gone before it began — plus every
+        // grant the sweep RAISED, whenever. A raise is a control that failed
+        // on this agent's record; it is rare, and it is the row a reviewer
+        // must see.
+        //
+        // Read in the order the cap should spend itself: raised (OUTLIVED_WINDOW)
+        // first, then grants not yet verified gone (undetermined), then the
+        // verified ones newest first. So when the cap bites it drops the
+        // oldest grants that ended on time, never an outlived one before
+        // them. The section is re-sorted newest first below, as it always was.
+        const timeBoundedByAgent = new Map<string, {
+            rows: Array<{
+                id: string; advertisedToolName: string; connectionName: string;
+                argumentsJson: string; attemptedAt: Date; expiryVerifiedAt: Date | null; expiryRaisedAt: Date | null;
+            }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read is what let one agent starve the rest (#5317)
+            const read = await db.externalWriteJournal.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId,
+                    advertisedToolName: { in: [...GRANT_EXPIRY_ARGS.keys()] },
+                    outcome: 'APPLIED',
+                    attemptedAt: { lt: window.end },
+                    OR: [
+                        { attemptedAt: { gte: window.start } },
+                        { expiryVerifiedAt: null },
+                        { expiryVerifiedAt: { gte: window.start } },
+                        { expiryRaisedAt: { not: null } },
+                    ],
+                },
+                select: {
+                    id: true, advertisedToolName: true, connectionName: true,
+                    argumentsJson: true, attemptedAt: true, expiryVerifiedAt: true, expiryRaisedAt: true,
+                },
+                orderBy: [
+                    { expiryRaisedAt: { sort: 'desc', nulls: 'last' } },
+                    { expiryVerifiedAt: { sort: 'desc', nulls: 'first' } },
+                    { attemptedAt: 'desc' },
+                    { id: 'asc' },
+                ],
+                take: TIME_BOUNDED_PER_AGENT + 1,
+            });
+            const kept = read.slice(0, TIME_BOUNDED_PER_AGENT).sort((x, y) =>
+                y.attemptedAt.getTime() - x.attemptedAt.getTime() || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+            timeBoundedByAgent.set(agentId, { rows: kept, truncated: read.length > TIME_BOUNDED_PER_AGENT });
+        }
 
         // ── Breakers and kills ───────────────────────────────────────────
         const breakers = await db.agentCircuitBreaker.findMany({
@@ -281,17 +373,36 @@ export async function readAgentRecertificationEvidence(
         });
         const breakerByAgent = new Map(breakers.map((b) => [b.agentId, b]));
 
-        const kills = await db.agentKillSwitch.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                agentId: { in: agentIds },
-                engagedAt: { lt: window.end },
-                OR: [{ liftedAt: null }, { liftedAt: { gte: window.start } }],
-            },
-            select: { agentId: true, engagedAt: true, liftedAt: true, engagedByUserId: true, liftedByUserId: true },
-            orderBy: [{ engagedAt: 'asc' }],
-            take: KILLS_PER_PAGE,
-        });
+        // Kills: one read PER AGENT, capped and read one past the cap so
+        // truncation is a fact the pack states (`killsTruncated`), as the
+        // time-bounded read above. It was one 500-row read shared by the page
+        // with no flag (#5317). The cap spends itself on a kill still in force
+        // first, then the most recently lifted; the section is shown oldest
+        // first, as it always was.
+        const killsByAgent = new Map<string, {
+            rows: Array<{ id: string; engagedAt: Date; liftedAt: Date | null; engagedByUserId: string; liftedByUserId: string | null }>;
+            truncated: boolean;
+        }>();
+        for (const agentId of agentIds) { // guardrail-allow: n+1 — one capped read per agent, bounded by PACK_PAGE_SIZE; a shared read let one agent starve the rest (#5317)
+            const read = await db.agentKillSwitch.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId,
+                    engagedAt: { lt: window.end },
+                    OR: [{ liftedAt: null }, { liftedAt: { gte: window.start } }],
+                },
+                select: { id: true, engagedAt: true, liftedAt: true, engagedByUserId: true, liftedByUserId: true },
+                orderBy: [
+                    { liftedAt: { sort: 'desc', nulls: 'first' } },
+                    { engagedAt: 'desc' },
+                    { id: 'asc' },
+                ],
+                take: KILLS_PER_AGENT + 1,
+            });
+            const kept = read.slice(0, KILLS_PER_AGENT).sort((x, y) =>
+                x.engagedAt.getTime() - y.engagedAt.getTime() || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+            killsByAgent.set(agentId, { rows: kept, truncated: read.length > KILLS_PER_AGENT });
+        }
 
         // ── Harness level and drift ──────────────────────────────────────
         const discovered = await db.discoveredAgent.findMany({
@@ -312,7 +423,7 @@ export async function readAgentRecertificationEvidence(
         // ── Assemble, in memory ──────────────────────────────────────────
         const out: SubjectEvidence[] = rows.map((s) => {
             const agentId = s.subjectAgentId;
-            const own = grants.filter((g) => g.agentId === agentId);
+            const own = grantsByAgent.get(agentId)?.rows ?? [];
             const kindsGranted = new Set(
                 own.map((g) => PROPOSAL_KIND_BY_PROPOSE_TOOL[g.toolName]).filter((k): k is string => Boolean(k)),
             );
@@ -371,9 +482,14 @@ export async function readAgentRecertificationEvidence(
                 grants: own.map((g) => {
                     const lastCalledAt = lastCalledByGrant.get(g.id) ?? null;
                     const kind = PROPOSAL_KIND_BY_PROPOSE_TOOL[g.toolName];
+                    // The stored name, cut at TOOL_NAME_IN_PACK; the key is
+                    // written only when it was cut, so a whole name's row is
+                    // the row it always was.
+                    const name = packToolName(g.toolName);
                     return {
                         grantId: g.id,
-                        toolName: g.toolName,
+                        toolName: name.toolName,
+                        ...(name.truncated ? { toolNameTruncated: true } : {}),
                         grantedByUserId: g.grantedByUserId,
                         grantedAt: g.createdAt.toISOString(),
                         lastCalledAt: iso(lastCalledAt),
@@ -381,20 +497,30 @@ export async function readAgentRecertificationEvidence(
                         proposals: kind ? countsFor(kind) : null,
                     };
                 }),
-                // Per agent: this agent's own list hit the cap, or the read as a
-                // whole did and this agent's share cannot be vouched for.
-                grantsTruncated: own.length >= GRANTS_PER_AGENT || grantsTruncatedOverall,
+                // This agent's own read found more than the cap: the list above
+                // is its oldest grants, not all of them, and it plans no
+                // narrowing (`narrowingsFor`).
+                grantsTruncated: grantsByAgent.get(agentId)?.truncated ?? false,
                 otherProposals,
                 cardVersions: { since: iso(since), currentVersion: card?.currentVersion ?? null, versions },
-                timeBoundedGrants: timeBounded
-                    .filter((t) => t.agentId === agentId)
-                    .map((t) => ({
-                        journalId: t.id,
-                        toolName: t.advertisedToolName,
-                        connectionName: t.connectionName,
-                        grantedAt: t.attemptedAt.toISOString(),
-                        ...timeBoundedState(t, window.end),
-                    })),
+                timeBoundedGrants: (timeBoundedByAgent.get(agentId)?.rows ?? [])
+                    .map((t) => {
+                        // The journal's name, cut at CONNECTION_NAME_IN_PACK;
+                        // the key is written only when it was cut.
+                        const name = packConnectionName(t.connectionName);
+                        return {
+                            journalId: t.id,
+                            toolName: t.advertisedToolName,
+                            connectionName: name.connectionName,
+                            ...(name.truncated ? { connectionNameTruncated: true } : {}),
+                            grantedAt: t.attemptedAt.toISOString(),
+                            ...timeBoundedState(t, window.end),
+                        };
+                    }),
+                // This agent's own read hit its cap: the list above is its
+                // outlived and undetermined grants, then the newest that ended
+                // on time — not all of them.
+                timeBoundedTruncated: timeBoundedByAgent.get(agentId)?.truncated ?? false,
                 guardFlags,
                 breaker: breaker
                     ? {
@@ -406,14 +532,16 @@ export async function readAgentRecertificationEvidence(
                         closedAt: iso(breaker.closedAt),
                     }
                     : null,
-                killEngagements: kills
-                    .filter((k) => k.agentId === agentId)
+                killEngagements: (killsByAgent.get(agentId)?.rows ?? [])
                     .map((k) => ({
                         engagedAt: k.engagedAt.toISOString(),
                         liftedAt: iso(k.liftedAt),
                         engagedByUserId: k.engagedByUserId,
                         liftedByUserId: k.liftedByUserId,
                     })),
+                // This agent's own kill read hit its cap: the list above is the
+                // kill in force, if any, then the most recently lifted.
+                killsTruncated: killsByAgent.get(agentId)?.truncated ?? false,
                 harness: { level, previousLevel, drift, lastSeenAt: iso(mine[0]?.lastSeenAt) },
             };
         });

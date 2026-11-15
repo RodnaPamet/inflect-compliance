@@ -25,9 +25,10 @@ other modules this page names under `src/lib`, re-export the
 scanent product's ([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent),
 `docs/contract.md` there), installed at one exact version from its release
 file.
-`packages/agent-harness-scanner` is the deployable scanner (#3678). It emits
-`/4`, builds its report against those schemas and refuses to sign one they
-would refuse.
+The deployable scanner is scanent's, the image `ghcr.io/rodnapamet/scanent`,
+which Inflect's own estate runs (`deploy/harness-scanner/README.md`); its report
+is contract `/4`, built from the same package. Inflect's in-repo copy,
+`packages/agent-harness-scanner` (#3678), was removed in scanent #26.
 Putting a client estate under it, and the labels it reads owners and principals
 from, is [`docs/agent-harness-scanner-onboarding.md`](agent-harness-scanner-onboarding.md).
 
@@ -64,7 +65,7 @@ receiving side derives `SPENDING_AGENT_UNDECLARED` from it for a REGISTERED
 agent whose register row holds no spending authority, and closes it only when a
 reviewed spending authority is in force.
 
-- A scanner SHOULD emit `/4`; the reference scanner does. `/2` and `/3` reports
+- A scanner SHOULD emit `/4`; scanent's scanner does. `/2` and `/3` reports
   stay accepted.
 
 **`/3` is `/2` with exactly one addition** (#3785, owner decision 2026-10-19):
@@ -77,8 +78,8 @@ naming `gcp-sa`, and so does this one: each report is held to the schema of the
 id it names, so a `/2` report that names `gcp-sa` anywhere is refused as
 `SCHEMA`.
 
-- A scanner SHOULD emit `/3`; the reference scanner does. A `/2` report stays
-  accepted, as it was.
+- A scanner SHOULD emit `/3` or later. A `/2` report stays accepted, as it
+  was.
 - A `/3` report MUST carry `unboundCredentials`, as a `/2` one must.
 
 `/2` is `/1` with exactly these additions (owner decisions, 2026-10-19):
@@ -96,8 +97,8 @@ The two optional additions carry counts and references only: no input, no
 output, no prompt — a model entry or a tool with any other member is refused.
 
 **`/1` is retired.** The owner set the moment on 2026-10-19: `/1` was retired at
-the release of the scanner container (#3686), the reference scanner's first
-deployment, which emits `/2`. No other scanner ever spoke `/1`.
+the release of the scanner container (#3686), the in-repo scanner's first
+deployment, which emitted `/2`. No other scanner ever spoke `/1`.
 
 - A scanner MUST emit `/2`, `/3` or `/4`. A `/2` report MUST carry
   `unboundCredentials`, empty when it saw none.

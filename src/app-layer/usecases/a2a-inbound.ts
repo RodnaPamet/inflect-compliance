@@ -112,7 +112,7 @@ import { A2aReplayError, countInboundTasksSince, recordA2aMessage } from './a2a-
 import { resolveTenantA2aSigningKey, type TenantA2aSigningKeyInForce } from './a2a-signing-key';
 import { agentHoldsExternalToolGrant } from './a2a-host-consumer-policy';
 import { hostConsumerAnswerText, settledRunAnswerText } from './a2a-run-answer';
-import { awaitRunSettled } from './a2a-synchronous-wait';
+import { awaitRunSettled, runStateOf } from './a2a-synchronous-wait';
 import {
     V1_METHOD_ALIASES,
     resolveA2aVersion,
@@ -513,8 +513,15 @@ async function startHostConsumerRequest(
                 select: { id: true },
             }),
         );
-    } catch {
-        return refuse('REPLAY', request.rpcId, 409);
+    } catch (err) {
+        // ONLY the unique violation is a replay, as in `recordA2aMessage`. Any
+        // other failure — the database, a trigger, the body's encryption — is
+        // an outage, and answering it as REPLAY would audit an attack that never
+        // happened and lose the real error (#5317).
+        if ((err as { code?: unknown } | null)?.code === 'P2002') {
+            return refuse('REPLAY', request.rpcId, 409);
+        }
+        throw err;
     }
 
     if (request.method === 'tasks/get') {
@@ -535,8 +542,9 @@ async function startHostConsumerRequest(
         // earlier call, so either it has settled or waiting another ten seconds
         // for a job measured in minutes buys nothing. The status is read fresh,
         // which is the part that matters.
-        const settled = run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'ABORTED';
-        const parked = run.status === 'AWAITING_APPROVAL' || run.status === 'PAUSED';
+        // The wait's own disposition table, never a second allowlist: one that
+        // left out EMPTY_CATALOGUE answered "still running" for ever (#5317).
+        const { settled, parked } = runStateOf(run.status);
         const followUpText = settled ? await settledRunAnswerText(sys, run.id) : null;
         return answer(
             await taskFor(

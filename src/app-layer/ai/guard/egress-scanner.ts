@@ -30,12 +30,20 @@ const SEVERITY_RANK: Record<GuardSeverity, number> = { low: 0, medium: 1, high: 
  * base64/hex blobs (append plaintext), collapse whitespace — but keep case.
  */
 function foldForEgress(input: string): string {
-    let out = input;
+    // Strip the invisible characters FIRST (#5305). The decode below used to
+    // run against the raw text, so a base64-wrapped secret split by a
+    // zero-width character never matched the alphabet and was never decoded,
+    // though a reader dropping the invisible characters sees it whole.
+    let out = input.replace(
+        new RegExp('[\\u00AD\\u200B-\\u200F\\u202A-\\u202E\\u2060\\u2066-\\u2069\\uFEFF]', 'g'),
+        '',
+    );
+    const stripped = out;
     // Append base64 decodings (mirrors normalize.ts but case-preserving).
     const b64 = /[A-Za-z0-9+/]{16,}={0,2}/g;
     const extra: string[] = [];
     let m: RegExpExecArray | null;
-    while ((m = b64.exec(input)) !== null) {
+    while ((m = b64.exec(stripped)) !== null) {
         const blob = m[0];
         if (blob.replace(/=+$/, '').length % 4 === 1) continue;
         try {
@@ -45,11 +53,9 @@ function foldForEgress(input: string): string {
             // ignore
         }
     }
+    // The decodings are printable ASCII by the test above, so they carry no
+    // invisible character to strip.
     if (extra.length) out = `${out} ${extra.join(' ')}`;
-    out = out.replace(
-        new RegExp('[\\u00AD\\u200B-\\u200F\\u202A-\\u202E\\u2060\\u2066-\\u2069\\uFEFF]', 'g'),
-        '',
-    );
     out = out.replace(/[ \t]+/g, ' ');
     return out;
 }

@@ -875,3 +875,65 @@ describe('the backfill loops terminate (#5243)', () => {
         expect(r).toMatchObject({ scanned: 12, backfilled: 12, errors: 0 });
     });
 });
+
+// ─── #5647: the documented spelling must work, and a dropped flag must not
+// be silent ────────────────────────────────────────────────────────────
+//
+// The usage block documents `--models Risk,Finding` and the parser only read
+// `--models=…`, so the documented command dropped the filter. On this script a
+// dropped `--models` is not a usage error but a mass write: no filter means
+// every model in the manifest re-encrypted under the global key.
+describe('parseArgs — flag spelling and unknown arguments (#5647)', () => {
+    const argv = (...args: string[]) => ['node', 'script', ...args];
+
+    it('reads --models with a SPACE, as the usage block documents', () => {
+        expect(parseArgs(argv('--models', 'Risk,Finding')).modelsFilter)
+            .toEqual(['Risk', 'Finding']);
+    });
+
+    it('still reads --models with an = sign', () => {
+        // The form that always worked. Without this the fix could have moved
+        // the breakage rather than removed it.
+        expect(parseArgs(argv('--models=Risk,Finding')).modelsFilter)
+            .toEqual(['Risk', 'Finding']);
+    });
+
+    it('reads --batch-size in both spellings', () => {
+        expect(parseArgs(argv('--batch-size', '100')).batchSize).toBe(100);
+        expect(parseArgs(argv('--batch-size=100')).batchSize).toBe(100);
+    });
+
+    it('leaves the filter empty when --models is absent, as before', () => {
+        expect(parseArgs(argv('--execute')).modelsFilter).toEqual([]);
+    });
+
+    it('REFUSES an argument nobody claimed', () => {
+        // The half that surfaces the next one of these: a dropped flag was
+        // indistinguishable from an applied one.
+        expect(() => parseArgs(argv('--execute', '--modls', 'Risk')))
+            .toThrow(/Unrecognised argument/);
+    });
+
+    it('refuses a value flag given no value', () => {
+        expect(() => parseArgs(argv('--models'))).toThrow(/--models was given no value/);
+        // And one followed by another flag rather than a value — reading
+        // `--execute` as the model list would be worse than stopping.
+        expect(() => parseArgs(argv('--models', '--execute')))
+            .toThrow(/--models was given no value/);
+    });
+
+    it('does not mistake a value for an unknown argument', () => {
+        // The value-consuming half of the unknown-argument check: `Risk,Finding`
+        // is a value, not a stray token. A naive check would reject every
+        // space-form invocation it was added to allow.
+        expect(() => parseArgs(argv('--execute', '--models', 'Risk,Finding', '--verify')))
+            .not.toThrow();
+    });
+
+    it('still rejects an unknown MODEL name, in either spelling', () => {
+        // The validation that already existed, now reachable from the
+        // documented form too — it used to be bypassed entirely by it.
+        expect(() => parseArgs(argv('--models', 'NotAModel'))).toThrow(/Unknown model/);
+        expect(() => parseArgs(argv('--models=NotAModel'))).toThrow(/Unknown model/);
+    });
+});

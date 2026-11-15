@@ -20,6 +20,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { insertedNotificationIds } from './inserted-ids';
 import { tenantPageLink } from './tenant-link';
 
 /** Same bound as `resolveAgenticRecipients`: a broadcast must not become a mail bomb. */
@@ -62,6 +63,8 @@ export async function notifyOwnersOfScimAiAdminDeprovision(
     const linkUrl = tenantPageLink(tenant?.slug, '/admin/members');
     const stamp = input.deactivatedAt.toISOString();
 
+    const keyFor = (userId: string) =>
+        `SCIM_AI_ADMIN_DEPROVISIONED:${input.membershipId}:${stamp}:${userId}`;
     const res = await db.notification.createMany({
         data: owners.map((o) => ({
             tenantId: input.tenantId,
@@ -70,18 +73,22 @@ export async function notifyOwnersOfScimAiAdminDeprovision(
             title: SCIM_AI_ADMIN_DEPROVISIONED_TITLE,
             message,
             linkUrl,
-            dedupeKey: `SCIM_AI_ADMIN_DEPROVISIONED:${input.membershipId}:${stamp}:${o.userId}`,
+            dedupeKey: keyFor(o.userId),
         })),
         skipDuplicates: true,
     });
 
     // Published only on a real write, as `createAgenticNotification` does: an
     // SSE event for a row the dedupe key rejected would show a notification
-    // that is not in the list the bell opens.
+    // that is not in the list the bell opens. Each event carries the ROW's id,
+    // read back by the unique dedupe key (#5305), so marking it read works.
     if (res.count > 0) {
+        const inserted = await insertedNotificationIds(db, input.tenantId, owners.map((o) => keyFor(o.userId)));
         for (const o of owners) {
+            const written = inserted.get(keyFor(o.userId));
+            if (!written) continue;
             publishNotificationEvent(input.tenantId, o.userId, {
-                id: `SCIM_AI_ADMIN_DEPROVISIONED:${input.membershipId}:${o.userId}`,
+                id: written.id,
                 type: 'GENERAL',
                 title: SCIM_AI_ADMIN_DEPROVISIONED_TITLE,
                 message,

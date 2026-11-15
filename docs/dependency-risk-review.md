@@ -497,6 +497,14 @@ never runs.
 | **Blast radius** | The scanner's own process, in the client's estate. What leaves it is a signed report the ingest verifies against its own strict schema, which a mis-parse cannot widen. |
 | **Decision** | **Reviewed — adopted in the scanner image at the version the repository's tests run against.** The `REVIEWED` floor (major 5) is unchanged. Dependabot proposes the image's updates as a group (`.github/dependabot.yml`). |
 
+**Moved out of this repository (2026-11-15, scanent #26).** The call site this
+review covers left with the in-repo scanner: `packages/agent-harness-scanner`,
+its container manifest and lockfile, and the Dependabot entries for them were
+removed, and the `cicd` source's workflow parse is scanent's
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), reviewed there.
+`js-yaml` stays a dependency of the application for its own first-party YAML
+call sites, and the `REVIEWED` floor (major 5) is unchanged.
+
 ## Review — 2026-10-24 — the TOTP enrolment QR code
 
 ### `qrcode` — `^1.5.4`
