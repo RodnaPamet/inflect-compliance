@@ -15,7 +15,6 @@
 import { createHash } from 'node:crypto';
 
 import { canonicalJson } from '@/lib/canonical-json';
-import { connectKeyScopes } from '@/lib/agentic/connect-wizard';
 import { PROFILE_MAX_TURNS } from '@/lib/agentic/agent-profile';
 import { CreateTaskSchema } from '@/lib/schemas';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -238,17 +237,14 @@ export interface AgentDefinition {
     /** 1 reads; 2 also proposes (`AUTONOMY_REQUIRED_BY_CAPABILITY`). */
     readonly autonomyLevel: 1 | 2;
     /**
-     * How the harness starts this agent's runs. A Flue agent's run is started
-     * with its bound key (`agent-key`); a profile agent's by its automation
-     * rule (`automation-rule`), which holds no key, so none is minted for it.
+     * How the harness starts this agent's runs, and neither way presents a
+     * key, so none is minted. A Flue agent is the tenant's designated
+     * interactive agent and answers the OWNER's question at
+     * `POST /agents/questions` (`questions-route`): #5604 refuses the ad-hoc
+     * question on the generic run route. A profile agent's run starts from its
+     * automation rule (`automation-rule`).
      */
-    readonly startedBy: 'agent-key' | 'automation-rule';
-    /**
-     * `mcp:orchestrate` starts the run; the rest are the grants' own scopes
-     * (`connectKeyScopes`). Empty for an agent started by its rule: a key
-     * nothing presents is a credential with no use.
-     */
-    readonly keyScopes: readonly string[];
+    readonly startedBy: 'questions-route' | 'automation-rule';
 }
 
 export interface ProfileDefinition extends ProfileFixture {
@@ -293,15 +289,13 @@ function isApplicable(task: InspectTask, engine: InspectEngine): boolean {
 function agentFor(name: string, profileFixture: string | null, profileTools: readonly string[]): AgentDefinition {
     const grants = [...new Set<string>([...STANDARD_READ_GRANTS, ...profileTools])].sort();
     const proposes = grants.some((g) => g.startsWith('propose_'));
-    const startedBy = profileFixture === null ? 'agent-key' : 'automation-rule';
     return {
         name,
         profileFixture,
         grants,
         dataAccessScope: proposes ? 'WRITE_TENANT_DATA' : 'READ_TENANT_DATA',
         autonomyLevel: proposes ? 2 : 1,
-        startedBy,
-        keyScopes: startedBy === 'agent-key' ? [...new Set(['mcp:orchestrate', ...connectKeyScopes(grants)])].sort() : [],
+        startedBy: profileFixture === null ? 'questions-route' : 'automation-rule',
     };
 }
 

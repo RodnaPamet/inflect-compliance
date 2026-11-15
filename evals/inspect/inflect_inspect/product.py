@@ -1,12 +1,21 @@
-"""The product's own REST API, as a seed tenant's agent and its OWNER.
+"""The product's own REST API, as a seed tenant's OWNER.
 
-Each credential on the route its holder already uses, and no harness route.
+Every request carries the OWNER's session cookie, on the route the product's
+own pages call. No API key is presented, and there is no harness route.
 
-A FLUE run is started with the seed agent's bound API key
-(``Authorization: Bearer iflk_...``) at ``POST /agent-runs``:
-``startWorkflowRun`` refuses any reasoning-engine run whose context carries no
-``agentId`` (``flue_requires_registered_agent``), and only an agent-bound key
-sets one; a session never does.
+A FLUE run is the ad-hoc question, started at the route the product reserves
+for it: ``POST /agents/questions`` (``askAdHocQuestion`` ->
+``startInteractiveRun``). Since #5604 ``resolveRunDefinition`` refuses
+``ad-hoc-question`` on the generic ``POST /agent-runs`` with
+``AD_HOC_QUESTION_USE_QUESTIONS_ROUTE``, whoever presents it, because only the
+questions route sanitises and rate-limits the question. That route is for a
+signed-in PERSON (``NOT_A_PERSON`` for a key, an agent or a job), so the OWNER
+asks; ``startInteractiveRun`` binds the tenant's designated interactive agent
+(``TenantSecuritySettings.interactiveAgentId``, which the seed sets to the
+eval agent) to the OWNER's own context, so the run's tools are still that
+agent's grants. It needs ``AGENT_INTERACTIVE_RUNS`` on the deployment, which
+the workflow sets. It answers 202 with the run id: the run has started and the
+answer is not ready.
 
 A TOOL RUNNER run is an agent profile's, and since #5367 a profile key names
 the trigger that starts it; ``POST /agent-runs`` names none, so it starts no
@@ -24,8 +33,8 @@ there before the task.
 Either way the run is bound to the agent task 3's AGENT-scope kill and task
 5's grants read refer to. Everything else (the run, its step feed, the
 proposals, the counts, the settings, the kill switch, the trigger task) is read
-or written as the seed tenant's OWNER with a session cookie, through the routes
-the product's own pages call. The harness never reads the database.
+or written through the routes the product's own pages call. The harness never
+reads the database.
 
 Every response shape read here is pinned in ``fixtures/product-contract.json``,
 which ``tests/unit/inspect-harness-product-contract.test.ts`` holds to the
@@ -56,7 +65,7 @@ RESIDENCIES = {"EXTERNAL", "LOCAL_ONLY"}
 class Product(Protocol):
     """What the runner needs. The pytest stubs implement the same."""
 
-    def start_run(self, workflow_key: str, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]: ...
+    def ask_question(self, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]: ...
     def get_run(self, run_id: str) -> Dict[str, Any]: ...
     def get_steps(self, run_id: str) -> List[Dict[str, Any]]: ...
     def abort_run(self, run_id: str) -> None: ...
@@ -78,34 +87,22 @@ class HttpProduct:
         base_url: str,
         tenant_slug: str,
         session_cookie: str,
-        agent_key: Optional[str] = None,
+        *,
         timeout_s: float = 30.0,
     ) -> None:
         parsed = urllib.parse.urlparse(base_url)
         if parsed.scheme != "http" or parsed.hostname not in _LOOPBACK:
             raise ValueError("the harness targets the CI test deployment on loopback only")
-        # A Tool Runner tenant holds no agent key: its runs start from its
-        # automation rules. Where one is handed over it must be one.
-        if agent_key is not None and not agent_key.startswith("iflk_"):
-            raise ValueError("a run is started with the seed agent's bound API key (iflk_...)")
         self._base = f"{base_url.rstrip('/')}/api/t/{urllib.parse.quote(tenant_slug)}"
         self._origin = f"{parsed.scheme}://{parsed.netloc}"
         self._cookie = session_cookie
-        self._agent_key = agent_key
         self._timeout = timeout_s
 
-    def _call(
-        self, method: str, path: str, body: Optional[Dict[str, Any]] = None, as_agent: bool = False
-    ) -> Tuple[int, Any]:
+    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None) -> Tuple[int, Any]:
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(self._base + path, data=data, method=method)
-        if as_agent:
-            # The key alone: the edge lets an iflk_ Bearer through to the
-            # handler, which binds the agent. No cookie rides along.
-            req.add_header("Authorization", f"Bearer {self._agent_key}")
-        else:
-            req.add_header("Cookie", self._cookie)
-            req.add_header("Origin", self._origin)
+        req.add_header("Cookie", self._cookie)
+        req.add_header("Origin", self._origin)
         if data is not None:
             req.add_header("Content-Type", "application/json")
         try:
@@ -126,12 +123,13 @@ class HttpProduct:
             raise RuntimeError(f"{method} {path}: HTTP {status}")
         return payload
 
-    def start_run(self, workflow_key: str, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
-        if self._agent_key is None:
-            raise ValueError("no agent key was handed over: this tenant's runs start from its automation rules")
-        status, payload = self._call(
-            "POST", "/agent-runs", {"workflowKey": workflow_key, "input": run_input}, as_agent=True
-        )
+    def ask_question(self, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+        """Start the ad-hoc question as the OWNER; (status, body). 202 ``{runId}`` when it started.
+
+        ``run_input`` is the body as sent: ``{"question": text}``, or ``{}`` for
+        task 10, whose input is absent.
+        """
+        status, payload = self._call("POST", "/agents/questions", run_input)
         return status, payload if isinstance(payload, dict) else {}
 
     def get_run(self, run_id: str) -> Dict[str, Any]:

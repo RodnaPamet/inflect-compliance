@@ -2,17 +2,18 @@
  * THE INSPECT SEED, RUN TWICE AGAINST A REAL DATABASE (inspect.md Phase 1.6).
  *
  * `scripts/inspect-seed.ts` makes the agent-evals nightly runnable: four seed
- * tenants, their eval agents, bound keys, approved profiles, the automation
- * rules that start the Tool Runner runs, fixtures, and a manifest `tasks.py`
- * reads. What is asserted is the contract it states:
+ * tenants, their eval agents, approved profiles, the automation rules that
+ * start the Tool Runner runs, the interactive agent that answers the Flue
+ * questions, fixtures, and a manifest `tasks.py` reads. What is asserted is
+ * the contract it states:
  *
  *   - every row it promises exists, through the usecases (scored, active,
  *     granted, carded agents; approved four-eyes profiles allowing the
  *     AUTOMATION trigger alone; one ENABLED rule per profile, authored by the
- *     owner, firing on its samples' titles; bound keys for Flue agents only);
+ *     owner, firing on its samples' titles; a Flue tenant's eval agent
+ *     designated as its interactive agent);
  *   - a second run duplicates nothing and writes the same manifest;
- *   - the raw keys are in the keys file, verify as keys bound to their agent,
- *     and appear nowhere in the manifest; a profile agent holds no live key;
+ *   - no tenant holds a live seed key: neither start path presents one;
  *   - the manifest has the shape `evals/inspect/fixtures/seed-manifest.example.json`
  *     pins for the Python side;
  *   - a task titled with a sample's input fires exactly that profile's rule,
@@ -27,21 +28,19 @@ jest.mock('@/app-layer/jobs/queue', () => ({
     enqueue: jest.fn(async () => undefined),
 }));
 
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
-import { verifyApiKey } from '@/lib/auth/api-key-auth';
 import { hashForLookup } from '@/lib/security/encryption';
 import { parseProfileRunKey } from '@/lib/agentic/agent-profile';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { runAutomationEventDispatch } from '@/app-layer/jobs/automation-event-dispatch';
 import { runAgentInvokeDispatch, type AgentInvokeDispatchPayload } from '@/app-layer/jobs/agent-invoke-dispatch';
 import {
-    SEED_KEY_NAME,
     assertSeedTarget,
     loadCommittedTaskSet,
     seedInspectTenants,
@@ -115,10 +114,7 @@ describeFn('scripts/inspect-seed', () => {
         before = await footprint(Object.values(tenantIds));
         second = await seedInspectTenants(quiet);
         after = await footprint(Object.values(tenantIds));
-        writeSeedOutputs(second, {
-            manifestPath: path.join(dir, 'seed-manifest.json'),
-            agentKeysPath: path.join(dir, 'agent-keys.json'),
-        });
+        writeSeedOutputs(second, { manifestPath: path.join(dir, 'seed-manifest.json') });
     });
 
     afterAll(async () => {
@@ -258,52 +254,19 @@ describeFn('scripts/inspect-seed', () => {
         expect(second.tenants).toEqual(first.tenants);
     });
 
-    it('binds one live seed key to each Flue agent, with mcp:orchestrate and the grants\' scopes, in the keys file only', async () => {
-        const keys = JSON.parse(readFileSync(path.join(dir, 'agent-keys.json'), 'utf8')) as Record<string, Record<string, string>>;
-        expect(statSync(path.join(dir, 'agent-keys.json')).mode & 0o777).toBe(0o600);
+    it('leaves no live seed key, and makes each Flue agent its tenant\'s interactive agent', async () => {
         const manifestText = readFileSync(path.join(dir, 'seed-manifest.json'), 'utf8');
-        // No key, and nothing key-shaped, anywhere in the manifest.
-        const inManifest = (needle: string) => manifestText.includes(needle);
-        expect(inManifest('iflk_')).toBe(false);
-
+        expect(manifestText.includes('iflk_')).toBe(false);
+        expect(await prisma.tenantApiKey.count({ where: { tenantId: { in: Object.values(tenantIds) }, revokedAt: null } })).toBe(0);
         for (const t of PLAN.tenants) {
-            const m = second.tenants[t.slug];
-            if (t.engine !== 'flue') {
-                // A profile agent's runs start from its rule: no key, in the
-                // file or live in the tenant.
-                expect(keys[t.slug]).toEqual({});
-                expect(await prisma.tenantApiKey.count({ where: { tenantId: tenantIds[t.slug], revokedAt: null } })).toBe(0);
-                continue;
-            }
-            const agentIds = [m.agentId!];
-            expect(Object.keys(keys[t.slug]).sort()).toEqual([...agentIds].sort());
-            for (const agentId of agentIds) {
-                const raw = keys[t.slug][agentId];
-                expect(inManifest(raw)).toBe(false);
-                const verified = await verifyApiKey(raw);
-                expect(verified.valid).toBe(true);
-                if (!verified.valid) continue;
-                expect(verified.ctx.agentId).toBe(agentId);
-                expect(verified.ctx.tenantId).toBe(tenantIds[t.slug]);
-
-                const live = await prisma.tenantApiKey.findMany({
-                    where: { tenantId: tenantIds[t.slug], agentId, revokedAt: null },
-                    select: { name: true, scopes: true },
-                });
-                expect(live).toHaveLength(1);
-                expect(live[0].name).toBe(SEED_KEY_NAME);
-                const def = t.agents.find((d) => d.profileFixture === null)!;
-                expect([...(live[0].scopes as string[])].sort()).toEqual([...def.keyScopes].sort());
-                expect(def.keyScopes).toContain('mcp:orchestrate');
-            }
+            const settings = await prisma.tenantSecuritySettings.findUnique({
+                where: { tenantId: tenantIds[t.slug] },
+                select: { interactiveAgentId: true },
+            });
+            // The questions route answers with this agent bound (#5604); a
+            // Tool Runner tenant asks no question.
+            expect(settings?.interactiveAgentId ?? null).toBe(t.engine === 'flue' ? second.tenants[t.slug].agentId : null);
         }
-        // The first run's keys were revoked, not left beside the second's.
-        const revoked = await prisma.tenantApiKey.count({
-            where: { tenantId: { in: Object.values(tenantIds) }, name: SEED_KEY_NAME, revokedAt: { not: null } },
-        });
-        expect(revoked).toBeGreaterThanOrEqual(
-            PLAN.tenants.reduce((n, t) => n + t.agents.filter((a) => a.startedBy === 'agent-key').length, 0),
-        );
     });
 
     it('writes the manifest in the shape the Python side reads', () => {

@@ -1783,6 +1783,69 @@
             }
         },
         {
+            "name": "TR: refused at its first model call, before any token (run 43700423641)",
+            "taskId": "token-cap-halts-at-the-boundary",
+            "engine": "tool-runner",
+            "expected": "VACUOUS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "FAILED",
+                    "errorCode": "tool_runner_run_failed",
+                    "costTokens": 0,
+                    "stepCount": 0,
+                    "settledAtMs": 400
+                },
+                "steps": [],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "TR: failed after a model call, short of the cap",
+            "taskId": "token-cap-halts-at-the-boundary",
+            "engine": "tool-runner",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "FAILED",
+                    "errorCode": "tool_runner_run_failed",
+                    "costTokens": 1000,
+                    "stepCount": 1,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 0
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
             "name": "every model call has a digest and every funnel step a verdict",
             "taskId": "every-model-call-has-a-decision-row",
             "engine": "flue",

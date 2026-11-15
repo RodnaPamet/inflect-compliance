@@ -17,9 +17,12 @@
  *   6. The fallback (organisation-level) key reaches the model: the app and
  *      worker get the workspace header with it, and the job log names which
  *      key and whether the header went, never a value.
- *   7. Only a Flue tenant hands over an agent key. A Tool Runner tenant's runs
- *      start from its automation rules (owner decision, 2026-11-13), so a key
- *      for one is refused rather than masked and passed along unused.
+ *   7. No API key reaches the harness. A Flue run is the OWNER's question at
+ *      the questions route, the only route #5604 lets start the ad-hoc
+ *      question, which needs AGENT_INTERACTIVE_RUNS on the deployment; a Tool
+ *      Runner run starts from its automation rule (owner decision,
+ *      2026-11-13). The seed mints none, and the eval step hands over the
+ *      OWNER's session alone.
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -117,13 +120,18 @@ describe('the model is reached with the key in use', () => {
     });
 });
 
-describe('agent keys reach only the tenants whose runs present one', () => {
+describe('no API key reaches the harness', () => {
     const run = WORKFLOW.jobs.inspect.steps.find((s) => s.id === 'evals')?.run ?? '';
 
-    it('requires a key for a Flue tenant and refuses one for a Tool Runner tenant', () => {
-        expect(run).toContain(`expects_key="$(node -p "require('./inspect-out/seed-manifest.json')['\${slug}'].agentId ? 1 : 0")"`);
-        expect(run).toContain('if [ "$expects_key" = "1" ] && [ "$keys_for_slug" -eq 0 ]; then');
-        expect(run).toContain('if [ "$expects_key" = "0" ] && [ "$keys_for_slug" -ne 0 ]; then');
+    it('hands over the OWNER session alone, and the seed writes no key file', () => {
+        expect(run).toContain('cookie_env+=(-e "INSPECT_SESSION_${var}=next-auth.session-token=${session}")');
+        expect(run).not.toContain('INSPECT_AGENT_KEY_');
+        expect(WORKFLOW_SRC).not.toContain('--agent-keys');
+        expect(WORKFLOW_SRC).not.toContain('inspect-agent-keys.json');
+    });
+
+    it('turns on the questions route the Flue samples are asked at (#5604)', () => {
+        expect(WORKFLOW.jobs.inspect.env.AGENT_INTERACTIVE_RUNS).toBe('1');
     });
 });
 

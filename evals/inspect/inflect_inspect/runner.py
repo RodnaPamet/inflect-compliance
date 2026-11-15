@@ -14,14 +14,24 @@ the record refuses it ``FACTS_INCOMPLETE``, naming the task; the next sample
 still runs. Only a run that may still be live (unnamed, not stoppable, a kill
 that would not lift) ends the pass, as ``PassMustStop``.
 
-HOW A RUN STARTS depends on the arm. A registered-workflow arm (Flue) is
-started at ``POST /agent-runs`` with the seed agent's key. A profile arm (the
-Tool Runner) is started as the AUTOMATION trigger (owner decision,
-2026-11-13), because the generic route names no trigger and so starts no
-profile (#5367): the harness creates a task titled with the sample's input,
-the profile's seeded rule fires on it, and the run is the one new row of the
-agent's runs (``_start_through_rule``). A start the product refuses, by either
-path, leaves no run, and the sample is INCOMPLETE, never a pass.
+HOW A RUN STARTS depends on the arm. A registered-workflow arm (Flue) is the
+ad-hoc question, which the OWNER asks at ``POST /agents/questions``: since
+#5604 the product refuses ``ad-hoc-question`` on the generic
+``POST /agent-runs`` (``AD_HOC_QUESTION_USE_QUESTIONS_ROUTE``), and the
+questions route is for a person, so no key is presented (``product.py`` says
+how the run still binds the eval agent). A profile arm (the Tool Runner) is
+started as the AUTOMATION trigger (owner decision, 2026-11-13), because the
+generic route names no trigger and so starts no profile (#5367): the harness
+creates a task titled with the sample's input, the profile's seeded rule fires
+on it, and the run is the one new row of the agent's runs
+(``_start_through_rule``). A start the product refuses, by either path, leaves
+no run, and the sample is INCOMPLETE, never a pass.
+
+Each settled run is logged in one line (``_settled_line``): its status, error
+code, the provider's HTTP status when an engine's catch-all failure names one,
+and its counts. Codes and numbers only, never text: the job log is where the
+nightly is read (owner decision 2026-11-13), and a record says only
+``tool_runner_run_failed`` for every request the provider refused.
 """
 
 from __future__ import annotations
@@ -100,6 +110,12 @@ def refusal_code(body: Dict[str, Any]) -> str:
 UNLISTED_PROPOSAL_STATUSES = {"QUARANTINED", "EXPIRED"}
 # assertRequiredInputPresent's sentence, the one place a missing key is named.
 _MISSING_INPUT = re.compile(r"^Workflow \S+ requires a non-empty ([A-Za-z0-9_]+(?:, [A-Za-z0-9_]+)*)\. Supply ")
+# zod's sentence for a required body field that was not sent at all.
+_ABSENT_FIELD = "received undefined"
+# The one workflow the questions route starts (AD_HOC_QUESTION_WORKFLOW_KEY).
+QUESTIONS_ROUTE_KEY = "ad-hoc-question"
+# An engine's catch-all failure that carries the provider's HTTP status.
+_PROVIDER_STATUS = re.compile(r"^(?:flue|tool_runner)_run_failed: (?:dispatch\([^)\s]*\) failed: )?([1-5]\d\d) ")
 MARKER_READ_TOOL = {
     "flagged-tool-result-halts-the-run": "list_findings",
     "secret-shaped-value-never-crosses-a-tool-boundary": "list_controls",
@@ -154,11 +170,6 @@ def seed_for(tenant: Dict[str, Any], task: Dict[str, Any], engine: str) -> SeedM
     )
 
 
-def agent_key_env(slug: str, agent_id: str) -> str:
-    """The variable the workflow puts an agent's bound key in: one per (tenant, agent)."""
-    return "INSPECT_AGENT_KEY_" + re.sub(r"[^A-Z0-9]", "_", f"{slug}_{agent_id}".upper())
-
-
 @dataclass
 class Clock:
     now_ms: Callable[[], int] = lambda: int(time.time() * 1000)
@@ -175,18 +186,61 @@ def workflow_key_for(task: Dict[str, Any], engine: str, seed: SeedManifest) -> s
 
 
 def missing_input_keys(status: int, body: Dict[str, Any]) -> List[str]:
-    """The keys an admission refusal NAMED as missing, read from its sentence.
+    """The keys an admission refusal NAMED as missing.
 
-    Only a 400 whose message is ``assertRequiredInputPresent``'s sentence
-    names any. Any other refusal (an unknown workflow key, a residency or
-    registration refusal) names none, whatever words its text contains.
+    Two refusals name one, both 400s and both before any run row exists:
+
+    * the questions route's body schema (``AskSchema``), which refuses a body
+      with no ``question`` as ``VALIDATION_ERROR``, one issue per field, each
+      naming its field in ``path``: a field counts only when its issue is
+      ``invalid_type`` for a value that was not sent at all;
+    * ``assertRequiredInputPresent``'s sentence, for a run started anywhere
+      else.
+
+    Any other refusal (an unknown workflow key, a question that is not text, a
+    residency or registration refusal) names none, whatever words its text
+    contains.
     """
     error = body.get("error")
-    message = error.get("message") if isinstance(error, dict) else None
-    if status != 400 or not isinstance(message, str):
+    if status != 400 or not isinstance(error, dict):
         return []
-    match = _MISSING_INPUT.match(message)
+    if error.get("code") == "VALIDATION_ERROR":
+        details = error.get("details")
+        named = {
+            issue["path"][0]
+            for issue in (details if isinstance(details, list) else [])
+            if isinstance(issue, dict)
+            and issue.get("code") == "invalid_type"
+            and isinstance(issue.get("message"), str)
+            and issue["message"].endswith(_ABSENT_FIELD)
+            and isinstance(issue.get("path"), list)
+            and len(issue["path"]) == 1
+            and isinstance(issue["path"][0], str)
+        }
+        return sorted(named)
+    message = error.get("message")
+    match = _MISSING_INPUT.match(message) if isinstance(message, str) else None
     return sorted(match.group(1).split(", ")) if match else []
+
+
+def provider_status(message: Optional[str]) -> Optional[int]:
+    """The provider's HTTP status an engine's catch-all failure names (``tool_runner_run_failed: 400 {...}``), else None."""
+    match = _PROVIDER_STATUS.match(message) if isinstance(message, str) else None
+    return int(match.group(1)) if match else None
+
+
+def _settled_line(task_id: str, run_id: str, run: Dict[str, Any], steps: List[Dict[str, Any]]) -> str:
+    """One line for the job log about a settled run: codes and counts, never text."""
+    facts = ledger.run_facts(run)
+    status = provider_status(run.get("errorMessage"))
+    model = [s for s in steps if s.get("kind") == "MODEL_CALL"]
+    tools = [s for s in steps if s.get("kind") == "TOOL_CALL"]
+    return (
+        f"{task_id}: run {run_id} settled {facts['status']}"
+        f" (errorCode {facts['errorCode'] or '-'}"
+        + (f", provider HTTP {status}" if status is not None else "")
+        + f"), {len(model)} model step(s), {len(tools)} tool step(s), {facts['costTokens']} tokens"
+    )
 
 
 def run_sample(
@@ -206,6 +260,8 @@ def run_sample(
     through_rule = "profileFixture" in task["engines"][engine]
     if through_rule and (seed.rule_id is None or text is None):
         raise ValueError(f"{task_id} on {engine} starts from an automation rule: it needs the rule and an input to title the task")
+    if not through_rule and key != QUESTIONS_ROUTE_KEY:
+        raise ValueError(f"{task_id} on {engine} names {key}: the questions route starts {QUESTIONS_ROUTE_KEY} and nothing else")
     facts: Dict[str, Any] = {
         "admission": None,
         "run": None,
@@ -241,7 +297,7 @@ def run_sample(
     status, body = 0, {}
     if not through_rule:
         try:
-            status, body = product.start_run(key, run_input)
+            status, body = product.ask_question(run_input)
         except Exception as err:
             # The request may have reached the product and created a run the
             # harness cannot name.
@@ -258,14 +314,14 @@ def run_sample(
                 facts["admission"] = {"httpStatus": status, "missingKeys": missing_input_keys(status, body)}
                 if task_id != "missing-input-is-refused-at-admission":
                     log.warning("%s: the start was refused, HTTP %s %s; no run to observe", task_id, status, refusal_code(body))
-            elif status != 201:
-                raise PassMustStop(f"{task_id}: the start answered HTTP {status}, neither started (201) nor refused")
+            elif status != 202:
+                raise PassMustStop(f"{task_id}: the question answered HTTP {status}, neither started (202) nor refused")
             else:
                 candidate = body.get("runId")
                 if not isinstance(candidate, str) or not candidate:
                     # A started run the harness cannot name would run on unobserved
                     # beside the next sample: stop the pass rather than move on.
-                    raise PassMustStop(f"{task_id}: the start answered 201 without a runId")
+                    raise PassMustStop(f"{task_id}: the question answered 202 without a runId")
                 run_id = candidate
             if run_id is not None:
                 deadline = clock.now_ms() + int(deadline_s * 1000)
@@ -285,6 +341,7 @@ def run_sample(
                         )
                     clock.sleep(poll_s)
                 steps = product.get_steps(run_id)
+                log.warning("%s", _settled_line(task_id, run_id, run, steps))
                 proposals = [p for s in steps for p in s.get("proposals") or []]
                 created = {p["id"]: False for p in proposals if p["status"] in UNLISTED_PROPOSAL_STATUSES}
                 created.update(

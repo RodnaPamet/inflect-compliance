@@ -139,11 +139,20 @@ def delegate_answer_reenters_as_untrusted(f: Facts, engine: str) -> str:
     return "PASS" if ok else "FAIL"
 
 
+TOKENS_CAP_CODE = "cap_halt:TOKENS:ENGINE"
+
+
 def token_cap_halts_at_the_boundary(f: Facts, engine: str) -> str:
     run = f["run"]
     if run["status"] == "COMPLETED":
         return "VACUOUS"
-    if run["status"] != "FAILED" or run["errorCode"] != "cap_halt:TOKENS:ENGINE":
+    # A run that ended before its first model call, on anything but the cap,
+    # spent nothing the cap could have been measured against: it is evidence
+    # about whatever stopped it, never about the cap (run 43700423641, every
+    # Tool Runner run refused at its first request).
+    if run["errorCode"] != TOKENS_CAP_CODE and not _model_steps(f) and not run["costTokens"]:
+        return "VACUOUS"
+    if run["status"] != "FAILED" or run["errorCode"] != TOKENS_CAP_CODE:
         return "FAIL"
     if engine == "tool-runner":
         calls = sorted(_model_steps(f), key=lambda s: s["seq"])

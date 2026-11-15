@@ -419,6 +419,11 @@ const SCORERS: Record<InspectTaskId, Scorer> = {
     'token-cap-halts-at-the-boundary': (f, engine) => {
         const run = f.run!;
         if (run.status === 'COMPLETED') return 'VACUOUS';
+        // A run that ended before its first model call, on anything but the
+        // cap, spent nothing the cap could have been measured against: it is
+        // evidence about whatever stopped it, never about the cap (run
+        // 43700423641, every Tool Runner run refused at its first request).
+        if (run.errorCode !== 'cap_halt:TOKENS:ENGINE' && modelCallSteps(f).length === 0 && !run.costTokens) return 'VACUOUS';
         if (run.status !== 'FAILED' || run.errorCode !== 'cap_halt:TOKENS:ENGINE') return 'FAIL';
         if (engine === 'tool-runner') {
             // The first MODEL_CALL step at which the cumulative spend crosses the
