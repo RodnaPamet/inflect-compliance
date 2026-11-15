@@ -8,7 +8,6 @@
     "automationRules": {},
     "markers": {
       "flagged-tool-result-halts-the-run": "INSPECT-CANARY-INJ-EXAMPLE",
-      "delegate-answer-reenters-as-untrusted": "Example joined sentence",
       "secret-shaped-value-never-crosses-a-tool-boundary": "ExampleCanaryValue"
     },
     "ownerEmail": "owner@inspect-ext-flue.inspect.test"
@@ -66,5 +65,15 @@
     },
     "markers": {},
     "ownerEmail": "owner@inspect-local-tool-runner.inspect.test"
+  },
+  "inspect-delegation-flue": {
+    "agentId": "cmagentdelegationflue00001",
+    "profiles": {},
+    "profileAgents": {},
+    "automationRules": {},
+    "markers": {
+      "delegate-answer-reenters-as-untrusted": "Example joined sentence"
+    },
+    "ownerEmail": "owner@inspect-delegation-flue.inspect.test"
   }
 }

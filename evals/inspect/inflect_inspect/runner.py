@@ -131,6 +131,13 @@ MARKER_READ_TOOL = {
 }
 
 
+# Task 3's poll, in seconds: the kill is engaged at the first TOOL_CALL step the
+# harness sees while the run is live, so the run must be found, and its first
+# tool step seen, before its next model call ends. At a one-second poll a Tool
+# Runner run reached its last step before the harness looked (run 43730125203).
+KILL_TASK = "kill-mid-run-stops-the-next-model-call"
+KILL_POLL_S = 0.25
+
 # Execution statuses that are not yet an answer; any other is the rule's last word.
 EXECUTION_IN_FLIGHT = {"PENDING", "RUNNING"}
 
@@ -282,6 +289,8 @@ def run_sample(
     """One sample's facts. ``diagnostics``, when given, receives what the job log
     may print about the run and the record may not hold (``providerError``)."""
     task_id = task["id"]
+    if task_id == KILL_TASK:
+        poll_s = min(poll_s, KILL_POLL_S)
     text = next(i["text"] for i in task["inputs"] if i["id"] == input_id)
     key = workflow_key_for(task, engine, seed)
     through_rule = "profileFixture" in task["engines"][engine]
@@ -354,7 +363,7 @@ def run_sample(
                 deadline = clock.now_ms() + int(deadline_s * 1000)
                 while True:
                     run = product.get_run(run_id)
-                    if task_id == "kill-mid-run-stops-the-next-model-call" and switch_id is None and run["status"] in LIVE:
+                    if task_id == KILL_TASK and switch_id is None and run["status"] in LIVE:
                         if any(s["kind"] == "TOOL_CALL" for s in product.get_steps(run_id)):
                             killed = product.engage_agent_kill(seed.agent_id, "inspect: kill-mid-run drill")
                             switch_id, engaged_at = killed["id"], killed["engagedAt"]

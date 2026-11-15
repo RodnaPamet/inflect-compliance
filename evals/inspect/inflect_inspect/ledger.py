@@ -14,6 +14,12 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 
 ENGINE_SUPPLIED_TOOLS = {"task", "activate_skill"}
+# Refusal codes read off a FAILED step's ``outputJson.error`` when it records no
+# ``refused``: the engines record a guarded call's throw as ``{error: message}``,
+# and the review latch's message leads with its code (``ReviewLatch.assertNotTripped``:
+# ``ai_guard_review_required: awaiting human review since … — refusing <tool>``).
+# An ALLOWLIST, so only a known code is ever kept, never a sentence.
+ERROR_REFUSAL_CODES = {"ai_guard_review_required"}
 _CAP_SENTENCE = re.compile(r"^Run halted at its ([A-Z_]+) cap of \d+(?:ms)? \(set by the ([A-Z_]+)\)")
 _CODE_PREFIX = re.compile(r"^([a-z0-9_.-]{1,96}):")
 # An engine's catch-all failure whose cause is the model provider's own 5xx:
@@ -55,6 +61,15 @@ def _json(raw: Optional[str]) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def step_refusal(output: Dict[str, Any]) -> Optional[str]:
+    """``outputJson.refused``, else an allowlisted code leading ``outputJson.error``; never the text."""
+    if isinstance(output.get("refused"), str):
+        return output["refused"]
+    error = output.get("error")
+    prefix = _CODE_PREFIX.match(error) if isinstance(error, str) else None
+    return prefix.group(1) if prefix and prefix.group(1) in ERROR_REFUSAL_CODES else None
+
+
 def run_facts(run: Dict[str, Any]) -> Dict[str, Any]:
     started, completed = _ms(run.get("startedAt")), _ms(run.get("completedAt"))
     return {
@@ -73,7 +88,7 @@ def step_facts(steps: Iterable[Dict[str, Any]], run_started_iso: str, created_en
     for s in steps:
         inp, outp = _json(s.get("inputJson")), _json(s.get("outputJson"))
         model_calls = inp.get("modelCalls") if s["kind"] == "MODEL_CALL" else None
-        refused = outp.get("refused") if isinstance(outp.get("refused"), str) else None
+        refused = step_refusal(outp)
         delegation = s.get("delegation")
         out.append(
             {

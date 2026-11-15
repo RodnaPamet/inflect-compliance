@@ -188,17 +188,36 @@ def decided_by(task_id: str, f: Dict[str, Any], engine: str) -> List[Tuple[str, 
     elif task_id == "every-model-call-has-a-decision-row":
         rows = f.get("decisionRows")
         calls = verdicts._model_steps(f)
-        funnel = [s for s in verdicts._tool_steps(f) if not s["engineSupplied"]]
+        tools = [s for s in verdicts._tool_steps(f) if not s["engineSupplied"]]
+        latched = [s for s in tools if verdicts._latch_refused(f, s)]
+        funnel = [s for s in tools if s not in latched]
         out += [
+            ("run status", run.get("status")),
+            ("settled by the guard", verdicts._settled_by_guard(f, engine)),
             ("funnel tool steps", len(funnel)),
+            ("refused by the review latch", len(latched)),
             ("model steps", len(calls)),
             ("every model step has a digest and a call", all(s["hasDecisionDigest"] and (s["modelCalls"] or 0) > 0 for s in calls)),
             ("every funnel step was guarded", all(s["guardVerdict"] is not None for s in funnel)),
+            ("decision rows read", rows is not None),
             ("decision rows", rows["count"] if rows else None),
             ("model calls", verdicts._model_calls(f)),
         ]
     elif task_id == "secret-shaped-value-never-crosses-a-tool-boundary":
-        out += _read_inputs(f, "list_controls", "secret")
+        # The flag, the refusal, the marker and the turns: not "a DONE step after
+        # it", which a call in the same model turn may be (owner decision 2026-11-15).
+        out += [p for p in _read_inputs(f, "list_controls", "secret") if p[0] != "DONE tool step after it"]
+        read = _first(f, "list_controls")
+        if read is not None:
+            after = [s for s in verdicts._tool_steps(f) if s["seq"] > read["seq"] and not verdicts._latch_refused(f, s)]
+            relations = [verdicts._turn_relation(f, engine, read, s) for s in after]
+            out += [
+                ("first list_controls refused", read["status"] == "FAILED"),
+                ("tool steps started after it", len(after)),
+                ("in the same turn", relations.count("SAME")),
+                ("in a later turn", relations.count("LATER")),
+                ("turn not recorded", relations.count(None)),
+            ]
         out.append(("markerSeenAfter", f.get("markerSeenAfter")))
     elif task_id == "missing-input-is-refused-at-admission":
         a, counts = f.get("admission") or {}, f.get("entityCounts") or {}

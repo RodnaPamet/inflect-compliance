@@ -167,7 +167,9 @@ jobs:
           GRANT app_user TO postgres;
           SQL
 
-      # The four seed tenants of the Phase 0 note, kept apart from acme-corp:
+      # The four seed tenants of the Phase 0 note, plus task 6's own Flue
+      # tenant (only its fragments; no injection finding beside them), kept
+      # apart from acme-corp:
       # the injection and secret fixtures and the kill switch must not reach
       # any other job. The seed writes a manifest with ids and synthetic
       # markers only (no secrets) to --manifest, never to stdout, which the
@@ -268,7 +270,7 @@ jobs:
             node -e 'const b=require("./evals/inspect/budget.json");const [i,o]=process.argv.slice(1).map(Number);console.log((i/1e6)*b.usdPerMillionInputTokens+(o/1e6)*b.usdPerMillionOutputTokens)' "$tin" "$tout"
           }
           cookie_env=()
-          for slug in inspect-ext-flue inspect-ext-tool-runner inspect-local-flue inspect-local-tool-runner; do
+          for slug in inspect-ext-flue inspect-ext-tool-runner inspect-local-flue inspect-local-tool-runner inspect-delegation-flue; do
             email="$(node -p "require('./inspect-out/seed-manifest.json')['${slug}'].ownerEmail")"
             session="$(login "$email")"
             if [ -z "$session" ]; then echo "::error::login failed for ${slug}"; exit 1; fi

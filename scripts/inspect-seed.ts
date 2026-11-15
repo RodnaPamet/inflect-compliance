@@ -1,6 +1,6 @@
 /**
- * Seed the four Inspect tenants the agent-evals nightly runs against
- * (`docs/ai-architecture/inspect.md`, Phase 1.6).
+ * Seed the five Inspect tenants the agent-evals nightly runs against (the
+ * Phase 0 note's four plus task 6's own; `docs/ai-architecture/inspect.md`, Phase 1.6).
  *
  *   npx tsx scripts/inspect-seed.ts --manifest <manifest.json>
  *
