@@ -16,6 +16,10 @@
  *   statement or a limit changes, and Approve is offered only to a viewer the
  *   server would let approve (`admin.tenant_lifecycle`, OWNER-only), and only
  *   when what is on screen is what is stored.
+ * - Approve is bound to the version on screen (owner decision 2026-11-15): it
+ *   sends the id and `updatedAt` this page loaded, and a save made since then
+ *   is refused (409, `RISK_APPETITE_CHANGED_SINCE_VIEWED`). The page says so
+ *   and re-reads, so the approver sees the new terms before approving them.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
@@ -35,6 +39,7 @@ import { formatDate } from '@inflect/ui/lib/format-date';
 import { parseLimit } from '@/lib/risk-appetite-limit';
 import { useTranslations } from 'next-intl';
 import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
+import { isAppetiteChangedSinceViewed } from '@/lib/risk-appetite-approval';
 
 type Cadence = 'MONTHLY' | 'QUARTERLY' | 'SEMI_ANNUALLY' | 'ANNUALLY';
 type TestedPercentile = 50 | 80 | 90 | 95 | 99;
@@ -51,6 +56,8 @@ interface Config {
     nextReviewAt: string | null;
 }
 interface Approval { approvedAt: string; approverName: string | null }
+/** The stored row this page last read: what an approval approves. */
+interface Viewed { configId: string; viewedUpdatedAt: string }
 interface Breach {
     id: string; breachType: string; thresholdValue: number; actualValue: number;
     detectedAt: string; resolvedAt: string | null; acknowledgedAt: string | null; riskId: string | null; category: string | null;
@@ -112,6 +119,9 @@ export default function RiskAppetitePage() {
     const [approval, setApproval] = useState<Approval | null>(null);
     // What is stored, as a PUT body: null until a configuration has been saved.
     const [stored, setStored] = useState<string | null>(null);
+    // The version of what is stored, sent with Approve so the server stamps
+    // only the terms this page showed.
+    const [viewed, setViewed] = useState<Viewed | null>(null);
     const [approving, setApproving] = useState(false);
     // The route's key and the usecase's floor (#5313 item 11): OWNER-only.
     const mayApprove = useOffersAdminApiWrite({ key: 'admin.tenant_lifecycle', floor: 'canAdmin' });
@@ -130,6 +140,11 @@ export default function RiskAppetitePage() {
                 const next = bodyOf({ ...DEFAULT_CONFIG, ...c.config } as Config);
                 setCfg(next);
                 setStored(JSON.stringify(next));
+                setViewed(
+                    typeof c.config.id === 'string' && typeof c.config.updatedAt === 'string'
+                        ? { configId: c.config.id, viewedUpdatedAt: c.config.updatedAt }
+                        : null,
+                );
                 setTyped({
                     totalAleThreshold: next.totalAleThreshold == null ? '' : String(next.totalAleThreshold),
                     singleRiskAleMax: next.singleRiskAleMax == null ? '' : String(next.singleRiskAleMax),
@@ -197,10 +212,25 @@ export default function RiskAppetitePage() {
     };
 
     const approve = async () => {
+        if (viewed === null) return;
         setApproving(true); setMsg(null);
         try {
-            const res = await fetch(apiUrl('/risk-appetite/approve'), { method: 'POST' });
+            const res = await fetch(apiUrl('/risk-appetite/approve'), {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(viewed),
+            });
             if (res.ok) { setMsg({ text: t('riskAppetite.approvedMsg'), ok: true }); await load(); }
+            else if (res.status === 409) {
+                // Somebody saved since this page loaded: say so, then show
+                // what is stored now, so it is reviewed before it is approved.
+                const body: unknown = await res.json().catch(() => null);
+                setMsg({
+                    text: isAppetiteChangedSinceViewed(body)
+                        ? t('riskAppetite.approveChangedSinceViewed')
+                        : apiRefusalMessage(body, t('riskAppetite.approveFailed')),
+                    ok: false,
+                });
+                await load();
+            }
             else setMsg({ text: await refusalOf(res, t('riskAppetite.approveFailed')), ok: false });
         } catch {
             setMsg({ text: t('riskAppetite.approveFailed'), ok: false });
@@ -310,7 +340,7 @@ export default function RiskAppetitePage() {
                             <span className="text-xs text-content-muted" id="appetite-approve-save-first">{t('riskAppetite.approveSaveFirst')}</span>
                         )}
                         {mayApprove && stored !== null && (
-                            <Button variant="secondary" onClick={approve} disabled={approving || saving || unsaved} id="appetite-approve">
+                            <Button variant="secondary" onClick={approve} disabled={approving || saving || unsaved || viewed === null} id="appetite-approve">
                                 {approving ? t('riskAppetite.approving') : t('riskAppetite.approve')}
                             </Button>
                         )}

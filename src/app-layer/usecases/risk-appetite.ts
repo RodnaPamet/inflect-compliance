@@ -14,7 +14,8 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 import { assertCanRead, assertCanAdmin, assertCanWrite } from '../policies/common';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
+import { RISK_APPETITE_CHANGED_SINCE_VIEWED } from '@/lib/risk-appetite-approval';
 import { logEvent } from '../events/audit';
 import { resolveALE } from './fair-calculator';
 import { getLatestSimulation } from './monte-carlo';
@@ -217,6 +218,18 @@ export async function upsertAppetiteConfig(ctx: RequestContext, input: UpsertApp
             reviewCadence: input.reviewCadence,
             nextReviewAt: input.nextReviewAt ? new Date(input.nextReviewAt) : null,
         };
+        // Lock the row before reading it (#5313 item 11). The save decides
+        // whether to clear the approval from what it reads, so without the
+        // lock an approval committed between this read and the write below
+        // would survive on terms nobody approved. With it, an approval in
+        // flight waits for the save and then finds `updatedAt` moved (409),
+        // and one committed first is read here and cleared. Prisma has no
+        // locking read; this runs on the tenant-bound client, under RLS.
+        await db.$queryRaw`
+            SELECT "id"
+              FROM "RiskAppetiteConfig"
+             WHERE "tenantId" = ${ctx.tenantId}
+               FOR UPDATE`;
         const existing = await db.riskAppetiteConfig.findFirst({
             where: { tenantId: ctx.tenantId },
             select: {
@@ -269,8 +282,8 @@ export async function upsertAppetiteConfig(ctx: RequestContext, input: UpsertApp
 }
 
 /**
- * Approve the risk appetite as it stands (#5313 item 11, owner decisions
- * 2026-11-15). OWNER-only: the route gates on a literal
+ * Approve the risk appetite the approver was shown (#5313 item 11, owner
+ * decisions 2026-11-15). OWNER-only: the route gates on a literal
  * `requirePermission('admin.tenant_lifecycle')`, and this asserts the same
  * key, so a caller reaching the usecase another way is refused too.
  *
@@ -279,8 +292,21 @@ export async function upsertAppetiteConfig(ctx: RequestContext, input: UpsertApp
  * API key's context names the person who minted the key, not one who read the
  * statement. A later save that changes the statement or a limit clears it
  * (`upsertAppetiteConfig`).
+ *
+ * BOUND TO WHAT WAS SHOWN. `input` is the row's id and `updatedAt` as the
+ * approver's page loaded them, and the stamp is ONE conditional `updateMany`
+ * whose WHERE names the tenant, the id and that `updatedAt`. A save made after
+ * the page loaded moves `updatedAt`, so the write matches nothing and this
+ * refuses with a 409 (`RISK_APPETITE_CHANGED_SINCE_VIEWED`) and stores no
+ * stamp. Never read the row and then write it: a save landing between the two
+ * is the case this exists to refuse. The stamp itself moves `updatedAt`
+ * (`@updatedAt`), so the page re-reads after approving, and a second approval
+ * from a page that has not re-read is refused the same way.
  */
-export async function approveAppetiteConfig(ctx: RequestContext) {
+export async function approveAppetiteConfig(
+    ctx: RequestContext,
+    input: { configId: string; viewedUpdatedAt: string },
+) {
     assertCanAdmin(ctx);
     if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
         throw forbidden('Approving the risk appetite requires admin.tenant_lifecycle', {
@@ -292,29 +318,47 @@ export async function approveAppetiteConfig(ctx: RequestContext) {
             reason: 'RISK_APPETITE_APPROVAL_NEEDS_PERSON',
         });
     }
+    // The route's schema already refuses a malformed marker; this keeps a
+    // non-HTTP caller from turning `Invalid Date` into a query.
+    const viewedUpdatedAt = new Date(input.viewedUpdatedAt);
+    if (!input.configId || Number.isNaN(viewedUpdatedAt.getTime())) {
+        throw badRequest('An approval must name the version of the risk appetite it approves');
+    }
     return runInTenantContext(ctx, async (db) => {
-        const existing = await db.riskAppetiteConfig.findFirst({
-            where: { tenantId: ctx.tenantId },
-            select: { id: true },
-        });
-        if (!existing) throw notFound('There is no risk appetite to approve; save one first');
         const approvedAt = new Date();
-        const saved = await db.riskAppetiteConfig.update({
-            where: { id: existing.id },
+        const { count } = await db.riskAppetiteConfig.updateMany({
+            where: { tenantId: ctx.tenantId, id: input.configId, updatedAt: viewedUpdatedAt },
             data: { approvedByUserId: ctx.userId, approvedAt },
         });
+        if (count === 0) {
+            // The write is already refused; this read only words the refusal.
+            const stored = await db.riskAppetiteConfig.findFirst({
+                where: { tenantId: ctx.tenantId },
+                select: { id: true },
+            });
+            if (!stored) throw notFound('There is no risk appetite to approve; save one first');
+            throw new ConflictError(
+                'The risk appetite has changed since it was shown to you; reload it and review it before approving',
+                { reason: RISK_APPETITE_CHANGED_SINCE_VIEWED },
+            );
+        }
         await logEvent(db, ctx, {
             action: 'RISK_APPETITE_APPROVED',
             entityType: 'RiskAppetiteConfig',
-            entityId: saved.id,
+            entityId: input.configId,
             details: 'Approved the risk appetite statement and its limits',
             detailsJson: {
                 category: 'custom',
                 event: 'risk_appetite_approved',
                 summary: 'Risk appetite approved',
                 approvedAt: approvedAt.toISOString(),
+                viewedUpdatedAt: viewedUpdatedAt.toISOString(),
             },
         });
+        const saved = await db.riskAppetiteConfig.findFirst({
+            where: { tenantId: ctx.tenantId, id: input.configId },
+        });
+        if (!saved) throw notFound('There is no risk appetite to approve; save one first');
         return saved;
     });
 }

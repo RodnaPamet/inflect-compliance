@@ -32,3 +32,23 @@ export const RiskAppetiteConfigSchema = z.object({
 }).strict();
 
 export type RiskAppetiteConfigInput = z.infer<typeof RiskAppetiteConfigSchema>;
+
+/**
+ * Request body of `POST /api/t/:slug/risk-appetite/approve` (#5313 item 11,
+ * owner decision 2026-11-15: an approval is bound to the version the approver
+ * was shown).
+ *
+ * The id and `updatedAt` of the stored configuration as the page loaded it.
+ * The usecase stamps the approval in ONE conditional write naming both, so a
+ * save made after the page loaded matches nothing and the approval is refused
+ * (409, `RISK_APPETITE_CHANGED_SINCE_VIEWED`) rather than landing on limits
+ * the approver never saw. `.strict()`, and both fields required: an approval
+ * that names no version is a 400, never an approval of whatever is stored.
+ */
+export const ApproveRiskAppetiteSchema = z.object({
+    configId: z.string().min(1),
+    /** `RiskAppetiteConfig.updatedAt`, as an ISO-8601 UTC string. */
+    viewedUpdatedAt: z.string().datetime(),
+}).strict();
+
+export type ApproveRiskAppetiteInput = z.infer<typeof ApproveRiskAppetiteSchema>;

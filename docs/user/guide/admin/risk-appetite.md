@@ -17,6 +17,7 @@ Click **{{ui:nav.admin}}** at the bottom of the sidebar. Under {{ui:admin.sectio
 | Open the page | Owner, Admin |
 | Save the configuration, acknowledge a breach | Owner, Admin |
 | Create a remediation task for a breach | Owner, Admin |
+| Approve the appetite | Owner |
 
 Editors, Readers, Auditors and AI admins see **{{ui:admin.forbidden.title}}**.
 
@@ -59,6 +60,14 @@ Leave a limit empty to not check it.
 Fill in the statement and the limits, choose the percentile, and click **{{ui:admin.riskAppetite.saveConfig}}**. **{{ui:admin.riskAppetite.saved}}** confirms it. The new limits are checked at the next daily run.
 
 Type numbers without commas or dots between thousands, such as `1000000`; spaces are fine (`1 000 000`). A limit that is not a number is marked **{{ui:admin.riskAppetite.invalidNumber}}**, and **{{ui:admin.riskAppetite.saveConfig}}** stays greyed out until it is fixed.
+
+### Approve the appetite
+
+Beside the configuration, Inflect shows whether the saved appetite is approved: **{{ui:admin.riskAppetite.notApproved}}**, or who approved it and when. An Owner records the board's approval by clicking **{{ui:admin.riskAppetite.approve}}**; **{{ui:admin.riskAppetite.approvedMsg}}** confirms it.
+
+The approval belongs to the version on screen. If you have unsaved changes, the button is greyed out with **{{ui:admin.riskAppetite.approveSaveFirst}}**: save first. If somebody else saved the appetite after you opened the page, Inflect refuses the approval with **{{ui:admin.riskAppetite.approveChangedSinceViewed}}** and shows the saved version, so you never approve limits you have not seen.
+
+A later save that changes the statement, a limit, the percentile or a category limit clears the approval, and it must be approved again. Changing only the review dates keeps it.
 
 ### Acknowledge a breach
 
