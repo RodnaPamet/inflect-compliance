@@ -26,7 +26,7 @@ inflect · ai architecture · vector store · roadmap v2 · 2026-11-11
 | Wave | 1 (the first Layer 4 wave, zero-GPU) — see master § Sequencing. Phase 4 (Weaviate) is conditional and has no wave until a floor is missed |
 | Depends on | a Postgres image that carries the pgvector extension (Phase 1.1 — the image on the VM today does not); **an embedding provider to be useful** → [`nemotron-retriever.md`](./nemotron-retriever.md) |
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
-| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. Open, raised here: the floor values (Phase 3.6), the lexical arm (§ Fit), and the patch cadence of the self-built Postgres image (Phase 1.1): proposed default, keep the 2026-10-10 tag rule with a scheduled rebuild; the alternative, digest pins with a scheduled bump pull request, reverses that decision and is the owner's to take |
+| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. **D-L4-8** decided 2026-11-12 (owner): the self-built Postgres image keeps the 2026-10-10 tag rule, rebuilt weekly and whenever the upstream `16-alpine` digest changes, as a moving line tag plus an immutable per-build tag. Open, raised here: the floor values (Phase 3.6) and the lexical arm (§ Fit) |
 | Complete at | Phase 3. Phase 4 runs only if Phase 3's record misses a floor; until then it is not part of completion |
 
 ## At a glance
@@ -76,11 +76,28 @@ flowchart LR
   the production stack (`deploy/docker-compose.prod.yml`, repo-canonical since
   #2849) runs `postgres`, `pgbouncer`, `redis`, `clamav`, `app`, `worker`,
   `watchtower`, `caddy` — nothing else.
-- **The Postgres image cannot load pgvector.** Every Postgres in the
-  repository is `postgres:16-alpine`: `deploy/docker-compose.prod.yml`, the
-  four root Compose files (`docker-compose.yml`, `.test`, `.staging`, `.prod`)
-  and the service containers of five workflows (`ci.yml` three times,
-  `dast.yml`, `dast-full.yml`, `integration-stress.yml`, `load-test.yml`). The
+- **The image that carries pgvector is built, and nothing runs it yet.**
+  `deploy/postgres/Dockerfile` is `postgres:16-alpine` plus pgvector `v0.8.7`
+  (pinned by tag and commit, compiled without `-march=native`, toolchain
+  removed in the same layer). ci.yml's `Postgres image` job builds it,
+  smoke-tests it (`deploy/postgres/smoke.sh`: musl, no toolchain, `CREATE
+  EXTENSION vector`, a cosine query by sequential scan and through HNSW) and
+  gates it with Trivy on every change to `deploy/postgres/`;
+  `.github/workflows/postgres-pgvector-image.yml` publishes it to
+  `ghcr.io/rodnapamet/postgres-pgvector` as the line tag `16-alpine` plus an
+  immutable per-build tag, from `main` only, on dispatch, every Wednesday, and
+  on any day the upstream `16-alpine` digest moved (D-L4-8)
+  ([implementation note](../implementation-notes/2026-11-15-postgres-pgvector-image.md)).
+- **The Postgres every service runs cannot load pgvector yet.** Every Postgres
+  reference in the repository is still `postgres:16-alpine`:
+  `deploy/docker-compose.prod.yml`, the four root Compose files
+  (`docker-compose.yml`, `.test`, `.staging`, `.prod`) and the service
+  containers of seven workflows (`ci.yml` three times, `agent-evals.yml`,
+  `dast.yml`, `dast-full.yml`, `garak.yml`, `integration-stress.yml`,
+  `load-test.yml`; this list said five until 2026-11-15, missing the two
+  evaluation workflows). They move to the published line tag in the pull
+  request after the first publish (1.2): a CI service container cannot pull
+  an image that has never been published. The
   official image's `16/alpine3.23` Dockerfile compiles the core server and
   `contrib` and nothing else; pgvector is not in it. So `CREATE EXTENSION
   vector` fails on the production database, in every CI job, and in local
@@ -201,7 +218,7 @@ knowledge tables exist under RLS; exactly one module issues SQL against a
 vector column.
 
 **Sub-phases.**
-- [ ] 1.1 **The image.** `deploy/postgres/Dockerfile`: `FROM
+- [x] 1.1 **The image.** `deploy/postgres/Dockerfile`: `FROM
       postgres:16-alpine`, compiling pgvector at a pinned tag (`v0.8.7`
       today) against the image's own server headers, the build toolchain
       removed in the same layer. Same base, same musl, same collation, so the
@@ -224,7 +241,13 @@ vector column.
       for the owner (§ Owner decisions) rather than taken here. The fallback,
       `pgvector/pgvector:0.8.7-pg16-bookworm`, is taken only with a planned
       `REINDEX DATABASE` (or dump and restore) window, written into the pull
-      request's rollback plan.
+      request's rollback plan. *Landed in two steps, as tei-embed's image did
+      (#5687 then #5702):* the Dockerfile, the smoke test, ci.yml's
+      `Postgres image` job and the publishing workflow first; the image is
+      then published by the owner's dispatch of `Postgres pgvector image` from
+      `main`, and only then do the references and the `BASELINE` entry move
+      (1.2), because a CI service container cannot pull an unpublished image
+      and the guard refuses a baseline entry nothing references.
 - [ ] 1.2 **Every Postgres moves together.** The production Compose file, the
       four root Compose files and the five workflows' service containers all
       reference the same image and line tag, or the fresh-DB migration gate

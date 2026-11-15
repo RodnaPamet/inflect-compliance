@@ -2,7 +2,7 @@
 #  CI — Enterprise-grade pipeline
 #  Jobs: lint · typecheck · test · coverage · build · e2e
 #        load-smoke · security · codeql · docker · trivy
-#        tei-embed-image
+#        tei-embed-image · postgres-image
 #
 #  Job graph:
 #    lint ─────────────┐
@@ -16,7 +16,8 @@
 #           └──→ trivy ┤
 #    security ─────────┤
 #    codeql ───────────┤
-#    tei-embed-image ──┘
+#    tei-embed-image ──┤
+#    postgres-image ───┘
 #
 #  Runs on PRs, pushes to main, and merge-queue groups.
 #
@@ -24,6 +25,7 @@
 #    RUN  in the queue — changes · lint · typecheck · test · test-summary
 #                        · build · security   (the semantic-collision gate)
 #    SKIP in the queue — e2e · docker · trivy · codeql · tei-embed-image
+#                        · postgres-image
 #                        (different failure class; each already runs on the
 #                        PR AND on push to main)
 #    Already push/schedule-only — coverage · load-smoke.
@@ -314,6 +316,9 @@ jobs:
       # tei-embed's image (deploy/tei-embed/). Its build context IS that
       # directory, so nothing else can change it; the same `|| 'true'` fallback.
       tei_embed: ${{ steps.filter.outputs.tei_embed || 'true' }}
+      # postgres-pgvector's image (deploy/postgres/). Its build context IS that
+      # directory, so nothing else can change it; the same `|| 'true'` fallback.
+      postgres_image: ${{ steps.filter.outputs.postgres_image || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -360,6 +365,12 @@ jobs:
             tei_embed:
               - 'deploy/tei-embed/**'
               - '.github/workflows/tei-embed-image.yml'
+              # Governs its Trivy gate, as for `container`.
+              - '.trivyignore'
+              - '.github/workflows/ci.yml'
+            postgres_image:
+              - 'deploy/postgres/**'
+              - '.github/workflows/postgres-pgvector-image.yml'
               # Governs its Trivy gate, as for `container`.
               - '.trivyignore'
               - '.github/workflows/ci.yml'
@@ -3221,6 +3232,55 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "tei-embed:ci-${{ github.sha }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          timeout: "15m"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: ".trivyignore"
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 12: Postgres image — postgres-pgvector (vector store Phase 1.1)
+  #  Builds deploy/postgres/Dockerfile (postgres:16-alpine plus pgvector
+  #  at a pinned tag and commit), smoke-tests it (CREATE EXTENSION vector
+  #  and a cosine query, sequential and through HNSW), and blocks on
+  #  CRITICAL and HIGH vulnerabilities with fixes, as the application
+  #  image's gate does. Never published from here: the dispatch, weekly
+  #  and upstream-digest postgres-pgvector-image.yml publishes the line
+  #  tag (owner decisions D-L4-1 and D-L4-8).
+  # ═══════════════════════════════════════════════════════════════
+  postgres-image:
+    name: "Postgres image"
+    needs: [changes]
+    # Behind its own path filter, on pull requests AND pushes: the build context
+    # is deploy/postgres/ alone, so nothing outside it can change the image.
+    # Upstream patches reach the published image through the rebuilds in
+    # postgres-pgvector-image.yml, not through this job. Skipped in the merge
+    # queue with docker and trivy: it already ran on the pull request.
+    if: ${{ github.event_name != 'merge_group' && needs.changes.outputs.postgres_image == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # `--pull --no-cache`: re-read the upstream 16-alpine tag and recompile
+      # pgvector against it, so this job judges what a publish today would ship.
+      - name: Build the postgres-pgvector image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build --pull --no-cache -f deploy/postgres/Dockerfile -t "postgres-pgvector:ci-${{ github.sha }}" deploy/postgres
+
+      - name: Smoke-test the postgres-pgvector image
+        run: deploy/postgres/smoke.sh "postgres-pgvector:ci-${{ github.sha }}"
+
+      # The same gate as the application image's:
+      # CRITICAL,HIGH, blocking, fixed vulnerabilities only, with the
+      # repository's narrow exemptions.
+      - name: "Gate: Trivy scan of the postgres-pgvector image (critical+high)"
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "postgres-pgvector:ci-${{ github.sha }}"
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"

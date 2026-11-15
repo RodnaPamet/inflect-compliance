@@ -182,6 +182,13 @@ const CHECK_REQUIREDNESS: Readonly<Record<string, { required: boolean; why: stri
             + 'Requiring a context that is usually absent would make it score as zero failures. Its '
             + 'verdict is about an image the VM runs only once a later pull request pins its digest.',
     },
+    'postgres-image': {
+        required: false,
+        why: 'Builds the postgres-pgvector image from `deploy/postgres/`, behind its own path filter, '
+            + 'so it is absent from every pull request that does not touch that directory. Requiring '
+            + 'a context that is usually absent would make it score as zero failures. What CI and the '
+            + 'VM run is the published line tag, which the publish workflow gates the same way.',
+    },
 };
 
 describe('every ci.yml job declares whether it is a required check', () => {
