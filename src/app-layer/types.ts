@@ -76,6 +76,23 @@ export interface RequestContext {
     agentId?: string;
 
     /**
+     * The `INVOKE_AGENT` recursion depth of the run this context belongs to
+     * (#5716), or absent for every context no automation rule invoked.
+     *
+     * `MAX_AGENT_INVOKE_DEPTH` is read off the job payload by
+     * `agent-invoke-dispatch`, and nothing wrote the number it reads: a run did
+     * not record its depth and the automation events its effects caused carried
+     * none, so every invoke arrived at depth 1 and `depth_exceeded` could not
+     * trip through a real cycle. This is the carrier — the bus stamps it onto
+     * every event emitted under this context, and `invokeAgent` enqueues one
+     * higher.
+     *
+     * ABSENT IS DEPTH ZERO, deliberately: an event no agent run caused is the
+     * common case and must keep behaving exactly as before.
+     */
+    agentInvokeDepth?: number;
+
+    /**
      * `TenantApiKey.maxAutonomyLevel` — the highest rung on the 0-6 agent
      * ladder this CREDENTIAL may drive its agent to.
      *

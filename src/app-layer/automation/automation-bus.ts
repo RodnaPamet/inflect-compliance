@@ -105,6 +105,26 @@ function createAutomationBus(): AutomationBus {
                 tenantId: ctx.tenantId,
                 actorUserId: input.actorUserId ?? ctx.userId ?? null,
                 emittedAt: new Date(),
+                // THE RECURSION DEPTH RIDES `data`, and like `tenantId` it comes
+                // from ctx rather than from the caller (#5716). An event a run's
+                // effects cause is one lap of a possible agent -> rule -> agent
+                // cycle; `invokeAgent` reads this number off the event to enqueue
+                // one higher, and `MAX_AGENT_INVOKE_DEPTH` could not trip while
+                // nothing wrote it.
+                //
+                // IN `data` RATHER THAN A TYPED FIELD OF ITS OWN, matching
+                // `__subflowDepth`. `data` is the thing that flows: the queue
+                // payload, the rehydrate, both `ActionEvent` sites and
+                // `invokeSubflow`'s forward all pass it through wholesale, so a
+                // cycle that laps through a SUB-FLOW carries the depth with no
+                // hop having to remember to. A typed field would need seven
+                // explicit hand-offs, and missing one is a silent hole.
+                //
+                // Absent for every context no rule invoked, so an ordinary
+                // event's `data` is untouched.
+                ...(ctx.agentInvokeDepth === undefined
+                    ? {}
+                    : { data: { ...input.data, __agentInvokeDepth: ctx.agentInvokeDepth } }),
             } as AutomationDomainEvent;
 
             log('debug', 'automation-bus.emit', {

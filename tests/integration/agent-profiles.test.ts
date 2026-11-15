@@ -856,6 +856,22 @@ describeFn('agent profiles (real DB)', () => {
             expect(plainRun).toEqual({ profileVersionId: null, profileInstructionsHash: null });
         });
 
+        // #5716. The run RECORDS the depth a rule invoked it at, because the
+        // worker and the resume path rebuild a continuation's context from the
+        // row: a depth that reached the run and was not persisted would be lost
+        // the moment a deferral parked it, and the next lap would restart at 1.
+        it('records the invoke depth its context carried, and NULL when none did', async () => {
+            mockDriver = 'static';
+            const invoked = await startWorkflowRun(authorA({ agentInvokeDepth: 2 }), WF);
+            const human = await startWorkflowRun(authorA(), WF);
+            const rows = await prisma.workflowRun.findMany({
+                where: { id: { in: [invoked.runId, human.runId] } },
+                select: { id: true, agentInvokeDepth: true },
+            });
+            expect(rows.find((r) => r.id === invoked.runId)?.agentInvokeDepth).toBe(2);
+            expect(rows.find((r) => r.id === human.runId)?.agentInvokeDepth).toBeNull();
+        });
+
         it('PROFILE_HASH_MISMATCH: text swapped in under the re-wrap exception does not run', async () => {
             // The trigger admits one change to a frozen version: ciphertext to
             // v2 ciphertext with every other column unchanged, for the rotation

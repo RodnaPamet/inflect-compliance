@@ -186,12 +186,23 @@ describe('resuming a flue run as a HUMAN — the third door', () => {
         expect(gate).toBeLessThan(close);
     });
 
-    it('restores the run\'s agent binding onto the executing context', () => {
+    it('restores the run\'s own bindings onto the executing context', () => {
         // The human stays the ACTOR — the audit entry and the checkpoint step
-        // both take their userId — while the EXECUTION carries the agent the
-        // run was authorised under, so every register term applies to the
-        // continuation as it did to the first segment.
-        expect(resume).toContain('const execCtx: RequestContext = run.agentId ? { ...ctx, agentId: run.agentId } : ctx');
+        // both take their userId — while the EXECUTION carries what the run was
+        // authorised under, so every register term applies to the continuation
+        // as it did to the first segment.
+        //
+        // The needle moved in #5716, which added a second binding beside the
+        // agent. It was the whole old line (`… = run.agentId ? { ...ctx,
+        // agentId: run.agentId } : ctx`), so it pinned the SHAPE of one diff
+        // rather than the property; these two pin the property, one clause each,
+        // and each still fails if its binding is dropped.
+        expect(resume).toContain('...(run.agentId ? { agentId: run.agentId } : {}),');
+        // THE RECURSION DEPTH, from the row and never from the resumer. A
+        // resumed segment goes on causing events; a depth left behind here
+        // restarts the next lap of an agent -> rule -> agent cycle at 1, which
+        // is the defect #5716 exists to close, one hop along.
+        expect(resume).toContain('...(run.agentInvokeDepth != null ? { agentInvokeDepth: run.agentInvokeDepth } : {}),');
     });
 
     it('and hands THAT context to the engine, not the bare one', () => {
