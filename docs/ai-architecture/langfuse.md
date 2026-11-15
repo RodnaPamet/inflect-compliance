@@ -8,8 +8,8 @@ inflect · ai architecture · langfuse · roadmap v1 · 2026-10-29
 > planned). **Phase 0's decision is taken: OTel-only (D-L4-5 and D-L4-6,
 > decided by the owner 2026-11-11).** No Langfuse service is run and no
 > sub-processor is added. The roadmap is complete once the master's decision
-> table and status board record it; that edit is the coordinator's and is
-> outstanding (§ Updating the master). The **Current state** section is true today
+> table and status board record it; that edit is the coordinator's and
+> was made on 2026-11-15 (§ Updating the master). The **Current state** section is true today
 > (re-verified 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section
 > records the decision; Phases 1–3 are kept as the plan if D-L4-5 is reopened. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
@@ -140,7 +140,7 @@ Phase 0 put the three in front of the owner, and the owner chose OTel-only.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide hosting and content policy (decided 2026-11-11; master record outstanding)
+### Phase 0 — Decide hosting and content policy (decided 2026-11-11; master record made 2026-11-15)
 
 **The record.** Both decisions were taken by the owner on 2026-11-11 and
 relayed to this change by the coordinating session; the owner's initials go in
@@ -336,9 +336,7 @@ plan's, and applies if D-L4-5 is reopened.
 
 ## Updating the master
 
-Outstanding, and the coordinator's to do (this change does not edit the
-master, whose Langfuse row still reads "missing" and whose D-L4-5 row still
-shows "self-host if the VM bears it" as the default-if-undecided). Write:
+MADE (2026-11-15, #5358). The master now reads:
 
 - **Status board**, Langfuse row, current-state column: "complete — OTel-only
   (D-L4-5, 2026-11-11); content capture off by default (D-L4-6)", linking the

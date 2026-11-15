@@ -6,7 +6,7 @@ inflect · ai architecture · swe-bench · roadmap v1 · 2026-10-29
 > the target architecture places in the Validation column as "testing".
 > **Phase 0's decision is taken: declined (D-EV-5, decided by the owner
 > 2026-11-11).** The roadmap is complete once the master's decision table and
-> status board record it; that edit is the coordinator's and is outstanding
+> status board record it; that edit is the coordinator's and was made on 2026-11-15
 > (§ Updating the master). The **Current state** section is true today (re-verified
 > 2026-11-11 at main 3.365.0, `8733323f`). The **Roadmap** section records the
 > decision, because the benchmark measures a capability this product does not
@@ -94,7 +94,7 @@ roadmap's to take.
 
 ## Roadmap (future direction)
 
-### Phase 0 — Decide, and record (decided 2026-11-11; master record outstanding)
+### Phase 0 — Decide, and record (decided 2026-11-11; master record made 2026-11-15)
 
 **The record.** D-EV-5 was decided by the owner on 2026-11-11 (relayed to this
 change by the coordinating session; the owner's initials go in the master's
@@ -113,13 +113,12 @@ change before the benchmark became relevant, are in
 - [x] 0.1 D-EV-5: retire the box from the target diagram's Validation column,
       or keep it as a placeholder tied to the sandbox refusal. *Declined,
       2026-11-11: the box is answered "declined — no capability to measure".*
-- [ ] 0.2 Record the decision in the master's decision table and mark this
+- [x] 0.2 Record the decision in the master's decision table and mark this
       framework "declined — no capability to measure" or "placeholder".
-      *Outstanding. Recorded here and in the implementation note only. The
-      master is the coordinator's to edit, and at this writing its D-EV-5 row
-      still shows "declined" only as the default-if-undecided, with no date,
-      and its status-board row has no decision. § Updating the master gives
-      the text to write.*
+      *Done 2026-11-15 (#5358). The master's D-EV-5 row reads "**decided
+      2026-11-11** (owner): declined", and its status-board row reads
+      "**declined** — no capability to measure (D-EV-5, 2026-11-11)" with the
+      implementation note linked.*
 
 **Prompt.**
 ```text
@@ -150,8 +149,7 @@ Not applicable.
 
 ## Updating the master
 
-Outstanding, and the coordinator's to do (this change does not edit the
-master). Write:
+MADE (2026-11-15, #5358). The master now reads:
 
 - **Status board**, SWE-bench row, current-state column: "declined — no
   capability to measure (D-EV-5, 2026-11-11)", linking the implementation note.
