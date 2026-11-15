@@ -3,9 +3,10 @@
 # NAMED CHANGES TO THE PRODUCTION VM — the VM half.
 #
 # Runs ON the VM, as root, from `vm.sh`, which the dispatch-only `VM apply`
-# workflow runs (.github/workflows/vm-apply.yml). It carries the four changes
+# workflow runs (.github/workflows/vm-apply.yml). It carries the five changes
 # `deploy/apply.sh` has no mode for, from the capacity budget C1 runbook
-# (docs/implementation-notes/2026-11-12-capacity-c1.md), C1b and #5308:
+# (docs/implementation-notes/2026-11-12-capacity-c1.md), C1b, #5308 and the
+# tei-embed rollback:
 #
 #   remote.sh <action> <stage-dir>
 #
@@ -25,6 +26,11 @@
 #                                check-drift.sh, which trusts that copy only
 #                                while it is byte-identical to the repo's,
 #                                stops reporting it
+#   retire-tei-embed             the tei-embed service's rollback: stop and
+#                                remove its one container, keeping the
+#                                tei-embed-data volume; by compose if the live
+#                                file still defines it, by its compose labels
+#                                if not
 #
 # Each checks its preconditions before it changes anything, and stops if one
 # fails.
@@ -104,6 +110,70 @@ retire-lab-containers)
     echo "lab volumes kept:"
     docker volume ls --format '{{.Name}}' | grep -F orangehrm | sed 's/^/  /' || echo "  (none)"
     [ "$after" -eq 0 ] || { echo "a lab container is still present" >&2; exit 1; }
+    ;;
+
+retire-tei-embed)
+    # The rollback of the tei-embed service (owner decision 2026-11-15): a
+    # revert of its compose entry is not enough, because `up -d` leaves a
+    # service that has left the file running. Like the lab: `rm --stop
+    # --force` of that ONE service, never `down` (it would take the project's
+    # network, and with it every production container), and never
+    # `up -d --remove-orphans` (the scanner and proving-server overlays share
+    # this Compose project, so their containers are orphans of the canonical
+    # file and would go too). Without `-v`: the tei-embed-data volume, the
+    # model weights fetched on first start, is kept, so a re-apply does not
+    # fetch them again.
+    #
+    # The project is compose's default, the directory's name, which is why the
+    # live containers are named inflect-<service>-1 and the volume
+    # inflect_tei-embed-data. A container is the service's when it carries
+    # BOTH compose labels: the identity `compose rm` itself selects on, and
+    # stricter than a name, which compose only derives by default.
+    SERVICE=tei-embed
+    PROJECT="$(basename "$PWD")"
+    VOLUME="${PROJECT}_${SERVICE}-data"
+    tei_ids() {
+        docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" \
+            --filter "label=com.docker.compose.service=$SERVICE"
+    }
+    # Each list is a plain assignment, so a `docker ps` that fails stops the
+    # run (set -e) rather than reading as "no container".
+    tei_report() {
+        local id n name
+        n=0
+        for id in $2; do
+            n=$((n + 1))
+            name="$(docker inspect -f '{{.Name}}' "$id")"
+            echo "  ${name#/} $(docker inspect -f '{{.State.Status}}' "$id")"
+        done
+        echo "  $1: $n $SERVICE container(s)"
+    }
+    # A count, not `grep -q`, which can stop reading early and fail the lister.
+    volume_present() { [ "$(docker volume ls --format '{{.Name}}' | grep -cFx "$VOLUME")" -gt 0 ] && echo yes || echo no; }
+    vol_before="$(volume_present)"
+    ids="$(tei_ids)"
+    tei_report before "$ids"
+    if [ -z "$ids" ]; then
+        echo "nothing to retire: no $SERVICE container exists"
+    else
+        rc=0
+        compose -f docker-compose.prod.yml rm --stop --force "$SERVICE" 2>&1 | shape || rc=$?
+        ids="$(tei_ids)"
+        if [ -n "$ids" ]; then
+            # The live compose file no longer defines the service (compose
+            # exits 1, "no such service"), or did not interpolate: compose
+            # cannot name it, so the same containers, by the same two labels.
+            echo "compose did not remove it (exit $rc): removing the container by its compose project and service labels"
+            # shellcheck disable=SC2086  # one id per word is the point
+            docker rm --force $ids >/dev/null
+        fi
+    fi
+    ids="$(tei_ids)"
+    tei_report after "$ids"
+    vol_after="$(volume_present)"
+    echo "volume $VOLUME present: before $vol_before, after $vol_after"
+    [ -z "$ids" ] || { echo "a $SERVICE container is still present" >&2; exit 1; }
+    [ "$vol_after" = "$vol_before" ] || { echo "the $VOLUME volume changed" >&2; exit 1; }
     ;;
 
 recreate-legacy-mcp-proving)

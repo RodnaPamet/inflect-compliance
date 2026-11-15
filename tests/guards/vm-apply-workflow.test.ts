@@ -19,6 +19,8 @@
  *   - every action that writes runs its preflight first, in the same run;
  *   - the OrangeHRM lab is removed with `rm --stop`, never `down`, and the
  *     hostnames it may stop serving are literals in the script;
+ *   - the tei-embed rollback removes that one container and keeps its volume,
+ *     whether or not the live compose file still defines it;
  *   - nothing it relays from the VM reaches the log except its shape.
  *
  * Parsed as YAML and as code lines, and the output filters are RUN on a stream
@@ -157,7 +159,7 @@ describe('the action list is the same in the workflow and the script', () => {
 });
 
 describe('every write is preceded by its preflight, in the same run', () => {
-    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder', 'refresh-env-prod-example'];
+    const REMOTE_ACTIONS = ['retire-lab-containers', 'recreate-legacy-mcp-proving', 'retire-capacity-recorder', 'refresh-env-prod-example', 'retire-tei-embed'];
     const isPreflight = (a: string) => a === 'preflight' || a.endsWith('-preflight');
 
     it('a preflight action never writes', () => {
@@ -195,7 +197,7 @@ describe('every write is preceded by its preflight, in the same run', () => {
 
     it('the remote actions run remote.sh, which has a branch for each and refuses anything else', () => {
         const d = dispatch();
-        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(['on_vm', 'on_vm', 'on_vm', 'on_vm']);
+        expect(REMOTE_ACTIONS.map((a) => d.get(a))).toEqual(REMOTE_ACTIONS.map(() => 'on_vm'));
         const branches = code(REMOTE_SH)
             .map((l) => /^([a-z][a-z-]*|\*)\)\s*$/.exec(l)?.[1])
             .filter((b): b is string => b !== undefined);
@@ -251,9 +253,10 @@ describe('the OrangeHRM lab', () => {
     it('its containers are removed with rm --stop, naming the three services, and never with down', () => {
         const services = code(REMOTE_SH).filter((l) => /^\s*LAB_SERVICES=/.test(l)).map((l) => l.trim());
         expect(services).toEqual(['LAB_SERVICES=(orangehrm-mcp orangehrm orangehrm-db)']);
+        // The lab's, and tei-embed's (asserted with its own action below).
         const rm = commands(REMOTE_SH).filter((l) => /\bcompose\b.*\brm\b/.test(l));
-        expect(rm).toHaveLength(1);
-        expect(rm[0]).toContain('rm --stop --force "${LAB_SERVICES[@]}"');
+        expect(rm).toHaveLength(2);
+        expect(rm.filter((l) => l.includes('rm --stop --force "${LAB_SERVICES[@]}"'))).toHaveLength(1);
         // `down` removes the project's networks, inflect_default first, which
         // every production container is on.
         for (const rel of [...SCRIPTS, APPLY_SH]) {
@@ -360,7 +363,7 @@ describe('the scripts it runs print shape, never content', () => {
         // word is not a call).
         const unquoted = (l: string) => l.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
         const calls = lines.filter((l) => l.trim() !== DEFINITION && /(^|[\s;&|(!{])compose\s/.test(unquoted(l)));
-        expect(calls.length).toBe(3);
+        expect(calls.length).toBe(4);
         expect(calls.filter((l) => !/\bcompose\s[^|]*2>&1 \| shape\b/.test(l))).toEqual([]);
     });
 
@@ -371,7 +374,7 @@ describe('the scripts it runs print shape, never content', () => {
         const inspected = remote.flatMap((l) => [...l.matchAll(/docker inspect -f '\{\{(\.[A-Za-z.]+)\}\}'/g)].map((m) => m[1]));
         expect(remote.filter((l) => /\bdocker\s+inspect\b/.test(l)).length).toBeGreaterThan(0);
         expect(remote.filter((l) => /\bdocker\s+inspect\b/.test(l) && !/docker inspect -f '\{\{\.[A-Za-z.]+\}\}'/.test(l))).toEqual([]);
-        expect([...new Set(inspected)].sort()).toEqual(['.HostConfig.Memory', '.HostConfig.NanoCpus', '.State.Health.Status', '.State.Status']);
+        expect([...new Set(inspected)].sort()).toEqual(['.HostConfig.Memory', '.HostConfig.NanoCpus', '.Name', '.State.Health.Status', '.State.Status']);
         expect(remote.filter((l) => /\bdocker\s+(volume\s+ls|ps)\b/.test(l) && !/--format '\{\{\.Name\}\}'|-aq\b/.test(l))).toEqual([]);
     });
 
@@ -956,5 +959,202 @@ describe('refresh-env-prod-example replaces the VM copy of the public template, 
             r.cleanup();
             fs.rmSync(scratch, { recursive: true, force: true });
         }
+    });
+});
+
+/**
+ * `retire-tei-embed` (owner decision 2026-11-15): the tei-embed service's
+ * rollback, so that taking it off the VM needs no signed-in session. A revert
+ * of its compose entry leaves the container running (`up -d` does not remove a
+ * service that left the file), and `up -d --remove-orphans` would also remove
+ * the scanner and proving-server overlays' containers, which share the Compose
+ * project. Its remote.sh branch is RUN here in a scratch directory named like
+ * /opt/inflect, against a fake `docker` holding a container table and a volume
+ * list, with the live compose file either still defining the service or not.
+ */
+describe('retire-tei-embed removes the one tei-embed container, and keeps its volume', () => {
+    const ACTION = 'retire-tei-embed';
+    const SECRET = 'sekret';
+    const TEI = 'c-tei inflect-tei-embed-1 inflect tei-embed running';
+    // The same service in ANOTHER compose project, and a production neighbour:
+    // neither may be touched.
+    const OTHER_PROJECT = 'c-other scratch-tei-embed-1 scratch tei-embed running';
+    const APP = 'c-app inflect-app-1 inflect app running';
+    const VOLUMES = ['inflect_postgres-data', 'inflect_tei-embed-data'];
+
+    /** remote.sh's branch for the action, to its `;;`, comments dropped. */
+    const branch = () => {
+        const lines = code(REMOTE_SH);
+        const start = lines.findIndex((l) => l === `${ACTION})`);
+        const end = lines.findIndex((l, i) => i > start && l.trim() === ';;');
+        if (start < 0 || end < 0) throw new Error(`remote.sh has no ${ACTION} branch`);
+        return lines.slice(start + 1, end);
+    };
+
+    // A `docker` that knows only the calls the branch may make, and fails on
+    // any other, logging every call. `compose … rm` behaves as compose does: it
+    // removes the project's containers of a service the file defines, and
+    // exits 1 with "no such service" for one it does not.
+    const FAKE_DOCKER = String.raw`
+docker() {
+    printf '%s\n' "$*" >> "$FAKE/calls"
+    local t="$FAKE/containers"
+    case "$1" in
+    ps)
+        [ "$2" = -aq ] || { echo "fake docker: ps $*" >&2; return 2; }
+        [ -e "$FAKE/psfails" ] && { echo "Cannot connect to the Docker daemon" >&2; return 1; }
+        shift 2
+        local proj='' svc=''
+        while [ $# -gt 0 ]; do
+            [ "$1" = --filter ] || { echo "fake docker: ps arg $1" >&2; return 2; }
+            case "$2" in
+            label=com.docker.compose.project=*) proj="${"$"}{2##*=}" ;;
+            label=com.docker.compose.service=*) svc="${"$"}{2##*=}" ;;
+            *) echo "fake docker: filter $2" >&2; return 2 ;;
+            esac
+            shift 2
+        done
+        awk -v p="$proj" -v s="$svc" '(p == "" || $3 == p) && (s == "" || $4 == s) { print $1 }' "$t"
+        ;;
+    inspect)
+        [ "$2" = -f ] || return 2
+        case "$3" in
+        '{{.Name}}') awk -v i="$4" '$1 == i { print "/" $2 }' "$t" ;;
+        '{{.State.Status}}') awk -v i="$4" '$1 == i { print $5 }' "$t" ;;
+        *) echo "fake docker: inspect $3" >&2; return 2 ;;
+        esac
+        ;;
+    rm)
+        [ "$2" = --force ] || { echo "fake docker: rm without --force" >&2; return 2; }
+        shift 2
+        [ -e "$FAKE/stuck" ] && return 0
+        local id
+        for id in "$@"; do awk -v i="$id" '$1 != i' "$t" > "$t.new" && mv "$t.new" "$t"; done
+        ;;
+    volume)
+        [ "$2 $3 $4" = "ls --format {{.Name}}" ] || { echo "fake docker: volume $*" >&2; return 2; }
+        cat "$FAKE/volumes"
+        ;;
+    compose)
+        echo "WARN[0000] The \"PW=${SECRET}\" variable is not set. Defaulting to a blank string."
+        [ "$*" = "compose --env-file .env --env-file .env.prod -f docker-compose.prod.yml rm --stop --force tei-embed" ] \
+            || { echo "fake docker: compose $*" >&2; return 2; }
+        [ -e "$FAKE/defines" ] || { echo "no such service: tei-embed"; return 1; }
+        awk '$3 == "inflect" && $4 == "tei-embed" { print " Container " $2 "  Stopping"; print " Container " $2 "  Removed" }' "$t"
+        [ -e "$FAKE/stuck" ] && return 0
+        awk '!($3 == "inflect" && $4 == "tei-embed")' "$t" > "$t.new" && mv "$t.new" "$t"
+        ;;
+    *) echo "fake docker: $1" >&2; return 2 ;;
+    esac
+}`;
+
+    function runBranch(opts: { containers: string[]; defines: boolean; stuck?: boolean; psFails?: boolean }) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-apply-tei-'));
+        const dir = path.join(root, 'inflect');
+        const fake = path.join(root, 'fake');
+        fs.mkdirSync(dir);
+        fs.mkdirSync(fake);
+        fs.writeFileSync(path.join(fake, 'containers'), opts.containers.map((c) => `${c}\n`).join(''));
+        fs.writeFileSync(path.join(fake, 'volumes'), VOLUMES.map((v) => `${v}\n`).join(''));
+        fs.writeFileSync(path.join(fake, 'calls'), '');
+        if (opts.defines) fs.writeFileSync(path.join(fake, 'defines'), '');
+        if (opts.stuck) fs.writeFileSync(path.join(fake, 'stuck'), '');
+        if (opts.psFails) fs.writeFileSync(path.join(fake, 'psfails'), '');
+        const helper = code(REMOTE_SH).filter((l) => l.startsWith('compose() {'));
+        expect(helper).toHaveLength(1);
+        const script = [
+            'set -euo pipefail',
+            `FAKE='${fake}'`,
+            FAKE_DOCKER,
+            shellFunction(REMOTE_SH, 'shape'),
+            helper[0],
+            `cd '${dir}'`,
+            ...branch(),
+        ].join('\n');
+        let status = 0;
+        let out = '';
+        try {
+            out = execFileSync('bash', ['-c', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (e) {
+            const x = e as { status: number; stdout: string; stderr: string };
+            status = x.status;
+            out = `${x.stdout}${x.stderr}`;
+        }
+        const left = fs.readFileSync(path.join(fake, 'containers'), 'utf8').split('\n').filter(Boolean);
+        const volumes = fs.readFileSync(path.join(fake, 'volumes'), 'utf8').split('\n').filter(Boolean);
+        const calls = fs.readFileSync(path.join(fake, 'calls'), 'utf8').split('\n').filter(Boolean);
+        fs.rmSync(root, { recursive: true, force: true });
+        return { status, out, lines: out.split('\n').map((l) => l.trim()), left, volumes, calls };
+    }
+
+    /** No call may name a volume except to list them, and none may remove one. */
+    const volumeUntouched = (r: ReturnType<typeof runBranch>) => {
+        expect(r.volumes).toEqual(VOLUMES);
+        expect(r.calls.filter((c) => /\bvolume\b/.test(c) && c !== 'volume ls --format {{.Name}}')).toEqual([]);
+        expect(r.calls.filter((c) => /(^|\s)(-v|--volumes)(\s|$)/.test(c))).toEqual([]);
+    };
+
+    it('runs on the VM through remote.sh, with the lab’s compose arguments and no -v', () => {
+        expect(dispatch().get(ACTION)).toBe('on_vm');
+        const rm = branch().filter((l) => /\bcompose\b.*\brm\b/.test(l)).map((l) => l.trim());
+        expect(rm).toEqual(['compose -f docker-compose.prod.yml rm --stop --force "$SERVICE" 2>&1 | shape || rc=$?']);
+        expect(branch().filter((l) => l.trim().startsWith('SERVICE=')).map((l) => l.trim())).toEqual(['SERVICE=tei-embed']);
+        // The lab's first compose file is the same one, through the same helper
+        // (and so the same two env files).
+        const lab = commands(REMOTE_SH).filter((l) => l.includes('rm --stop --force "${LAB_SERVICES[@]}"'));
+        expect(lab).toHaveLength(1);
+        expect(lab[0].trim().startsWith('compose -f docker-compose.prod.yml ')).toBe(true);
+    });
+
+    it('removes the container through compose while the live file defines the service', () => {
+        const r = runBranch({ containers: [APP, TEI, OTHER_PROJECT], defines: true });
+        expect(r.status).toBe(0);
+        expect(r.left).toEqual([APP, OTHER_PROJECT]);
+        expect(r.calls.filter((c) => c.startsWith('compose '))).toHaveLength(1);
+        expect(r.calls.filter((c) => c.startsWith('rm '))).toEqual([]);
+        expect(r.lines).toContain('inflect-tei-embed-1 running');
+        expect(r.lines).toContain('before: 1 tei-embed container(s)');
+        expect(r.lines).toContain('after: 0 tei-embed container(s)');
+        expect(r.lines).toContain('Container inflect-tei-embed-1 Removed');
+        expect(r.lines).toContain('volume inflect_tei-embed-data present: before yes, after yes');
+        expect(r.lines.filter((l) => l.includes(SECRET))).toEqual([]);
+        volumeUntouched(r);
+    });
+
+    it('removes it by its compose labels when the live file no longer defines it', () => {
+        const r = runBranch({ containers: [APP, TEI, OTHER_PROJECT], defines: false });
+        expect(r.status).toBe(0);
+        expect(r.left).toEqual([APP, OTHER_PROJECT]);
+        expect(r.calls.filter((c) => c.startsWith('rm '))).toEqual(['rm --force c-tei']);
+        expect(r.lines).toContain('compose did not remove it (exit 1): removing the container by its compose project and service labels');
+        expect(r.lines).toContain('after: 0 tei-embed container(s)');
+        expect(r.lines.filter((l) => l.includes(SECRET))).toEqual([]);
+        volumeUntouched(r);
+    });
+
+    it('is a no-op when no tei-embed container exists', () => {
+        for (const defines of [true, false]) {
+            const r = runBranch({ containers: [APP, OTHER_PROJECT], defines });
+            expect(r.status).toBe(0);
+            expect(r.left).toEqual([APP, OTHER_PROJECT]);
+            expect(r.calls.filter((c) => c.startsWith('compose ') || c.startsWith('rm '))).toEqual([]);
+            expect(r.lines).toContain('nothing to retire: no tei-embed container exists');
+            volumeUntouched(r);
+        }
+    });
+
+    it('fails, and never reports nothing to retire, when docker cannot list containers', () => {
+        const r = runBranch({ containers: [APP, TEI], defines: true, psFails: true });
+        expect(r.status).not.toBe(0);
+        expect(r.lines.filter((l) => l.startsWith('nothing to retire'))).toEqual([]);
+        expect(r.left).toEqual([APP, TEI]);
+        volumeUntouched(r);
+    });
+
+    it('fails when a tei-embed container is still present afterwards', () => {
+        const r = runBranch({ containers: [APP, TEI], defines: true, stuck: true });
+        expect(r.status).toBe(1);
+        expect(r.lines).toContain('a tei-embed container is still present');
+        volumeUntouched(r);
     });
 });
