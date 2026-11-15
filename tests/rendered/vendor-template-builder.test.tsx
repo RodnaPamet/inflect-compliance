@@ -55,7 +55,10 @@ jest.mock('next-intl', () => {
 jest.mock('@/lib/tenant-context-provider', () => {
     const href = (path: string) => `/t/acme${path}`;
     const apiUrl = (path: string) => `/api/t/acme${path}`;
-    const ctx = { permissions: { canWrite: true } };
+    // `vendors.edit` is the key every template write route takes (#5313);
+    // `canWrite` is set against it so a test can show the page reads the key.
+    const ctx = { permissions: { canWrite: true }, appPermissions: { vendors: { edit: true } } };
+    (globalThis as { __vendorTemplateCtx?: unknown }).__vendorTemplateCtx = ctx;
     return {
         useTenantHref: () => href,
         useTenantApiUrl: () => apiUrl,
@@ -156,6 +159,14 @@ async function chooseType(sectionId: string, label: string) {
     fireEvent.click(document.getElementById(`new-question-${sectionId}-type`)!);
     fireEvent.click(await screen.findByRole('option', { name: label }));
 }
+
+
+type VendorTemplateCtx = { permissions: { canWrite: boolean }; appPermissions: { vendors: { edit: boolean } } };
+const tenantCtx = () => (globalThis as unknown as { __vendorTemplateCtx: VendorTemplateCtx }).__vendorTemplateCtx;
+afterEach(() => {
+    tenantCtx().permissions.canWrite = true;
+    tenantCtx().appPermissions.vendors.edit = true;
+});
 
 describe('VendorTemplateBuilderClient', () => {
     it('shows each answer type as words and the weight as a sentence, not codes', async () => {
@@ -351,5 +362,22 @@ describe('VendorTemplateBuilderClient', () => {
         expect(screen.getByTestId('published-banner')).toBeTruthy();
         expect(screen.queryByRole('button', { name: fill(TB.editQuestion, { prompt: 'Do you use MFA?' }) })).toBeNull();
         expect(screen.queryByTestId('add-question-form')).toBeNull();
+    });
+
+    // #5313 — authoring follows `vendors.edit`, the key every write route
+    // takes, not the coarse `canWrite` tier.
+    it('offers no authoring without vendors.edit, whatever the coarse tier says', async () => {
+        tenantCtx().appPermissions.vendors.edit = false;
+        await renderBuilder();
+        expect(document.getElementById('publish-template-btn')).toBeNull();
+        expect(screen.queryByTestId('add-section-form')).toBeNull();
+        expect(screen.queryAllByTestId('add-question-form')).toHaveLength(0);
+    });
+
+    it('offers authoring with vendors.edit on a read-tier role', async () => {
+        tenantCtx().permissions.canWrite = false;
+        await renderBuilder();
+        expect(document.getElementById('publish-template-btn')).not.toBeNull();
+        expect(screen.getByTestId('add-section-form')).toBeTruthy();
     });
 });

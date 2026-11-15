@@ -66,6 +66,12 @@ export interface PortfolioDashboardProps {
     data: PortfolioData;
     /** True when the caller is allowed to edit the dashboard. */
     canEdit: boolean;
+    /**
+     * True when the caller may create workspaces (`canManageTenants`, an
+     * organization owner since #4576). The onboarding state offers the
+     * workspaces page only to them; an ORG_ADMIN is told to ask an owner.
+     */
+    canManageTenants: boolean;
 }
 
 // ─── API client (small, focused on this page only) ─────────────────
@@ -158,6 +164,7 @@ export function PortfolioDashboard({
     initialWidgets,
     data,
     canEdit,
+    canManageTenants,
 }: PortfolioDashboardProps) {
     const router = useRouter();
     const t = useTranslations('org');
@@ -403,15 +410,26 @@ export function PortfolioDashboard({
             {/* No-data onboarding. A seeded org with ZERO tenants would
              *  otherwise render a grid of zero-value cards — noise, not
              *  signal. Show a purposeful onboarding state instead, until
-             *  the first tenant's snapshot rolls up. */}
+             *  the first tenant's snapshot rolls up. Only an organization
+             *  owner can create a workspace (`canManageTenants`), so only an
+             *  owner is sent to the workspaces page; anybody else is told
+             *  to ask one (#5313). */}
             {widgets.length > 0 && data.summary.tenants.total === 0 && (
                 <EmptyState
                     variant="no-records"
                     icon={Building2}
-                    title={t('dashboard.onboardingTitle')}
-                    description={t('dashboard.onboardingDesc')}
+                    title={
+                        canManageTenants
+                            ? t('dashboard.onboardingTitle')
+                            : t('dashboard.onboardingTitleAskOwner')
+                    }
+                    description={
+                        canManageTenants
+                            ? t('dashboard.onboardingDesc')
+                            : t('dashboard.onboardingDescAskOwner')
+                    }
                     primaryAction={
-                        canEdit
+                        canManageTenants
                             ? {
                                   label: t('dashboard.manageTenants'),
                                   href: `/org/${data.orgSlug}/tenants`,

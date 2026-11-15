@@ -21,6 +21,7 @@ import { PdfExportButton } from '@/components/PdfExportButton';
 import { RequirePermission } from '@/components/require-permission';
 import { UpgradeGate } from '@/components/UpgradeGate';
 import useSWR from 'swr';
+import { ApiClientError } from '@/lib/api-client';
 import { Tooltip } from '@/components/ui/tooltip';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
@@ -94,7 +95,7 @@ export function ReportsClient({
         `/api/t/${tenantSlug}/risks/reports`,
         async (url: string) => {
             const r = await fetch(url);
-            if (!r.ok) throw new Error(`templates ${r.status}`);
+            if (!r.ok) throw new ApiClientError(`templates ${r.status}`, 'fetch_failed', r.status);
             return r.json();
         },
     );

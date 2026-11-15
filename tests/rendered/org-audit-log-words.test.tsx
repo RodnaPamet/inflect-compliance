@@ -7,6 +7,9 @@
  *   2. An action a newer deploy wrote renders as "Other event".
  *   3. The action filter re-reads the first page with `action=`, and Load
  *      older keeps the filter.
+ *   4. A Load older that returns after the filter changed is dropped: its
+ *      unfiltered rows are not appended to the filtered list, and its cursor
+ *      does not replace the filtered one (#5313).
  */
 import * as React from 'react';
 import { render, screen, within, waitFor } from '@testing-library/react';
@@ -139,5 +142,54 @@ describe('the org audit log', () => {
         await user.click(screen.getByTestId('org-audit-load-more'));
         await waitFor(() => expect(screen.getByText('b@example.com as Org reader')).toBeInTheDocument());
         expect(urls[1]).toBe('/api/org/acme/audit-log?limit=20&cursor=c2&action=ORG_INVITE_CREATED');
+    });
+
+    it('drops a Load older that returns after the filter changed (#5313)', async () => {
+        const user = userEvent.setup();
+        const urls: string[] = [];
+        let releaseOlder: (() => void) | null = null;
+        (globalThis as { fetch?: unknown }).fetch = jest.fn((url: string) => {
+            urls.push(url);
+            if (url.includes('cursor=c1')) {
+                // The unfiltered 'Load older' — held until the filter has
+                // already been changed and answered.
+                return new Promise((resolve) => {
+                    releaseOlder = () =>
+                        resolve({
+                            ok: true,
+                            status: 200,
+                            json: async () => ({
+                                rows: [row('ORG_MEMBER_ADDED', { role: 'ORG_ADMIN' })],
+                                nextCursor: 'stale-cursor',
+                            }),
+                        });
+                });
+            }
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({
+                    rows: [row('ORG_INVITE_CREATED', { email: 'f@example.com', role: 'ORG_READER' })],
+                    nextCursor: 'filtered-c2',
+                }),
+            });
+        }) as unknown as typeof fetch;
+
+        render(<AuditLogTable orgSlug="acme" initialRows={[row('ORG_MEMBER_ADDED', { role: 'ORG_READER' })] as never} initialNextCursor="c1" />);
+        await user.click(screen.getByTestId('org-audit-load-more'));
+        await user.click(screen.getByRole('combobox', { name: 'Filter by action' }));
+        await user.click(await screen.findByRole('option', { name: 'Invitation sent' }));
+        await waitFor(() => expect(screen.getByText('f@example.com as Org reader')).toBeInTheDocument());
+
+        // Now the stale unfiltered page arrives.
+        expect(releaseOlder).not.toBeNull();
+        releaseOlder!();
+        await new Promise((r) => setTimeout(r, 20));
+        expect(screen.queryByText('Role: Org admin')).toBeNull();
+
+        // And Load older continues the FILTERED stream.
+        await user.click(screen.getByTestId('org-audit-load-more'));
+        await waitFor(() => expect(urls.length).toBe(3));
+        expect(urls[2]).toBe('/api/org/acme/audit-log?limit=20&cursor=filtered-c2&action=ORG_INVITE_CREATED');
     });
 });

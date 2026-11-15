@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ScrollText } from 'lucide-react';
 
@@ -302,36 +302,48 @@ export function AuditLogTable({ orgSlug, initialRows, initialNextCursor }: Props
         [orgSlug],
     );
 
+    // Every request takes a generation; a response is applied only while it
+    // is still the latest (#5313). Without it, a 'Load older' that returns
+    // after the filter changed appended the old filter's rows to the new
+    // list and left the cursor continuing the old stream.
+    const generation = useRef(0);
+
     const loadMore = useCallback(async () => {
         if (!cursor || loading) return;
+        const mine = ++generation.current;
         setLoading(true);
         setError(null);
         try {
             const data = await fetchPage(action, cursor);
+            if (mine !== generation.current) return;
             setRows((prev) => [...prev, ...data.rows]);
             setCursor(data.nextCursor);
         } catch {
+            if (mine !== generation.current) return;
             // Never the HTTP status or a JavaScript message: neither is
             // something a person can act on.
             setError(t('audit.fetchFailed'));
         } finally {
-            setLoading(false);
+            if (mine === generation.current) setLoading(false);
         }
     }, [action, cursor, loading, fetchPage, t]);
 
     const chooseAction = useCallback(
         async (next: OrgAuditActionValue | '') => {
+            const mine = ++generation.current;
             setAction(next);
             setLoading(true);
             setError(null);
             try {
                 const data = await fetchPage(next, null);
+                if (mine !== generation.current) return;
                 setRows(data.rows);
                 setCursor(data.nextCursor);
             } catch {
+                if (mine !== generation.current) return;
                 setError(t('audit.fetchFailed'));
             } finally {
-                setLoading(false);
+                if (mine === generation.current) setLoading(false);
             }
         },
         [fetchPage, t],

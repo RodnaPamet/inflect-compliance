@@ -148,7 +148,7 @@ beforeEach(() => {
 });
 
 async function readColumns() {
-    render(<LegacyAccessMappingCard connectionId="conn_1" />);
+    render(<LegacyAccessMappingCard connectionId="conn_1" provider="legacy-mcp" />);
     fireEvent.click(screen.getByText('profileButton'));
     await waitFor(() => expect(screen.getByTestId('legacy-mapping-table')).toBeInTheDocument());
 }
@@ -260,20 +260,27 @@ describe('the saved mapping is the starting point, not the suggestions (#5214)',
 });
 
 describe('a non-legacy connection renders nothing', () => {
-    it('shows no mapping section for another provider', async () => {
-        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-            const url = String(input);
-            if (url.includes('/admin/integrations')) {
-                return {
-                    ok: true, status: 200,
-                    json: async () => [{ id: 'conn_1', provider: 'entra-id' }],
-                };
-            }
-            return { ok: true, status: 200, json: async () => ({}) };
-        }) as unknown as typeof fetch;
+    it('shows no mapping section for another provider', () => {
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider="entra-id" />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
+    });
 
-        render(<LegacyAccessMappingCard connectionId="conn_1" />);
-        await waitFor(() => expect(screen.queryByText('profileButton')).not.toBeInTheDocument());
+    // #5313 — the provider comes from the page's own read of the connection;
+    // the card no longer downloads the admin.manage connection list (which
+    // wrote an AUTHZ_DENIED row per visit for a member without that key), and
+    // a failed read no longer puts the card on an Okta or Entra page.
+    it('sends no request of its own to learn the provider', () => {
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider="legacy-mcp" />);
+        expect(screen.getByText('profileButton')).toBeInTheDocument();
+        expect(calls.filter((c) => c.url.includes('/admin/integrations'))).toEqual([]);
+    });
+
+    it('renders nothing while the provider is unknown or the read failed', () => {
+        const { unmount } = render(<LegacyAccessMappingCard connectionId="conn_1" provider={undefined} />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
+        unmount();
+        render(<LegacyAccessMappingCard connectionId="conn_1" provider={null} />);
+        expect(screen.queryByText('profileButton')).not.toBeInTheDocument();
     });
 });
 
