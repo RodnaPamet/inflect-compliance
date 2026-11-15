@@ -11,7 +11,7 @@
  */
 import { MAPPING_CONFIG_KEY } from '@/lib/legacy-access/canonical';
 import { CONVENTION_CONFIG_KEY } from './legacy-username-convention';
-import { Prisma, EvidenceType } from '@prisma/client';
+import { Prisma, EvidenceType, type IntegrationExecutionStatus } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { selfAccountIdsFromConnection } from '../integrations/identity-writer-factory';
@@ -1224,6 +1224,52 @@ export async function listExecutionsForConnection(
             },
             orderBy: { executedAt: 'desc' },
             take: options.limit ?? 50,
+        })
+    );
+}
+
+/**
+ * The NEWEST execution of one kind on one connection, read on its own (#5313,
+ * item 10).
+ *
+ * The reconciliation queue and the legacy runs card used to find "the latest
+ * match run" by filtering the 50 newest rows `listExecutionsForConnection`
+ * returns. A connection whose last match run had been followed by 50 pulls,
+ * syncs or other runs therefore read as never matched, and its queue as
+ * having nothing to review. Ask for the kind, and the answer does not depend
+ * on how busy the connection has been since.
+ *
+ * One bounded row: `findFirst`, newest `executedAt` first, `id` breaking a tie
+ * so the same rows always give the same answer. `status` narrows to one
+ * outcome when the caller needs it (the queue reads PASSED runs only). `null`
+ * means no such run exists on this connection in this tenant.
+ */
+export async function getLatestExecutionForConnection(
+    ctx: RequestContext,
+    connectionId: string,
+    automationKey: string,
+    options: { status?: IntegrationExecutionStatus } = {}
+) {
+    return runInTenantContext(ctx, (db) =>
+        db.integrationExecution.findFirst({
+            where: {
+                tenantId: ctx.tenantId,
+                connectionId,
+                automationKey,
+                ...(options.status ? { status: options.status } : {}),
+            },
+            select: {
+                id: true,
+                provider: true,
+                automationKey: true,
+                controlId: true,
+                status: true,
+                errorMessage: true,
+                triggeredBy: true,
+                executedAt: true,
+                completedAt: true,
+            },
+            orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
         })
     );
 }

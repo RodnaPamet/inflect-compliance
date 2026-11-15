@@ -85,6 +85,9 @@ const ADMIN_ONLY_ROUTES = [
     // P1 — connection-level run + per-connection outcomes + identity roster.
     'admin/integrations/[connectionId]/sync/route.ts',
     'admin/integrations/[connectionId]/executions/route.ts',
+    // #5313 item 10 — the newest run of one kind on a connection, so a match
+    // run older than the 50-row history is not read as never run.
+    'admin/integrations/[connectionId]/executions/latest/route.ts',
     'admin/integrations/identity-accounts/route.ts',
     // #3672 — the accountable owner of an external agent connection
     // (integration passport P11). admin.manage, the connection-write key.

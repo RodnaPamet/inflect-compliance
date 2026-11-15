@@ -12,9 +12,11 @@
  * people" posts `{ snapshotId }` to the reconcile route. Both answer 202 with a
  * job id and nothing else, so this card says the run started and where its
  * result will appear. The result is the run's `IntegrationExecution` row, the
- * one the page's "Check runs" table already lists; the card reads the newest
- * row of each kind from the same rows and shows its status and its NAMED
- * reason. Refresh reloads them. Nothing polls.
+ * one the page's "Check runs" table lists. The card asks the server for the
+ * newest row of EACH kind (`executions/latest`) and shows its status and its
+ * NAMED reason; it does not pick them out of the table's rows, which are the
+ * 50 newest of every kind, so a match run followed by 50 other runs read as
+ * never run (#5313, item 10). Refresh reloads both. Nothing polls.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * NEVER A GENERIC "FAILED"
@@ -64,7 +66,7 @@ import { isLegacyConnection } from './legacy-connection';
 export const PULL_KEY = 'legacy-mcp.pull';
 export const RECONCILE_KEY = 'legacy-mcp.reconcile';
 
-/** One `IntegrationExecution` row, as the connection's executions route returns it. */
+/** One `IntegrationExecution` row, as the connection's `executions/latest` route returns it. */
 export interface LegacyExecutionRow {
     id: string;
     automationKey: string;
@@ -132,13 +134,6 @@ const SNAPSHOT_VARIANT: Record<LegacySnapshotStanding['status'], StatusBadgeVari
     PENDING: 'info',
 };
 
-/** Newest row of one kind. `executedAt` is ISO, so it sorts as a string. */
-function latestOf(rows: readonly LegacyExecutionRow[], key: string): LegacyExecutionRow | null {
-    return rows
-        .filter((r) => r.automationKey === key)
-        .sort((a, b) => b.executedAt.localeCompare(a.executedAt))[0] ?? null;
-}
-
 type Notice = { variant: 'info' | 'error'; text: string };
 
 export interface LegacyAccessRunsCardProps {
@@ -148,20 +143,16 @@ export interface LegacyAccessRunsCardProps {
      * (#5313) — `undefined` until it has answered, `null` when it failed.
      */
     provider: string | null | undefined;
-    /** The connection's executions, as the page loaded them for Check runs. */
-    runs: readonly LegacyExecutionRow[];
-    runsLoading: boolean;
-    runsError: boolean;
-    /** Reloads the page's executions. Called by Refresh and after a start. */
+    /**
+     * Reloads the page's Check runs history. Called by Refresh and after a
+     * start, beside the card's own reads.
+     */
     onReloadRuns: () => Promise<void> | void;
 }
 
 export function LegacyAccessRunsCard({
     connectionId,
     provider,
-    runs,
-    runsLoading,
-    runsError,
     onReloadRuns,
 }: LegacyAccessRunsCardProps) {
     const t = useTranslations('admin.integrations.legacyRuns');
@@ -175,6 +166,10 @@ export function LegacyAccessRunsCard({
     const [standing, setStanding] = useState<LegacySnapshotStanding | null>(null);
     const [standingLoading, setStandingLoading] = useState(true);
     const [standingError, setStandingError] = useState<string | null>(null);
+    const [lastRead, setLastRead] = useState<LegacyExecutionRow | null>(null);
+    const [lastMatch, setLastMatch] = useState<LegacyExecutionRow | null>(null);
+    const [runsLoading, setRunsLoading] = useState(true);
+    const [runsError, setRunsError] = useState(false);
     const [starting, setStarting] = useState<'read' | 'match' | null>(null);
     const [notice, setNotice] = useState<Notice | null>(null);
 
@@ -194,15 +189,40 @@ export function LegacyAccessRunsCard({
         }
     }, [apiUrl, connectionId]);
 
+    // The newest run of each kind, asked of the server one kind at a time
+    // (#5313, item 10). Never derived from the page's history rows: those are
+    // the 50 newest of every kind, and an older run of this kind is not in them.
+    const loadLatestRuns = useCallback(async () => {
+        setRunsError(false);
+        const latestOf = async (key: string): Promise<LegacyExecutionRow | null> => {
+            const res = await fetch(apiUrl(
+                `/admin/integrations/${connectionId}/executions/latest?automationKey=${encodeURIComponent(key)}`
+            ));
+            if (!res.ok) throw new Error(String(res.status));
+            const body = (await res.json().catch(() => null)) as { execution?: LegacyExecutionRow | null } | null;
+            return body?.execution ?? null;
+        };
+        try {
+            const [read, match] = await Promise.all([latestOf(PULL_KEY), latestOf(RECONCILE_KEY)]);
+            setLastRead(read);
+            setLastMatch(match);
+        } catch {
+            setRunsError(true);
+        } finally {
+            setRunsLoading(false);
+        }
+    }, [apiUrl, connectionId]);
+
     useEffect(() => {
         if (!shown) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         void loadStanding();
-    }, [shown, loadStanding]);
+        void loadLatestRuns();
+    }, [shown, loadStanding, loadLatestRuns]);
 
     const refresh = useCallback(async () => {
-        await Promise.all([loadStanding(), onReloadRuns()]);
-    }, [loadStanding, onReloadRuns]);
+        await Promise.all([loadStanding(), loadLatestRuns(), onReloadRuns()]);
+    }, [loadStanding, loadLatestRuns, onReloadRuns]);
 
     // The snapshot "Match to people" sends: the one the standing read named,
     // which is the one a campaign will be built from.
@@ -244,9 +264,6 @@ export function LegacyAccessRunsCard({
     );
 
     if (!shown) return null;
-
-    const lastRead = latestOf(runs, PULL_KEY);
-    const lastMatch = latestOf(runs, RECONCILE_KEY);
 
     // Why "Match to people" cannot be pressed, if it cannot. The server refuses
     // the same cases on its own; this saves somebody starting a run that is

@@ -18,7 +18,9 @@
  *     is empty and showing it would read as "nothing to do";
  *   - the key matters because a connection also has pull and profile
  *     executions, and the newest execution on the connection is frequently one
- *     of those;
+ *     of those — which is also why the SERVER answers it (`executions/latest`,
+ *     #5313 item 10): picked from the 50 newest rows of every kind, a match run
+ *     followed by 50 pulls or syncs read as no run at all;
  *   - latest, because a decision carries the run it was made against and the
  *     server returns 409 against a superseded one. Letting a reviewer work an
  *     older run would produce a queue every action on which is refused.
@@ -235,21 +237,24 @@ export default function ReconciliationQueuePage() {
         setLoading(true);
         setLoadError(false);
         try {
-            const execRes = await fetch(apiUrl(`/admin/integrations/${connectionId}/executions`));
+            // The server picks the run (#5313, item 10): the newest PASSED match
+            // run on this connection, however many other runs came after it.
+            // Filtering the 50-row history here read an older run as none.
+            const execRes = await fetch(apiUrl(
+                `/admin/integrations/${connectionId}/executions/latest`
+                + `?automationKey=${encodeURIComponent(RECONCILE_KEY)}&status=PASSED`
+            ));
             if (!execRes.ok) {
                 setLoadError(true);
                 setRows([]);
                 return;
             }
             const execBody = (await execRes.json()) as {
-                executions?: WireExecution[];
+                execution?: WireExecution | null;
                 connection?: { name?: string } | null;
             };
             setConnectionName(execBody.connection?.name || null);
-            const execs: WireExecution[] = execBody.executions ?? [];
-            const run = execs
-                .filter((e) => e.automationKey === RECONCILE_KEY && e.status === 'PASSED')
-                .sort((a, b) => b.executedAt.localeCompare(a.executedAt))[0];
+            const run = execBody.execution ?? null;
 
             if (!run) {
                 setExecutionId(null);
