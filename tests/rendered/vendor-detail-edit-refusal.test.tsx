@@ -23,7 +23,9 @@ jest.mock('@/lib/tenant-context-provider', () => {
         tenantSlug: 'acme',
         tenantName: 'Acme',
         permissions,
-        appPermissions: { tasks: { create: true, edit: true } },
+        // Every vendor write asks `vendors.edit` (#5313); a real context
+        // always carries it.
+        appPermissions: { tasks: { create: true, edit: true }, vendors: { view: true, create: true, edit: true } },
     };
     const apiUrl = (p: string) => `/api/t/acme${p.startsWith('/') ? p : `/${p}`}`;
     const href = (p: string) => `/t/acme${p}`;

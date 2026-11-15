@@ -46,6 +46,30 @@ export interface RegisteredPeer {
     card: { readable: boolean; reason?: string };
 }
 
+/**
+ * The supplier picker's options and search, shared by the registration form
+ * and the two invitation forms (#5313): the first page the server rendered
+ * when nothing is typed; otherwise every supplier whose name matches, from the
+ * vendors route, so the picker is not limited to that page (#4901: it was cut
+ * at 200, silently; the invitation forms were cut at 50).
+ */
+export function useVendorSearch(vendors: PeerChoice[]) {
+    const apiUrl = useTenantApiUrl();
+    const vendorOptions = useMemo<AsyncOption[]>(() => vendors.map((v) => ({ value: v.id, label: v.label })), [vendors]);
+    const searchVendors = useCallback(
+        async (query: string, signal: AbortSignal): Promise<AsyncOption[]> => {
+            const q = query.trim();
+            if (q === '') return vendorOptions;
+            const res = await fetch(apiUrl(`/vendors?q=${encodeURIComponent(q)}&limit=${VENDOR_SEARCH_LIMIT}`), { signal });
+            if (!res.ok) return [];
+            const body = (await res.json().catch(() => null)) as { items?: { id: string; name: string }[] } | null;
+            return (body?.items ?? []).map((v) => ({ value: v.id, label: v.name }));
+        },
+        [apiUrl, vendorOptions],
+    );
+    return { vendorOptions, searchVendors };
+}
+
 export function RegisterPeerForm({
     owners,
     vendors,
@@ -76,21 +100,7 @@ export function RegisterPeerForm({
     const [error, setError] = useState<string | null>(null);
 
     const ownerOptions: ComboboxOption[] = owners.map((o) => ({ value: o.id, label: o.label }));
-    const vendorOptions = useMemo<AsyncOption[]>(() => vendors.map((v) => ({ value: v.id, label: v.label })), [vendors]);
-    // The first page when nothing is typed; otherwise every supplier whose name
-    // matches, from the vendors route, so the picker is not limited to the
-    // page the server rendered (#4901: it was cut at 200, silently).
-    const searchVendors = useCallback(
-        async (query: string, signal: AbortSignal): Promise<AsyncOption[]> => {
-            const q = query.trim();
-            if (q === '') return vendorOptions;
-            const res = await fetch(apiUrl(`/vendors?q=${encodeURIComponent(q)}&limit=${VENDOR_SEARCH_LIMIT}`), { signal });
-            if (!res.ok) return [];
-            const body = (await res.json().catch(() => null)) as { items?: { id: string; name: string }[] } | null;
-            return (body?.items ?? []).map((v) => ({ value: v.id, label: v.name }));
-        },
-        [apiUrl, vendorOptions],
-    );
+    const { vendorOptions, searchVendors } = useVendorSearch(vendors);
     const tierOptions: ComboboxOption[] = RISK_TIERS.map((tier) => ({ value: tier, label: t(`peers.register.tier.${tier}`) }));
 
     const complete =

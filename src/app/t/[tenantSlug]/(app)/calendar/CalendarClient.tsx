@@ -30,7 +30,7 @@ import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD, startOfUtcDay } from '@/components/ui/date-picker/date-utils';
 import { CalendarHeatmap } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarHeatmap';
-import { CalendarMonth } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth';
+import { CalendarMonth, monthGridRange } from '@/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth';
 import { GanttTimeline } from '@/app/t/[tenantSlug]/(app)/calendar/_components/GanttTimeline';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -68,12 +68,6 @@ function startOfUtcMonth(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-function endOfUtcMonth(d: Date): Date {
-    return new Date(
-        Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999),
-    );
-}
-
 /**
  * How far forward the heatmap looks. It used to end at `today`, so it was
  * purely retrospective — a density view of past activity beside two deadline
@@ -103,13 +97,9 @@ function rangeForView(
             to: new Date(todayMs + 180 * DAY_MS),
         };
     }
-    // month — pad to cover the 6-row grid
-    const start = startOfUtcMonth(monthCursor);
-    const end = endOfUtcMonth(monthCursor);
-    return {
-        from: new Date(start.getTime() - 7 * DAY_MS),
-        to: new Date(end.getTime() + 7 * DAY_MS),
-    };
+    // month — exactly the cells the 6-row grid shows, leading and trailing
+    // days included (the trailing run can be up to fourteen days).
+    return monthGridRange(monthCursor);
 }
 
 export function CalendarClient({ tenantSlug }: CalendarClientProps) {

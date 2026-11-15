@@ -13,6 +13,7 @@
  * `.openapi(...)` to every NEW request schema when you add it.
  */
 import { EVIDENCE_DESCRIPTION_MAX } from '@/lib/evidence-description';
+import { RISK_IMPORT_MAX_ROWS } from '@/lib/risk-import-limits';
 import { z } from '@/lib/openapi/zod';
 // `AssetType` is a Prisma enum on a NOT NULL column. Declaring it as
 // `z.string()` let any value through Zod and fail at the driver, which
@@ -877,7 +878,7 @@ export const BulkImportRisksSchema = z.object({
         impact: z.coerce.number().int().min(1).max(10).optional(),
         owner: z.string().optional().nullable(),
         ownerUserId: z.string().optional().nullable(),
-    }).strip()).min(1).max(500),
+    }).strip()).min(1).max(RISK_IMPORT_MAX_ROWS),
 }).strip().openapi('RiskBulkImportRequest', {
     description: 'Bulk-create risks from a parsed CSV in a single request. Server dedupes by title and resolves owner names/emails to members.',
 });

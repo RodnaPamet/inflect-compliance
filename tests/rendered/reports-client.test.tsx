@@ -7,7 +7,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 jest.mock('next-intl', () => ({
     useTranslations: () => (key: string) => key,
@@ -120,6 +120,41 @@ describe('ReportsClient — honest metrics + unified risk reporting (PR-I)', () 
         // next-intl is mocked to echo keys, so any surviving hardcoded key would
         // still be visible in the DOM.
         expect(list.textContent).not.toMatch(/riskTpl(Portfolio|DeepDive|Bia)/);
+    });
+});
+
+describe('ReportsClient — the last framework picked wins (#5313)', () => {
+    const originalFetch = global.fetch;
+    afterEach(() => {
+        global.fetch = originalFetch;
+        jest.clearAllMocks();
+    });
+
+    it('a slow answer for an earlier pick does not overwrite the current one', async () => {
+        const pending = new Map<string, (r: Response) => void>();
+        global.fetch = jest.fn((url: string) => new Promise<Response>((resolve) => {
+            pending.set(new URL(url, 'http://x').searchParams.get('framework') as string, resolve);
+        })) as any;
+        const respond = (key: string, pct: number) =>
+            pending.get(key)!({ ok: true, status: 200, json: async () => readiness(key, pct) } as unknown as Response);
+
+        const { container } = renderClient([ISO, SOC2, NIS2], 'ISO27001');
+        const pick = async (label: string) => {
+            fireEvent.click(container.querySelector('#reports-framework-select button') as Element);
+            fireEvent.click(await screen.findByText(label));
+        };
+        await pick('SOC 2');
+        await waitFor(() => expect(pending.has('SOC2')).toBe(true));
+        await pick('NIS2');
+        await waitFor(() => expect(pending.has('NIS2')).toBe(true));
+
+        // NIS2 answers first, then the slower SOC 2.
+        await act(async () => { respond('NIS2', 30); });
+        await waitFor(() => expect(screen.getByText('30%')).toBeInTheDocument());
+        await act(async () => { respond('SOC2', 70); });
+        await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+        expect(screen.getByText('30%')).toBeInTheDocument();
+        expect(screen.queryByText('70%')).toBeNull();
     });
 });
 

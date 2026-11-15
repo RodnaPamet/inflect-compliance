@@ -72,6 +72,30 @@ export function edgeAdmitsAgentAdminWrite(
     );
 }
 
+/**
+ * Would the edge admit this session's READ of one agent's register-key tabs —
+ * risk, skills, behaviour, coverage, breaker, the service-principal link and
+ * the behaviour fingerprint, all under `/api/t/:slug/admin/agents/:agentId/…`?
+ * Asked of `checkAdminAccess` with a GET of one such path (#5313). OWNER,
+ * ADMIN and AI_ADMIN are admitted; an AUDITOR is admitted only to the inventory
+ * reads, and any other membership to nothing, whatever key a custom role
+ * grants. `'defer'` admits, as at the edge.
+ */
+export function edgeAdmitsAgentTabReads(
+    tenantSlug: string,
+    agentId: string,
+    claims: EdgeAdminClaims | null | undefined,
+): boolean {
+    return (
+        checkAdminAccess(
+            `/api/t/${tenantSlug}/admin/agents/${encodeURIComponent(agentId)}/coverage`,
+            claims?.role ?? null,
+            claims?.memberships ?? null,
+            'GET',
+        ) !== 'deny'
+    );
+}
+
 export interface AgentRegisterAffordances {
     /**
      * Register an agent, amend one, activate, suspend or retire it, and answer

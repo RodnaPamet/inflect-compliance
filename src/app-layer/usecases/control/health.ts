@@ -27,6 +27,8 @@ export interface ControlHealthDTO {
     verdict: ControlHealthVerdict;
     status: string;
     applicability: string;
+    /** Null while never assessed — the third display state (#5313). */
+    applicabilityDecidedAt: string | null;
     lastTested: string | null;
     latestTestResult: string | null; // PASS | FAIL | INCONCLUSIVE
     latestTestAt: string | null;
@@ -64,7 +66,7 @@ export async function getControlHealth(
     const core = await runInTenantContext(ctx, async (db) => {
         const control = await db.control.findFirst({
             where: { id: controlId, OR: [{ tenantId: ctx.tenantId }, { tenantId: null }] },
-            select: { id: true, status: true, applicability: true, lastTested: true, nextDueAt: true },
+            select: { id: true, status: true, applicability: true, applicabilityDecidedAt: true, lastTested: true, nextDueAt: true },
         });
         if (!control) return null;
 
@@ -135,6 +137,7 @@ export async function getControlHealth(
         verdict,
         status: control.status,
         applicability: control.applicability,
+        applicabilityDecidedAt: control.applicabilityDecidedAt ? control.applicabilityDecidedAt.toISOString() : null,
         lastTested: control.lastTested ? control.lastTested.toISOString() : null,
         latestTestResult: latestTest?.result ?? null,
         latestTestAt: latestTest?.executedAt ? latestTest.executedAt.toISOString() : null,

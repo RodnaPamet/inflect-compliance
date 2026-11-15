@@ -1022,3 +1022,29 @@ describe('arguments are checked against the tool\'s own schema before saving (#4
         expect(screen.queryByTestId('parameter-sets-declared-arguments')).not.toBeInTheDocument();
     });
 });
+
+// #5313 — the new-baseline form belongs to one connection's tools. Switching
+// the connection clears the tool picked on the last one, so Save cannot write
+// an unreviewed baseline for a tool the list is no longer showing.
+describe('switching the connection resets the new-baseline form', () => {
+    it('clears the tool picked on the previous connection', async () => {
+        const user = userEvent.setup();
+        mount({ connections: [...CONNECTIONS, { id: 'conn_2', name: 'Okta MCP' }] });
+        await screen.findByTestId('parameter-set-create');
+
+        await user.click(document.getElementById('parameter-sets-tool') as HTMLElement);
+        await user.click(await screen.findByText('update_user'));
+        fireEvent.change(document.getElementById('parameter-sets-label') as HTMLElement, {
+            target: { value: 'Nightly roster push' },
+        });
+        expect(screen.getByRole('button', { name: /Save baseline/ })).toBeEnabled();
+
+        await user.click(document.getElementById('parameter-sets-connection') as HTMLElement);
+        await user.click(await screen.findByText('Okta MCP'));
+
+        expect(document.getElementById('parameter-sets-tool')).not.toHaveTextContent('update_user');
+        expect(screen.getByRole('button', { name: /Save baseline/ })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: /Save baseline/ }));
+        expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    });
+});

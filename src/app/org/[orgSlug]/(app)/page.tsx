@@ -77,8 +77,10 @@ export default async function PortfolioOverviewPage({ params }: PageProps) {
                 canSetMaturity: ctx.permissions.canSetMaturity,
                 initiatives,
                 canManageInitiatives: ctx.permissions.canConfigureDashboard,
+                canDrillDown: ctx.permissions.canDrillDown,
             })}
             canEdit={ctx.permissions.canConfigureDashboard}
+            canManageTenants={ctx.permissions.canManageTenants}
         />
     );
 }

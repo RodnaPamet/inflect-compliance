@@ -170,7 +170,7 @@ beforeEach(() => {
     });
 });
 
-function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string; holdsAgentRegistry?: boolean } = {}) {
+function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean; userId?: string; holdsAgentRegistry?: boolean; canManage?: boolean } = {}) {
     detailPayload = agentReview(review);
     return render(
         withClient(
@@ -180,6 +180,7 @@ function renderDetail(review: Record<string, unknown>, opts: { isAdmin?: boolean
                 currentUserId={opts.userId ?? 'usr_admin'}
                 isAdmin={opts.isAdmin ?? true}
                 holdsAgentRegistry={opts.holdsAgentRegistry ?? false}
+                {...(opts.canManage === undefined ? {} : { canManage: opts.canManage })}
             />,
         ),
     );
@@ -267,6 +268,12 @@ describe('the detail page reads an AGENT campaign', () => {
         await waitFor(() => expect(screen.getByTestId('access-review-agent-prepare-packs')).toBeInTheDocument());
         expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
         expect(screen.getAllByText('No pack yet').length).toBeGreaterThan(0);
+    });
+
+    it('offers no preparation to an admin whose role lacks access_reviews.create, which the route takes (#5313)', async () => {
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin', canManage: false });
+        await waitFor(() => expect(screen.getAllByText('No pack yet').length).toBeGreaterThan(0));
+        expect(screen.queryByTestId('access-review-agent-prepare-packs')).not.toBeInTheDocument();
     });
 
     it('gives the agent’s owner no verdict and no narrowing control, even as an admin', async () => {

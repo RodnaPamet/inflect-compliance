@@ -16,6 +16,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Switch } from '@/components/ui/switch';
 import { Heading } from '@/components/ui/typography';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -95,7 +96,12 @@ export function VendorMonitoringPanel({
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
     const [saving, setSaving] = useState<MonitorToggleField | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    // Two kinds of failure (#5313). A failed READ with nothing to show yet
+    // replaces the panel; a failed toggle or "Run now" is a notice inside it,
+    // cleared by the next action. They shared one `error`, so one refused
+    // toggle replaced the whole panel for good.
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -103,11 +109,11 @@ export function VendorMonitoringPanel({
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor`));
             if (!res.ok) throw new Error(t('monitoring.loadFailed'));
             setPosture(await res.json());
-            setError(null);
+            setLoadError(null);
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.loadFailed'));
+            setLoadError(t('monitoring.loadFailed'));
         } finally {
             setLoading(false);
         }
@@ -118,6 +124,7 @@ export function VendorMonitoringPanel({
 
     const runNow = async () => {
         setRunning(true);
+        setActionError(null);
         try {
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor/run`), { method: 'POST' });
             if (!res.ok) throw new Error(t('monitoring.runFailed'));
@@ -126,7 +133,7 @@ export function VendorMonitoringPanel({
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.runFailed'));
+            setActionError(t('monitoring.runFailed'));
         } finally {
             setRunning(false);
         }
@@ -135,6 +142,7 @@ export function VendorMonitoringPanel({
     /** PATCH a single monitor boolean, then reload posture. */
     const patchMonitor = async (field: MonitorToggleField, value: boolean) => {
         setSaving(field);
+        setActionError(null);
         try {
             const res = await fetch(apiUrl(`/vendors/${vendorId}/monitor`), {
                 method: 'PATCH',
@@ -147,18 +155,20 @@ export function VendorMonitoringPanel({
         } catch {
             // The panel's own sentence: the only other message here is the
             // browser's network error, which is English and says nothing (#4696).
-            setError(t('monitoring.settingsSaveFailed'));
+            setActionError(t('monitoring.settingsSaveFailed'));
         } finally {
             setSaving(null);
         }
     };
 
-    if (loading) {
+    // A reload after an action keeps the panel on screen.
+    if (loading && !posture) {
         return <div className={cn(cardVariants(), 'text-sm text-content-muted')}>{t('monitoring.loading')}</div>;
     }
-    if (error) {
-        return <div className={cn(cardVariants(), 'text-sm text-content-error')}>{error}</div>;
+    if (loadError && !posture) {
+        return <div className={cn(cardVariants(), 'text-sm text-content-error')}>{loadError}</div>;
     }
+    const notice = actionError ?? loadError;
 
     const m = posture?.monitor;
     const events = posture?.events ?? [];
@@ -173,6 +183,11 @@ export function VendorMonitoringPanel({
 
     return (
         <div className="space-y-section">
+            {notice && (
+                <InlineNotice variant="error" id="vendor-monitor-error">
+                    {notice}
+                </InlineNotice>
+            )}
             {/* Monitor state card */}
             <div className={cn(cardVariants(), 'space-y-default')}>
                 <div className="flex items-center justify-between">

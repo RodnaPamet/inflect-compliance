@@ -618,16 +618,16 @@
     },
     {
       "code": "V7.1.1",
-      "title": "No Sensitive Data in Logs",
-      "summary": "Ensure logs do not capture sensitive data such as full credentials or tokens.",
+      "title": "No Credentials or Payment Details in Logs",
+      "summary": "Keep credentials and payment details out of all log output, and record session tokens only in an irreversible, hashed form.",
       "category": "L1",
       "section": "Error Handling and Logging",
       "sortOrder": 75
     },
     {
       "code": "V7.1.2",
-      "title": "No Credentials in Logs",
-      "summary": "Exclude passwords, session tokens, and secrets from all log output.",
+      "title": "No Other Sensitive Data in Logs",
+      "summary": "Ensure logs do not capture other sensitive data, such as personal data protected by privacy law or classified as sensitive by security policy.",
       "category": "L1",
       "section": "Error Handling and Logging",
       "sortOrder": 76
@@ -4197,6 +4197,24 @@
           ]
         }
       ]
+    }
+  ],
+  "outOfScopeRequirements": [
+    {
+      "code": "V2.6.1",
+      "category": "L2",
+      "unlinkTemplateCodes": [
+        "ASVS-V2"
+      ],
+      "reason": "ASVS 4.0.3 sets V2.6 (lookup secrets) at L2 and L3, not L1. Corrected in the library and dropped from this L1 catalogue in #5644 (#5316 item 7); a database that installed the L1 catalogue before then still categorises it L1 and links it to ASVS-V2. ASVS-V2 keeps its single-use lookup-code task by owner decision (2026-11-14)."
+    },
+    {
+      "code": "V11.1.6",
+      "category": "L2",
+      "unlinkTemplateCodes": [
+        "ASVS-V11"
+      ],
+      "reason": "ASVS 4.0.3 sets V11.1.6 (race conditions in business logic) at L2 and L3, not L1. Corrected in the library and dropped from this L1 catalogue in #5644 (#5316 item 7); a database that installed the L1 catalogue before then still categorises it L1 and links it to ASVS-V11. ASVS-V11 keeps its concurrency-serialisation task by owner decision (2026-11-14)."
     }
   ],
   "pack": {
