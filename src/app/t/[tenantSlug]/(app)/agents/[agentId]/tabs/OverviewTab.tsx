@@ -223,6 +223,13 @@ export function OverviewTab({
             await mutate();
             onChanged?.();
             router.refresh();
+        } catch {
+            // The request never answered (the connection dropped, or it was
+            // aborted), so whether the retirement happened is not known
+            // (#5313). Say exactly that, and re-read the agent so the page
+            // shows the status it has now.
+            setFailure(t('agentDetail.overview.retireUnconfirmed'));
+            void mutate();
         } finally {
             setBusy(false);
         }

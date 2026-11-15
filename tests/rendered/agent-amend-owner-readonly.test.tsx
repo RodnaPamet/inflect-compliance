@@ -138,3 +138,29 @@ describe('a refused amend shows the reason, not the envelope (#5151)', () => {
         expect((await screen.findByTestId('agent-amend-error')).textContent).toBe('Autonomy above the tier ceiling.');
     });
 });
+
+// #5313 — an unreadable supplier list disables the field rather than offering
+// "None" as an enabled choice over a supplier the operator cannot see.
+describe('the supplier field when the suppliers could not be read', () => {
+    it('is disabled and says why', () => {
+        render(
+            <TenantProvider value={TENANT_CTX}>
+                <AgentAmendModal
+                    agent={{ ...AGENT, vendorId: 'vendor-9' }}
+                    owners={OWNERS}
+                    vendors={null}
+                    onClose={() => {}}
+                    onAmended={() => {}}
+                />
+            </TenantProvider>,
+        );
+        expect(document.getElementById('agent-amend-vendor')).toBeDisabled();
+        expect(document.body.textContent).toContain(AMEND.vendorUnavailable);
+    });
+
+    it('stays enabled when the list was read', () => {
+        renderModal();
+        expect(document.getElementById('agent-amend-vendor')).not.toBeDisabled();
+        expect(document.body.textContent).not.toContain(AMEND.vendorUnavailable);
+    });
+});
