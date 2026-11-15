@@ -46,7 +46,9 @@ const EXPECTED_AI_ADMIN: { [D in keyof PermissionSet]: PermissionSet[D] } = {
     // `decide` is READER's too: the usecase narrows it to the campaign's
     // assigned reviewer, so an AI admin decides only a review assigned to them.
     access_reviews: { view: true, create: false, decide: true, close: false },
-    identity_reconciliation: { view: true, confirm: false },
+    // Not READER's any more: the queue's view key is OWNER, ADMIN and AUDITOR
+    // (owner decision 2026-11-15, #5695).
+    identity_reconciliation: { view: false, confirm: false },
     continuity: { edit: false },
     processes: { edit: false },
     frameworks: { view: true, install: false },

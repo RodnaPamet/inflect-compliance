@@ -108,6 +108,9 @@ const MIGRATED_PAGES = [
     // than parked in the unmigrated tally, which is what the ceiling comment
     // asks for.
     'admin/integrations/[connectionId]/reconciliation/page.tsx',
+    // #5695 split the queue into a server gate (page.tsx) and this client
+    // component, which carries everything the comment above describes.
+    'admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient.tsx',
     'admin/identity-write-policy/WriteLadderClient.tsx',
     // SP-5 — SharePoint sync-health dashboard; semantic tokens + KPIStat only.
     'admin/integrations/sharepoint-health/page.tsx',

@@ -2083,6 +2083,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'scorer weights, capped, and re-checked row by row.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue\\/latest-run$`),
+        methods: ['GET'],
+        permission: 'identity_reconciliation.view',
+        note:
+            'Which run the queue opens: the legacy connection\'s name and its ' +
+            'newest PASSED match run. The queue\'s own key, because a member who ' +
+            'may read the queue must be able to find the run it is for (#5695, ' +
+            'owner decision 2026-11-15). Legacy connections only, four fields of ' +
+            'the run; the admin connection read stays admin.manage.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/legacy-access\\/queue$`),
         methods: ['GET'],
         permission: 'identity_reconciliation.view',

@@ -89,6 +89,13 @@ export type PermissionSet = {
      *
      * So it follows `close` (OWNER/ADMIN) rather than `decide`. Owner ruling,
      * 2026-10-09.
+     *
+     * `view` is OWNER, ADMIN and AUDITOR (owner decision 2026-11-15, #5695):
+     * holding it opens the queue, which names candidate employees by name and
+     * work email, so it is not every member's. EDITOR, READER and AI_ADMIN
+     * (READER's set) held it until then, though the edge never let them reach
+     * the queue. A custom role may still grant it; one whose stored blob
+     * predates this domain takes its base role's default.
      */
     identity_reconciliation: { view: boolean; confirm: boolean };
     /**
@@ -694,7 +701,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // OWNER/ADMIN only — see the `personnel` docblock above.
                 personnel: { view: false, manage: false },
                 access_reviews: { view: true, create: false, decide: true, close: false },
-                identity_reconciliation: { view: true, confirm: false },
+                // Not a reader of the reconciliation queue: AUDITOR, OWNER and ADMIN only
+                // (owner decision 2026-11-15, #5695). A custom role may still grant it.
+                identity_reconciliation: { view: false, confirm: false },
                 continuity: { edit: true },
                 processes: { edit: true },
                 frameworks: { view: true, install: false },
@@ -795,7 +804,9 @@ function readerPermissions(): PermissionSet {
         // OWNER/ADMIN only — see the `personnel` docblock on `PermissionSet`.
         personnel: { view: false, manage: false },
         access_reviews: { view: true, create: false, decide: true, close: false },
-        identity_reconciliation: { view: true, confirm: false },
+        // Not a reader of the reconciliation queue: AUDITOR, OWNER and ADMIN only
+        // (owner decision 2026-11-15, #5695). A custom role may still grant it.
+        identity_reconciliation: { view: false, confirm: false },
         continuity: { edit: false },
         processes: { edit: false },
         frameworks: { view: true, install: false },

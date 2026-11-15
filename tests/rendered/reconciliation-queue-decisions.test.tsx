@@ -97,7 +97,7 @@ jest.mock('@/components/layout/PageBreadcrumbs', () => ({
     ),
 }));
 
-import ReconciliationQueuePage from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/page';
+import { ReconciliationQueueClient as ReconciliationQueuePage } from '@/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/reconciliation/ReconciliationQueueClient';
 
 const en = require('../../messages/en.json');
 const L = en.admin.integrations.legacyQueue;
@@ -127,7 +127,7 @@ const PEOPLE = { 'emp-ana': { name: 'Ana Petrova', email: 'ana@acme.test' } };
 
 let queueStatus = 200;
 let calls: Array<{ path: string; method: string; body: unknown; query: URLSearchParams }> = [];
-/** What `executions/latest` names: the newest PASSED match run, or nothing. */
+/** What `queue/latest-run` names: the newest PASSED match run, or nothing. */
 let latestRun: { id: string; automationKey: string; status: string; executedAt: string } | null;
 
 beforeEach(() => {
@@ -144,9 +144,9 @@ beforeEach(() => {
         calls.push({ path: url.pathname, method, body: init?.body ? JSON.parse(String(init.body)) : null, query: url.searchParams });
         let status = 200;
         let body: unknown = {};
-        if (url.pathname.endsWith('/executions/latest')) {
+        if (url.pathname.endsWith('/queue/latest-run')) {
             body = {
-                connection: { id: 'conn-1', name: 'Payroll', provider: 'legacy-mcp', isEnabled: true, ownerUserId: null },
+                connection: { id: 'conn-1', name: 'Payroll' },
                 execution: latestRun,
             };
         } else if (url.pathname.endsWith('/queue')) {
@@ -175,13 +175,17 @@ describe('#5313 item 10 — the run is the one the server names', () => {
         render(<ReconciliationQueuePage />);
         await screen.findByText('jdoe');
 
-        const latest = calls.filter((c) => c.path.endsWith('/executions/latest'));
+        // #5695: the run is read under the queue's own view key, from the
+        // reconciliation API — never from the admin connection read
+        // (`integrations/:id/executions/latest`, admin.manage), which refused
+        // every view-key holder who is not an admin.
+        const latest = calls.filter((c) => c.path.endsWith('/queue/latest-run'));
         expect(latest).toHaveLength(1);
-        expect(latest[0].path).toBe('/api/t/acme/admin/integrations/conn-1/executions/latest');
-        expect(latest[0].query.get('automationKey')).toBe('legacy-mcp.reconcile');
-        expect(latest[0].query.get('status')).toBe('PASSED');
-        // The 50-row history is not read at all.
-        expect(calls.some((c) => c.path.endsWith('/executions'))).toBe(false);
+        expect(latest[0].path).toBe('/api/t/acme/admin/legacy-access/queue/latest-run');
+        expect(latest[0].method).toBe('GET');
+        expect(latest[0].query.get('connectionId')).toBe('conn-1');
+        // No admin connection read at all: neither the latest-run read nor the 50-row history.
+        expect(calls.filter((c) => c.path.includes('/admin/integrations/'))).toEqual([]);
 
         const queue = calls.filter((c) => c.path.endsWith('/queue'));
         expect(queue).toHaveLength(1);
