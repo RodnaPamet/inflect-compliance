@@ -1,7 +1,7 @@
 /**
  * THE INSPECT SEED, RUN TWICE AGAINST A REAL DATABASE (inspect.md Phase 1.6).
  *
- * `scripts/inspect-seed.ts` makes the agent-evals nightly runnable: four seed
+ * `scripts/inspect-seed.ts` makes the agent-evals nightly runnable: five seed
  * tenants, their eval agents, approved profiles, the automation rules that
  * start the Tool Runner runs, the interactive agent that answers the Flue
  * questions, fixtures, and a manifest `tasks.py` reads. What is asserted is
@@ -126,9 +126,9 @@ describeFn('scripts/inspect-seed', () => {
         await prisma.$disconnect();
     });
 
-    it('creates the four tenants with their residency and engine', async () => {
+    it('creates the five tenants with their residency and engine', async () => {
         expect(Object.keys(tenantIds).sort()).toEqual(
-            ['inspect-ext-flue', 'inspect-ext-tool-runner', 'inspect-local-flue', 'inspect-local-tool-runner'],
+            ['inspect-delegation-flue', 'inspect-ext-flue', 'inspect-ext-tool-runner', 'inspect-local-flue', 'inspect-local-tool-runner'],
         );
         for (const t of PLAN.tenants) {
             const settings = await prisma.tenantSecuritySettings.findUnique({

@@ -115,11 +115,23 @@ describe('task 2 injection and task 9 secret', () => {
 describe('the plan the committed set produces', () => {
     const plan = planSeed(SET);
 
-    it('covers the four tenants tasks.py maps to', () => {
+    it('covers the five tenants tasks.py maps to', () => {
         expect(plan.tenants.map((t) => t.slug)).toEqual(SEED_TENANTS.map((t) => t.slug));
         expect(plan.tenants.map((t) => t.slug).sort()).toEqual(
-            ['inspect-ext-flue', 'inspect-ext-tool-runner', 'inspect-local-flue', 'inspect-local-tool-runner'],
+            ['inspect-delegation-flue', 'inspect-ext-flue', 'inspect-ext-tool-runner', 'inspect-local-flue', 'inspect-local-tool-runner'],
         );
+    });
+
+    it('gives every task kind a tenant on each engine it runs on, and no tenant an empty plan', () => {
+        for (const task of SET.tasks) {
+            for (const engine of ['flue', 'tool-runner'] as const) {
+                if ('notApplicable' in task.engines[engine]) continue;
+                expect([task.id, SEED_TENANTS.some((t) => t.taskTenant === task.tenant && t.engine === engine)]).toEqual([task.id, true]);
+            }
+        }
+        for (const t of plan.tenants) {
+            expect([t.slug, SET.tasks.some((task) => task.tenant === t.taskTenant && !('notApplicable' in task.engines[t.engine]))]).toEqual([t.slug, true]);
+        }
     });
 
     it('seeds every profile a Tool Runner task names, each on an agent of its own', () => {
@@ -198,7 +210,12 @@ describe('the plan the committed set produces', () => {
             }
         }
         const extFlue = plan.tenants.find((t) => t.slug === 'inspect-ext-flue')!;
-        expect(extFlue.fixtures).toEqual(['control-secret', 'finding-fragment-a', 'finding-fragment-b', 'finding-injection', 'risks-bulk']);
+        expect(extFlue.fixtures).toEqual(['control-secret', 'finding-injection', 'risks-bulk']);
+        // Task 6's fragments are the ONLY findings on its own tenant: a read of
+        // them can no longer return task 2's injection finding (run 43730125203).
+        const delegation = plan.tenants.find((t) => t.slug === 'inspect-delegation-flue')!;
+        expect(delegation.fixtures).toEqual(['finding-fragment-a', 'finding-fragment-b']);
+        expect(Object.keys(delegation.markers)).toEqual(['delegate-answer-reenters-as-untrusted']);
         // Task 6 is n/a on the Tool Runner, so its fragments are not seeded there.
         const extTr = plan.tenants.find((t) => t.slug === 'inspect-ext-tool-runner')!;
         expect(extTr.fixtures).toEqual(['control-secret', 'finding-injection', 'risks-bulk']);

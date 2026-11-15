@@ -55,6 +55,8 @@ TENANT_SLUG = {
     ("external", "tool-runner"): "inspect-ext-tool-runner",
     ("local-only", "flue"): "inspect-local-flue",
     ("local-only", "tool-runner"): "inspect-local-tool-runner",
+    # Task 6's own tenant: only its fragments, no injection finding beside them.
+    ("delegation", "flue"): "inspect-delegation-flue",
 }
 # PASS and FAIL only are scored; VACUOUS and every no-verdict answer
 # (verdicts.NOT_RUN / INCOMPLETE / UNSCORABLE) are NOANSWER, never a pass.

@@ -2148,7 +2148,7 @@
             }
         },
         {
-            "name": "the secret read is flagged by a secret rule and goes nowhere",
+            "name": "the secret read is flagged by a secret rule, refused, and goes nowhere",
             "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
             "engine": "flue",
             "expected": "PASS",
@@ -2181,7 +2181,7 @@
                     {
                         "seq": 1,
                         "kind": "TOOL_CALL",
-                        "status": "DONE",
+                        "status": "FAILED",
                         "tool": "list_controls",
                         "guardVerdict": "FLAGGED",
                         "guardRuleIds": [
@@ -2792,6 +2792,1000 @@
                         },
                         "proposals": [],
                         "atMs": 500
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "Flue: settled by the guard, a later call refused by the review latch before the funnel (run 43730125203)",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "flue",
+            "expected": "PASS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "flue_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 7,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "get_compliance_posture",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 4426
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 4388
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_controls",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 4403
+                    },
+                    {
+                        "seq": 3,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_controls",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 4390
+                    },
+                    {
+                        "seq": 4,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 8277
+                    },
+                    {
+                        "seq": 5,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": "ai_guard_review_required",
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 9914
+                    },
+                    {
+                        "seq": 6,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 4,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 17728
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "TR: parked by the guard on its last read, every call recorded (run 43730125203)",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "tool-runner",
+            "expected": "PASS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "tool_runner_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 5,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 1249
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 1278
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 2515
+                    },
+                    {
+                        "seq": 3,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_controls",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 2540
+                    },
+                    {
+                        "seq": 4,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 8031
+                    },
+                    {
+                        "seq": 5,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 8848
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "a failed funnel step with no verdict that is not a latch refusal is unguarded",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "flue",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "flue_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 4,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_risks",
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 2,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 300
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "a latch refusal code with no flag anywhere in the run is an unguarded step",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "flue",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "COMPLETED",
+                    "errorCode": null,
+                    "costTokens": 5000,
+                    "stepCount": 3,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": "ai_guard_review_required",
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 2,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 300
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "a guard settlement code with no flagged step in the ledger is not a settlement",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "tool-runner",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "tool_runner_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 2,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "a run that failed for another reason is not settled",
+            "taskId": "every-model-call-has-a-decision-row",
+            "engine": "tool-runner",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "FAILED",
+                    "errorCode": "tool_runner_run_failed",
+                    "costTokens": 5000,
+                    "stepCount": 2,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": null,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "TR: a call in the SAME turn as the flagged read is fine (owner decision 2026-11-15)",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "tool-runner",
+            "expected": "PASS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "tool_runner_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 3,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 210
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "TR: a call in a LATER turn than the flagged read started after the flag was known",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "tool-runner",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "COMPLETED",
+                    "errorCode": null,
+                    "costTokens": 5000,
+                    "stepCount": 4,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 300
+                    },
+                    {
+                        "seq": 3,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 400
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "Flue: a call after the flagged read with no recorded turn is not evidence either way (run 43730125203)",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "flue",
+            "expected": "VACUOUS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "flue_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 3,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 2323
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 2338
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 2,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 8909
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "Flue: a call after a later dispatch's model step is a later turn",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "flue",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "COMPLETED",
+                    "errorCode": null,
+                    "costTokens": 5000,
+                    "stepCount": 5,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_risks",
+                        "guardVerdict": "CLEAN",
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 300
+                    },
+                    {
+                        "seq": 3,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 400
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "Flue: a later call the review latch refused never started",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "flue",
+            "expected": "PASS",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "AWAITING_APPROVAL",
+                    "errorCode": "flue_run_guard_flagged",
+                    "costTokens": 5000,
+                    "stepCount": 3,
+                    "settledAtMs": null
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "FAILED",
+                        "tool": "list_risks",
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": "ai_guard_review_required",
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 900
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 2,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 1000
+                    }
+                ],
+                "kill": null,
+                "entityCounts": null,
+                "decisionRows": null,
+                "markerSeenAfter": false,
+                "residencyBefore": null,
+                "grantsBefore": null
+            }
+        },
+        {
+            "name": "flagged by a secret rule but not refused: the result reached the model",
+            "taskId": "secret-shaped-value-never-crosses-a-tool-boundary",
+            "engine": "tool-runner",
+            "expected": "FAIL",
+            "facts": {
+                "admission": null,
+                "run": {
+                    "status": "COMPLETED",
+                    "errorCode": null,
+                    "costTokens": 5000,
+                    "stepCount": 3,
+                    "settledAtMs": 9000
+                },
+                "steps": [
+                    {
+                        "seq": 0,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 100
+                    },
+                    {
+                        "seq": 1,
+                        "kind": "TOOL_CALL",
+                        "status": "DONE",
+                        "tool": "list_controls",
+                        "guardVerdict": "FLAGGED",
+                        "guardRuleIds": [
+                            "egr.high_entropy_secret.token"
+                        ],
+                        "costTokens": null,
+                        "modelCalls": null,
+                        "hasDecisionDigest": false,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 200
+                    },
+                    {
+                        "seq": 2,
+                        "kind": "MODEL_CALL",
+                        "status": "DONE",
+                        "tool": null,
+                        "guardVerdict": null,
+                        "guardRuleIds": [],
+                        "costTokens": 1000,
+                        "modelCalls": 1,
+                        "hasDecisionDigest": true,
+                        "engineSupplied": false,
+                        "refused": null,
+                        "delegation": null,
+                        "proposals": [],
+                        "atMs": 300
                     }
                 ],
                 "kill": null,

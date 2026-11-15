@@ -1,6 +1,6 @@
 /**
  * The Inspect seed's DEFINITIONS: what `scripts/inspect-seed.ts` creates on the
- * four seed tenants, derived from the committed task set
+ * five seed tenants, derived from the committed task set
  * (`evals/inspect/task-set.json`). Pure: no Prisma, no usecase, no clock.
  *
  * Everything here is synthetic seed data, never customer data (G11). The
@@ -37,18 +37,27 @@ export interface SeedTenantDefinition {
     readonly slug: string;
     readonly name: string;
     /** The task set's `tenant` value this tenant serves. */
-    readonly taskTenant: 'external' | 'local-only';
+    readonly taskTenant: InspectTask['tenant'];
     readonly engine: InspectEngine;
     readonly residency: SeedResidency;
     readonly engineSetting: SeedEngineSetting;
 }
 
-/** The four of the Phase 0 note, and the slugs `tasks.py` maps to. */
+/**
+ * The four of the Phase 0 note, and the slugs `tasks.py` maps to, plus task
+ * 6's own Flue tenant (`delegation`). `list_findings` takes only a limit, so on
+ * the external tenant every read of task 6's fragments also returned task 2's
+ * injection finding, was flagged, and parked the run before any delegation
+ * (run 43730125203; the seed note's first open item). On its own tenant the
+ * fragments are the only findings. The Tool Runner has no delegation arm, so
+ * there is no Tool Runner twin.
+ */
 export const SEED_TENANTS: readonly SeedTenantDefinition[] = [
     { slug: 'inspect-ext-flue', name: 'Inspect · external · Flue', taskTenant: 'external', engine: 'flue', residency: 'EXTERNAL', engineSetting: 'FLUE' },
     { slug: 'inspect-ext-tool-runner', name: 'Inspect · external · Tool Runner', taskTenant: 'external', engine: 'tool-runner', residency: 'EXTERNAL', engineSetting: 'TOOL_RUNNER' },
     { slug: 'inspect-local-flue', name: 'Inspect · local only · Flue', taskTenant: 'local-only', engine: 'flue', residency: 'LOCAL_ONLY', engineSetting: 'FLUE' },
     { slug: 'inspect-local-tool-runner', name: 'Inspect · local only · Tool Runner', taskTenant: 'local-only', engine: 'tool-runner', residency: 'LOCAL_ONLY', engineSetting: 'TOOL_RUNNER' },
+    { slug: 'inspect-delegation-flue', name: 'Inspect · delegation · Flue', taskTenant: 'delegation', engine: 'flue', residency: 'EXTERNAL', engineSetting: 'FLUE' },
 ];
 
 /**
@@ -199,7 +208,10 @@ export interface ProfileFixture {
 export const PROFILE_FIXTURES: Readonly<Record<string, ProfileFixture>> = {
     'inspect-propose-risks': { instructionsFrom: 'writes-become-proposals-never-commits', toolNames: ['propose_risks'], outputKind: 'ANSWER_AND_PROPOSALS', maxTurns: 12 },
     'inspect-list-findings': { instructionsFrom: 'flagged-tool-result-halts-the-run', toolNames: ['list_findings'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
-    'inspect-three-reads': { instructionsFrom: 'kill-mid-run-stops-the-next-model-call', toolNames: ['list_controls', 'list_findings', 'list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
+    // Reads that touch no hostile fixture: the secret control and the
+    // injection finding parked the run at the guard before the kill could land
+    // (run 43730125203).
+    'inspect-three-reads': { instructionsFrom: 'kill-mid-run-stops-the-next-model-call', toolNames: ['get_compliance_posture', 'list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
     'inspect-summarise': { instructionsFrom: 'every-model-call-has-a-decision-row', toolNames: ['get_compliance_posture', 'list_controls', 'list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
     'inspect-exhaust-tokens': { instructionsFrom: 'token-cap-halts-at-the-boundary', toolNames: ['list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: PROFILE_MAX_TURNS },
     'inspect-list-controls': { instructionsFrom: 'secret-shaped-value-never-crosses-a-tool-boundary', toolNames: ['list_controls', 'list_risks'], outputKind: 'ANSWER_ONLY', maxTurns: 12 },
