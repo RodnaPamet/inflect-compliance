@@ -1,3 +1,5 @@
+import { CONNECTION_NAME_INVALID_CHARACTERS } from '@/lib/text/connection-name';
+
 /**
  * Turning a config FORM's values back into the JSON the API expects.
  *
@@ -86,6 +88,17 @@ export interface DeclaredConfigField {
  * checks back on, and the page said only "Connection updated" (#4466). The edit
  * form therefore carries the state the row had when it was opened, and an edit
  * never changes it; enabling is its own action on the row.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * DECISION 4 — AN EDIT THAT DID NOT CHANGE THE NAME DOES NOT SEND IT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Saving refuses a name carrying a control character or a lone surrogate
+ * (#5317), and a label stored before that rule is left alone. Resending the
+ * stored name with every edit would make such a connection uneditable: fixing
+ * its URL would be refused for a name nobody touched. So an edit sends the name
+ * only when the operator changed it, and the server keeps the stored one when
+ * it is absent.
  */
 export function buildConnectionBody(input: {
     readonly provider: string;
@@ -99,6 +112,11 @@ export function buildConnectionBody(input: {
      * DECISION 3. Ignored when creating, where the server's default applies.
      */
     readonly editingIsEnabled?: boolean;
+    /**
+     * The edited connection's name when the form was opened — see DECISION 4.
+     * Ignored when creating.
+     */
+    readonly editingName?: string;
 }): Record<string, unknown> {
     const declaredBoolean = new Set(
         input.configFields.filter((f) => f.type === 'boolean').map((f) => f.key),
@@ -113,6 +131,8 @@ export function buildConnectionBody(input: {
         body.id = input.editingId;
         // See DECISION 3: omitting it would re-enable a disabled connection.
         if (typeof input.editingIsEnabled === 'boolean') body.isEnabled = input.editingIsEnabled;
+        // See DECISION 4: an unchanged name is the stored one, which stays.
+        if (input.editingName !== undefined && input.name === input.editingName) delete body.name;
     }
 
     // Only send secrets if any field has a value — see DECISION 1.
@@ -120,4 +140,37 @@ export function buildConnectionBody(input: {
     if (hasSecrets) body.secrets = input.secrets;
 
     return body;
+}
+
+/**
+ * Whether a refused save was refused for the connection NAME's characters
+ * (#5317), so the form can say so beside the name field rather than in the
+ * page banner.
+ *
+ * Two shapes carry it, and both are read: the route's schema answers a
+ * `VALIDATION_ERROR` whose issue sits at `['name']` with the message
+ * `CONNECTION_NAME_INVALID_CHARACTERS`, and the usecase's own check (reached by
+ * callers that skip the schema) answers a `BAD_REQUEST` with
+ * `details.reason` set to the same code.
+ */
+export function isConnectionNameCharacterRefusal(body: unknown): boolean {
+    if (!body || typeof body !== 'object') return false;
+    const error = (body as { error?: unknown }).error;
+    if (!error || typeof error !== 'object') return false;
+    const details = (error as { details?: unknown }).details;
+    if (Array.isArray(details)) {
+        return details.some(
+            (issue) =>
+                !!issue &&
+                typeof issue === 'object' &&
+                Array.isArray((issue as { path?: unknown }).path) &&
+                (issue as { path: unknown[] }).path[0] === 'name' &&
+                (issue as { message?: unknown }).message === CONNECTION_NAME_INVALID_CHARACTERS,
+        );
+    }
+    return (
+        !!details &&
+        typeof details === 'object' &&
+        (details as { reason?: unknown }).reason === CONNECTION_NAME_INVALID_CHARACTERS
+    );
 }

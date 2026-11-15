@@ -8,7 +8,7 @@
  * real types, an `act()` wrapper, a `scrollIntoView` shim — and still timed out.
  * The blockers are on #4008. Here it is a pure function and the cases are plain.
  */
-import { buildConnectionBody } from '@/lib/integrations/config-form-values';
+import { buildConnectionBody, isConnectionNameCharacterRefusal } from '@/lib/integrations/config-form-values';
 
 const base = {
     provider: 'mcp-server',
@@ -125,5 +125,65 @@ describe('the id', () => {
         // and a falsy value must not produce `id: ''`, which the server would
         // read as an update of a connection that does not exist.
         expect(buildConnectionBody({ ...base, editingId: '' })).not.toHaveProperty('id');
+    });
+});
+
+describe('decision 4 — an edit that did not change the name does not send it (#5317)', () => {
+    it('omits the name when the edit left it as it was', () => {
+        // The case with teeth. A label stored before the name rule may hold a
+        // character the save now refuses; resending it would refuse every edit
+        // of that connection for a name nobody touched.
+        const body = buildConnectionBody({ ...base, editingId: 'conn-1', editingName: 'sap stub' });
+        expect(body).not.toHaveProperty('name');
+        expect(body).toMatchObject({ id: 'conn-1', provider: 'mcp-server' });
+    });
+
+    it('sends the name when the edit changed it', () => {
+        const body = buildConnectionBody({ ...base, editingId: 'conn-1', editingName: 'old name' });
+        expect(body.name).toBe('sap stub');
+    });
+
+    it('always sends the name on a create', () => {
+        expect(buildConnectionBody({ ...base, editingName: 'sap stub' }).name).toBe('sap stub');
+    });
+});
+
+describe('isConnectionNameCharacterRefusal — reading the name refusal off a 400', () => {
+    it("reads the route schema's issue at path name", () => {
+        expect(
+            isConnectionNameCharacterRefusal({
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid request payload',
+                    details: [{ path: ['name'], code: 'custom', message: 'CONNECTION_NAME_INVALID_CHARACTERS' }],
+                },
+            }),
+        ).toBe(true);
+    });
+
+    it("reads the usecase's reason", () => {
+        expect(
+            isConnectionNameCharacterRefusal({
+                error: { code: 'BAD_REQUEST', message: 'x', details: { reason: 'CONNECTION_NAME_INVALID_CHARACTERS' } },
+            }),
+        ).toBe(true);
+    });
+
+    it('is false for any other refusal', () => {
+        expect(isConnectionNameCharacterRefusal({ error: { code: 'BAD_REQUEST', message: 'Unknown provider' } })).toBe(false);
+        expect(
+            isConnectionNameCharacterRefusal({
+                error: { code: 'VALIDATION_ERROR', details: [{ path: ['name'], message: 'name is required' }] },
+            }),
+        ).toBe(false);
+        expect(
+            isConnectionNameCharacterRefusal({
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    details: [{ path: ['provider'], message: 'CONNECTION_NAME_INVALID_CHARACTERS' }],
+                },
+            }),
+        ).toBe(false);
+        expect(isConnectionNameCharacterRefusal(null)).toBe(false);
     });
 });
