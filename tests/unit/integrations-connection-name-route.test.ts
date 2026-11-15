@@ -18,10 +18,15 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 // `requirePermission` records AUTHZ_DENIED through the audit chain on denial.
-jest.mock('@/lib/audit', () => ({
-    appendAuditEntryOrQueue: jest.fn(async () => ({ recorded: 'chain' as const, auditId: 'audit-x' })),
-    appendAuditEntry: jest.fn(async () => ({ id: 'audit-x', entryHash: 'hash-x', previousHash: null })),
-}));
+// strictMock: any other export the route reaches fails loudly rather than
+// resolving to undefined (tests/guards/partial-mock-of-a-guarded-barrel).
+jest.mock('@/lib/audit', () => {
+    const { strictMock } = jest.requireActual('../helpers/strict-mock');
+    return strictMock('@/lib/audit', jest.requireActual('@/lib/audit'), {
+        appendAuditEntryOrQueue: jest.fn(async () => ({ recorded: 'chain' as const, auditId: 'audit-x' })),
+        appendAuditEntry: jest.fn(async () => ({ id: 'audit-x', entryHash: 'hash-x', previousHash: null })),
+    });
+});
 
 const upsertMock = jest.fn(async (_ctx: unknown, input: { id?: string; provider: string; name?: string }) => ({
     id: input.id ?? 'conn-new',
