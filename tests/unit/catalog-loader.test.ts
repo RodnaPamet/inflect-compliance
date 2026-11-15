@@ -361,3 +361,62 @@ packs:
         }
     });
 });
+
+describe('outOfScopeRequirements — a requirement the file no longer declares', () => {
+    const OOS_BASE = `
+framework: { key: X, name: X }
+requirements:
+  - { code: A.1, title: T, category: L1 }
+templates:
+  - code: T1
+    title: Template
+    category: C
+    requirementCodes: [A.1]
+`;
+    const issuesOf = (name: string, yaml: string): string[] => {
+        const p = write(name, yaml);
+        const file = loadCatalogFile(p);
+        try {
+            assertCatalogConsistency(file, p);
+            return [];
+        } catch (err) {
+            expect(err).toBeInstanceOf(CatalogValidationError);
+            return (err as CatalogValidationError).issues.map((i) => i.path);
+        }
+    };
+
+    it('defaults to none, and reads an entry naming a template of this file', () => {
+        expect(loadCatalogFile(write('oos-none.yaml', OOS_BASE)).outOfScopeRequirements).toEqual([]);
+        const yaml = OOS_BASE + `
+outOfScopeRequirements:
+  - { code: A.2, category: L2, unlinkTemplateCodes: [T1], reason: moved to L2 }
+`;
+        expect(issuesOf('oos-ok.yaml', yaml)).toEqual([]);
+        expect(loadCatalogFile(write('oos-ok2.yaml', yaml)).outOfScopeRequirements).toEqual([
+            { code: 'A.2', category: 'L2', unlinkTemplateCodes: ['T1'], reason: 'moved to L2' },
+        ]);
+    });
+
+    it('refuses an entry for a requirement the file still declares', () => {
+        expect(issuesOf('oos-still.yaml', OOS_BASE + `
+outOfScopeRequirements:
+  - { code: A.1, category: L2, unlinkTemplateCodes: [T1], reason: r }
+`)).toContain('outOfScopeRequirements[0].code');
+    });
+
+    it('refuses an unknown template, and the same code twice', () => {
+        expect(issuesOf('oos-bad.yaml', OOS_BASE + `
+outOfScopeRequirements:
+  - { code: A.2, category: L2, unlinkTemplateCodes: [GONE], reason: r }
+  - { code: A.2, category: L2, unlinkTemplateCodes: [T1], reason: r }
+`)).toEqual(['outOfScopeRequirements[0].unlinkTemplateCodes[0]', 'outOfScopeRequirements[1].code']);
+    });
+
+    it('refuses an entry that names no template or gives no reason', () => {
+        const p = write('oos-schema.yaml', OOS_BASE + `
+outOfScopeRequirements:
+  - { code: A.2, category: L2, unlinkTemplateCodes: [] }
+`);
+        expect(() => loadCatalogFile(p)).toThrow(CatalogValidationError);
+    });
+});
