@@ -23,6 +23,7 @@ import {
 import { registry } from '@/app-layer/integrations/registry';
 import { jsonResponse } from '@/lib/api-response';
 import { publicBaseUrl } from '@/lib/http/public-base-url';
+import { SaveIntegrationConnectionSchema } from '@/app-layer/schemas/integration-connection.schemas';
 
 /**
  * The connection fields this endpoint serves, named here and nowhere else.
@@ -111,22 +112,11 @@ export const GET = withApiErrorHandling(
 export const POST = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
 
-    const body = await req.json() as {
-        id?: string;
-        provider: string;
-        name: string;
-        configJson?: Record<string, unknown>;
-        secrets?: Record<string, unknown>;
-        isEnabled?: boolean;
-    };
-
-    // Validate required fields
-    if (!body.provider || typeof body.provider !== 'string') {
-        return jsonResponse({ error: 'provider is required' }, { status: 400 });
-    }
-    if (!body.name || typeof body.name !== 'string') {
-        return jsonResponse({ error: 'name is required' }, { status: 400 });
-    }
+    // Zod, so a name carrying a control character or a lone surrogate is a 400
+    // before anything is written (#5317). `name` may be left out of an UPDATE:
+    // a stored label is left alone, and the enable action and an unchanged
+    // edit do not resend it. See SaveIntegrationConnectionSchema.
+    const body = SaveIntegrationConnectionSchema.parse(await req.json());
 
     // Validate provider exists in registry
     if (!registry.getProvider(body.provider)) {
@@ -140,8 +130,8 @@ export const POST = withApiErrorHandling(
         id: body.id,
         provider: body.provider,
         name: body.name,
-        configJson: body.configJson,
-        secrets: body.secrets,
+        configJson: body.configJson ?? undefined,
+        secrets: body.secrets ?? undefined,
         isEnabled: body.isEnabled,
     });
 

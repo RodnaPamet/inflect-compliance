@@ -7266,6 +7266,7 @@
       "selectProvider": "Изберете доставчик...",
       "connectionName": "Име на връзката",
       "namePlaceholder": "напр. Acme GitHub Org",
+      "nameInvalidCharacters": "Името на връзката не може да съдържа управляващи или повредени знаци. Премахнете ги и запазете отново.",
       "configuration": "Конфигурация",
       "secrets": "Тайни",
       "hide": "Скриване",

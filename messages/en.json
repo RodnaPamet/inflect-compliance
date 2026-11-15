@@ -7266,6 +7266,7 @@
       "selectProvider": "Select a provider...",
       "connectionName": "Connection Name",
       "namePlaceholder": "e.g. Acme GitHub Org",
+      "nameInvalidCharacters": "A connection name can't contain control characters or broken characters. Remove them and save again.",
       "configuration": "Configuration",
       "secrets": "Secrets",
       "hide": "Hide",

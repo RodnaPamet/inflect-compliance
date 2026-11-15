@@ -32,6 +32,10 @@ import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import {
+    CONNECTION_NAME_INVALID_CHARACTERS,
+    connectionNameHasInvalidCharacters,
+} from '@/lib/text/connection-name';
+import {
     validateProviderConfig,
     validateProviderSecrets,
     redirectsStoredCredential,
@@ -328,13 +332,35 @@ export async function upsertIntegrationConnection(
     input: {
         id?: string;
         provider: string;
-        name: string;
+        /**
+         * Required on a create. Optional on an update (#5317): a stored label
+         * is left alone, so an update that does not send it keeps it whatever
+         * it holds.
+         */
+        name?: string;
         configJson?: Record<string, unknown>;
         secrets?: Record<string, unknown>;
         isEnabled?: boolean;
     }
 ) {
     if (!ctx.permissions?.canAdmin) throw forbidden('Admin only');
+
+    // A name that IS sent is judged here as well as in the route's schema,
+    // because this usecase has callers that never pass through that schema
+    // (the A2A peer flow builds its connection's name). Owner decision
+    // 2026-11-15 on #5317: control characters and lone surrogates are refused
+    // with a 400; a stored label is never rewritten.
+    if (input.name !== undefined) {
+        if (input.name === '') throw badRequest('name is required');
+        if (connectionNameHasInvalidCharacters(input.name)) {
+            throw badRequest(
+                'A connection name may not contain control characters or broken (unpaired) characters.',
+                { reason: CONNECTION_NAME_INVALID_CHARACTERS },
+            );
+        }
+    } else if (!input.id) {
+        throw badRequest('name is required');
+    }
 
     // Validate provider is registered
     const providerImpl = registry.getProvider(input.provider);
@@ -441,7 +467,8 @@ export async function upsertIntegrationConnection(
             const updated = await db.integrationConnection.update({
                 where: { id: input.id },
                 data: {
-                    name: input.name,
+                    // Absent means "keep the stored name" (#5317).
+                    ...(input.name !== undefined ? { name: input.name } : {}),
                     configJson:
                         input.configJson != null
                             ? (carryUsecaseWrittenKeys(existing.configJson, validatedConfig) as Prisma.InputJsonValue)
@@ -463,7 +490,7 @@ export async function upsertIntegrationConnection(
                     // Names the weakening flags explicitly so the trail can
                     // answer "when did certificate verification stop?".
                     securityFlagsEnabled: enabledSecurityFlags(input.configJson),
-                    summary: `Updated integration: ${input.name}`,
+                    summary: `Updated integration: ${updated.name}`,
                 },
             });
 
@@ -480,7 +507,8 @@ export async function upsertIntegrationConnection(
             data: {
                 tenantId: ctx.tenantId,
                 provider: input.provider,
-                name: input.name,
+                // Checked present at the top: a create without a name is refused.
+                name: input.name as string,
                 configJson: validatedConfig as Prisma.InputJsonValue,
                 secretEncrypted,
                 isEnabled: willBeEnabled,
