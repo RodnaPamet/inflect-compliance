@@ -172,7 +172,15 @@ function destructuredProp(name: string, at: ts.Node): { component: string; attri
  * is unknown — and a union missing one of its members is not a union, so the
  * call is reported rather than answered from the rest.
  */
-function propValues(sf: ts.SourceFile, component: string, attribute: string): ts.Expression[] | null {
+/**
+ * Every render site of `component` in ONE file, and what it passes for one
+ * attribute. `unknown` when a site omits it or spreads instead.
+ */
+function renderSitesIn(
+    sf: ts.SourceFile,
+    component: string,
+    attribute: string,
+): { values: ts.Expression[]; unknown: boolean } {
     const values: ts.Expression[] = [];
     let unknown = false;
     walk(sf, (n) => {
@@ -186,7 +194,30 @@ function propValues(sf: ts.SourceFile, component: string, attribute: string): ts
         }
         values.push(init.expression);
     });
-    return unknown || values.length === 0 ? null : values;
+    return { values, unknown };
+}
+
+/**
+ * Does `sf` import `name` from `fromFile`?
+ *
+ * The guard that makes a cross-file search sound. Two files can each declare a
+ * component called `Child`, and searching the reach for `<Child …>` by name
+ * alone would read one component's render site as another's — a wrong answer
+ * dressed as a resolution, which is the whole class #5661 was about. A render
+ * site counts only where the name is bound to the component that declared the
+ * prop.
+ */
+function importsFrom(sf: ts.SourceFile, name: string, fromFile: string, exists: (f: string) => boolean): boolean {
+    for (const st of sf.statements) {
+        if (!ts.isImportDeclaration(st) || !st.importClause?.namedBindings) continue;
+        const nb = st.importClause.namedBindings;
+        if (!ts.isNamedImports(nb)) continue;
+        if (!nb.elements.some((el) => el.name.text === name)) continue;
+        const spec = literalText(st.moduleSpecifier);
+        const target = spec ? resolveImport(sf.fileName, spec, exists) : null;
+        if (target === fromFile) return true;
+    }
+    return false;
 }
 
 /**
@@ -309,6 +340,61 @@ export class UrlResolver {
     /** How many calls took the legacy NAME test because no binding could be read. */
     nameFallbacks = 0;
 
+    /**
+     * The files of the page being read, set by `pageActions` for the duration
+     * of one page — the scope within which a prop's render site is looked for
+     * (#5688). Empty when the resolver is driven directly, which keeps the
+     * same-file behaviour #5661 shipped.
+     */
+    private reach: readonly string[] = [];
+
+    /** Run `body` with the page's reach visible to prop resolution. */
+    withReach<T>(files: readonly string[], body: () => T): T {
+        const before = this.reach;
+        this.reach = files;
+        try {
+            return body();
+        } finally {
+            this.reach = before;
+        }
+    }
+
+    /**
+     * Every expression that passes `attribute` to `component`, anywhere in the
+     * page's reach, each with the file it was written in so it resolves in its
+     * OWN scope.
+     *
+     * #5661 read render sites in the declaring file only, which left a builder
+     * handed down from a parent in another file unresolvable — 19 calls fell
+     * back to the callee's NAME because of it (#5688, #5662's residual).
+     *
+     * Fail-closed is unchanged and now spans files: one render site that
+     * spreads its props, or omits the attribute, makes the value unknown. A
+     * union missing a member is not a union, and the page's reach is the only
+     * population this can see — a component rendered from outside it resolves
+     * to nothing rather than to the sites that happen to be inside.
+     */
+    private propValues(sf: ts.SourceFile, component: string, attribute: string): { expr: ts.Expression; sf: ts.SourceFile }[] | null {
+        const out: { expr: ts.Expression; sf: ts.SourceFile }[] = [];
+        let unknown = false;
+
+        const take = (f: ts.SourceFile) => {
+            const found = renderSitesIn(f, component, attribute);
+            if (found.unknown) unknown = true;
+            for (const expr of found.values) out.push({ expr, sf: f });
+        };
+
+        take(sf);
+        for (const file of this.reach) {
+            if (file === sf.fileName) continue;
+            const other = this.src.parsed(file);
+            if (!importsFrom(other, component, sf.fileName, this.src.exists)) continue;
+            take(other);
+        }
+
+        return unknown || out.length === 0 ? null : out;
+    }
+
     constructor(private readonly src: Source) {}
 
     /**
@@ -387,11 +473,78 @@ export class UrlResolver {
             return inner ? inner.map((p) => `${prefix}${p.startsWith('/') ? '' : '/'}${p}`) : null;
         }
 
-        const bound = this.identifier(e.expression.text, sf, e.expression);
-        const decl = functionDeclarationNamed(e.expression.text, e.expression);
-        const fn = bound ? builderFunction(bound.expr) : decl;
+        const fns = this.builderFunctionsFor(e.expression, sf);
+        if (fns && fns.length > 1) {
+            // More than one render site hands this child a builder. Read each
+            // and union, the way a conditional's two branches already are —
+            // and refuse unless EVERY one reads, since a union missing a
+            // member is not a union.
+            const each = fns.map(({ fn, sf: fsf }) => this.readBuilderBody(fn, fsf, e, depth));
+            if (!each.every((x) => x !== null)) return null;
+            return [...new Set((each as string[][]).flat())];
+        }
 
-        if (fn) {
+        const only = fns?.[0];
+        if (only) {
+            const read = this.readBuilderBody(only.fn, only.sf, e, depth);
+            return read;
+        }
+        return this.legacyNameFallback(e, sf, depth);
+    }
+
+    /**
+     * The builder FUNCTION each of a callee's bindings holds, following a
+     * destructured prop to its render sites (#5688).
+     *
+     * `builderPrefix` answers only for a context HOOK, which is why a prop
+     * whose parent writes `const apiUrl = useCallback((path) => …)` fell back
+     * to the callee's name: the prefix is not a constant, it is the function's
+     * body. Nine of the twelve remaining fallbacks were that one missing hop.
+     */
+    private builderFunctionsFor(
+        id: ts.Identifier,
+        sf: ts.SourceFile,
+        depth = 0,
+    ): { fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration; sf: ts.SourceFile }[] | null {
+        if (depth > 4) return null;
+
+        const bound = this.identifier(id.text, sf, id);
+        if (bound) {
+            const fn = builderFunction(bound.expr);
+            return fn ? [{ fn, sf: bound.sf }] : null;
+        }
+        const decl = functionDeclarationNamed(id.text, id);
+        if (decl) return [{ fn: decl, sf }];
+
+        const prop = destructuredProp(id.text, id);
+        const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
+        if (!values) return null;
+
+        const out: { fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration; sf: ts.SourceFile }[] = [];
+        for (const v of values) {
+            if (!ts.isIdentifier(v.expr)) {
+                const fn = builderFunction(v.expr);
+                if (!fn) return null;
+                out.push({ fn, sf: v.sf });
+                continue;
+            }
+            const nested = this.builderFunctionsFor(v.expr, v.sf, depth + 1);
+            if (!nested) return null;
+            out.push(...nested);
+        }
+        return out.length ? out : null;
+    }
+
+    /** Read one builder's body with the call's arguments bound by position. */
+    private readBuilderBody(
+        fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
+        fnFile: ts.SourceFile,
+        e: ts.CallExpression,
+        depth: number,
+    ): string[] | null {
+        {
+            const sf = fnFile;
+            const bound = { sf: fnFile };
             const body = ts.isBlock(fn.body!) ? soleReturn(fn.body as ts.Block) : (fn.body as ts.Expression);
             if (!body) return null;
 
@@ -413,15 +566,18 @@ export class UrlResolver {
                 }
             });
             try {
-                return this.paths(body, bound?.sf ?? sf, depth + 1);
+                return this.paths(body, bound.sf ?? sf, depth + 1);
             } finally {
                 for (let i = 0; i < pushed; i++) this.bound.pop();
             }
         }
+    }
 
-        // No binding could be read. Fall back to the name, and count it.
-        if (!LEGACY_BUILDER_NAMES.has(e.expression.text)) return undefined;
+    /** No binding could be read: fall back to the callee's NAME, and count it. */
+    private legacyNameFallback(e: ts.CallExpression, sf: ts.SourceFile, depth: number): string[] | null | undefined {
+        if (!ts.isIdentifier(e.expression) || !LEGACY_BUILDER_NAMES.has(e.expression.text)) return undefined;
         this.nameFallbacks++;
+        const arg = e.arguments[0];
         const inner = arg ? this.paths(arg, sf, depth + 1) : null;
         return inner ? inner.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`) : null;
     }
@@ -445,12 +601,14 @@ export class UrlResolver {
         if (bound) return hookOf(bound.expr);
 
         const prop = destructuredProp(id.text, id);
-        const values = prop ? propValues(sf, prop.component, prop.attribute) : null;
+        const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
         if (!values) return null;
         const prefixes = new Set(
             values.map((v) => {
-                if (ts.isIdentifier(v)) return this.builderPrefix(v, sf);
-                return hookOf(v);
+                // In ITS file's scope, not the child's: a parent elsewhere in
+                // the reach binds its own `apiUrl`.
+                if (ts.isIdentifier(v.expr)) return this.builderPrefix(v.expr, v.sf);
+                return hookOf(v.expr);
             }),
         );
         return prefixes.size === 1 && !prefixes.has(null) ? [...prefixes][0] : null;
@@ -586,9 +744,9 @@ export class UrlResolver {
             const target = this.identifier(e.text, sf, e);
             if (target && !ts.isObjectLiteralExpression(target.expr)) return this.paths(target.expr, target.sf, depth + 1);
             const prop = destructuredProp(e.text, e);
-            const values = prop ? propValues(sf, prop.component, prop.attribute) : null;
+            const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
             if (values) {
-                const each = values.map((v) => this.paths(v, sf, depth + 1));
+                const each = values.map((v) => this.paths(v.expr, v.sf, depth + 1));
                 if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];
             }
         }
@@ -697,8 +855,9 @@ export function pageActions(page: string, src: Source, routes: readonly ApiRoute
     const byKey = new Map<string, ResolvedAction>();
     const unresolved: UnresolvedCall[] = [];
     const missing = (c: ApiCall, why: string) => unresolved.push({ file: c.file, line: c.line, why, expression: c.expression });
-    for (const file of pageReach(page, src)) {
-        for (const c of apiCalls(file, src.parsed(file), r)) {
+    const reach = pageReach(page, src);
+    for (const file of reach) {
+        for (const c of r.withReach(reach, () => apiCalls(file, src.parsed(file), r))) {
             if (!c.segments) {
                 missing(c, 'the URL is built in a way the scan cannot follow');
                 continue;

@@ -551,6 +551,81 @@ describe('page actions — a URL builder is read from its binding', () => {
     });
 });
 
+/**
+ * #5688. A builder handed down as a prop is resolved from the render sites in
+ * the PAGE'S REACH, not the declaring file alone — #5661 read only the latter,
+ * which left 19 calls answering from the callee's NAME.
+ */
+describe('page actions — a prop is resolved across the files of one page', () => {
+    const page = 'src/app/t/[tenantSlug]/(app)/x/page.tsx';
+    const child = 'src/app/t/[tenantSlug]/(app)/x/Child.tsx';
+    const route = (f: string, t: string) => parseApiRoute(f, t);
+    const table: ApiRoute[] = [route('src/app/api/t/[tenantSlug]/widgets/route.ts', 'export const GET = a;')];
+
+    const act = (files: Record<string, string>) => pageActions(page, memory(files), table);
+
+    // EVERY fixture here names the builder `buildUrl`, outside
+    // LEGACY_BUILDER_NAMES, and that is load-bearing. Named `apiUrl`, the name
+    // fallback resolves these to the same route and the cases pass with the
+    // cross-file mechanism removed — they prove nothing. Mutation-proving
+    // caught exactly that, twice (the first time in #5696's useCallback case).
+    it('resolves a builder the parent passes from another file in the reach', () => {
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Child buildUrl={buildUrl} />;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('follows a builder FUNCTION the parent wrote, not just a context hook', () => {
+        // Nine of the twelve fallbacks left after the cross-file read were this
+        // shape: the parent writes `const buildUrl = useCallback((path) => …)`,
+        // so the prefix is not a constant — it is the function's body.
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P({ tenantSlug }: Props) {\n    const buildUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);\n    return <Child buildUrl={buildUrl} />;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('a same-named component elsewhere is NOT a render site unless it imports the declaring one', () => {
+        // The guard that makes a cross-file search sound. Two files can each
+        // declare a `Child`; matching by name alone would read one component's
+        // render site as another's — a wrong answer dressed as a resolution,
+        // which is the class this whole thread is about.
+        const other = 'src/app/t/[tenantSlug]/(app)/x/Other.tsx';
+        const a = act({
+            // The page IMPORTS the declaring Child (so it is in the reach) but
+            // renders only Other. That matters: if the page rendered `<Child />`
+            // with no attribute, fail-closed would return null on its own and
+            // the import guard would never be the thing under test.
+            [page]: "import { Child } from './Child';\nimport { Other } from './Other';\nexport default function P() {\n    return <Other />;\n}",
+            // A BARE identifier callee. Written `buildUrl!(…)` the callee is a
+            // NonNullExpression, the builder machinery never runs, and the call
+            // is unresolvable whatever the guard does — vacuous.
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+            [other]: "function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/widgets'))} />;\n}\nexport function Other() {\n    const buildUrl = useTenantApiUrl();\n    return <Child buildUrl={buildUrl} />;\n}",
+        });
+        // Other's `Child` is a DIFFERENT component that happens to share the
+        // name, and it supplies the attribute. Without the import guard its
+        // render site would answer for the declaring Child too, which is a
+        // wrong answer dressed as a resolution.
+        expect(a.unresolved.map((u) => u.expression)).toContain("buildUrl('/widgets')");
+    });
+
+    it('one render site that omits the attribute makes the value unknown, across files too', () => {
+        const a = act({
+            [page]: "import { Child } from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <><Child buildUrl={buildUrl} /><Child /></>;\n}",
+            [child]: "export function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}",
+        });
+        // A union missing a member is not a union — reported, not answered
+        // from the site that does supply it.
+        expect(a.resolved).toEqual([]);
+    });
+});
+
 describe('the page inventory', () => {
     const sidebar = parse(
         'SidebarNav.tsx',
