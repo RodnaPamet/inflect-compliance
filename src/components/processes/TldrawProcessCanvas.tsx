@@ -737,7 +737,11 @@ export function TldrawProcessCanvas({
             if (!readOnly) {
                 // A duplicated or pasted step gets its own key; see the module.
                 disposeUniqueKeys.current?.();
-                disposeUniqueKeys.current = installUniqueProcessKeys(editor);
+                disposeUniqueKeys.current = installUniqueProcessKeys(editor, {
+                    // A copied edge's line, with the load path's chip rule.
+                    resolveChipLabel: (kind, label, controls) =>
+                        chipTextForRef.current(kind, label, controls),
+                });
                 disposeArrowConversion.current?.();
                 disposeArrowConversion.current = installArrowToEdgeConversion(editor, {
                     onRefuse: (refusals) => onEdgeRefusedRef.current?.(refusals),

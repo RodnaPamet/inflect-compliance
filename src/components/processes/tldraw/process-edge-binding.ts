@@ -24,7 +24,9 @@
  * correct until the first node created by drawing it — the same trap the node
  * shape documents. The row is written from the KEYS.
  */
-import { T, type RecordProps, type TLBaseBinding } from 'tldraw';
+import { T, type Editor, type RecordProps, type TLBaseBinding, type TLShapeId } from 'tldraw';
+
+import { PROCESS_NODE_SHAPE_TYPE } from './process-node-shape';
 
 /** The discriminator. */
 export const PROCESS_EDGE_BINDING_TYPE = 'process-edge' as const;
@@ -75,6 +77,37 @@ export const processEdgeBindingProps: RecordProps<ProcessEdgeBinding> = {
         }),
     ),
 };
+
+/**
+ * A binding's endpoints as node keys, read through the shapes it binds.
+ *
+ * The same resolution `tldrawToRows` applies on save: each end's `nodeKey`
+ * from the shape `fromId` / `toId` names, and the stored `sourceKey` /
+ * `targetKey` only when that shape is not a process node on this page.
+ *
+ * Every live reader of an edge's endpoints goes through this (#5309 item 24).
+ * The props are a denormalised copy and can be stale: tldraw's Duplicate copied
+ * a binding between two copied steps with their ORIGINALS' keys, so a reader of
+ * the props saw `A→B` where the save saw `A'→B'`. The arrow converter's
+ * duplicate check then let a second `A'→B'` through, and every save after it
+ * refused `DUPLICATE_EDGE`.
+ */
+export function edgeEndpointKeys(
+    editor: Pick<Editor, 'getShape'>,
+    binding: { fromId: string; toId: string; props: { sourceKey: string; targetKey: string } },
+): { sourceKey: string; targetKey: string } {
+    const keyOf = (shapeId: string): string | null => {
+        const s = editor.getShape(shapeId as TLShapeId) as
+            | { type?: string; props?: { nodeKey?: unknown } }
+            | undefined;
+        if (!s || s.type !== PROCESS_NODE_SHAPE_TYPE) return null;
+        return typeof s.props?.nodeKey === 'string' ? s.props.nodeKey : null;
+    };
+    return {
+        sourceKey: keyOf(binding.fromId) ?? binding.props.sourceKey,
+        targetKey: keyOf(binding.toId) ?? binding.props.targetKey,
+    };
+}
 
 /** The wire default for `edgeKind`, so nothing has to copy the literal. */
 export const DEFAULT_EDGE_KIND = 'flow';
