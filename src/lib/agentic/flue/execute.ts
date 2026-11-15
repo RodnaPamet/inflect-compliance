@@ -6,6 +6,7 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import { recordExternalToolDecision } from './tool-decision';
+import { toolCallIdsOf } from './turn-tool-calls';
 import {
     externalResidencyRefusal,
     type ExternalAiAcknowledgement,
@@ -189,6 +190,39 @@ interface TurnRecord {
      * parent response's own roll-up.
      */
     role: FlueModelRole;
+}
+
+/**
+ * WHICH MODEL CALL ISSUED A TOOL CALL, recorded on that call's TOOL_CALL step
+ * as `outputJson.modelTurn` (owner decision 2026-11-15, Inspect task 9).
+ *
+ * Flue records ONE MODEL_CALL step per dispatch, after every call in it, so
+ * the ledger alone cannot say whether two tool calls came from the same model
+ * reply or from two. The runtime can: its `turn` event (one per model call,
+ * emitted when the reply ends and BEFORE that reply's tool calls run) carries
+ * the reply, whose `toolCall` blocks name the ids the tool `run`s then receive
+ * as `toolCallId`. So each id is mapped to the call that issued it, and the
+ * step names it.
+ *
+ * `segment` is the seq the dispatch started at (`fromSeq`) and `call` the
+ * 1-based ordinal of the model call within it, in the order the runtime
+ * reported them (a worker's calls and a compaction count too: each is a model
+ * call). The pair, because the ordinal restarts with every dispatch and a
+ * resumed run's dispatches are not always separated by a MODEL_CALL step (a
+ * dispatch that throws records none). Absent where the runtime named no turn
+ * for the id, and on every step written before this existed: a reader treats
+ * absence as "not recorded", never as a turn.
+ *
+ * In `outputJson`, not `inputJson`: a TOOL_CALL's input is the model's
+ * arguments, and a key added to them could not be told from an argument of
+ * that name (the reason `WorkflowStep.subagentName` is a column). Flue's tool
+ * outputs are the engine's own objects (`{ error }`, `{ refused }`), and the
+ * step projection lifts this key out into `RunStepFeedRow.modelTurn`, so the
+ * `outputJson` every reader of the feed sees is what it was.
+ */
+export interface FlueModelTurn {
+    segment: number;
+    call: number;
 }
 
 /** A dispatch's tokens split by the role that spent them. Sums to the total. */
@@ -445,8 +479,17 @@ export async function executeFlueRun(
      * exit below.
      */
     const turns: TurnRecord[] = [];
+    // WHICH MODEL CALL ISSUED EACH TOOL CALL (`FlueModelTurn`). Counted before
+    // the usage check below: a call the provider reported no usage for is
+    // still a call, and its tool calls still came from it. Taken (deleted) by
+    // the step that records the call, as `seen` is.
+    let modelCallsSeen = 0;
+    const turnOfCall = new Map<string, FlueModelTurn>();
     const onTurn = (event: FlueEvent, eventCtx: FlueEventContext): void => {
         if (event.type !== 'turn' || eventCtx.id !== runId) return;
+        modelCallsSeen += 1;
+        // The reply's tool-call IDS, never its text (`toolCallIdsOf`).
+        for (const id of toolCallIdsOf(event.response)) turnOfCall.set(id, { segment: fromSeq, call: modelCallsSeen });
         const usage = event.response.usage;
         // Absent "when the provider reported none". Nothing was measured, so
         // nothing is claimed — the same reading `readUsage` takes.
@@ -462,6 +505,13 @@ export async function executeFlueRun(
             durationMs: event.durationMs,
             role: event.taskId ? 'worker' : 'supervisor',
         });
+    };
+    /** The call that issued this tool call, once: the entry is that call's. */
+    const takeTurn = (toolCallId: string | undefined): FlueModelTurn | undefined => {
+        if (toolCallId === undefined) return undefined;
+        const turn = turnOfCall.get(toolCallId);
+        turnOfCall.delete(toolCallId);
+        return turn;
     };
     /**
      * Registered inside the `try` so the `finally` below is its only disposer —
@@ -708,6 +758,8 @@ export async function executeFlueRun(
             seen.delete(id);
             return o;
         },
+        // TAKEN, as the verdict is, and for the same two reasons.
+        takeTurn: (id) => takeTurn(id),
     }));
 
     // THE SKILLS THIS DEFINITION ASKS FOR, resolved here rather than in the
@@ -816,13 +868,10 @@ export async function executeFlueRun(
                 // the upper. Together they say which steps the delegate
                 // produced.
                 input: { agent: d.agent, taskId: d.taskId, fromSeq: d.fromSeq },
-                ...(d.answerAccepted
-                    ? {}
-                    : {
-                        // A REFUSED answer is the one outcome a reader cannot
-                        // infer from the row's existence, so it is stated.
-                        output: { refused: 'ai_guard_blocked' },
-                    }),
+                // A REFUSED answer is the one outcome a reader cannot infer
+                // from the row's existence, so it is stated. The model call
+                // that issued the `task` call rides beside it (`FlueModelTurn`).
+                ...delegationOutput(d.answerAccepted, takeTurn(d.toolCallId)),
             });
         },
     });
@@ -1126,6 +1175,18 @@ export async function executeFlueRun(
     }
 }
 
+/** A delegation step's output: the refusal when the answer was refused, and the issuing call when known. */
+function delegationOutput(
+    answerAccepted: boolean,
+    turn: FlueModelTurn | undefined,
+): { output?: { refused?: 'ai_guard_blocked'; modelTurn?: FlueModelTurn } } {
+    const output = {
+        ...(answerAccepted ? {} : { refused: 'ai_guard_blocked' as const }),
+        ...(turn ? { modelTurn: turn } : {}),
+    };
+    return Object.keys(output).length > 0 ? { output } : {};
+}
+
 /**
  * One offered tool, wrapped so the ledger and the budget see every call.
  *
@@ -1145,6 +1206,7 @@ function wrapForLedger(
         forgetOrigin: (toolCallId: string) => void;
         onFailure: () => void;
         takeVerdict: (toolCallId: string) => StepGuardObservation | undefined;
+        takeTurn: (toolCallId: string) => FlueModelTurn | undefined;
     },
 ): FlueToolDefinition {
     return {
@@ -1220,6 +1282,9 @@ function wrapForLedger(
             // BEFORE the call, because the call is what reads it.
             ledger.noteOrigin(context.toolCallId, seq);
             const startedAt = Date.now();
+            // Read before the call: the `turn` event that named this id was
+            // emitted before the runtime ran it.
+            const turn = ledger.takeTurn(context.toolCallId);
             try {
                 const result = await tool.run(context);
                 const verdict = ledger.takeVerdict(context.toolCallId);
@@ -1237,6 +1302,9 @@ function wrapForLedger(
                     // version and the manifest digest, not the input), and
                     // they are the reviewable half.
                     input: context.data,
+                    // Which model call issued it (`FlueModelTurn`); nothing
+                    // else, so a DONE step's output stays the engine's own.
+                    ...(turn ? { output: { modelTurn: turn } } : {}),
                 });
                 // The Art 12 disclosure, for an external tool only — a no-op
                 // for every built-in, which is why it is called unconditionally
@@ -1262,7 +1330,10 @@ function wrapForLedger(
                     guardVerdict: verdict?.verdict,
                     guardRuleIds: verdict?.ruleIds,
                     input: context.data,
-                    output: { error: err instanceof Error ? err.message : String(err) },
+                    output: {
+                        error: err instanceof Error ? err.message : String(err),
+                        ...(turn ? { modelTurn: turn } : {}),
+                    },
                 });
                 // A call that threw still SENT something. Disclosing only the
                 // successes would record the calls that worked rather than the

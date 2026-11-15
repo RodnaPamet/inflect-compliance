@@ -70,6 +70,41 @@ def step_refusal(output: Dict[str, Any]) -> Optional[str]:
     return prefix.group(1) if prefix and prefix.group(1) in ERROR_REFUSAL_CODES else None
 
 
+def model_turn(raw: Any) -> Optional[Dict[str, int]]:
+    """A feed row's ``modelTurn`` (``{segment, call}``), else None: two integers, ``call`` from 1, nothing else.
+
+    The step projection lifts it out of the stored output (Flue records which
+    model call issued each tool call). Absent on every other engine and on
+    every step written before it existed, and None is "not recorded", never a turn.
+    """
+    if not isinstance(raw, dict) or set(raw) != {"segment", "call"}:
+        return None
+    segment, call = raw["segment"], raw["call"]
+    ok = all(isinstance(v, int) and not isinstance(v, bool) for v in (segment, call)) and segment >= 0 and call >= 1
+    return {"segment": segment, "call": call} if ok else None
+
+
+def decision_row_facts(body: Any, steps: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """The run's decision rows (``GET /agent-runs/:id/decisions``, D-EV-8) joined to its MODEL_CALL steps.
+
+    ``total`` is every row the run wrote; ``matched`` the rows whose
+    ``inputDigest`` a MODEL_CALL step names as its ``decisionDigest``. A set,
+    not a per-step join: a resumed Flue run's dispatches digest the same
+    message, so two steps can name one digest, and its rows are counted once.
+    A body the harness cannot read whole (not the shape, or ``truncated``) is
+    UNREADABLE: a count drawn from part of the rows is no count. Digests are
+    joined here and never kept: the facts hold two numbers.
+    """
+    unreadable = {"readable": False, "total": None, "matched": None}
+    if not isinstance(body, dict) or body.get("truncated") is not False or not isinstance(body.get("rows"), list):
+        return unreadable
+    rows = body["rows"]
+    if not all(isinstance(r, dict) and isinstance(r.get("inputDigest"), str) for r in rows):
+        return unreadable
+    digests = {s["decisionDigest"] for s in steps if s.get("kind") == "MODEL_CALL" and isinstance(s.get("decisionDigest"), str)}
+    return {"readable": True, "total": len(rows), "matched": sum(1 for r in rows if r["inputDigest"] in digests)}
+
+
 def run_facts(run: Dict[str, Any]) -> Dict[str, Any]:
     started, completed = _ms(run.get("startedAt")), _ms(run.get("completedAt"))
     return {
@@ -104,6 +139,7 @@ def step_facts(steps: Iterable[Dict[str, Any]], run_started_iso: str, created_en
                 "engineSupplied": s.get("tool") in ENGINE_SUPPLIED_TOOLS,
                 "refused": refused,
                 "delegation": {"agent": delegation["agent"], "fromSeq": delegation.get("fromSeq")} if delegation else None,
+                "modelTurn": model_turn(s.get("modelTurn")) if s["kind"] == "TOOL_CALL" else None,
                 "proposals": [
                     {"kind": p["kind"], "status": p["status"], "createdEntity": bool(created_entity.get(p["id"], False))}
                     for p in s.get("proposals") or []

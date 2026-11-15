@@ -50,7 +50,7 @@ def _step(seq, kind, status, tool=None, guard=None, rules=(), **extra):
     base = {
         "seq": seq, "kind": kind, "status": status, "tool": tool, "guardVerdict": guard, "guardRuleIds": list(rules),
         "costTokens": None, "modelCalls": 1 if kind == "MODEL_CALL" else None, "hasDecisionDigest": kind == "MODEL_CALL",
-        "engineSupplied": False, "refused": None, "delegation": None, "proposals": [], "atMs": seq * 1000,
+        "engineSupplied": False, "refused": None, "delegation": None, "modelTurn": None, "proposals": [], "atMs": seq * 1000,
     }
     base.update(extra)
     return base
@@ -96,7 +96,8 @@ def test_the_block_for_run_43715891271s_shape():
         "explain   decided by: providerFailed false, first list_controls step 1, first list_controls guardVerdict FLAGGED,"
         " first list_controls guardRuleIds [egr.private_key.pem], first list_controls flagged true,"
         " first list_controls carries a /secret/i rule false, first list_controls refused true,"
-        " tool steps started after it 0, in the same turn 0, in a later turn 0, turn not recorded 0, markerSeenAfter false",
+        " tool steps started after it 0, in the same turn 0, in a later turn 0, issued in an earlier turn 0, turn not recorded 0,"
+            " markerSeenAfter false",
         "explain end",
     ]
 

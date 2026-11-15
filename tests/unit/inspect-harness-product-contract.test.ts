@@ -33,6 +33,7 @@ import type { KillSwitchRecord, listKillSwitches } from '@/app-layer/usecases/ag
 import type { getWorkflowRun, listWorkflowRuns } from '@/app-layer/usecases/workflow-runs';
 import type { askAdHocQuestion } from '@/app-layer/usecases/ad-hoc-question';
 import type { RunStepFeed } from '@/app-layer/usecases/workflow-run-steps';
+import type { RunDecisionRows } from '@/app-layer/usecases/ai-decision-log';
 import type { RiskKpiCounts } from '@/app-layer/repositories/RiskRepository';
 import type { RunStepFeedRow } from '@/lib/agentic/run-step-projection';
 import type { createTask } from '@/app-layer/usecases/task';
@@ -77,7 +78,11 @@ const READS = {
     askQuestion: ['runId'] as const satisfies readonly (keyof AskedQuestion)[],
     getRun: ['status', 'errorMessage', 'costTokens', 'stepCount', 'startedAt', 'completedAt'] as const satisfies readonly (keyof StoredRun)[],
     getSteps: ['steps', 'hasMore', 'cursor'] as const satisfies readonly (keyof RunStepFeed)[],
-    step: ['seq', 'kind', 'status', 'tool', 'guardVerdict', 'guardRuleIds', 'costTokens', 'inputJson', 'outputJson', 'decisionDigest', 'delegation', 'proposals', 'at'] as const satisfies readonly (keyof RunStepFeedRow)[],
+    step: ['seq', 'kind', 'status', 'tool', 'guardVerdict', 'guardRuleIds', 'costTokens', 'inputJson', 'outputJson', 'decisionDigest', 'delegation', 'modelTurn', 'proposals', 'at'] as const satisfies readonly (keyof RunStepFeedRow)[],
+    stepModelTurn: ['segment', 'call'] as const satisfies readonly (keyof NonNullable<RunStepFeedRow['modelTurn']>)[],
+    // D-EV-8: the run's decision rows, joined to its MODEL_CALL steps by digest.
+    runDecisions: ['rows', 'truncated'] as const satisfies readonly (keyof RunDecisionRows)[],
+    runDecisionRow: ['inputDigest'] as const satisfies readonly (keyof RunDecisionRows['rows'][number])[],
     stepProposal: ['id', 'kind', 'status'] as const satisfies readonly (keyof RunStepFeedRow['proposals'][number])[],
     riskKpi: ['total'] as const satisfies readonly (keyof RiskKpiCounts)[],
     securitySettings: ['aiResidency'] as const satisfies readonly (keyof SecurityConfig)[],
@@ -127,6 +132,19 @@ describe('each field the harness reads is in the product type and in the fixture
         expect(keysOf(feed)).toEqual(expect.arrayContaining([...READS.getSteps]));
         expect(keysOf(feed.steps[0])).toEqual(expect.arrayContaining([...READS.step]));
         expect(keysOf(feed.steps[0].proposals[0])).toEqual(expect.arrayContaining([...READS.stepProposal]));
+        expect(keysOf(feed.steps[0].modelTurn)).toEqual(expect.arrayContaining([...READS.stepModelTurn]));
+    });
+
+    it("the run's decision rows (D-EV-8): every field the route returns, and no text", () => {
+        const body = R.getRunDecisions.body as RunDecisionRows;
+        const full = ['runId', 'rows', 'truncated'] as const satisfies readonly (keyof RunDecisionRows)[];
+        expect(keysOf(body).sort()).toEqual([...full].sort());
+        expect(keysOf(body)).toEqual(expect.arrayContaining([...READS.runDecisions]));
+        const row = ['id', 'inputDigest', 'agentId', 'createdAt', 'humanOutcome'] as const satisfies readonly (keyof RunDecisionRows['rows'][number])[];
+        expect(keysOf(body.rows[0]).sort()).toEqual([...row].sort());
+        expect(keysOf(body.rows[0])).toEqual(expect.arrayContaining([...READS.runDecisionRow]));
+        expect(R.getRunDecisions.path).toBe('/agent-runs/run_1/decisions');
+        expect(readCode('evals/inspect/inflect_inspect/product.py')).toContain('self._ok("GET", f"/agent-runs/{urllib.parse.quote(run_id)}/decisions")');
     });
 
     it('the risk count is the unpaginated list’s kpiCounts.total', () => {

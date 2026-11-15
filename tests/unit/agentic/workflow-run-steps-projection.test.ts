@@ -14,6 +14,7 @@ import {
     projectRunSteps,
     decisionDigestOf,
     isLiveRunStatus,
+    modelTurnOf,
     type ProjectableStep,
     type ProjectableProposal,
 } from '@/lib/agentic/run-step-projection';
@@ -135,6 +136,57 @@ describe('decisionDigestOf', () => {
 
     it('swallows a parse failure rather than throwing into the page', () => {
         expect(decisionDigestOf('{')).toBeNull();
+    });
+});
+
+describe('modelTurnOf — which model call issued a Flue tool call (task 9)', () => {
+    const TURN = { segment: 4, call: 2 };
+
+    it('lifts the turn out of a FAILED step and leaves the stored output byte for byte as it was', () => {
+        const before = JSON.stringify({ error: 'ai_guard_flagged: a tool result was flagged' });
+        const stored = JSON.stringify({ error: 'ai_guard_flagged: a tool result was flagged', modelTurn: TURN });
+        expect(modelTurnOf('TOOL_CALL', stored)).toEqual({ modelTurn: TURN, outputJson: before });
+    });
+
+    it('a DONE step whose output was only the turn reads as no output, as before the turn was recorded', () => {
+        expect(modelTurnOf('TOOL_CALL', JSON.stringify({ modelTurn: TURN }))).toEqual({ modelTurn: TURN, outputJson: null });
+    });
+
+    it('a delegation refused on re-entry keeps its refusal code', () => {
+        const stored = JSON.stringify({ refused: 'ai_guard_blocked', modelTurn: TURN });
+        expect(modelTurnOf('TOOL_CALL', stored)).toEqual({
+            modelTurn: TURN,
+            outputJson: JSON.stringify({ refused: 'ai_guard_blocked' }),
+        });
+    });
+
+    it('reads NOTHING on any other kind, and passes its output through untouched', () => {
+        const stored = JSON.stringify({ modelTurn: TURN });
+        expect(modelTurnOf('MODEL_CALL', stored)).toEqual({ modelTurn: null, outputJson: stored });
+        expect(modelTurnOf('READ', stored)).toEqual({ modelTurn: null, outputJson: stored });
+    });
+
+    it.each([
+        ['no turn recorded (an older row, the Tool Runner)', JSON.stringify({ error: 'x' })],
+        ['a call numbered from 0', JSON.stringify({ modelTurn: { segment: 0, call: 0 } })],
+        ['a negative segment', JSON.stringify({ modelTurn: { segment: -1, call: 1 } })],
+        ['a fractional call', JSON.stringify({ modelTurn: { segment: 0, call: 1.5 } })],
+        ['a string', JSON.stringify({ modelTurn: '0.1' })],
+        ['an extra member', JSON.stringify({ modelTurn: { segment: 0, call: 1, x: 1 } })],
+        ['an array output', JSON.stringify([{ modelTurn: TURN }])],
+        ['malformed JSON', '{"modelTurn":'],
+    ])('%s: no turn, and the stored output untouched', (_label, stored) => {
+        expect(modelTurnOf('TOOL_CALL', stored)).toEqual({ modelTurn: null, outputJson: stored });
+    });
+
+    it('projectRunSteps carries the turn on its own field and the output without it', () => {
+        const [row] = projectRunSteps(undefined, [
+            step({ kind: 'TOOL_CALL', toolCalled: 'list_controls', outputJson: JSON.stringify({ modelTurn: TURN }) }),
+        ], []);
+        expect(row.modelTurn).toEqual(TURN);
+        expect(row.outputJson).toBeNull();
+        const [plain] = projectRunSteps(undefined, [step({ kind: 'TOOL_CALL', toolCalled: 'list_controls' })], []);
+        expect(plain.modelTurn).toBeNull();
     });
 });
 

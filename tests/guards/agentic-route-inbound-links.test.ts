@@ -490,6 +490,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/automation/executions/agent-runs/route.ts',
     't/[tenantSlug]/agent-runs/[id]/steps/route.ts',
     't/[tenantSlug]/agent-runs/[id]/stream/route.ts',
+    // D-EV-8 (owner decision 2026-11-15) — the Art 12 rows one run wrote, as
+    // JSON, for the Inspect harness's task 8 join. A machine read: the page
+    // a person opens is `/agents/decisions`, which the run timeline already
+    // links on each model call's digest. Run's gate AND the decision log's.
+    't/[tenantSlug]/agent-runs/[id]/decisions/route.ts',
     // #3472 — one run's OPEN HUMAN CHECKPOINT: the PENDING proposals it
     // queued, each with a server-computed diff, for the canvas's inline
     // approve/reject. Agentic surface because it reads the proposal queue

@@ -68,6 +68,7 @@ class Product(Protocol):
     def ask_question(self, run_input: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]: ...
     def get_run(self, run_id: str) -> Dict[str, Any]: ...
     def get_steps(self, run_id: str) -> List[Dict[str, Any]]: ...
+    def run_decisions(self, run_id: str) -> Dict[str, Any]: ...
     def abort_run(self, run_id: str) -> None: ...
     def risk_count(self) -> int: ...
     def run_count(self) -> int: ...
@@ -151,6 +152,17 @@ class HttpProduct:
                 return steps
             cursor = page["cursor"]
         raise RuntimeError("step feed did not end within 50 pages")
+
+    def run_decisions(self, run_id: str) -> Dict[str, Any]:
+        """The run's decision rows (D-EV-8): ``{runId, rows: [{id, inputDigest, agentId, createdAt, humanOutcome}], truncated}``.
+
+        Raises on any refusal: the runner records the read as unreadable, and
+        task 8 is then not evidenced rather than failed.
+        """
+        body = self._ok("GET", f"/agent-runs/{urllib.parse.quote(run_id)}/decisions")
+        if not isinstance(body, dict):
+            raise RuntimeError(f"run {run_id}'s decision rows are not readable")
+        return body
 
     def risk_count(self) -> int:
         # The UNPAGINATED list: its kpiCounts.total is an aggregate count of the

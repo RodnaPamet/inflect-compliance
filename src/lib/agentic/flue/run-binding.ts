@@ -247,6 +247,12 @@ export interface FlueRunBinding {
          * grouping is absent, which is the right way for this to degrade.
          */
         fromSeq: number | null;
+        /**
+         * The runtime's id for the `task` call itself, when the operation
+         * carried one. It names the model call that issued the delegation
+         * (`FlueModelTurn` in `execute.ts`); absent, the step records none.
+         */
+        toolCallId?: string;
     }) => Promise<void>;
 }
 

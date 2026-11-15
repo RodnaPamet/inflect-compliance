@@ -235,7 +235,7 @@ export function gateDelegation(
  * failed look like a delegate that was blocked.
  */
 export async function guardDelegateResult(
-    operation: { type: string; toolName?: string },
+    operation: { type: string; toolName?: string; toolCallId?: string },
     ctx: { instanceId?: string; taskId?: string },
     result: unknown,
     guard: ((text: string, taskId: string | undefined) => Promise<void>) | undefined,
@@ -252,6 +252,8 @@ export async function guardDelegateResult(
         taskId: string;
         answerAccepted: boolean;
         fromSeq: number | null;
+        /** The runtime's id for the `task` call, which names the model call that issued it. */
+        toolCallId?: string;
     }) => Promise<void>,
     /** The span's lower bound, as `gateDelegation` returned it. */
     fromSeq: number | null = null,
@@ -267,7 +269,7 @@ export async function guardDelegateResult(
     // delegate that returned nothing would read as a delegation that never
     // occurred, which is the one reading that is certainly wrong.
     if (text === '') {
-        await recordIfPossible(record, agent, taskId, true, fromSeq);
+        await recordIfPossible(record, agent, taskId, true, fromSeq, operation.toolCallId);
         return;
     }
 
@@ -276,7 +278,7 @@ export async function guardDelegateResult(
     // or by a caller that predates delegation, and requiring it would make the
     // hook mandatory on every existing `bindRun` call site.
     if (!guard) {
-        await recordIfPossible(record, agent, taskId, true, fromSeq);
+        await recordIfPossible(record, agent, taskId, true, fromSeq, operation.toolCallId);
         return;
     }
 
@@ -286,10 +288,10 @@ export async function guardDelegateResult(
     try {
         await guard(text, taskId);
     } catch (err) {
-        await recordIfPossible(record, agent, taskId, false, fromSeq);
+        await recordIfPossible(record, agent, taskId, false, fromSeq, operation.toolCallId);
         throw err;
     }
-    await recordIfPossible(record, agent, taskId, true, fromSeq);
+    await recordIfPossible(record, agent, taskId, true, fromSeq, operation.toolCallId);
     return;
 }
 
@@ -310,15 +312,17 @@ async function recordIfPossible(
             taskId: string;
             answerAccepted: boolean;
             fromSeq: number | null;
+            toolCallId?: string;
         }) => Promise<void>)
         | undefined,
     agent: string | undefined,
     taskId: string | undefined,
     answerAccepted: boolean,
     fromSeq: number | null,
+    toolCallId: string | undefined,
 ): Promise<void> {
     if (!record || !agent || !taskId) return;
-    await record({ agent, taskId, answerAccepted, fromSeq });
+    await record({ agent, taskId, answerAccepted, fromSeq, ...(toolCallId ? { toolCallId } : {}) });
 }
 
 /** Which specialist answered, from the runtime's own result `details`. */

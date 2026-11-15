@@ -242,6 +242,7 @@ function runStep(over: Partial<RunStepRow> = {}): RunStepRow {
         delegation: null,
         subagent: null,
         compaction: null,
+        modelTurn: null,
         proposals: [],
         ...over,
     };
