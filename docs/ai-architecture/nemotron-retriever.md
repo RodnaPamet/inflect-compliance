@@ -54,15 +54,18 @@ flowchart LR
 ## Current state (true today)
 
 - **The embedding and rerank seam exists, and since 2026-11-15 the embedding
-  service's image is built and published (1.1a); no service runs and no vector
-  exists.** The image is `deploy/tei-embed/Dockerfile`, upstream TEI
+  service's image is built and published (1.1a) and the service is in the
+  canonical Compose file, pinned to that image's digest (1.1b); it runs on the
+  VM only once the owner applies it, and no vector exists.** The image is `deploy/tei-embed/Dockerfile`, upstream TEI
   `cpu-1.9.4` by tag and digest with its Debian packages upgraded, Trivy-gated
   and published to `ghcr.io/rodnapamet/tei-embed` (D-L4-11, owner,
   2026-11-15). The `tei-embed` service (`intfloat/multilingual-e5-small` at Hub
   commit `614241f6`, 2,560 MiB, 1.0 CPU at half weight, no published port)
-  enters `deploy/docker-compose.prod.yml` with the pull request that pins a
-  published digest (1.1b); it reaches the VM only when the owner approves a
-  `VM apply` run, and the app does not call it until the operator sets
+  is in `deploy/docker-compose.prod.yml` as
+  `ghcr.io/rodnapamet/tei-embed@sha256:90f7be79…3b55`, the digest the first
+  publish printed (run 43715894440, 2026-11-15, smoke and Trivy gate passed;
+  1.1b); it reaches the VM only when the owner approves a `VM apply` run
+  (1.1c), and the app does not call it until the operator sets
   `AI_EMBED_LOCAL_*` in `.env.prod`. The record is
   [`2026-11-15-retriever-tei-embed.md`](../implementation-notes/2026-11-15-retriever-tei-embed.md). `src/lib/ai/embeddings/` holds the
   `EmbeddingProvider` / `RerankProvider` contracts, the residency routing
@@ -316,9 +319,18 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
         and Trivy-gated at CRITICAL,HIGH (fixed only) by ci.yml's `TEI image`,
         published by `tei-embed-image.yml` weekly and on dispatch from `main`
         (D-L4-11). Done 2026-11-15.
-      - [ ] 1.1b The service in `deploy/docker-compose.prod.yml`, pinned to a
+      - [x] 1.1b The service in `deploy/docker-compose.prod.yml`, pinned to a
         digest that workflow published, the way the scanner overlay pins its
-        image (#3793, #5493); then the owner's `VM apply` run.
+        image (#3793, #5493): `ghcr.io/rodnapamet/tei-embed@sha256:90f7be794f9451e84381b385ad1d4c16883035686dfa658b1d1ccb3c7ed53b55`,
+        tag `cpu-1.9.4-20261115-046ef5cc8`, from run 43715894440 (smoke:
+        healthy, 2 vectors of 384 dimensions, not OOM-killed; Trivy gate
+        passed). Done 2026-11-15. The same change fixed the weekly run's
+        newer-upstream report, which read one 1,000-tag page of GHCR's list
+        and called `cpu-1.2.1` newer than `cpu-1.9.4`
+        (`deploy/tei-embed/newer-upstream.sh`).
+      - [ ] 1.1c The owner's `VM apply` run (preflight, then apply), `VM check`
+        `containers` showing `tei-embed` healthy, and the capacity recorder's
+        first day of its peak on the VM.
 
       The service as specified for 1.1b, measured 2026-11-15. One deviation
       from the line above: it sits on the project's default network, beside

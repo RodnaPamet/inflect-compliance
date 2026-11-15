@@ -163,26 +163,53 @@ jobs:
 
             # REPORT ONLY, after the push: is there a newer upstream CPU release
             # than the FROM line names? The registry's tag list is public.
+            # GHCR returns at most 1,000 tags a page, in lexical order, so every
+            # page is read by following the `Link: rel="next"` header; one page
+            # ended at cpu-1.2.1 and was reported as newer than cpu-1.9.4. The
+            # comparison is deploy/tei-embed/newer-upstream.sh, by version, and
+            # a list without the current tag concludes nothing.
             - name: Report a newer upstream release, if any
               run: |
                   set -euo pipefail
                   CURRENT="${{ steps.push.outputs.upstream }}"
                   TOKEN=$(curl -fsS "https://ghcr.io/token?scope=repository:huggingface/text-embeddings-inference:pull" \
                       | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["token"])')
-                  NEWEST=$(curl -fsS -H "Authorization: Bearer ${TOKEN}" \
-                      "https://ghcr.io/v2/huggingface/text-embeddings-inference/tags/list?n=10000" \
-                      | python3 -I -c '
-                  import json, re, sys
-                  tags = json.load(sys.stdin).get("tags") or []
-                  rel = [t for t in tags if re.fullmatch(r"cpu-\d+\.\d+\.\d+", t)]
-                  print(max(rel, key=lambda t: tuple(int(x) for x in t[4:].split("."))) if rel else "")
-                  ')
-                  if [ -n "${NEWEST}" ] && [ "${NEWEST}" != "${CURRENT}" ]; then
-                      echo "::warning::upstream TEI ${NEWEST} is newer than the Dockerfile's ${CURRENT}: move the FROM line (digest and benchmark pin) in a pull request"
-                      echo "| newer upstream | \`${NEWEST}\` (the Dockerfile names \`${CURRENT}\`) |" >> "$GITHUB_STEP_SUMMARY"
-                  else
-                      echo "| newer upstream | none (\`${CURRENT}\` is the newest \`cpu-x.y.z\`) |" >> "$GITHUB_STEP_SUMMARY"
-                  fi
+                  TAGS="${RUNNER_TEMP}/tei-upstream-tags.txt"
+                  : > "${TAGS}"
+                  NEXT="/v2/huggingface/text-embeddings-inference/tags/list?n=1000"
+                  PAGES=0
+                  while [ -n "${NEXT}" ]; do
+                      PAGES=$((PAGES + 1))
+                      if [ "${PAGES}" -gt 100 ]; then
+                          echo "::warning::stopped reading upstream tags after 100 pages"
+                          break
+                      fi
+                      case "${NEXT}" in
+                          https://ghcr.io/*) URL="${NEXT}" ;;
+                          /v2/*) URL="https://ghcr.io${NEXT}" ;;
+                          *) echo "::warning::unexpected next-page link from GHCR"; break ;;
+                      esac
+                      curl -fsS -D "${RUNNER_TEMP}/tei-tags-headers.txt" -o "${RUNNER_TEMP}/tei-tags-page.json" \
+                          -H "Authorization: Bearer ${TOKEN}" "${URL}"
+                      python3 -I -c 'import json, sys; print("\n".join(json.load(open(sys.argv[1])).get("tags") or []))' \
+                          "${RUNNER_TEMP}/tei-tags-page.json" >> "${TAGS}"
+                      NEXT=$(sed -n 's/^[Ll]ink: *<\([^>]*\)>; *rel="next".*/\1/p' "${RUNNER_TEMP}/tei-tags-headers.txt" | tr -d '\r' | head -1)
+                  done
+                  VERDICT=$(deploy/tei-embed/newer-upstream.sh "${CURRENT}" < "${TAGS}")
+                  case "${VERDICT}" in
+                      "newer "*)
+                          NEWEST="${VERDICT#newer }"
+                          echo "::warning::upstream TEI ${NEWEST} is newer than the Dockerfile's ${CURRENT}: move the FROM line (digest and benchmark pin) in a pull request"
+                          echo "| newer upstream | \`${NEWEST}\` (the Dockerfile names \`${CURRENT}\`) |" >> "$GITHUB_STEP_SUMMARY"
+                          ;;
+                      current)
+                          echo "| newer upstream | none (\`${CURRENT}\` is the newest \`cpu-x.y.z\` of $(wc -l < "${TAGS}") tags, ${PAGES} pages) |" >> "$GITHUB_STEP_SUMMARY"
+                          ;;
+                      *)
+                          echo "::warning::the upstream tag list (${PAGES} pages) does not contain ${CURRENT}; no newer-release verdict"
+                          echo "| newer upstream | unknown (the tag list read did not contain \`${CURRENT}\`) |" >> "$GITHUB_STEP_SUMMARY"
+                          ;;
+                  esac
 
             - name: Find the image the Compose file pins today
               id: pinned
