@@ -903,6 +903,7 @@ export interface JobPayloadMap {
     'compliance-posture-summary-dispatch': CompliancePostureDispatchPayload;
     'legacy-access-pull': LegacyAccessPullPayload;
     'legacy-reconcile': LegacyReconcilePayload;
+    'agent-recert-packs-prepare': AgentRecertPacksPreparePayload;
     'identity-sync': IdentitySyncPayload;
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
     'identity-leaver-pass': IdentityLeaverPassPayload;
@@ -1104,6 +1105,27 @@ export interface LegacyReconcilePayload {
     snapshotId: string;
 }
 
+/**
+ * Prepare an AGENT access review's reviewer packs off the request (#5317).
+ * Enqueued by `requestAgentReviewPacks` when a campaign needs more pack runs
+ * than one request should hold (`SYNC_PACK_RUN_LIMIT`), with a job id fixed
+ * per campaign (`agentPackPreparationJobId`) so a second press finds the first.
+ */
+export interface AgentRecertPacksPreparePayload {
+    /** Tenant of the campaign. Required for isolation. */
+    tenantId: string;
+    accessReviewId: string;
+    /**
+     * The person who asked. The job runs as them, re-read when it runs
+     * (`resolveInitiatorContext`): a member who left, was deactivated or lost
+     * `access_reviews.create` or the admin tier in between is refused, and
+     * nothing is prepared on their behalf.
+     */
+    requestedByUserId: string;
+    /** The asking request's id, for log correlation. */
+    requestId?: string;
+}
+
 export interface IdentityLeaverPassPayload {
     tenantId: string;
     /**
@@ -1227,6 +1249,17 @@ export const JOB_DEFAULTS: Record<JobName, {
     removeOnComplete: number | boolean;
     removeOnFail: number | boolean;
 }> = {
+    'agent-recert-packs-prepare': {
+        // ONE attempt. Every refusal it can reach is a fact a retry seconds
+        // later does not change (the requester lost the key, the preparer was
+        // killed, the packs exist), and a retry of a run that broke would start
+        // every page's workflow run again. The page shows the failure and the
+        // person presses Prepare again, which removes the failed job first.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
+        removeOnFail: 200,
+    },
     'legacy-reconcile': {
         // NOT retried, same reasoning as the pull it follows. A refusal is
         // already a PARTIAL execution row carrying a named reason — the snapshot

@@ -1448,6 +1448,34 @@ executorRegistry.register('legacy-reconcile', async (payload) => {
     });
 });
 
+// #5317 — prepare a large AGENT campaign's reviewer packs. ON-DEMAND only:
+// enqueued by `requestAgentReviewPacks` behind POST …/agent-packs, never
+// scheduled. It runs as the person who asked, re-read now; a refusal throws,
+// fails the job with its sentence (the page shows it) and is never retried.
+executorRegistry.register('agent-recert-packs-prepare', async (payload, ctx) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentRecertPackPreparation } = await import('./agent-recert-pack-preparation');
+    const forwarded: NamesEveryField<JobPayload<'agent-recert-packs-prepare'>> = {
+        tenantId: payload.tenantId,
+        accessReviewId: payload.accessReviewId,
+        requestedByUserId: payload.requestedByUserId,
+        requestId: payload.requestId,
+    };
+    const r = await runAgentRecertPackPreparation(forwarded, async (progress) => {
+        // Forwarded to the BullMQ progress channel, which the packs route
+        // reads for the page's "preparing N of M".
+        if (ctx?.updateProgress) await ctx.updateProgress(progress);
+    });
+    return makeResult('agent-recert-packs-prepare', startedAt, startMs, r.packs, r.packs, 0, {
+        tenantId: payload.tenantId,
+        accessReviewId: r.accessReviewId,
+        packs: r.packs,
+        narrowings: r.narrowings,
+        runs: r.runIds.length,
+    });
+});
+
 // PR-2 — identity-sync: sync one Okta / Google Workspace connection.
 executorRegistry.register('identity-sync', async (payload) => {
     const startedAt = new Date().toISOString();

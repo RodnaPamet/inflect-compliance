@@ -13,8 +13,9 @@ const mockScopeOf = jest.fn();
 const mockSubmitConnected = jest.fn();
 const mockSubmitAgent = jest.fn();
 const mockCreateAgent = jest.fn();
-const mockPrepare = jest.fn();
+const mockRequestPacks = jest.fn();
 const mockGetPacks = jest.fn();
+const mockReadPreparation = jest.fn();
 const mockDecideNarrowing = jest.fn();
 const mockRecordSample = jest.fn();
 
@@ -25,8 +26,9 @@ jest.mock('@/app-layer/usecases/access-review-connected', () => ({
 jest.mock('@/app-layer/usecases/access-review-agent', () => ({
     submitAgentDecision: (...a: unknown[]) => mockSubmitAgent(...a),
     createAgentAccessReview: (...a: unknown[]) => mockCreateAgent(...a),
-    prepareAgentReviewPacks: (...a: unknown[]) => mockPrepare(...a),
+    requestAgentReviewPacks: (...a: unknown[]) => mockRequestPacks(...a),
     getAgentReviewPacks: (...a: unknown[]) => mockGetPacks(...a),
+    readAgentPackPreparation: (...a: unknown[]) => mockReadPreparation(...a),
     decideAgentNarrowing: (...a: unknown[]) => mockDecideNarrowing(...a),
     recordAgentDecisionSampleOutcome: (...a: unknown[]) => mockRecordSample(...a),
 }));
@@ -92,12 +94,34 @@ describe('the agent routes forward the campaign from the URL', () => {
 
     it('packs: GET reads, POST prepares', async () => {
         mockGetPacks.mockResolvedValue({ packs: [] });
-        mockPrepare.mockResolvedValue({ packs: 2 });
+        mockReadPreparation.mockResolvedValue(null);
+        mockRequestPacks.mockResolvedValue({ mode: 'PREPARED', packs: 2 });
         await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
         expect(mockGetPacks).toHaveBeenCalledWith(ctx, 'ar-1');
         const res = await call(preparePacks, { reviewId: 'ar-1' });
         expect(res.status).toBe(201);
-        expect(mockPrepare).toHaveBeenCalledWith(ctx, 'ar-1');
+        expect(mockRequestPacks).toHaveBeenCalledWith(ctx, 'ar-1');
+    });
+
+    it('packs: a campaign handed to the job answers 202 (#5317)', async () => {
+        mockRequestPacks.mockResolvedValue({ mode: 'QUEUED', accessReviewId: 'ar-1', jobId: 'agent-recert-packs-ar-1', runs: 9, alreadyQueued: false });
+        const res = await call(preparePacks, { reviewId: 'ar-1' });
+        expect(res.status).toBe(202);
+        expect(await res.json()).toMatchObject({ mode: 'QUEUED', jobId: 'agent-recert-packs-ar-1' });
+    });
+
+    it('packs: GET carries the preparation while there are no packs, and does not read the queue once there are', async () => {
+        mockGetPacks.mockResolvedValue({ packs: [] });
+        mockReadPreparation.mockResolvedValue({ state: 'RUNNING', done: 4, total: 12 });
+        const before = await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
+        expect(await before.json()).toMatchObject({ preparation: { state: 'RUNNING', done: 4, total: 12 } });
+        expect(mockReadPreparation).toHaveBeenCalledWith(ctx, 'ar-1');
+
+        mockReadPreparation.mockClear();
+        mockGetPacks.mockResolvedValue({ packs: [{ id: 'pk-1' }] });
+        const after = await call(readPacks, { reviewId: 'ar-1' }, undefined, 'GET');
+        expect(await after.json()).toMatchObject({ preparation: null });
+        expect(mockReadPreparation).not.toHaveBeenCalled();
     });
 
     it('a narrowing and a sample are answered with their campaign’s id', async () => {

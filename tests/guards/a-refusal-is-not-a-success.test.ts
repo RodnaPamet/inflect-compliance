@@ -132,9 +132,12 @@ describe('an executor that computes a refusal must report one', () => {
             carryingASignal: signalling.length,
             withoutASignal: sites.length - signalling.length,
         }).toEqual({
-            callSites: 54,
+            // 55 since #5317 added `agent-recert-packs-prepare`, whose
+            // refusals throw (the job fails with the sentence) rather than
+            // ride in `details`.
+            callSites: 55,
             carryingASignal: 10,
-            withoutASignal: 44,
+            withoutASignal: 45,
         });
     });
 
