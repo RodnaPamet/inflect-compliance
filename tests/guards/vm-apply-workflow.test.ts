@@ -614,7 +614,8 @@ describe('apply.sh over an IAP connection that drops', () => {
             ].join('\n'),
         );
         const run = (mode: Record<string, string>, script?: string) => {
-            const env: Record<string, string> = {
+            // Typed with NODE_ENV: the repo's ProcessEnv type requires it.
+            const env: Record<string, string> & { NODE_ENV: string } = {
                 NODE_ENV: 'test',
                 PATH: `${bin}:/usr/bin:/bin`,
                 HOME: home,
