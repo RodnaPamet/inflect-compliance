@@ -267,3 +267,104 @@ describe('5. the deletion wait is not bounded by the tool deadline it follows (#
         });
     });
 });
+
+describe('6. the deletion is outside the deadline race (#5304)', () => {
+    it('a tool that finishes just inside its deadline keeps its output while an ACCEPTED deletion polls', async () => {
+        // The deletion used to run inside the race, in the executor's
+        // `finally`. A tool that finished a moment before its deadline then
+        // lost to the deadline while the deletion was still polling, and its
+        // finished output was thrown away as a timeout.
+        const timers = makeTimers();
+        const decisions: unknown[] = [];
+        let releaseDeletion!: () => void;
+        let deletionPolling!: () => void;
+        const polling = new Promise<void>((r) => (deletionPolling = r));
+        const { transport } = fakeTransport({
+            execSandbox: async () => ({
+                exited: true as const,
+                exitCode: 0,
+                signal: null,
+                stdout: 'finished just in time',
+                stderr: '',
+            }),
+            deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_ACCEPTED' as const }),
+            awaitDeleted: () =>
+                new Promise<void>((resolve) => {
+                    releaseDeletion = resolve;
+                    deletionPolling();
+                }),
+        });
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+            },
+        });
+
+        const pending = run(exec, timers);
+        await polling;
+        // The deadline arrives while the deletion is still polling.
+        timers.fire();
+        releaseDeletion();
+
+        const result = await pending;
+        expect(result.stdout).toBe('finished just in time');
+        // The deletion was still waited for, and recorded, before the result
+        // reached the caller.
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_ACCEPTED',
+            settled: true,
+        });
+    });
+
+    it('a timed-out tool whose exec answers after the abort still has its sandbox deleted and recorded', async () => {
+        const timers = makeTimers();
+        let execStarted!: () => void;
+        const started = new Promise<void>((r) => (execStarted = r));
+        const { transport, calls } = fakeTransport({
+            // Answers only once the deadline has aborted it, WITH output: the
+            // late answer must not count, and must not skip the deletion.
+            execSandbox: ({ signal }) =>
+                new Promise((resolve) => {
+                    signal.addEventListener(
+                        'abort',
+                        () =>
+                            resolve({
+                                exited: true as const,
+                                exitCode: 0,
+                                signal: null,
+                                stdout: 'late',
+                                stderr: '',
+                            }),
+                        { once: true },
+                    );
+                    execStarted();
+                }),
+        });
+        let finished!: () => void;
+        const recorded = new Promise<void>((r) => (finished = r));
+        const decisions: unknown[] = [];
+        const exec = openShellToolExecutor(transport, {
+            onDecision: async (d) => {
+                decisions.push(d);
+                if (d.kind === 'sandbox-deleted') finished();
+            },
+        });
+
+        const pending = run(exec, timers);
+        const assertion = expect(pending).rejects.toThrow(ToolExecutionTimeoutError);
+        await started;
+        timers.fire();
+        await assertion;
+        await recorded;
+
+        expect(calls.deleted).toEqual(['sb-1']);
+        expect(decisions).toContainEqual({
+            kind: 'sandbox-deleted',
+            sandboxId: 'sb-1',
+            outcome: 'DELETION_OUTCOME_COMPLETED',
+            settled: true,
+        });
+    });
+});

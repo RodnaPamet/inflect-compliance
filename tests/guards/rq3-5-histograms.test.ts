@@ -99,8 +99,12 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
         expect(matrix).toMatch(/collisionRatio=\{cell\.collisionRatio\}/);
         expect(cell).toMatch(/risk-matrix-cell-collision/);
         // The marker is decorative; the words live in aria + tooltip.
-        expect(cell).toMatch(/same-cell loss estimates differ/);
-        expect(cell).toMatch(/check the histogram view/);
+        // The words are the catalogue's since #5309; the cell asks by key.
+        expect(cell).toMatch(/t\('cellCollisionAria', \{ ratio:/);
+        expect(cell).toMatch(/t\('cellCollision', \{ ratio:/);
+        const chart = require('../../messages/en.json').common.chart;
+        expect(chart.cellCollisionAria).toMatch(/same-cell loss estimates differ/);
+        expect(chart.cellCollision).toMatch(/check the histogram view/);
     });
 
     test('the histogram path: the callout list with the drill-down', () => {

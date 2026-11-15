@@ -9,7 +9,7 @@ urn: urn:inflect:mappingset:asvs-to-iso27001
 name: "OWASP ASVS 4.0.3 → ISO/IEC 27001:2022 (Annex A)"
 description: >
   Cross-framework traceability mapping from OWASP ASVS 4.0.3 Level 1 requirements to ISO/IEC 27001:2022 (Annex A) references.
-version: 1
+version: 2
 source_framework_ref: OWASP-ASVS-4.0.3
 target_framework_ref: ISO27001-2022
 
@@ -172,6 +172,10 @@ mapping_entries:
     target_ref: A.8.5
     strength: RELATED
     rationale: "ASVS V3.4.5 contributes to ISO 27001 Annex A A.8.5 (Secure authentication)."
+  - source_ref: "V3.7.1"
+    target_ref: A.8.5
+    strength: RELATED
+    rationale: "ASVS V3.7.1 contributes to ISO 27001 Annex A A.8.5 (Secure authentication)."
   # ── ASVS V4: Access Control → A.8.2 Privileged access rights ──
   - source_ref: "V4.1.1"
     target_ref: A.8.2
@@ -316,6 +320,14 @@ mapping_entries:
     strength: INTERSECT
     rationale: "ASVS V6.2.1 contributes to ISO 27001 Annex A A.8.24 (Use of cryptography)."
   # ── ASVS V7: Error Handling and Logging → A.8.15 Logging ──
+  - source_ref: "V7.1.1"
+    target_ref: A.8.15
+    strength: INTERSECT
+    rationale: "ASVS V7.1.1 contributes to ISO 27001 Annex A A.8.15 (Logging)."
+  - source_ref: "V7.1.2"
+    target_ref: A.8.15
+    strength: INTERSECT
+    rationale: "ASVS V7.1.2 contributes to ISO 27001 Annex A A.8.15 (Logging)."
   - source_ref: "V7.4.1"
     target_ref: A.8.15
     strength: INTERSECT

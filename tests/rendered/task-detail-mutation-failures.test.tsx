@@ -388,6 +388,10 @@ describe('task detail — the edit dialog’s assignee picker follows tasks.assi
         await waitFor(() =>
             expect(document.getElementById('task-panel-title')).toHaveValue(TASK.title),
         );
+        // The panel holds its fields disabled until its own GET has landed
+        // (#5309 item 10), and the title's value arrives from props before
+        // that. Loaded is when the form opens, so wait for that too.
+        await waitFor(() => expect(document.getElementById('task-panel-title')).toBeEnabled());
     }
 
     it('a built-in Editor can pick an assignee there', async () => {

@@ -70,6 +70,7 @@ import {
     saveTldrawCanvas,
     type SavedProcessMap,
 } from '@/lib/processes/tldraw-save';
+import { useVersionConflictCopy } from '@/lib/processes/version-conflict-toast';
 import {
     useCanvasAutosave,
     type CanvasAutosaveApi,
@@ -143,6 +144,9 @@ export function useTldrawCanvasAutosave({
     // Whether the last save reached `onSaved` — see `ManualSaveResult.saved`.
     const landedRef = useRef(false);
 
+    // The 409 toast's words, in the user's locale (#5316).
+    const conflictCopy = useVersionConflictCopy();
+
     const save = useCallback(async () => {
         // Narrowing, not a guard against being called while disabled — the
         // `enabled` computation below is what stops that, and this is what
@@ -165,6 +169,7 @@ export function useTldrawCanvasAutosave({
             // was when the edit that started the timer landed.
             canvas: serializeEditorCanvas(editor),
             toast,
+            conflictCopy,
             onConflict,
             onSaved: (saved) => {
                 versionRef.current = saved.version;
@@ -172,7 +177,7 @@ export function useTldrawCanvasAutosave({
                 onSaved(saved);
             },
         });
-    }, [editor, mapId, tenantSlug, toast, onConflict, onSaved]);
+    }, [editor, mapId, tenantSlug, toast, conflictCopy, onConflict, onSaved]);
 
     const autosave = useCanvasAutosave({
         enabled: enabled && Boolean(editor) && Boolean(mapId),

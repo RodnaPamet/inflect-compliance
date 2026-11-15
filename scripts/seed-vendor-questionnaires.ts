@@ -98,51 +98,70 @@ async function seedFixtureForTenant(tenantId: string, fixture: Fixture): Promise
     });
     if (existing) return false; // idempotent — already seeded for this tenant.
 
-    const tpl = await prisma.vendorAssessmentTemplate.create({
-        data: {
-            tenantId,
-            key: fixture.key,
-            version: 1,
-            isLatestVersion: true,
-            isPublished: true,
-            isGlobal: true,
-            name: fixture.name,
-            description: fixture.description,
-            scoringConfigJson: fixture.scoringConfig as object,
-            createdByUserId: null,
-        },
-    });
-
-    let sOrder = 0;
-    for (const section of fixture.sections) {
-        const sec = await prisma.vendorAssessmentTemplateSection.create({
+    // ONE TRANSACTION for the template, its sections and its questions
+    // (#5654). The idempotency gate above reads only the TEMPLATE row, and the
+    // template was written first, so an interrupted run left it present and
+    // `isPublished` with some or none of its sections — and every later start
+    // found it, returned false, and reported "already present". A tenant kept a
+    // published, incomplete questionnaire permanently.
+    //
+    // `entrypoint.sh` runs this on EVERY container start and swallows the exit
+    // code ("non-fatal"), so the interruption is ordinary: Watchtower replacing
+    // the container, the database dropping the connection, one question
+    // violating a constraint.
+    //
+    // It also fixes the concurrent case rather than only the interrupted one.
+    // Two replicas starting together can both pass the gate; today the loser
+    // can write a partial tree before hitting the `tenantId_key_version`
+    // unique. In a transaction the loser's work rolls back and the winner's
+    // complete row stands.
+    await prisma.$transaction(async (tx) => {
+        const tpl = await tx.vendorAssessmentTemplate.create({
             data: {
                 tenantId,
-                templateId: tpl.id,
-                sortOrder: sOrder++,
-                title: section.title,
-                description: section.description,
-                weight: section.weight,
+                key: fixture.key,
+                version: 1,
+                isLatestVersion: true,
+                isPublished: true,
+                isGlobal: true,
+                name: fixture.name,
+                description: fixture.description,
+                scoringConfigJson: fixture.scoringConfig as object,
+                createdByUserId: null,
             },
         });
-        let qOrder = 0;
-        for (const q of section.questions) {
-            await prisma.vendorAssessmentTemplateQuestion.create({
+
+        let sOrder = 0;
+        for (const section of fixture.sections) {
+            const sec = await tx.vendorAssessmentTemplateSection.create({
                 data: {
                     tenantId,
                     templateId: tpl.id,
-                    sectionId: sec.id,
-                    sortOrder: qOrder++,
-                    prompt: q.prompt,
-                    answerType: q.answerType as never,
-                    required: q.required,
-                    weight: q.weight,
-                    optionsJson: q.options ?? undefined,
-                    riskPointsJson: q.riskPoints ?? undefined,
+                    sortOrder: sOrder++,
+                    title: section.title,
+                    description: section.description,
+                    weight: section.weight,
                 },
             });
+            let qOrder = 0;
+            for (const q of section.questions) {
+                await tx.vendorAssessmentTemplateQuestion.create({
+                    data: {
+                        tenantId,
+                        templateId: tpl.id,
+                        sectionId: sec.id,
+                        sortOrder: qOrder++,
+                        prompt: q.prompt,
+                        answerType: q.answerType as never,
+                        required: q.required,
+                        weight: q.weight,
+                        optionsJson: q.options ?? undefined,
+                        riskPointsJson: q.riskPoints ?? undefined,
+                    },
+                });
+            }
         }
-    }
+    });
     return true;
 }
 

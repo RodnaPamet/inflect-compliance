@@ -68,7 +68,13 @@ export interface AisvsQuestionnaireFixture {
 
 /**
  * Seed the questionnaire for ONE tenant. Idempotent: returns false when the
- * template already exists, so re-running is safe on a populated database.
+ * template already exists, so re-running is safe on a populated database —
+ * which holds because the writes are ONE TRANSACTION (#5654). They were not,
+ * and the gate reads only the TEMPLATE row, which was written first: an
+ * interrupted run left a published template with some or none of its sections,
+ * and every later run found it, returned false, and reported it as already
+ * present. `scripts/entrypoint.sh` runs the production seeder on every
+ * container start and swallows the exit code, so the interruption is ordinary.
  *
  * `VendorAssessmentTemplate` is RLS-tenant-scoped, so a "global" baseline is
  * still a per-tenant row — which is why this takes a tenantId rather than
@@ -92,71 +98,74 @@ export async function seedAisvsVendorQuestionnaire(
     });
     if (existing) return false;
 
-    const tpl = await prisma.vendorAssessmentTemplate.create({
-        data: {
-            tenantId,
-            key: fixture.key,
-            version: 1,
-            isLatestVersion: true,
-            isPublished: true,
-            isGlobal: true,
-            name: fixture.name,
-            description: `${fixture.description}\n\n${fixture.attribution}`,
-            scoringConfigJson: {
-                mode: 'WEIGHTED_AVERAGE',
-                // Percentages, DECLARED rather than implied — see
-                // ScoringConfig.thresholdScale. Undeclared, these were bracketed
-                // against a points-per-unit-weight average that never exceeds
-                // ~10, so every vendor auto-rated LOW.
-                thresholdScale: 'PERCENT',
-                ratingThresholds: [
-                    { rating: 'LOW', minScore: 0, maxScore: 25 },
-                    { rating: 'MEDIUM', minScore: 26, maxScore: 50 },
-                    { rating: 'HIGH', minScore: 51, maxScore: 75 },
-                    { rating: 'CRITICAL', minScore: 76, maxScore: 100 },
-                ],
-            },
-            createdByUserId,
-        },
-    });
-
-    let sOrder = 0;
-    for (const section of fixture.sections) {
-        const sec = await prisma.vendorAssessmentTemplateSection.create({
+    await prisma.$transaction(async (tx) => {
+        const tpl = await tx.vendorAssessmentTemplate.create({
             data: {
                 tenantId,
-                templateId: tpl.id,
-                sortOrder: sOrder++,
-                title: section.title,
-                description: section.conditional
-                    ? `Applies only to ${section.appliesTo} vendors — answer N/A otherwise.`
-                    : null,
-                weight: section.weight,
+                key: fixture.key,
+                version: 1,
+                isLatestVersion: true,
+                isPublished: true,
+                isGlobal: true,
+                name: fixture.name,
+                description: `${fixture.description}\n\n${fixture.attribution}`,
+                scoringConfigJson: {
+                    mode: 'WEIGHTED_AVERAGE',
+                    // Percentages, DECLARED rather than implied — see
+                    // ScoringConfig.thresholdScale. Undeclared, these were bracketed
+                    // against a points-per-unit-weight average that never exceeds
+                    // ~10, so every vendor auto-rated LOW.
+                    thresholdScale: 'PERCENT',
+                    ratingThresholds: [
+                        { rating: 'LOW', minScore: 0, maxScore: 25 },
+                        { rating: 'MEDIUM', minScore: 26, maxScore: 50 },
+                        { rating: 'HIGH', minScore: 51, maxScore: 75 },
+                        { rating: 'CRITICAL', minScore: 76, maxScore: 100 },
+                    ],
+                },
+                createdByUserId,
             },
         });
-        let qOrder = 0;
-        for (const q of section.questions) {
-            const isArchetype = q.type === 'ARCHETYPE';
-            await prisma.vendorAssessmentTemplateQuestion.create({
+
+        let sOrder = 0;
+        for (const section of fixture.sections) {
+            const sec = await tx.vendorAssessmentTemplateSection.create({
                 data: {
                     tenantId,
                     templateId: tpl.id,
-                    sectionId: sec.id,
-                    sortOrder: qOrder++,
-                    prompt: q.prompt,
-                    answerType: 'SINGLE_SELECT',
-                    // A conditional section's questions cannot be required — the
-                    // vendor may legitimately answer N/A to all of them — and the
-                    // archetype question drives the conditionals rather than
-                    // being scored itself.
-                    required: !section.conditional && !isArchetype,
-                    weight: q.weight,
-                    optionsJson: isArchetype ? ARCHETYPE_OPTIONS : SELECT_OPTIONS,
-                    riskPointsJson: isArchetype ? {} : SELECT_RISK,
+                    sortOrder: sOrder++,
+                    title: section.title,
+                    description: section.conditional
+                        ? `Applies only to ${section.appliesTo} vendors — answer N/A otherwise.`
+                        : null,
+                    weight: section.weight,
                 },
             });
+            let qOrder = 0;
+            for (const q of section.questions) {
+                const isArchetype = q.type === 'ARCHETYPE';
+                await tx.vendorAssessmentTemplateQuestion.create({
+                    data: {
+                        tenantId,
+                        templateId: tpl.id,
+                        sectionId: sec.id,
+                        sortOrder: qOrder++,
+                        prompt: q.prompt,
+                        answerType: 'SINGLE_SELECT',
+                        // A conditional section's questions cannot be required — the
+                        // vendor may legitimately answer N/A to all of them — and the
+                        // archetype question drives the conditionals rather than
+                        // being scored itself.
+                        required: !section.conditional && !isArchetype,
+                        weight: q.weight,
+                        optionsJson: isArchetype ? ARCHETYPE_OPTIONS : SELECT_OPTIONS,
+                        riskPointsJson: isArchetype ? {} : SELECT_RISK,
+                    },
+                });
+            }
         }
-    }
+    });
+
     return true;
 }
 

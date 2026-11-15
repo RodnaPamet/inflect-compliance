@@ -70,13 +70,18 @@ describe('output that becomes an action was already scanned', () => {
         // The second scan, which is what makes the missing one here a choice
         // rather than a gap.
         //
-        // The CALL, not the bare name: `createAgentProposal` occurs twice in
-        // that file (its import and its one call site), and a needle satisfied
-        // by the import would still pass with the call deleted — the assertion
-        // would then be claiming a second scan that no longer runs, which is
-        // the exact shape of the wrong comment this whole file exists to
-        // replace.
-        expect(read('src/lib/mcp/tools/propose-tools.ts')).toContain('await createAgentProposal(');
+        // The CALL, not the bare name: a needle satisfied by the import would
+        // still pass with the call deleted — the assertion would then be
+        // claiming a second scan that no longer runs, which is the exact shape
+        // of the wrong comment this whole file exists to replace.
+        //
+        // Since #5304 the scan is the queue's `prepareAgentProposal`, run over
+        // every item of a batch before any is written; `createAgentProposal`
+        // then writes the item it prepared. Both calls are asserted, the
+        // second at its one queueing site.
+        const proposeTools = read('src/lib/mcp/tools/propose-tools.ts');
+        expect(proposeTools).toContain('await prepareAgentProposal(');
+        expect(proposeTools).toContain('const proposal = await createAgentProposal(ctx, item);');
     });
 });
 

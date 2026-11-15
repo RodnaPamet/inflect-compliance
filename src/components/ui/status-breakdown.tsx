@@ -36,7 +36,8 @@
  *   size    — `sm` (compact toolbar row) | `md` (dashboard card).
  *   showDot — render a colored dot to the left of each label.
  *   showCount, showPercent — toggles for the right-edge labels.
- *   emptyState — ReactNode shown when total === 0 (default: "No data").
+ *   emptyState — ReactNode shown when total === 0 (default: `common.ui.noData`,
+ *                in the reader's language).
  */
 
 import { cn } from "@inflect/ui/lib/cn";
@@ -123,9 +124,7 @@ export function StatusBreakdown({
     showDot = true,
     showCount = true,
     showPercent = false,
-    emptyState = (
-        <p className="text-sm text-content-subtle">No data</p>
-    ),
+    emptyState,
     ariaLabel,
     className,
 }: StatusBreakdownProps) {
@@ -134,7 +133,11 @@ export function StatusBreakdown({
         total ?? items.reduce((sum, item) => sum + item.value, 0);
 
     if (computedTotal === 0 || items.length === 0) {
-        return <div className={className}>{emptyState}</div>;
+        return (
+            <div className={className}>
+                {emptyState ?? <p className="text-sm text-content-subtle">{t('noData')}</p>}
+            </div>
+        );
     }
 
     const barHeight = SIZE_BAR_HEIGHT[size];

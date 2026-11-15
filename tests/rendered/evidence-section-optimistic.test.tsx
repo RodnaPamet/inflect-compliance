@@ -124,3 +124,33 @@ describe('EvidenceUploadSection optimistic upload', () => {
         expect(screen.getByTestId('evidence-attached-link')).toHaveTextContent('report.pdf');
     });
 });
+
+describe('EvidenceUploadSection attached links (#5309)', () => {
+    it('renders a dangerous-scheme address as text, never as a link', async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                evidence: [],
+                links: [
+                    { id: 'l-bad', kind: 'LINK', url: 'javascript:alert(1)', note: 'Bad link' },
+                    { id: 'l-good', kind: 'LINK', url: 'https://example.com/report', note: 'Good link' },
+                ],
+            }),
+        });
+        render(
+            <EvidenceUploadSection
+                tenantSlug="acme"
+                linkField="taskId"
+                linkId="t1"
+                canWrite
+                listEndpoint="/tasks/t1/evidence"
+            />,
+        );
+
+        const good = await screen.findByText('Good link');
+        expect(good.closest('a')).toHaveAttribute('href', 'https://example.com/report');
+        const bad = screen.getByText('Bad link');
+        expect(bad.closest('a')).toBeNull();
+        expect(screen.getAllByTestId('evidence-attached-link')).toHaveLength(1);
+    });
+});

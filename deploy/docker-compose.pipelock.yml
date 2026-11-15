@@ -13,6 +13,10 @@
 #     -f docker-compose.prod.yml \
 #     -f docker-compose.pipelock.yml up -d
 #
+#   (The two --env-file flags are the BASE file's interpolation scope. This
+#   overlay interpolates nothing, and the container's environment comes from
+#   `env_file: ./.env.pipelock` alone.)
+#
 # ── WHY THIS IS NOT IN docker-compose.prod.yml ────────────────────────
 # It used to be, and that is precisely what made the canonical file
 # un-runnable (#2849). The service is defined but was never activated:
@@ -44,6 +48,13 @@
 #         openssl pkey -in pipelock-signing.key -pubout -out pipelock-signing.pub
 #   [ ] Put the PUBLIC half in /opt/inflect/.env.prod as
 #       PIPELOCK_PUBLIC_KEY (public half ONLY — the app verifies with it).
+#       That is the APP's file; pipelock itself never reads .env.prod.
+#   [ ] Create /opt/inflect/.env.pipelock (root-owned, mode 0600) from
+#       deploy/.env.pipelock.example: the upstream MCP target and the
+#       receipt-posting API key, and nothing else. The variable NAMES in
+#       that template that are marked UNCONFIRMED must be checked against
+#       the pinned release's documentation first. apply.sh refuses to act
+#       on this overlay without the file.
 #   [ ] Confirm the receipt endpoint POST /api/t/<slug>/agent-receipts
 #       accepts the daemon's receipt format for the pinned version.
 #
@@ -97,8 +108,17 @@ services:
     restart: unless-stopped
     depends_on:
       - app
+    # Its OWN environment file, never `.env.prod` (#5308, owner decision
+    # 2026-11-14). `env_file:` hands the container EVERY variable in the file,
+    # and `.env.prod` holds DATA_ENCRYPTION_KEY (the master key over every
+    # tenant's DEK), the database and Redis credentials and AUTH_SECRET: the
+    # whole key hierarchy, in a third-party image's environment. `.env.pipelock`
+    # holds only what pipelock needs; `deploy/.env.pipelock.example` lists it.
+    # apply.sh refuses to act on this overlay while the file is absent, and
+    # tests/guards/deploy-compose-canonical.test.ts fails if this service names
+    # `.env.prod` or a DATA_ENCRYPTION_KEY variable again.
     env_file:
-      - ./.env.prod
+      - ./.env.pipelock
     environment:
       PIPELOCK_MODE: "balanced" # detect + sign; switch to "strict" to block
       PIPELOCK_SIGNING_KEY_FILE: "/run/secrets/pipelock-signing.key"

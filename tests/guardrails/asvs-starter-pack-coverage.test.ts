@@ -55,9 +55,10 @@ const asvs = lib(ASVS);
 const chapters = asvs.framework.nodes.filter((n) => !n.assessable);
 const requirements = asvs.framework.nodes.filter((n) => n.assessable);
 
-// The authored counts — 259 requirements: 128 L1, 119 L2, 12 L3.
+// The authored counts — 259 requirements: 129 L1, 120 L2, 10 L3 (seven levels
+// corrected against the ASVS 4.0.3 table in #5316).
 const EXPECTED_REQUIREMENTS = 259;
-const EXPECTED_L1 = 128;
+const EXPECTED_L1 = 129;
 
 describe('ASVS 4.0.3 — library structure', () => {
     it('parses with ref_id OWASP-ASVS-4.0.3 and kind INDUSTRY_STANDARD', () => {
@@ -90,6 +91,21 @@ describe('ASVS 4.0.3 — library structure', () => {
     it('carries the expected number of L1 requirements', () => {
         const l1 = requirements.filter((r) => r.category === 'L1');
         expect(l1.length).toBe(EXPECTED_L1);
+    });
+
+    // #5316: these seven carried a level the ASVS 4.0.3 table does not give
+    // them, so the L1 pack left out three real L1 obligations and shipped an
+    // L2 one. A requirement's level is the lowest column ticked in the table.
+    it.each([
+        ['V2.4.5', 'L2'],
+        ['V2.6.1', 'L2'],
+        ['V3.7.1', 'L1'],
+        ['V7.1.1', 'L1'],
+        ['V7.1.2', 'L1'],
+        ['V11.1.6', 'L2'],
+        ['V14.2.4', 'L2'],
+    ])('%s carries the ASVS 4.0.3 level %s', (refId, level) => {
+        expect(requirements.find((r) => r.refId === refId)?.category).toBe(level);
     });
 
     it('every requirement ref_id is V-prefixed and parented to a chapter', () => {

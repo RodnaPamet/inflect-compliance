@@ -18,16 +18,22 @@
  * (`usecases/self-assessment`) consume it.
  */
 
-/** One ordered answer option, scored 0 (none) → 4 (leading). */
+/**
+ * One ordered answer option, scored 0 (none) → 4 (leading). Its label is UI
+ * copy and lives in the message catalogues, not here:
+ * `onboarding.sovereignty.questions.<questionId>.options.s<score>`.
+ */
 export interface SelfAssessmentOption {
-    label: string;
     score: 0 | 1 | 2 | 3 | 4;
 }
 
 export interface SelfAssessmentQuestion {
-    /** Stable id, e.g. `ds-1-01`. */
+    /**
+     * Stable id, e.g. `ds-1-01`. Also the message key: the question's text is
+     * `onboarding.sovereignty.questions.<id>.text` in `messages/<locale>.json`,
+     * so English and Bulgarian are read from one place each.
+     */
     id: string;
-    text: string;
     /** Exactly five ordered options, scores 0..4. */
     options: SelfAssessmentOption[];
 }
@@ -63,9 +69,9 @@ export interface SelfAssessment {
     dimensions: SelfAssessmentDimension[];
 }
 
-/** Build the five ordered options from five labels (scores 0..4). */
-function opts(labels: [string, string, string, string, string]): SelfAssessmentOption[] {
-    return labels.map((label, i) => ({ label, score: i as 0 | 1 | 2 | 3 | 4 }));
+/** The five ordered options, scores 0..4 (labels are in the message catalogues). */
+function opts(): SelfAssessmentOption[] {
+    return ([0, 1, 2, 3, 4] as const).map((score) => ({ score }));
 }
 
 export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
@@ -83,31 +89,11 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'EUCS',
             },
             questions: [
-                {
-                    id: 'ds-1-01',
-                    text: 'Do you know the legal jurisdiction(s) under which each production cloud provider operates?',
-                    options: opts(['None', 'Informal', 'Documented per-provider', 'Contractually asserted', 'Continuously monitored']),
-                },
-                {
-                    id: 'ds-1-02',
-                    text: "Are any workloads subject to non-EU extraterritorial law (e.g. US CLOUD Act) via the provider's parent company?",
-                    options: opts(['Unknown', 'Suspected / unassessed', 'Assessed & accepted', 'Mitigated via EU subsidiary/contract', 'Sovereign-cloud isolated']),
-                },
-                {
-                    id: 'ds-1-03',
-                    text: 'Have you evaluated a sovereign or EU-only cloud offering (EUCS "High", Gaia-X-labelled) for sensitive workloads?',
-                    options: opts(['Never', 'Aware', 'Evaluated', 'Piloted', 'In production for sensitive tiers']),
-                },
-                {
-                    id: 'ds-1-04',
-                    text: 'Is provider concentration risk (single-hyperscaler dependency) tracked as a formal risk?',
-                    options: opts(['No', 'Informal', 'On the risk register', 'With a mitigation plan', 'Multi-provider by design']),
-                },
-                {
-                    id: 'ds-1-05',
-                    text: "Are encryption keys for cloud-hosted sensitive data held under your sole control (HYOK/BYOK), outside the provider's jurisdiction?",
-                    options: opts(['Provider-managed', 'BYOK unassessed', 'BYOK in use', 'HYOK for sensitive tiers', 'HYOK + external KMS under EU control']),
-                },
+                { id: 'ds-1-01', options: opts() },
+                { id: 'ds-1-02', options: opts() },
+                { id: 'ds-1-03', options: opts() },
+                { id: 'ds-1-04', options: opts() },
+                { id: 'ds-1-05', options: opts() },
             ],
         },
         // ── Dimension 2 — Data Residency & Transfer Mechanisms ──
@@ -121,31 +107,11 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'GDPR Ch. V',
             },
             questions: [
-                {
-                    id: 'ds-2-01',
-                    text: 'Do you maintain an inventory of where each category of personal/sensitive data physically resides?',
-                    options: opts(['None', 'Partial', 'Complete inventory', 'Mapped to data classification', 'Continuously reconciled']),
-                },
-                {
-                    id: 'ds-2-02',
-                    text: 'For every cross-border transfer, is a valid GDPR Ch. V mechanism (adequacy, SCCs + TIA) in place?',
-                    options: opts(['Unknown', 'Some', 'All documented', 'All with transfer-impact assessments', 'Monitored & re-validated']),
-                },
-                {
-                    id: 'ds-2-03',
-                    text: 'Can you enforce data-residency constraints technically (region-pinning), not just contractually?',
-                    options: opts(['No', 'Contract-only', 'Region-pinned config', 'Enforced + drift alerting', 'Policy-as-code enforced']),
-                },
-                {
-                    id: 'ds-2-04',
-                    text: 'Have you assessed Data Act (EU 2023/2854) obligations around switching/portability and IoT data access?',
-                    options: opts(['Unaware', 'Aware', 'Gap-assessed', 'Remediation planned', 'Compliant']),
-                },
-                {
-                    id: 'ds-2-05',
-                    text: 'Are data-sharing arrangements with third parties governed under a Data Governance Act-aligned framework?',
-                    options: opts(['Ad hoc', 'Contracts only', 'Governed intermediary model', 'With audit trail', 'Fully DGA-aligned']),
-                },
+                { id: 'ds-2-01', options: opts() },
+                { id: 'ds-2-02', options: opts() },
+                { id: 'ds-2-03', options: opts() },
+                { id: 'ds-2-04', options: opts() },
+                { id: 'ds-2-05', options: opts() },
             ],
         },
         // ── Dimension 3 — Identity & Sovereignty of Access ──
@@ -159,31 +125,11 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'eIDAS 2.0',
             },
             questions: [
-                {
-                    id: 'ds-3-01',
-                    text: 'Is your primary identity provider (IdP) subject to EU jurisdiction and control?',
-                    options: opts(['Non-EU', 'Unassessed', 'Assessed', 'EU-hosted', 'EU-sovereign IdP']),
-                },
-                {
-                    id: 'ds-3-02',
-                    text: 'Are you tracking eIDAS 2.0 / EU Digital Identity Wallet readiness for customer or workforce identity?',
-                    options: opts(['No', 'Monitoring', 'Gap-assessed', 'Pilot', 'Integrated']),
-                },
-                {
-                    id: 'ds-3-03',
-                    text: 'Do you retain the ability to authenticate if a foreign IdP becomes unavailable (sanctions, outage)?',
-                    options: opts(['No fallback', 'Manual', 'Documented failover', 'Tested failover', 'Active-active EU fallback']),
-                },
-                {
-                    id: 'ds-3-04',
-                    text: 'Are privileged credentials to sovereignty-sensitive systems held outside foreign-controlled vaults?',
-                    options: opts(['No', 'Unassessed', 'Segregated', 'EU-controlled vault', 'Hardware-backed EU control']),
-                },
-                {
-                    id: 'ds-3-05',
-                    text: 'Is federation with external identity systems assessed for jurisdictional / supply-chain risk?',
-                    options: opts(['Never', 'Informal', 'Assessed', 'On risk register', 'Continuously monitored']),
-                },
+                { id: 'ds-3-01', options: opts() },
+                { id: 'ds-3-02', options: opts() },
+                { id: 'ds-3-03', options: opts() },
+                { id: 'ds-3-04', options: opts() },
+                { id: 'ds-3-05', options: opts() },
             ],
         },
         // ── Dimension 4 — Infrastructure Dependency & Exit-Readiness ──
@@ -197,31 +143,11 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'DORA Art 28',
             },
             questions: [
-                {
-                    id: 'ds-4-01',
-                    text: 'Do you maintain a documented, tested exit plan for each critical third-party platform?',
-                    options: opts(['None', 'Informal', 'Documented', 'Tested', 'Tested + RTO-bounded']),
-                },
-                {
-                    id: 'ds-4-02',
-                    text: 'Are critical software dependencies assessed for supplier jurisdiction / ownership?',
-                    options: opts(['No', 'Partial', 'SBOM-backed', 'With ownership mapping', 'Continuously monitored']),
-                },
-                {
-                    id: 'ds-4-03',
-                    text: 'Could you re-platform a critical workload off its current provider within your target RTO?',
-                    options: opts(['Unknown', '>Months', 'Weeks', 'Within RTO', 'Portable-by-design']),
-                },
-                {
-                    id: 'ds-4-04',
-                    text: 'Is open-source / open-standard substitutability a deliberate architecture criterion for new systems?',
-                    options: opts(['No', 'Occasional', 'Recommended', 'Mandated for critical', 'Enforced in review']),
-                },
-                {
-                    id: 'ds-4-05',
-                    text: 'Are ICT third-party concentration and single-points-of-failure tracked (DORA-style register)?',
-                    options: opts(['No', 'Informal', 'Register exists', 'Risk-scored', 'Board-reported']),
-                },
+                { id: 'ds-4-01', options: opts() },
+                { id: 'ds-4-02', options: opts() },
+                { id: 'ds-4-03', options: opts() },
+                { id: 'ds-4-04', options: opts() },
+                { id: 'ds-4-05', options: opts() },
             ],
         },
         // ── Dimension 5 — Regulatory Alignment & Certification ──
@@ -235,31 +161,11 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'NIS2',
             },
             questions: [
-                {
-                    id: 'ds-5-01',
-                    text: 'Do you know which EU digital regulations (NIS2, DORA, CRA, Data Act, AI Act) apply to you, and your status?',
-                    options: opts(['Unknown', 'Partial', 'Mapped', 'Gap-assessed', 'Tracked to closure']),
-                },
-                {
-                    id: 'ds-5-02',
-                    text: 'Are your cloud/service certifications aligned to EU schemes (EUCS, C5, SecNumCloud) where relevant?',
-                    options: opts(['None', 'Aware', 'Targeting', 'In audit', 'Certified']),
-                },
-                {
-                    id: 'ds-5-03',
-                    text: 'For connected products, have you assessed Cyber Resilience Act secure-by-design obligations?',
-                    options: opts(['N/A or unassessed', 'Aware', 'Gap-assessed', 'Remediation planned', 'Compliant']),
-                },
-                {
-                    id: 'ds-5-04',
-                    text: 'Is regulatory-horizon monitoring in place so new EU obligations are caught before enforcement dates?',
-                    options: opts(['Reactive', 'Ad hoc', 'Periodic review', 'Owned function', 'Tooled / continuous']),
-                },
-                {
-                    id: 'ds-5-05',
-                    text: 'Are sovereignty/residency requirements flowed down to your own suppliers contractually?',
-                    options: opts(['No', 'Some', 'Standard clauses', 'Audited', 'Monitored']),
-                },
+                { id: 'ds-5-01', options: opts() },
+                { id: 'ds-5-02', options: opts() },
+                { id: 'ds-5-03', options: opts() },
+                { id: 'ds-5-04', options: opts() },
+                { id: 'ds-5-05', options: opts() },
             ],
         },
         // ── Dimension 6 — Sovereign AI ──
@@ -273,43 +179,29 @@ export const DIGITAL_SOVEREIGNTY_ASSESSMENT: SelfAssessment = {
                 clauseRef: 'AI Act EU 2024/1689',
             },
             questions: [
-                {
-                    id: 'ds-6-01',
-                    text: 'Do you know the jurisdiction where each production AI model is hosted and trained?',
-                    options: opts(['Unknown', 'Partial', 'Documented', 'EU-hosted for sensitive', 'Sovereign-hosted']),
-                },
-                {
-                    id: 'ds-6-02',
-                    text: 'Is sensitive/personal data sent to AI providers assessed for transfer + jurisdictional exposure?',
-                    options: opts(['No', 'Informal', 'Assessed', 'Mitigated', 'EU-only inference']),
-                },
-                {
-                    id: 'ds-6-03',
-                    text: 'Have you evaluated EU / open-weight models as an alternative to non-EU proprietary APIs for sensitive use?',
-                    options: opts(['Never', 'Aware', 'Evaluated', 'Piloted', 'In production for sensitive tiers']),
-                },
-                {
-                    id: 'ds-6-04',
-                    text: 'Are AI systems classified against AI Act risk tiers, with sovereignty implications noted?',
-                    options: opts(['No', 'Started', 'Classified', 'With sovereignty notes', 'Integrated in AI risk register']),
-                },
-                {
-                    id: 'ds-6-05',
-                    text: 'Can you continue critical AI-dependent operations if a non-EU AI provider becomes unavailable?',
-                    options: opts(['No fallback', 'Manual', 'Documented', 'Tested fallback', 'EU-sovereign fallback']),
-                },
+                { id: 'ds-6-01', options: opts() },
+                { id: 'ds-6-02', options: opts() },
+                { id: 'ds-6-03', options: opts() },
+                { id: 'ds-6-04', options: opts() },
+                { id: 'ds-6-05', options: opts() },
             ],
         },
     ],
 };
 
-/** Maturity bands — LABEL only, no legal-compliance claim. */
+/**
+ * Maturity bands — a LABEL only, no legal-compliance claim. `key` is the
+ * message key the UI renders (`onboarding.sovereignty.bands.<key>`); the
+ * scorer returns the key, never English text.
+ */
 export const SOVEREIGNTY_MATURITY_BANDS = [
-    { max: 1, label: 'Exposed' },
-    { max: 2, label: 'Emerging' },
-    { max: 3, label: 'Managed' },
-    { max: 4.0001, label: 'Sovereign-ready' },
+    { max: 1, key: 'exposed' },
+    { max: 2, key: 'emerging' },
+    { max: 3, key: 'managed' },
+    { max: 4.0001, key: 'sovereignReady' },
 ] as const;
+
+export type SovereigntyBandKey = (typeof SOVEREIGNTY_MATURITY_BANDS)[number]['key'];
 
 /** A dimension scoring below this yields a suggested risk + control. */
 export const SOVEREIGNTY_GAP_THRESHOLD = 2;

@@ -74,6 +74,7 @@ jest.mock('@/lib/storage', () => ({
 jest.mock('@/lib/cache/list-cache', () => ({
     cachedListRead: jest.fn(),
     bumpEntityCacheVersion: jest.fn(async () => undefined),
+    bumpTenantCacheVersion: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/app-layer/events/audit', () => ({

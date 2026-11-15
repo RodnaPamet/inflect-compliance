@@ -18,7 +18,9 @@
  *     `roles/iam.serviceAccountViewer` — the `code`
  *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
- *     `admin:harness_ingest` scope and nothing else (contract, Transport).
+ *     `admin:harness_ingest` scope (contract, Transport), plus `mcp:read` when
+ *     the `inflect-register` source is configured, because that source reads
+ *     the register with the same key; nothing else.
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
  *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, GitHub
  *     Actions on `api.github.com`, Google Cloud on `iam.googleapis.com` with its token from
@@ -336,7 +338,11 @@ export const ScannerConfigSchema = z
             .object({
                 baseUrl: z.string().refine((v) => httpsOrigin(v) !== null, 'baseUrl must be an https origin'),
                 tenantSlug: slug,
-                /** An API key with the `admin:harness_ingest` scope and no other. */
+                /**
+                 * An API key with the `admin:harness_ingest` scope, plus `mcp:read`
+                 * when the `inflect-register` source is configured (it reads the
+                 * register with this key), and no other scope.
+                 */
                 apiKeyEnv: envName,
             })
             .strict(),

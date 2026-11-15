@@ -317,8 +317,9 @@ export interface DataTableProps<T extends TableRowData> {
    *
    * Behaviour:
    *   - `undefined` (default) — auto: virtualize when `data.length`
-   *     exceeds the default threshold (`VIRTUALIZE_DEFAULT_THRESHOLD`,
-   *     currently 100). Pages opt in by doing nothing.
+   *     exceeds `VIRTUALIZE_DEFAULT_THRESHOLD` (1000 — see the
+   *     constant for why it is not lower). A table that should window
+   *     at fewer rows opts in with `true` or `{ threshold: N }`.
    *   - `true`               — force virtualization on regardless of
    *                            row count.
    *   - `false`              — force virtualization OFF. Use this on
@@ -348,10 +349,12 @@ export interface DataTableProps<T extends TableRowData> {
 
   /**
    * Explicit body height (px) when virtualization is on. When
-   * omitted, the body fills its parent via AutoSizer — which is the
-   * production default (use inside `<ListPageShell.Body>` or any
-   * sized flex parent). Set this only when AutoSizer can't reach a
-   * sized ancestor (e.g. test harnesses, or ad-hoc layouts).
+   * omitted, the body fills its parent — react-window sizes itself
+   * with its own ResizeObserver — which is the production default
+   * (use inside `<ListPageShell.Body>` or any sized flex parent). Set
+   * this only when there is no sized ancestor to measure (test
+   * harnesses, whose ResizeObserver never fires, or ad-hoc layouts);
+   * it is the list's height before the first measurement.
    */
   virtualHeight?: number;
 }

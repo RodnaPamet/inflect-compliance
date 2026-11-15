@@ -474,6 +474,35 @@ sources, so the service passed every check short of actually starting it.
 Enabling pipelock means satisfying the preconditions listed in that file's
 header and adding a second `-f` flag.
 
+**Pipelock reads `/opt/inflect/.env.pipelock`, never `.env.prod`** (#5308,
+owner decision 2026-11-14). `env_file:` hands a container every variable in the
+file, and `.env.prod` holds `DATA_ENCRYPTION_KEY`, the database and Redis
+credentials and `AUTH_SECRET`; loading it would put the whole key hierarchy
+into a third-party image's environment. The operator step before enabling:
+
+1. Create the file root-owned, mode 0600:
+   `sudo install -m 0600 -o root -g root /dev/null /opt/inflect/.env.pipelock`.
+2. Fill it from `deploy/.env.pipelock.example`: the upstream MCP target and the
+   API key pipelock posts receipts with, and nothing else. Several variable
+   names in that template are marked `UNCONFIRMED__`: nothing in this
+   repository says what the pinned release calls them, so confirm each against
+   that release's documentation before enabling. Never start the file as a copy
+   of `.env.prod`.
+3. The receipt route, `POST /api/t/<slug>/agent-receipts`, maps to no API-key
+   scope, so only a key with full access (`*`) reaches it today. Mapping it to a
+   scope is an open question; settle it before minting a `*` key for a
+   third-party daemon.
+
+`deploy/apply.sh` refuses to act on the overlay (exit 2) while the file is
+absent from the VM. It reads presence only, never the file. The overlay is in
+play only when `apply.sh` is pointed at it (`COMPOSE_BASENAME=docker-compose.pipelock.yml`
+with `I_KNOW_THIS_IS_NOT_THE_CANONICAL_COMPOSE=1`); the canonical set never
+includes it. `deploy/check-drift.sh` reports `.env.pipelock` as a credential
+whenever it is readable beyond root, by its name and whatever it holds, as it
+does `.env`, `.env.prod` and `.env.scanner`; the template is public.
+`tests/guards/deploy-compose-canonical.test.ts` fails if the overlay names
+`.env.prod` or a `DATA_ENCRYPTION_KEY` variable again.
+
 ### The other overlays, and what is not an overlay any more
 
 Two more opt-in overlays add services to the same Compose project on the VM.
@@ -533,6 +562,14 @@ That template describes the Epic OI-1 AWS model — Secrets Manager, RDS,
 ElastiCache, resolved by `scripts/bootstrap-env-from-secrets.sh`. The GCP VM
 does not use any of it; its secrets live in the two plaintext host files above.
 Read the template as documentation of the AWS path, not of this host.
+
+The VM nevertheless keeps a copy of it at `/opt/inflect/.env.prod.example`.
+`check-drift.sh` treats that copy as public only while it is byte-identical to
+the repository's, because it carries credential-shaped placeholders. So a change
+to the template (its `RATE_LIMIT_MODE` became `memory` in #5308, `redis` being
+a value the env schema refuses) makes the VM copy read as an exposed credential
+until it is replaced. The `VM apply` action `refresh-env-prod-example` replaces
+it with the repository's copy, keeping the previous one root-only.
 
 ---
 
@@ -858,6 +895,7 @@ owner's to make.
 | `retire-lab-containers` | `deploy/vm-apply/remote.sh`: `docker compose rm --stop --force` of the lab's three services, volumes kept, never `down` |
 | `recreate-legacy-mcp-proving` | `deploy/vm-apply/remote.sh`: checks the bundle and the token are present, validates the repo overlay, keeps the previous one, installs it and recreates that one service |
 | `retire-capacity-recorder` | `deploy/vm-apply/remote.sh`: stops and disables the capacity recorder's timer and removes its units, script and rows (installed by `host-config-apply`) |
+| `refresh-env-prod-example` | `deploy/vm-apply/remote.sh`: replaces `/opt/inflect/.env.prod.example`, the VM's copy of the public template, with the repository's, keeping the previous copy root-only; it writes no other file, and prints hashes, never content |
 
 Every action that writes runs its preflight first in the same run and writes
 only if it passed. The input is a choice, never a command, a path, a host or a

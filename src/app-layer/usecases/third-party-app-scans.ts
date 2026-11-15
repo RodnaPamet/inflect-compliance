@@ -90,6 +90,7 @@ import { recordThirdPartyAppScanOutcome } from '@/lib/observability/integration-
 import { FindingRepository } from '../repositories/FindingRepository';
 import { harnessKeyFingerprint, harnessSignedMessage } from '@/lib/agentic/harness-contract';
 import { firstSecretShapedMember } from '@/lib/agentic/harness-findings';
+import { thirdPartyAppLinks } from '@/lib/agentic/third-party-app-links';
 import {
     thirdPartyScanCompleteness,
     type ThirdPartyAppInventoryView,
@@ -216,6 +217,28 @@ export async function ingestThirdPartyAppReport(ctx: RequestContext, raw: string
     }
 }
 
+/**
+ * The publisher's ids for an application, as the report states them: what the
+ * Integrations tab builds its vendor-console links from
+ * (`src/lib/agentic/third-party-app-links.ts`). Identifiers, never secrets.
+ * Entra and Okta name the application by `appId`; GitHub by its numeric
+ * `appId` (stored as a string) and its slug. A member the report left null is
+ * stored null.
+ */
+function publisherIdsOf(a: IntegrationsReportApplication): {
+    publisherAppId: string | null;
+    publisherAppSlug: string | null;
+} {
+    switch (a.sourceKind) {
+        case 'github-integrations':
+            return { publisherAppId: a.appId === null ? null : String(a.appId), publisherAppSlug: a.appSlug };
+        case 'entra-integrations':
+            return { publisherAppId: a.appId, publisherAppSlug: null };
+        case 'okta-integrations':
+            return { publisherAppId: a.appId, publisherAppSlug: null };
+    }
+}
+
 /** A permission as stored: names and classes only, never a role id. */
 function storedPermission(p: PlannedPermission) {
     return { via: p.via, resourceAppId: p.resourceAppId, name: p.name, classes: p.classes };
@@ -284,13 +307,21 @@ async function record(
     });
 
     // Applications: new ones in one insert; known ones stamped seen in one
-    // update, and renamed one by one only where the directory renamed them.
+    // update, and renamed (or their publisher ids restamped) one by one only
+    // where the directory changed them. The latest scan wins, null included.
     const ids = body.applications.map((a) => a.id);
     const known = ids.length === 0
         ? []
         : await db.discoveredThirdPartyApp.findMany({
             where: { tenantId: ctx.tenantId, applicationId: { in: ids } },
-            select: { id: true, applicationId: true, displayName: true, sourceKind: true },
+            select: {
+                id: true,
+                applicationId: true,
+                displayName: true,
+                sourceKind: true,
+                publisherAppId: true,
+                publisherAppSlug: true,
+            },
             take: ids.length,
         });
     const knownByApplicationId = new Map(known.map((k) => [k.applicationId, k]));
@@ -302,6 +333,7 @@ async function record(
                 applicationId: a.id,
                 sourceKind: a.sourceKind,
                 displayName: applicationName(a),
+                ...publisherIdsOf(a),
                 firstSeenScanId: scan.id,
                 lastSeenScanId: scan.id,
                 firstSeenAt: now,
@@ -318,10 +350,17 @@ async function record(
     for (const a of body.applications) {
         const k = knownByApplicationId.get(a.id);
         const name = applicationName(a);
-        if (!k || (k.displayName === name && k.sourceKind === a.sourceKind)) continue;
+        const publisher = publisherIdsOf(a);
+        if (
+            !k
+            || (k.displayName === name
+                && k.sourceKind === a.sourceKind
+                && k.publisherAppId === publisher.publisherAppId
+                && k.publisherAppSlug === publisher.publisherAppSlug)
+        ) continue;
         await db.discoveredThirdPartyApp.update({
             where: { id: k.id },
-            data: { displayName: name, sourceKind: a.sourceKind },
+            data: { displayName: name, sourceKind: a.sourceKind, ...publisher },
         });
     }
     const rows = ids.length === 0
@@ -683,7 +722,15 @@ export async function getThirdPartyAppInventory(
                     grantsJson: true,
                     publisherVerified: true,
                     ownerCount: true,
-                    app: { select: { applicationId: true, sourceKind: true, displayName: true } },
+                    app: {
+                        select: {
+                            applicationId: true,
+                            sourceKind: true,
+                            displayName: true,
+                            publisherAppId: true,
+                            publisherAppSlug: true,
+                        },
+                    },
                 },
                 orderBy: [{ scanId: 'asc' }, { appId: 'asc' }],
                 take: ITEM_CAP + 1,
@@ -750,6 +797,11 @@ export async function getThirdPartyAppInventory(
                 .map((i) => {
                     const kind = i.app.sourceKind;
                     const names = namesOf(i.grantsJson);
+                    const links = thirdPartyAppLinks({
+                        applicationId: i.app.applicationId,
+                        publisherAppId: i.app.publisherAppId,
+                        publisherAppSlug: i.app.publisherAppSlug,
+                    });
                     return {
                         appId: i.appId,
                         applicationId: i.app.applicationId,
@@ -773,6 +825,8 @@ export async function getThirdPartyAppInventory(
                         signIn: knownState(kind, 'INTEGRATION_UNUSED', i.usage !== 'NOT_CONCLUDED'),
                         daysSinceSignIn: i.daysSinceSignIn,
                         openFindings: findingsBySubject.get(i.app.applicationId) ?? [],
+                        manageUrl: links.manageUrl,
+                        aboutUrl: links.aboutUrl,
                     };
                 })
                 .sort(

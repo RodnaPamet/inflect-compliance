@@ -198,15 +198,17 @@ export function requirementRowsOf(nodes: readonly TreeNodeLike[]): FetchedCandid
 }
 
 /**
- * Per-type fetch routine. Returns a Promise of an array of
- * `FetchedCandidate` rows. Callers needn't know which API path is
+ * Per-type fetch routine. Resolves to the `FetchedCandidate` rows and
+ * whether the load FAILED — a non-2xx (a refusal, a server error) or a
+ * network failure — which is not the same as a type with no rows, and the
+ * picker says so (#5309). Callers needn't know which API path is
  * involved — the picker hides that detail.
  */
 async function fetchCandidates(
     tenantSlug: string,
     kind: EntityPickerKind,
     extraQuery?: Record<string, string>,
-): Promise<FetchedCandidate[]> {
+): Promise<{ rows: FetchedCandidate[]; failed: boolean }> {
     const base = `/api/t/${tenantSlug}`;
     const qs = extraQuery
         ? '?' +
@@ -263,16 +265,16 @@ async function fetchCandidates(
             // global "all requirements" endpoint doesn't exist.
             // The consumer must pass `frameworkKey` in extraQuery.
             const frameworkKey = extraQuery?.frameworkKey;
-            if (!frameworkKey) return [];
+            if (!frameworkKey) return { rows: [], failed: false };
             url = `${base}/frameworks/${frameworkKey}/tree`;
             break;
         }
         default:
-            return [];
+            return { rows: [], failed: false };
     }
     try {
         const res = await fetch(url, { credentials: 'same-origin' });
-        if (!res.ok) return [];
+        if (!res.ok) return { rows: [], failed: true };
         const json = await res.json();
         // Tenant list APIs return `{ rows }`. The framework tree returns a
         // `FrameworkTreePayload` (`{ framework, nodes, totals }`) with the
@@ -280,17 +282,20 @@ async function fetchCandidates(
         // `requirements` the route never sends, so the list was always
         // empty (#5129).
         if (kind === 'FRAMEWORK_REQUIREMENT') {
-            return json && Array.isArray(json.nodes)
-                ? requirementRowsOf(json.nodes as TreeNodeLike[])
-                : [];
+            return {
+                rows: json && Array.isArray(json.nodes)
+                    ? requirementRowsOf(json.nodes as TreeNodeLike[])
+                    : [],
+                failed: false,
+            };
         }
-        if (Array.isArray(json)) return json as FetchedCandidate[];
+        if (Array.isArray(json)) return { rows: json as FetchedCandidate[], failed: false };
         if (json && Array.isArray(json.rows)) {
-            return json.rows as FetchedCandidate[];
+            return { rows: json.rows as FetchedCandidate[], failed: false };
         }
-        return [];
+        return { rows: [], failed: false };
     } catch {
-        return [];
+        return { rows: [], failed: true };
     }
 }
 
@@ -310,7 +315,7 @@ export async function fetchEntityLabel(
     untitled: string,
     extraQuery?: Record<string, string>,
 ): Promise<string | null> {
-    const rows = await fetchCandidates(tenantSlug, kind, extraQuery);
+    const { rows } = await fetchCandidates(tenantSlug, kind, extraQuery);
     return (
         rowsFromResponse(kind, rows, untitled).find((r) => r.id === entityId)
             ?.label ?? null
@@ -363,9 +368,12 @@ export function EntityPicker({
 }: EntityPickerProps) {
     const t = useTranslations('common');
     const placeholder = placeholderProp ?? t('ui.select');
-    const entityWord = entityType.toLowerCase().replace(/_/g, ' ');
+    // The kind's plural in the reader's language — never the enum with an
+    // "s" on the end ("policys") or an English noun in a Bulgarian sentence.
+    const entityWord = t(`ui.entityPlural.${entityType}`);
     const [candidates, setCandidates] = useState<CandidateRow[]>([]);
     const [loading, setLoading] = useState(false);
+    const [failed, setFailed] = useState(false);
     const extraKey = useMemo(
         () => (extraQuery ? JSON.stringify(extraQuery) : ''),
         [extraQuery],
@@ -379,14 +387,16 @@ export function EntityPicker({
         let cancelled = false;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLoading(true);
+        setFailed(false);
         void fetchCandidates(
             tenantSlug,
             entityType,
             extraQuery,
         )
-            .then((rows) => {
+            .then(({ rows, failed: loadFailed }) => {
                 if (cancelled) return;
                 setCandidates(rowsFromResponse(entityType, rows, t('ui.untitled')));
+                setFailed(loadFailed);
             })
             .finally(() => {
                 if (cancelled) return;
@@ -421,9 +431,11 @@ export function EntityPicker({
             placeholder={
                 loading
                     ? t('ui.loading')
-                    : options.length === 0
-                      ? t('ui.noEntitiesAvailable', { entity: entityWord })
-                      : placeholder
+                    : failed
+                      ? t('ui.entitiesLoadFailed', { entity: entityWord })
+                      : options.length === 0
+                        ? t('ui.noEntitiesAvailable', { entity: entityWord })
+                        : placeholder
             }
             emptyState={t('ui.noEntitiesMatch', { entity: entityWord })}
             matchTriggerWidth

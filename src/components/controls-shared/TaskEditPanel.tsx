@@ -170,6 +170,11 @@ export function TaskEditPanel({
     const [loadError, setLoadError] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const loadedRef = useRef(false);
+    // `loadedRef` gates commits; `loaded` gates the FORM. Typing before the
+    // GET lands would otherwise be skipped by every commit and then replaced
+    // by the stored values when the seed arrives, with nothing saved (#5309).
+    const [loaded, setLoaded] = useState(false);
+    const blocked = loadError || !loaded;
 
     // The autosave machine (debounce, status, latest-value ref, unmount
     // cleanup) lives in useAutosaveFields — shared with ControlEditPanel,
@@ -229,6 +234,7 @@ export function TaskEditPanel({
     useEffect(() => {
         let active = true;
         loadedRef.current = false;
+        setLoaded(false);
         setLoadError(false);
         fetch(base)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error("load failed"))))
@@ -245,6 +251,7 @@ export function TaskEditPanel({
                     dueAt: t.dueAt ? String(t.dueAt).slice(0, 10) : "",
                 });
                 loadedRef.current = true;
+                setLoaded(true);
             })
             .catch(() => {
                 if (!active) return;
@@ -353,7 +360,7 @@ export function TaskEditPanel({
                 every save until `loadedRef` is set, so editing must be
                 visibly blocked (never let edits look saved when they can't be). */}
             <div className="space-y-default" data-testid="task-edit-form">
-                <fieldset className="space-y-default" disabled={!canWrite || loadError}>
+                <fieldset className="space-y-default" disabled={!canWrite || blocked}>
                     <FormField label={tx("detail.fields.title")} required>
                         <Input
                             id="task-panel-title"
@@ -383,7 +390,7 @@ export function TaskEditPanel({
                             options={STATUS_OPTIONS}
                             selected={STATUS_OPTIONS.find((o) => o.value === (pendingTerminalStatus ?? status)) ?? null}
                             setSelected={(o) => handleStatusChange(o?.value ?? status)}
-                            disabled={!canWrite || loadError}
+                            disabled={!canWrite || blocked}
                             hideSearch
                             matchTriggerWidth
                             forceDropdown
@@ -494,7 +501,7 @@ export function TaskEditPanel({
                             id="task-panel-assignee"
                             name="assigneeUserId"
                             tenantSlug={tenantSlug}
-                            disabled={!mayAssign || loadError}
+                            disabled={!mayAssign || blocked}
                             size="sm"
                             selectedId={assigneeId || null}
                             onChange={(userId) => {
@@ -505,7 +512,7 @@ export function TaskEditPanel({
                         />
                     </FormField>
                 </fieldset>
-                {canWrite && !loadError && (
+                {canWrite && !blocked && (
                     <p
                         className="text-xs text-content-muted"
                         data-testid="task-edit-autosave-status"

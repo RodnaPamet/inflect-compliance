@@ -241,7 +241,7 @@ describe('Modal — focus + dismissal', () => {
         // needle was satisfied by any one of them — the close-button gate on
         // the line below would have kept this test green with the Escape guard
         // deleted, which is the half the test is named for.
-        expect(MODAL_SRC).toMatch(/if \(preventDefaultClose && !dragged\) return;/);
+        expect(MODAL_SRC).toMatch(/const closeModal = \(\) => \{\s*if \(preventDefaultClose\) return;/);
         // Close button is hidden too when preventDefaultClose is set.
         expect(MODAL_SRC).toMatch(/showCloseButton\s*&&\s*!preventDefaultClose/);
     });
@@ -254,10 +254,14 @@ describe('Modal — focus + dismissal', () => {
         expect(MODAL_SRC).toMatch(/focus-visible:ring-ring/);
     });
 
-    it('drag dismissal still closes the drawer variant (mobile UX)', () => {
-        // The onOpenChange handler for the drawer passes `dragged: true`
-        // so preventDefaultClose-guarded modals still close when dragged.
-        expect(MODAL_SRC).toMatch(/closeModal\(\s*\{\s*dragged:\s*true\s*\}\s*\)/);
+    it('the drawer variant takes the same guard — no dismissal bypasses it (#5309)', () => {
+        // The drawer's close used to pass `dragged: true`, meant to let a
+        // drag through. vaul calls that one handler for a backdrop tap and
+        // Escape as well, so it let every dismissal of a busy modal through:
+        // a running ConfirmDialog closed and fired `onCancel`. There is no
+        // exemption now. The behaviour is held by
+        // tests/rendered/confirm-dialog-drawer-pending.test.tsx.
+        expect(MODAL_SRC).not.toMatch(/dragged/);
     });
 });
 

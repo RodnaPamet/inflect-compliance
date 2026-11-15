@@ -100,11 +100,19 @@ jest.mock('@/app-layer/usecases/agent-proposals', () => ({
     // The real schema check: the funnel validates every item before it queues
     // any (#5304), and a stub here would let a malformed item through unseen.
     parseProposalPayload: jest.requireActual('@/app-layer/usecases/agent-proposals').parseProposalPayload,
+    // The funnel prepares (sanitises and guards) every item before it writes
+    // any (#5304). The stub hands back a handle carrying the input it was given,
+    // so the pin assertions below read what the funnel asked to queue.
+    prepareAgentProposal: jest.fn(async (_ctx: unknown, input: { kind: string }) => ({
+        kind: input.kind,
+        quarantined: false,
+        input,
+    })),
 }));
 
 import prisma from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit';
-import { createAgentProposal } from '@/app-layer/usecases/agent-proposals';
+import { createAgentProposal, prepareAgentProposal } from '@/app-layer/usecases/agent-proposals';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import type { AgentPolicyCardValue } from '@/lib/agentic/policy-card';
 import type { PolicyCardInForce } from '@/lib/agentic/policy-card-evaluation';
@@ -130,6 +138,7 @@ const findFirst = (prisma as any).tenantApiKey.findFirst as jest.Mock;
 const auditRows = appendAuditEntry as unknown as jest.Mock;
 const reserve = reserveDailyAction as unknown as jest.Mock;
 const proposals = createAgentProposal as unknown as jest.Mock;
+const prepares = prepareAgentProposal as unknown as jest.Mock;
 
 const TENANT = 'tenant-1';
 const API_KEY_ID = 'key-1';
@@ -521,7 +530,7 @@ describe('the propose funnel refuses before it writes', () => {
         });
 
         expect(proposals).toHaveBeenCalledTimes(1);
-        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        const [, arg] = prepares.mock.calls[0] as [unknown, { policyCardVersion: number }];
         expect(arg.policyCardVersion).toBe(NO_POLICY_CARD);
         expect(arg.policyCardVersion).not.toBeNull();
     });
@@ -536,7 +545,42 @@ describe('the propose funnel refuses before it writes', () => {
             items: [{ severity: 'LOW', type: 'OBSERVATION', title: 'x' }],
         });
 
-        const [, arg] = proposals.mock.calls[0] as [unknown, { policyCardVersion: number }];
+        const [, arg] = prepares.mock.calls[0] as [unknown, { policyCardVersion: number }];
         expect(arg.policyCardVersion).toBeGreaterThan(NO_POLICY_CARD);
+    });
+
+    it('a batch refused while it is prepared queues nothing and spends no policy-card action (#5304)', async () => {
+        const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
+        const item = { severity: 'LOW', type: 'OBSERVATION', title: 'x' };
+        prepares
+            .mockImplementationOnce(async (_ctx: unknown, input: { kind: string }) => ({
+                kind: input.kind,
+                quarantined: false,
+            }))
+            .mockRejectedValueOnce(new Error('ai_guard_blocked: egress malicious'));
+
+        await expect(
+            runProposeTool(inv, 'propose_finding', { items: [item, item, item] }),
+        ).rejects.toThrow(/ai_guard_blocked/);
+        expect(proposals).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+    });
+
+    it('and a batch that succeeds spends exactly one action, before it writes', async () => {
+        const inv = invocationFor({ permitted: [...MCP_PROPOSE_TOOL_NAMES] });
+        const item = { severity: 'LOW', type: 'OBSERVATION', title: 'x' };
+        const order: string[] = [];
+        reserve.mockImplementationOnce(async () => {
+            order.push('charge');
+            return 1;
+        });
+        proposals.mockImplementation(async () => {
+            order.push('write');
+            return { id: 'proposal-1' };
+        });
+
+        await runProposeTool(inv, 'propose_finding', { items: [item, item] });
+        expect(reserve).toHaveBeenCalledTimes(1);
+        expect(order).toEqual(['charge', 'write', 'write']);
     });
 });

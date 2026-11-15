@@ -48,7 +48,9 @@ describe('RQ3-OB-D — arrows name their risks', () => {
     test('a bounded title composer exists (top N + overflow tail)', () => {
         expect(matrix).toMatch(/export function movementArrowTitle/);
         expect(matrix).toMatch(/export const MOVEMENT_ARROW_TOOLTIP_MAX = 8/);
-        expect(matrix).toMatch(/\+\$\{overflow\} more/);
+        // The tail is the reader's language since #5309 (`movementMore`); its
+        // English default is held by tests/unit/movement-arrow-title.test.ts.
+        expect(matrix).toMatch(/overflow > 0 \? `\$\{head\} \$\{moreLabel\(overflow\)\}`/);
     });
 
     test('the arrow renders an SVG <title> and opts back into pointer events', () => {

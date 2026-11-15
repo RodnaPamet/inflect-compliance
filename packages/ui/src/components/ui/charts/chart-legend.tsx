@@ -29,6 +29,7 @@
  *     the optional `label` + domain min/max + unit.
  */
 import type { ReactElement } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -62,7 +63,7 @@ export interface ChartLegendGradientProps {
     variant: 'gradient';
     /** The shared `HeatScale` from `useHeatScale`. */
     heatScale: HeatScale;
-    /** Optional descriptive label (e.g. "Risk score"). */
+    /** Optional descriptive label (e.g. "Risk score"), already translated: it is shown and announced as given. */
     label?: string;
     /** Optional unit suffix on the min/max labels (e.g. "%"). */
     unit?: string;
@@ -128,9 +129,13 @@ function ChartLegendGradient({
         Number.isInteger(v) ? String(v) : v.toFixed(1);
     const minLabel = `${fmt(min)}${unit ?? ''}`;
     const maxLabel = `${fmt(max)}${unit ?? ''}`;
+    // Translated (#5312): the accessible name was built in English on every
+    // page, whatever the viewer's language. `label` is the caller's, and a
+    // caller passes it translated.
+    const t = useTranslations('common.chart');
     const ariaLabel = label
-        ? `${label}: ${minLabel} to ${maxLabel}`
-        : `Scale: ${minLabel} to ${maxLabel}`;
+        ? t('scaleAria', { label, min: minLabel, max: maxLabel })
+        : t('scaleAriaUnlabelled', { min: minLabel, max: maxLabel });
     return (
         <div
             className={cn(

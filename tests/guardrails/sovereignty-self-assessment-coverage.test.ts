@@ -26,6 +26,8 @@ import {
 } from '@/data/self-assessments/digital-sovereignty';
 import { isStepApplicable } from '@/app-layer/usecases/onboarding';
 import { ONBOARDING_STEPS, SKIPPABLE_STEPS } from '@/lib/schemas/onboarding';
+import en from '../../messages/en.json';
+import bg from '../../messages/bg.json';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -63,11 +65,23 @@ describe('Digital Sovereignty self-assessment bank', () => {
     });
 
     it('every question has exactly 5 ordered options scored 0..4', () => {
+        // The question and option text live in the message catalogues
+        // (`onboarding.sovereignty.questions.<id>`, #5316), so a label is
+        // checked where the UI reads it — in both locales.
+        type Copy = { text: string; options: Record<string, string> };
+        const catalogues = [en, bg].map(
+            (m) => m.onboarding.sovereignty.questions as Record<string, Copy>,
+        );
         for (const d of DIGITAL_SOVEREIGNTY_ASSESSMENT.dimensions) {
             for (const q of d.questions) {
                 expect(q.options).toHaveLength(5);
                 expect(q.options.map((o) => o.score)).toEqual([0, 1, 2, 3, 4]);
-                for (const o of q.options) expect(o.label.length).toBeGreaterThan(0);
+                for (const questions of catalogues) {
+                    expect(questions[q.id]?.text.length).toBeGreaterThan(0);
+                    for (const o of q.options) {
+                        expect(questions[q.id]?.options[`s${o.score}`]?.length).toBeGreaterThan(0);
+                    }
+                }
             }
         }
     });

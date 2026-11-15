@@ -124,6 +124,8 @@ const NAMING_FILES: Readonly<Record<string, string>> = {
     'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx':
         'a badge tone; the role-change picker offers it to an OWNER only, never the invite picker',
     'src/app/t/[tenantSlug]/(app)/admin/entra/GroupMappingsSection.tsx': 'shows its tie rule while a mapping to it is being added',
+    'src/components/policies/PolicyAcknowledgementsPanel.tsx':
+        'ROLE_VALUES: an audience for requesting policy acknowledgement by role; reads the role, writes none (#5309)',
 };
 
 /** Files that WRITE AI_ADMIN to a membership — the two the owner decided on, and no third. */

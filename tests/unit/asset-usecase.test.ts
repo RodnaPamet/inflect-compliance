@@ -92,6 +92,7 @@ jest.mock('@/lib/security/sanitize', () => ({
 
 jest.mock('@/lib/cache/list-cache', () => ({
     bumpEntityCacheVersion: jest.fn(),
+    bumpTenantCacheVersion: jest.fn(),
 }));
 
 jest.mock('@/app-layer/notifications/assignment', () => ({
@@ -113,7 +114,7 @@ jest.mock('@/lib/observability', () => ({
 
 import { AssetRepository } from '@/app-layer/repositories/AssetRepository';
 import { logEvent } from '@/app-layer/events/audit';
-import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
+import { bumpEntityCacheVersion, bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { createAssignmentNotification } from '@/app-layer/notifications/assignment';
 import { restoreEntity, purgeEntity } from '@/app-layer/usecases/soft-delete-operations';
 import {
@@ -700,5 +701,43 @@ describe('unlinkAssetEvidence', () => {
 
     it('rejects READER', async () => {
         await expect(unlinkAssetEvidence(readerCtx, 'a-1', 'e-1')).rejects.toBeDefined();
+    });
+});
+
+// ─── SSR payload invalidation (#5316) ──────────────────────────────
+//
+// The assets page caches its first-paint list in `cachedSsrPayload`, keyed on
+// the tenant cache version. An asset write that did not bump it left the
+// pre-write list on screen for up to 30 s with Redis configured.
+
+describe('asset writes invalidate the SSR payload cache', () => {
+    const bump = bumpTenantCacheVersion as jest.Mock;
+
+    it.each([
+        ['createAsset', async () => {
+            (AssetRepository.create as jest.Mock).mockResolvedValue({ id: 'a-1', name: 'Server' });
+            await createAsset(adminCtx, { name: 'Server', type: 'SYSTEM' });
+        }],
+        ['updateAsset', async () => {
+            (AssetRepository.getById as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: null });
+            (AssetRepository.update as jest.Mock).mockResolvedValue({ id: 'a-1', ownerUserId: null });
+            await updateAsset(adminCtx, 'a-1', { name: 'renamed' });
+        }],
+        ['deleteAsset', async () => {
+            (AssetRepository.delete as jest.Mock).mockResolvedValue({ id: 'a-1' });
+            await deleteAsset(adminCtx, 'a-1');
+        }],
+        ['restoreAsset', () => restoreAsset(adminCtx, 'a-1')],
+        ['purgeAsset', () => purgeAsset(adminCtx, 'a-1')],
+    ])('%s bumps the tenant cache version', async (_name, run) => {
+        await run();
+        expect(bump).toHaveBeenCalledWith(adminCtx.tenantId);
+    });
+
+    it('a refused write bumps nothing', async () => {
+        (AssetRepository.delete as jest.Mock).mockResolvedValue(null);
+        await expect(deleteAsset(adminCtx, 'missing')).rejects.toThrow();
+        await expect(createAsset(readerCtx, { name: 'X' })).rejects.toBeDefined();
+        expect(bump).not.toHaveBeenCalled();
     });
 });

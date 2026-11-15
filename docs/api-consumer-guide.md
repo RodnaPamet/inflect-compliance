@@ -97,10 +97,13 @@ Every request with it is refused with a 403 while a kill switch covers the agent
 or while the agent is anything but ACTIVE in the register (draft, suspended,
 retired). It works again once the kill is lifted or the agent is activated.
 
-### Session cookie — `next-auth.session-token` (browser / dev only)
+### Session cookie — `__Secure-next-auth.session-token` (browser / dev only)
 
 When you're signed in to the app in a browser, requests carry a NextAuth
-JWT **cookie** automatically (same-origin). This is what powers
+JWT **cookie** automatically (same-origin). Its name is scheme-dependent:
+`__Secure-next-auth.session-token` over https — every hosted deployment — and
+`next-auth.session-token` over http, because next-auth v4 adds the `__Secure-`
+prefix when the deployment URL is https. This is what powers
 Swagger UI's "Try it out" on dev/staging after you sign in. It is **not**
 a partner integration mechanism — there's no supported way to extract
 and replay the cookie from outside the browser, and it's tied to the

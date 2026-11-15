@@ -255,8 +255,11 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             : buttonVariants({ variant, size }),
           className,
         )}
-        disabled={props.disabled || loading}
         {...props}
+        // AFTER the spread (#5312): a caller passing `disabled={false}` (as
+        // `disabled={!selected}` does mid-request) used to override it, and a
+        // loading button stayed clickable.
+        disabled={props.disabled || loading}
       >
         {/**
          * Label centering (2026-05-31).

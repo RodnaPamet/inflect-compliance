@@ -40,7 +40,7 @@ import {
     bandRangeLabel,
 } from '@/lib/risk-matrix/scoring';
 import { formatCompactCurrency } from '@/lib/risk-coherence';
-import { pluralize } from '@/lib/pluralize';
+import { useTranslations } from 'next-intl';
 import type { RiskMatrixConfigShape } from '@/lib/risk-matrix/types';
 
 // ─── Props ──────────────────────────────────────────────────────────
@@ -163,8 +163,6 @@ function readableTextOnHex(hex: string): string {
     return lum > 0.55 ? 'rgb(15, 23, 42)' : 'rgb(255, 255, 255)';
 }
 
-// RQ3-OB-A — pluralization moved to the shared helper.
-
 // ─── Component ──────────────────────────────────────────────────────
 
 export function RiskMatrixCell({
@@ -194,6 +192,10 @@ export function RiskMatrixCell({
         [likelihood, impact, config],
     );
     const { score, band, likelihoodLabel, impactLabel } = resolved;
+    // Every word in the cell's label, tooltip and summary is the reader's
+    // language (#5309); the axis titles beside it already were.
+    const t = useTranslations('common.chart');
+    const riskNoun = (n: number) => (n === 1 ? t('riskOne') : t('riskOther'));
     const isEmpty = count <= 0;
     const money = formatMoney ?? ((v: number) => formatCompactCurrency(v));
 
@@ -202,12 +204,12 @@ export function RiskMatrixCell({
     const ariaLabel =
         `${config.axisLikelihoodLabel} ${likelihoodLabel} × ` +
         `${config.axisImpactLabel} ${impactLabel} = ${score} (${band.name})` +
-        ` — ${count} ${pluralize(count, 'risk')}` +
+        ` — ${count} ${riskNoun(count)}` +
         (aleOverlay && hasAle
-            ? ` — annualised loss expectancy ${money(totalAle)}`
+            ? ` — ${t('cellAleAria', { amount: money(totalAle) })}`
             : '') +
         (hasCollision
-            ? ` — warning: same-cell loss estimates differ ~${Math.round(collisionRatio)}×`
+            ? ` — ${t('cellCollisionAria', { ratio: Math.round(collisionRatio) })}`
             : '');
 
     const tooltipContent = (
@@ -219,17 +221,16 @@ export function RiskMatrixCell({
                 {band.name} ({bandRangeLabel(band)})
             </p>
             <p className="text-content-default">
-                {count} {pluralize(count, 'risk')}
+                {count} {riskNoun(count)}
             </p>
             {hasAle && (
                 <p className="text-content-default">
-                    ALE {money(totalAle)}
+                    {t('cellAle', { amount: money(totalAle) })}
                 </p>
             )}
             {hasCollision && (
                 <p className="text-content-warning">
-                    ALEs in this cell differ ~{Math.round(collisionRatio)}× — the
-                    matrix compresses them into one box; check the histogram view.
+                    {t('cellCollision', { ratio: Math.round(collisionRatio) })}
                 </p>
             )}
             {description && (
@@ -244,7 +245,7 @@ export function RiskMatrixCell({
                     ))}
                     {risks.length > 8 && (
                         <li className="text-content-subtle">
-                            … + {risks.length - 8} more
+                            {t('cellMore', { count: risks.length - 8 })}
                         </li>
                     )}
                 </ul>
@@ -427,6 +428,7 @@ function BubbleOverlay({
     limit: number;
     fg: string;
 }) {
+    const t = useTranslations('common.chart');
     // `count` is authoritative; `risks.length` guards the (pathological)
     // case where the two disagree so we never cram a multi-risk cell.
     const total = Math.max(count, risks.length);
@@ -438,7 +440,7 @@ function BubbleOverlay({
                 style={{ color: fg }}
                 data-testid="risk-matrix-cell-count-summary"
             >
-                {total} {pluralize(total, 'Risk')} identified
+                {t('cellRisksIdentified', { count: total })}
             </span>
         );
     }

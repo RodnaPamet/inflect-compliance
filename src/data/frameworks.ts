@@ -4,12 +4,16 @@
  * This file is retained as a fallback for the YAML-backed framework library system.
  * New code should use `@/app-layer/libraries` (framework-provider) instead.
  *
- * Migration status:
- * - SOC2_REQUIREMENTS: Available via getSOC2Requirements() from YAML-backed provider
- * - NIS2_REQUIREMENTS: Still hardcoded (NIS2 YAML library pending)
- * - FRAMEWORK_MAPPINGS: Still hardcoded (cross-framework YAML mappings pending)
+ * Migration status — every array here is a FALLBACK; the YAML is what is served:
+ * - SOC2_REQUIREMENTS: getSOC2Requirements() serves soc2-2017.yaml.
+ * - NIS2_REQUIREMENTS: getNIS2Requirements() serves nis2-2022.yaml.
+ * - FRAMEWORK_MAPPINGS: getFrameworkMappings() serves the `mappings:` block
+ *   bundled in iso27001-2022.yaml (ISO → SOC 2 / NIS2).
  *
- * This file will be removed once all frameworks and mappings are in YAML.
+ * Each array is read only when its library fails to load (or, for the
+ * mappings, when the ISO library carries no mappings). An edit here therefore
+ * does NOT change what /api/mapping returns — edit the YAML. The arrays stay
+ * only so a broken library degrades to a list rather than to nothing.
  *
  * Original description:
  * SOC 2 Trust Services Categories and NIS2 Requirement Areas

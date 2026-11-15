@@ -1,8 +1,8 @@
 # Test-only Postgres instance for local CI.
-# Port 5434 DOES collide with the dev stack: docker-compose.yml publishes
-# its direct Postgres on 5434 too (its PgBouncer is 5433). Stop the dev
-# stack's postgres before starting this one, or the test container
-# cannot bind 5434 and test runs reach the dev database instead (#5308).
+# Port 5434 is this stack's alone: the dev stack (docker-compose.yml)
+# publishes PgBouncer on 5433 and its direct Postgres on 5436, and staging
+# uses 5435, so the dev and test stacks run side by side. The dev port
+# moved off 5434 in #5308; before that the two collided.
 # Usage: docker compose -f docker-compose.test.yml up -d
 services:
   postgres-test:

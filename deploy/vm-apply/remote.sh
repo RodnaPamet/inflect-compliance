@@ -3,9 +3,9 @@
 # NAMED CHANGES TO THE PRODUCTION VM — the VM half.
 #
 # Runs ON the VM, as root, from `vm.sh`, which the dispatch-only `VM apply`
-# workflow runs (.github/workflows/vm-apply.yml). It carries the three changes
+# workflow runs (.github/workflows/vm-apply.yml). It carries the four changes
 # `deploy/apply.sh` has no mode for, from the capacity budget C1 runbook
-# (docs/implementation-notes/2026-11-12-capacity-c1.md) and C1b:
+# (docs/implementation-notes/2026-11-12-capacity-c1.md), C1b and #5308:
 #
 #   remote.sh <action> <stage-dir>
 #
@@ -19,6 +19,12 @@
 #                                script and its recorded rows. apply.sh's
 #                                host-config modes install it; a revert of
 #                                its HOST_CONFIG_SET entries keeps it gone
+#   refresh-env-prod-example     #5308: replace the VM's copy of the PUBLIC
+#                                template deploy/.env.prod.example (staged in
+#                                <stage-dir>) with the repo's, so
+#                                check-drift.sh, which trusts that copy only
+#                                while it is byte-identical to the repo's,
+#                                stops reporting it
 #
 # Each checks its preconditions before it changes anything, and stops if one
 # fails.
@@ -168,6 +174,45 @@ retire-capacity-recorder)
     echo "recorder files after: $left; data directory present: $([ -e "$rows_dir" ] && echo yes || echo no)"
     echo "timer after: $(systemctl is-active "$UNIT.timer" 2>/dev/null || true)"
     [ "$left" -eq 0 ] && [ ! -e "$rows_dir" ] || { echo "a recorder file is still present" >&2; exit 1; }
+    ;;
+
+refresh-env-prod-example)
+    # The VM keeps a copy of deploy/.env.prod.example beside .env.prod. It is a
+    # PUBLIC template, and check-drift.sh accepts its credential-shaped
+    # placeholders only while it is byte-identical to the repo's copy, so a
+    # repo change to the template (RATE_LIMIT_MODE, #5308) turns the VM's copy
+    # into a reported credential until this replaces it. It writes that one
+    # path and nothing else: never .env.prod, never .env.
+    #
+    # Hashes, not content: a 12-character prefix of each file's sha256 is what
+    # the log shows. The previous copy is kept root-only, because what a
+    # hand-edited copy held is not known.
+    FILE=.env.prod.example
+    NEW="$FILE.new.$TS"
+    [ -s "$STAGE/$FILE" ] || { echo "the stage is missing $FILE" >&2; exit 1; }
+    # Preconditions, each a yes or no. A symlink would make the install write
+    # through it to wherever it points.
+    [ ! -L "$FILE" ] || { echo "precondition: /opt/inflect/$FILE is a symlink. Nothing was changed." >&2; exit 1; }
+    [ ! -e "$FILE" ] || [ -f "$FILE" ] || { echo "precondition: /opt/inflect/$FILE is not a regular file. Nothing was changed." >&2; exit 1; }
+    repo_sha="$(sha256sum "$STAGE/$FILE" | awk '{print $1}')"
+    live_sha=""
+    if [ -f "$FILE" ]; then live_sha="$(sha256sum "$FILE" | awk '{print $1}')"; fi
+    echo "repo copy: sha256 ${repo_sha:0:12}"
+    echo "live copy: ${live_sha:+sha256 ${live_sha:0:12}}${live_sha:-absent}"
+    if [ "$live_sha" = "$repo_sha" ]; then
+        echo "the live copy already matches the repo; nothing changed"
+    else
+        install -m 0644 -o root -g root "$STAGE/$FILE" "$NEW"
+        trap 'rm -f "/opt/inflect/$NEW"' EXIT
+        if [ -n "$live_sha" ]; then
+            cp -a "$FILE" "$FILE.bak.$TS" && chmod 600 "$FILE.bak.$TS"
+            echo "previous copy kept as $FILE.bak.$TS (root only)"
+        fi
+        mv "$NEW" "$FILE"
+        after="$(sha256sum "$FILE" | awk '{print $1}')"
+        echo "live copy now: sha256 ${after:0:12}"
+        [ "$after" = "$repo_sha" ] || { echo "the live copy does not match the repo after the install" >&2; exit 1; }
+    fi
     ;;
 
 *)

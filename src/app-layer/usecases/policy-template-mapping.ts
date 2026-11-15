@@ -27,6 +27,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { PolicyTemplateRepository } from '../repositories/PolicyTemplateRepository';
 import { runInTenantContext } from '@/lib/db-context';
+import { bumpTenantCacheVersion } from '@/lib/cache/list-cache';
 import { notFound, badRequest } from '@/lib/errors/types';
 // Curated mapping fixture is the source of truth (mirrors seed-time
 // fixture loading); bundled at build via resolveJsonModule.
@@ -310,7 +311,7 @@ export async function linkPolicyControls(
     const uniqueIds = [...new Set(controlIds)];
     if (!uniqueIds.length) throw badRequest('No controls specified');
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await db.policy.findFirst({
             where: { id: policyId, tenantId: ctx.tenantId },
             select: { id: true, title: true },
@@ -363,6 +364,8 @@ export async function linkPolicyControls(
             alreadyLinked: [...existingSet],
         };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }
 
 export interface UnlinkPolicyControlsResult {
@@ -387,7 +390,7 @@ export async function unlinkPolicyControls(
     const uniqueIds = [...new Set(controlIds)];
     if (!uniqueIds.length) throw badRequest('No controls specified');
 
-    return runInTenantContext(ctx, async (db) => {
+    const committed = await runInTenantContext(ctx, async (db) => {
         const policy = await db.policy.findFirst({
             where: { id: policyId, tenantId: ctx.tenantId },
             select: { id: true, title: true },
@@ -419,4 +422,6 @@ export async function unlinkPolicyControls(
 
         return { policyId, removed: res.count, unlinkedControlIds: uniqueIds };
     });
+    await bumpTenantCacheVersion(ctx.tenantId);
+    return committed;
 }

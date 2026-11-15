@@ -202,9 +202,16 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
     //     iflk_…` (src/lib/auth/api-key-auth.ts::extractBearerToken +
     //     isApiKeyToken). THIS is the canonical partner-integration
     //     flow — declared first so it's the Swagger-UI default.
-    //   - SessionCookie: browser sessions are a NextAuth JWT cookie
-    //     (`next-auth.session-token`). Used for the dev/staging
-    //     "Try it out" flow; same-origin requests send it automatically.
+    //   - SessionCookie: browser sessions are a NextAuth JWT cookie. The
+    //     NAME depends on the scheme: next-auth v4 prefixes `__Secure-`
+    //     when the deployment URL is https
+    //     (`node_modules/next-auth/core/lib/cookie.js` —
+    //     `useSecureCookies ? '__Secure-' : ''`, defaulted in `init.js` from
+    //     `url.base.startsWith('https://')`), and `src/auth.ts` configures
+    //     neither `useSecureCookies` nor `cookies`, so that default governs.
+    //     This document declares an https production server, so the
+    //     production name carries the prefix — it said the bare name until
+    //     #5659, which is the name that exists only on http localhost.
     //
     // Registering twice in one process is harmless — the registry
     // singleton de-dupes component IDs, and the CLI/test each build once.
@@ -219,10 +226,18 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
     registerSecuritySchemeOnce(registry, 'SessionCookie', {
         type: 'apiKey',
         in: 'cookie',
-        name: 'next-auth.session-token',
+        // The https name, matching this document's own production server. On
+        // http localhost next-auth drops the prefix and the cookie is
+        // `next-auth.session-token` — stated in the description rather than
+        // picked, because a scheme carries one name and the deployments an
+        // integrator reads this for are https.
+        name: '__Secure-next-auth.session-token',
         description:
             'Browser session cookie (NextAuth JWT). Sent automatically for same-origin requests; ' +
-            'used by the dev/staging "Try it out" flow. Not the partner flow — prefer a Bearer API key.',
+            'used by the dev/staging "Try it out" flow. Not the partner flow — prefer a Bearer API key.\n\n' +
+            'The name is scheme-dependent: `__Secure-next-auth.session-token` over **https** (every ' +
+            'hosted deployment), and `next-auth.session-token` over **http** — next-auth v4 adds the ' +
+            '`__Secure-` prefix when the deployment URL is https.',
     });
 
     // ─── Route stubs ────────────────────────────────────────────────
@@ -254,7 +269,9 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
                 '- *BearerAuth* (recommended for integrations) — paste a tenant **API key** (`iflk_…`), ' +
                 'minted under Admin → API Keys. Sent as `Authorization: Bearer iflk_…`.\n' +
                 '- *SessionCookie* — for the dev/staging "Try it out" flow, sign in first; the browser ' +
-                'sends the `next-auth.session-token` cookie automatically (same-origin only).\n\n' +
+                'sends the NextAuth session cookie automatically (same-origin only). Its name is ' +
+                '`__Secure-next-auth.session-token` over https and `next-auth.session-token` over ' +
+                'http.\n\n' +
                 '**Coverage.** Operations marked `x-stub: true` exist and are callable, but their request/' +
                 'response bodies are not yet published in this contract — only the critical-endpoint set ' +
                 'carries full schemas. See `docs/api-consumer-guide.md` for the auth, rate-limit, ' +

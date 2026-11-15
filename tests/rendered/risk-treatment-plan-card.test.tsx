@@ -416,4 +416,59 @@ describe('RiskTreatmentPlanCard', () => {
         // Title set, dueDate still missing → still disabled.
         expect(submit.disabled).toBe(true);
     });
+
+    it("shows a refusal's sentence, not the serialised envelope (#5309)", async () => {
+        const detail = makePlanDetail({
+            milestones: [
+                {
+                    id: 'm1',
+                    title: 'done',
+                    description: null,
+                    dueDate: new Date('2026-09-01').toISOString(),
+                    completedAt: new Date().toISOString(),
+                    completedBy: { id: 'u_a', email: 'alice@example.test', name: 'Alice' },
+                    sortOrder: 0,
+                    evidence: null,
+                },
+            ],
+        });
+        const envelope = {
+            error: { code: 'CONFLICT', message: 'The plan was completed by someone else.', requestId: 'req-1' },
+        };
+        (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(
+            async (url: string, init?: RequestInit) => {
+                if (init?.method === 'POST') {
+                    return {
+                        ok: false,
+                        status: 409,
+                        json: async () => envelope,
+                        text: async () => JSON.stringify(envelope),
+                    };
+                }
+                if (url.endsWith('treatment-plans')) {
+                    return { ok: true, json: async () => ({ rows: [makePlanSummary()] }) };
+                }
+                return { ok: true, json: async () => detail };
+            },
+        );
+        render(
+            withClient(
+                <RiskTreatmentPlanCard
+                    tenantSlug="acme"
+                    riskId="r1"
+                    ownerChoices={ownerChoices}
+                    canWrite
+                    canAdmin
+                />,
+            ),
+        );
+        fireEvent.click(await screen.findByTestId('treatment-plan-complete-button'));
+        fireEvent.change(await screen.findByTestId('complete-plan-remark'), {
+            target: { value: 'all milestones met' },
+        });
+        fireEvent.click(screen.getByTestId('complete-plan-submit'));
+        const error = await screen.findByTestId('complete-plan-error');
+        expect(error.textContent).toBe('The plan was completed by someone else.');
+        expect(error.textContent).not.toMatch(/CONFLICT|requestId/);
+    });
 });

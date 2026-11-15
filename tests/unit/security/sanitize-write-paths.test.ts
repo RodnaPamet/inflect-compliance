@@ -210,6 +210,7 @@ jest.mock('@/app-layer/policies/evidence.policies', () => ({
 jest.mock('@/lib/cache/list-cache', () => ({
     cachedListRead: jest.fn(async (_k: unknown, fn: () => unknown) => fn()),
     bumpEntityCacheVersion: jest.fn(async () => undefined),
+    bumpTenantCacheVersion: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/app-layer/usecases/nis2-readiness', () => ({

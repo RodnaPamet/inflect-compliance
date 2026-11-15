@@ -3,7 +3,7 @@
 /**
  * Epic 57 — shortcut help overlay.
  *
- * Press `?` anywhere in the app to pop a modal listing every keyboard
+ * Press Ctrl+/ (⌘/ on a Mac) anywhere in the app to pop a modal listing every keyboard
  * shortcut the registry currently knows about. The listing is LIVE —
  * `useRegisteredShortcuts()` subscribes to the provider, so shortcuts
  * mounted deep in a route (overlay-scoped keys inside a modal, say)
@@ -20,13 +20,13 @@
  *
  * - **Typing-safe.** `useKeyboardShortcut('mod+/')` inherits the registry's
  *   default `allowInInputs: false`, so the help modal never hijacks
- *   the `?` keystroke while a user is composing in an input, textarea,
+ *   the keystroke while a user is composing in an input, textarea,
  *   or contenteditable (Lexical / Tiptap / cmdk). The palette's own
  *   input stays untouched.
  *
  * - **Overlay-scope close.** We don't re-implement Escape — Radix
  *   Dialog (inside the shared `<Modal>`) already handles Escape +
- *   backdrop click + focus trap. The `?` shortcut itself toggles
+ *   backdrop click + focus trap. The Ctrl+/ shortcut itself toggles
  *   open/close as a convenience.
  *
  * - **Grouping by scope.** The registry exposes `scope: 'global' |
@@ -125,13 +125,13 @@ export function ShortcutHelpOverlay() {
     const t = useTranslations("shortcuts");
     const [open, setOpen] = useState(false);
 
-    // Toggle on `?`. allowInInputs stays at its default (false) so
-    // typing `?` in any editable target is preserved. The overlay's
+    // Toggle on Ctrl+/ (⌘/). allowInInputs stays at its default (false) so
+    // the keystroke in any editable target is left alone. The overlay's
     // own scope is 'global' — we want it reachable anywhere there's
     // no editable focus, even while a modal/sheet is open. Overlay-
     // scope disallows firing while an overlay IS open; that'd be a
     // dead end here. Instead pass `allowWhenOverlayOpen: true` so
-    // `?` works on top of other surfaces.
+    // the binding works on top of other surfaces.
     useKeyboardShortcut(
         OPEN_HELP_KEY,
         () => setOpen((prev) => !prev),

@@ -885,7 +885,14 @@ const SINK_FLOOR = 30;
 // values: the proposal id, the deferral id, the decision (`ACCEPTED`,
 // `EDITED`, `REJECTED`, read off the proposal row) and the hook's own named
 // failure message. No model text and no transcript reaches any of them.
-const MEASURED_HOLES = 229;
+// 229 -> 231 on 2026-11-14 (#5304 item 7, the clean-up wait moved outside the
+// deadline race). Two holes in one new sink in `bounded-exec.ts` — the warn
+// logged when an executor's clean-up fails AFTER its result was captured:
+// `tool`, the registered tool name every other sink in that file already
+// logs, and the clean-up's error message. The clean-up is the sandbox
+// deletion; its error comes from the delete call and its transport, never
+// from the tool's output, which is already captured and is not on the error.
+const MEASURED_HOLES = 231;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

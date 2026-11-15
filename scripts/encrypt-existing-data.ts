@@ -97,6 +97,7 @@ const {
 
 
 import { PrismaClient } from '@prisma/client';
+import { assertNoUnknownArgs, readValueFlag } from './lib/value-flag';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -694,10 +695,21 @@ export function parseArgs(argv: readonly string[]): BackfillOptions {
         throw new Error('--pii-only and --skip-pii are mutually exclusive.');
     }
 
+    // REFUSED rather than ignored (#5647). `--models Risk,Finding` used to
+    // leave two stray tokens nobody read, so a dropped flag looked exactly
+    // like an applied one — and on this script a dropped `--models` means no
+    // filter, i.e. every model in the manifest rewritten.
+    assertNoUnknownArgs(
+        args,
+        ['execute', 'verify', 'pii-only', 'skip-pii'],
+        ['batch-size', 'models'],
+    );
+
     let batchSize = 500;
-    const batchArg = args.find((a) => a.startsWith('--batch-size='));
-    if (batchArg) {
-        const n = parseInt(batchArg.split('=')[1], 10);
+    // Either spelling: the usage block above documents the space form.
+    const batchArg = readValueFlag(args, 'batch-size');
+    if (batchArg !== undefined) {
+        const n = parseInt(batchArg, 10);
         if (!Number.isFinite(n) || n < 1) {
             throw new Error(`Invalid --batch-size: ${batchArg}`);
         }
@@ -705,10 +717,9 @@ export function parseArgs(argv: readonly string[]): BackfillOptions {
     }
 
     let modelsFilter: string[] = [];
-    const modelsArg = args.find((a) => a.startsWith('--models='));
-    if (modelsArg) {
+    const modelsArg = readValueFlag(args, 'models');
+    if (modelsArg !== undefined) {
         modelsFilter = modelsArg
-            .split('=')[1]
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);

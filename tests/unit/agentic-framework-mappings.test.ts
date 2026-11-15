@@ -436,3 +436,36 @@ describe('agentic cross-framework mappings — refs and strengths', () => {
         expect(selfEdges).toEqual([]);
     });
 });
+
+/**
+ * #5316 item 5. SOC 2's CC6 is criterion by criterion since #3369, and the
+ * catalogue's access-provisioning and periodic access-review controls link
+ * to CC6.2 / CC6.3, not CC6.1. An edge onto AIUC-1's access-review
+ * requirement that leaves only CC6.1 gives those controls no coverage of it;
+ * this asks the question from the controls' side, so it holds whichever
+ * CC6 criterion the edge names.
+ */
+describe('agentic cross-framework mappings — SOC 2 access-review controls reach AIUC-1', () => {
+    const soc2Catalog = loadAndValidateCatalogFile(
+        path.join(ROOT, 'prisma/fixtures', SEEDED_REPRESENTATIONS['SOC2-2017'].fixture),
+    );
+    const codesOf = (templateCode: string): string[] => {
+        const t = soc2Catalog.templates.find((x) => x.code === templateCode);
+        expect(t).toBeDefined();
+        return t!.requirementCodes;
+    };
+    const soc2ToAiuc = setsByPair.get('SOC2-2017→AIUC-1')!;
+
+    it.each([
+        ['TSC-CC6-1', 'Access provisioning and timely revocation'],
+        ['TSC-CC6-3', 'Periodic user access review'],
+    ])('%s (%s) gives partial coverage of B007 through the crosswalk', (templateCode) => {
+        const codes = new Set(codesOf(templateCode));
+        const edges = soc2ToAiuc.mapping_entries.filter(
+            (e) => e.target_ref === 'B007' && codes.has(e.source_ref),
+        );
+        expect(edges.length).toBeGreaterThan(0);
+        // RELATED is "review needed", never coverage — the edge must count.
+        expect(edges.some((e) => e.strength !== 'RELATED')).toBe(true);
+    });
+});

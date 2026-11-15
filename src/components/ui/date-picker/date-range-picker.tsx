@@ -45,6 +45,7 @@
 
 import { cn } from '@inflect/ui/lib/cn';
 import { enUS } from 'date-fns/locale';
+import { useTranslations } from 'next-intl';
 import { X } from 'lucide-react';
 import {
     useCallback,
@@ -89,6 +90,8 @@ export interface DateRangePickerProps
     presets?: ResolvableDateRangePreset[];
     /** Highlight the preset matching this id (overrides value match). */
     presetId?: string;
+    /** Mirror of `hasError`, which `FormField` sets on an invalid field. */
+    invalid?: boolean;
     /**
      * When true, the picker footer renders a Clear button that
      * emits `{ from: null, to: null }` and closes. Defaults to
@@ -120,14 +123,27 @@ export function DateRangePicker({
     disabledDays,
     showYearNavigation = false,
     locale = enUS,
-    placeholder = 'Select date range',
+    placeholder: placeholderProp,
     hasError,
+    invalid,
     align = 'center',
     className,
     clearable = true,
+    // On the trigger, the element a `FormField` label names (#5309).
+    id,
+    'aria-describedby': ariaDescribedBy,
     ...props
 }: DateRangePickerProps) {
     const { isDesktop } = useMediaQuery();
+    const t = useTranslations('common.calendar');
+    const placeholder = placeholderProp ?? t('selectDateRange');
+    // A catalogue preset is named by its id in the reader's language; a
+    // caller's own preset keeps the label it was given (#5309).
+    const presetLabel = useCallback(
+        (p: { id: string; label: string }) =>
+            t.has?.(`presets.${p.id}`) ? t(`presets.${p.id}`) : p.label,
+        [t],
+    );
 
     const isControlled = value !== undefined;
     const [internal, setInternal] = useState<DateRangeValue>(
@@ -146,9 +162,15 @@ export function DateRangePicker({
     const [draft, setDraft] = useState<RDPDateRange | undefined>(
         fromDateRangeValue(committed),
     );
-    const [month, setMonth] = useState<Date | undefined>(
-        committed.to ?? committed.from ?? undefined,
-    );
+    // The month the calendar shows: the committed range's start, read in the
+    // local calendar the day grid uses (the value is UTC midnight, which in a
+    // zone west of UTC is still the previous day — and on the 1st, the
+    // previous month).
+    const openingMonth = (range: DateRangeValue): Date | undefined => {
+        const local = fromDateRangeValue(range);
+        return local.from ?? local.to ?? undefined;
+    };
+    const [month, setMonth] = useState<Date | undefined>(openingMonth(committed));
 
     // Keep internal mirror in sync when controlled.
     useEffect(() => {
@@ -164,7 +186,7 @@ export function DateRangePicker({
         if (open) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setDraft(fromDateRangeValue(committed));
-            setMonth(committed.to ?? committed.from ?? new Date());
+            setMonth(openingMonth(committed) ?? new Date());
         } else {
             setDraft(fromDateRangeValue(committed));
         }
@@ -178,8 +200,8 @@ export function DateRangePicker({
     const openNow = useMemo(() => new Date(), [open]);
     const materialisedPresets = useMemo<DateRangePreset[]>(() => {
         if (!presets) return [];
-        return presets.map((p) => materializeDateRangePreset(p, openNow));
-    }, [presets, openNow]);
+        return presets.map((p) => ({ ...materializeDateRangePreset(p, openNow), label: presetLabel(p) }));
+    }, [presets, openNow, presetLabel]);
 
     // Determine which preset (if any) the committed range matches so
     // the Presets panel highlights it.
@@ -281,11 +303,11 @@ export function DateRangePicker({
     const displayText = useMemo(() => {
         if (activePresetId) {
             const p = presets?.find((pr) => pr.id === activePresetId);
-            if (p) return p.label;
+            if (p) return presetLabel(p);
         }
         if (!committed.from && !committed.to) return null;
         return formatDateRange(committed.from, committed.to, '');
-    }, [activePresetId, presets, committed]);
+    }, [activePresetId, presets, committed, presetLabel]);
 
     return (
         <DatePickerContext.Provider
@@ -352,7 +374,7 @@ export function DateRangePicker({
                                     data-testid="date-range-picker-clear"
                                 >
                                     <X className="size-3.5" aria-hidden="true" />
-                                    <span>Clear range</span>
+                                    <span>{t('clearRange')}</span>
                                 </button>
                             </div>
                         )}
@@ -360,10 +382,12 @@ export function DateRangePicker({
                 }
             >
                 <Trigger
+                    id={id}
+                    aria-describedby={ariaDescribedBy}
                     placeholder={placeholder}
                     disabled={disabled}
                     className={className}
-                    hasError={hasError}
+                    hasError={Boolean(hasError ?? invalid)}
                     aria-required={props.required || props['aria-required']}
                     aria-invalid={props['aria-invalid']}
                     aria-label={props['aria-label']}

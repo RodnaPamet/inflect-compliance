@@ -249,6 +249,65 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
 });
 
 /**
+ * The pipelock overlay reads its own environment file (#5308, owner decision
+ * 2026-11-14). It loaded `./.env.prod`, and `env_file:` hands the container
+ * every variable in the file: DATA_ENCRYPTION_KEY, the master key over every
+ * tenant's DEK, in a third-party image's environment. Nothing fails at `up`
+ * when that comes back, so it is held here, on the PARSED service.
+ */
+describe('deploy compose — the pipelock overlay never receives the master key', () => {
+    type Service = { env_file?: unknown; environment?: unknown; volumes?: unknown };
+    const pipelock = (): Service =>
+        (yaml.load(read(OVERLAY)) as { services: Record<string, Service> }).services.pipelock;
+
+    /** The master-key variables, from the env schema itself, not a literal list. */
+    const masterKeyVars = (): string[] => [
+        ...new Set(
+            Array.from(read('src/env.ts').matchAll(/^\s+(DATA_ENCRYPTION_KEY[A-Z_]*):/gm), (m) => m[1]),
+        ),
+    ];
+
+    it('the schema read finds both master-key variables (the scan is not vacuous)', () => {
+        expect(masterKeyVars().sort()).toEqual(['DATA_ENCRYPTION_KEY', 'DATA_ENCRYPTION_KEY_PREVIOUS']);
+    });
+
+    it('loads ./.env.pipelock and no other env file', () => {
+        expect(pipelock().env_file).toEqual(['./.env.pipelock']);
+    });
+
+    it('names .env.prod nowhere in the service', () => {
+        // Every value the service has: env_file, environment, volumes, the lot.
+        expect(JSON.stringify(pipelock())).not.toContain('.env.prod');
+    });
+
+    it('names no master-key variable, as a key or inside a value', () => {
+        const svc = JSON.stringify(pipelock());
+        expect(masterKeyVars().filter((v) => svc.includes(v))).toEqual([]);
+    });
+
+    it('interpolates nothing, so the base file\'s --env-file scope cannot reach it', () => {
+        // The usage line passes `--env-file .env.prod` for the BASE file; a
+        // `${DATA_ENCRYPTION_KEY}` here would resolve from it. Comment lines are
+        // prose and are dropped first.
+        expect(codeLines(read(OVERLAY)).filter((l) => l.includes('${'))).toEqual([]);
+    });
+
+    it('its template sets no master-key variable and no line of .env.prod', () => {
+        const assigned = codeLines(read('deploy/.env.pipelock.example'))
+            .map((l) => /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=/.exec(l)?.[1])
+            .filter((k): k is string => k !== undefined);
+        expect(assigned.filter((k) => masterKeyVars().includes(k))).toEqual([]);
+        const prodKeys = new Set(
+            codeLines(read('deploy/.env.prod.example'))
+                .map((l) => /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(l)?.[1])
+                .filter((k): k is string => k !== undefined),
+        );
+        expect(prodKeys.size).toBeGreaterThan(0);
+        expect(assigned.filter((k) => prodKeys.has(k))).toEqual([]);
+    });
+});
+
+/**
  * The harness scanner's overlay (#3665): Inflect's own estate scanned from the
  * production VM. Parsed as YAML, so each assertion is on a value the service
  * actually has rather than on the file's text.

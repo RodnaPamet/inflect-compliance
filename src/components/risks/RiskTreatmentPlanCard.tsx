@@ -27,6 +27,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { Heading } from '@/components/ui/typography';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
     DECISION_TO_STRATEGY,
     type TreatmentDecisionValue,
@@ -409,8 +410,8 @@ function MilestoneRowItem({
                 },
             );
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('milestoneCompleteFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('milestoneCompleteFailed')));
             }
             onMutated();
         } catch (err) {
@@ -514,8 +515,8 @@ function CreatePlanDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('createPlanFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('createPlanFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -624,8 +625,8 @@ function AddMilestoneDialog({
                 }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('addMilestoneFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('addMilestoneFailed')));
             }
             onSuccess();
         } catch (err) {
@@ -711,8 +712,8 @@ function CompletePlanDialog({
                 body: JSON.stringify({ closingRemark }),
             });
             if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || t('completePlanFailed'));
+                // The refusal's sentence, never the serialised envelope (#5309).
+                throw new Error(apiErrorMessage(await res.json().catch(() => null), t('completePlanFailed')));
             }
             onSuccess();
         } catch (err) {
