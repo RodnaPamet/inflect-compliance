@@ -32,6 +32,15 @@ import {
     DELEGATED_TASK_OPEN,
     subagentInstructionsOpen,
 } from '@/lib/agentic/tool-runner/params';
+import {
+    CONSERVATIVE_CAPABILITIES,
+    MODEL_CAPABILITIES,
+    MODEL_FAMILIES,
+    modelCapabilitiesFor,
+    modelFamilyOf,
+    type ModelCapabilities,
+} from '@/lib/agentic/tool-runner/model-capabilities';
+import { env } from '@/env';
 import { repoFiles } from '../../helpers/repo-files';
 import { codeOf } from '../../helpers/source-blocks';
 
@@ -262,7 +271,9 @@ describe('a RESUMED segment is shaped by the same function, and sends the stored
     const tools = [tool('list_risks')];
     const caps = resolveRunCaps(null);
     const RESUME = {
-        model: 'claude-stored-model',
+        // A model with a row that accepts every conditional member, and not the
+        // deep tier's: so the stored model is visibly the one sent.
+        model: 'claude-sonnet-5-5',
         system: [{ type: 'text' as const, text: 'the system the run parked with' }],
         messages: [
             { role: 'user' as const, content: 'the opening' },
@@ -282,6 +293,20 @@ describe('a RESUMED segment is shaped by the same function, and sends the stored
         expect(resumed.thread).toBe(false);
     });
 
+    it('the conditional members follow the STORED model\'s row, not the tier\'s', () => {
+        const resumed = lockedParams({
+            def: PROFILE_DEF,
+            tools,
+            message: 'Go.',
+            caps,
+            fromSeq: 4,
+            toolCallsPerTurn: 1,
+            resume: { ...RESUME, model: 'claude-haiku-4-5-20251001' },
+        });
+        expect(resumed.model).toBe('claude-haiku-4-5-20251001');
+        for (const member of ['thinking', 'output_config', 'fallbacks', 'betas']) expect(member in resumed).toBe(false);
+    });
+
     it('a sub-agent never resumes: the option is ignored for a child', () => {
         const child = lockedParams({
             def: PROFILE_DEF,
@@ -295,5 +320,129 @@ describe('a RESUMED segment is shaped by the same function, and sends the stored
         });
         expect(child.model).not.toBe(RESUME.model);
         expect(child.system).not.toBe(RESUME.system);
+    });
+});
+
+// ─── WHICH PARAMETERS EACH MODEL IS SENT (owner decision, 2026-11-15) ─────────
+
+describe('the request is a function of the definition and the model\'s row in the capability table', () => {
+    const tools = [tool('list_risks'), tool('list_controls')];
+    const caps = resolveRunCaps(null);
+    const configured = env as unknown as Record<string, string | undefined>;
+    afterEach(() => {
+        delete configured.AGENT_TOOL_RUNNER_MODEL_BALANCED;
+        delete configured.AGENT_TOOL_RUNNER_MODEL_DEEP;
+    });
+
+    /** A fresh request for `model` on the balanced tier (no profile), or the deep tier (the profile). */
+    function requestFor(model: string, def: WorkflowDefinition = DEF) {
+        configured.AGENT_TOOL_RUNNER_MODEL_BALANCED = model;
+        configured.AGENT_TOOL_RUNNER_MODEL_DEEP = model;
+        return lockedParams({ def, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 });
+    }
+
+    const ALWAYS = ['betas', 'fallbacks', 'output_config', 'thinking'];
+    const BASE_KEYS = ['max_iterations', 'max_tokens', 'messages', 'model', 'stream', 'system', 'thread', 'tool_choice', 'tools'];
+
+    /** The exact conditional members a row puts on the request. */
+    function expectedConditional(row: ModelCapabilities, effort: string): Record<string, unknown> {
+        return {
+            ...(row.thinking === 'adaptive' ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
+            ...(row.effort ? { output_config: { effort } } : {}),
+            ...(row.fallbacks ? { fallbacks: 'default', betas: [SERVER_SIDE_FALLBACK_BETA] } : {}),
+        };
+    }
+
+    it.each(MODEL_FAMILIES.map((family) => [family]))('%s: exactly its row\'s members, and every locked value', (family) => {
+        const row = MODEL_CAPABILITIES[family];
+        for (const [def, effort] of [[DEF, 'medium'], [PROFILE_DEF, 'high']] as const) {
+            const p = requestFor(family, def);
+            expect(p.model).toBe(family);
+            const conditional = expectedConditional(row, effort);
+            expect(Object.keys(p).sort()).toEqual([...BASE_KEYS, ...Object.keys(conditional)].sort());
+            const { thinking, output_config, fallbacks, betas } = p;
+            const sent = Object.fromEntries(
+                Object.entries({ thinking, output_config, fallbacks, betas }).filter(([, v]) => v !== undefined),
+            );
+            expect(sent).toEqual(conditional);
+            // The values no row governs.
+            expect(p.thread).toBe(false);
+            expect(p.stream).toBe(false);
+            expect(JSON.stringify(p.tool_choice)).toBe('{"type":"auto","disable_parallel_tool_use":true}');
+            expect(p.max_tokens).toBe(def === DEF ? 16_000 : 20_000);
+            for (const knob of ['temperature', 'top_p', 'top_k', 'mcp_servers', 'container']) expect(knob in p).toBe(false);
+        }
+    });
+
+    it('claude-haiku-4-5 (and its dated snapshot) gets no effort, no adaptive thinking, no fallbacks and no beta', () => {
+        for (const id of ['claude-haiku-4-5', 'claude-haiku-4-5-20251001']) {
+            expect(modelFamilyOf(id)).toBe('claude-haiku-4-5');
+            const p = requestFor(id);
+            for (const member of ALWAYS) expect({ id, member, present: member in p }).toEqual({ id, member, present: false });
+        }
+        expect(MODEL_CAPABILITIES['claude-haiku-4-5']).toEqual({ thinking: 'budget', effort: false, fallbacks: false });
+    });
+
+    it('claude-sonnet-5-5 and claude-opus-5-5 are sent the request of before, byte for byte', () => {
+        // The request `lockedParams` built for every model before the table, in
+        // its member order: the bytes on the wire must not move for these two.
+        const before = (model: string, effort: string, maxTokens: number, def: WorkflowDefinition) => {
+            const p = requestFor(model, def);
+            return JSON.stringify({
+                stream: false,
+                thread: false,
+                model,
+                max_tokens: maxTokens,
+                max_iterations: p.max_iterations,
+                system: p.system,
+                messages: [{ role: 'user', content: 'Go.' }],
+                tools,
+                tool_choice: { type: 'auto', disable_parallel_tool_use: true },
+                thinking: { type: 'adaptive', display: 'summarized' },
+                output_config: { effort },
+                fallbacks: 'default',
+                betas: [SERVER_SIDE_FALLBACK_BETA],
+            });
+        };
+        expect(JSON.stringify(requestFor('claude-sonnet-5-5'))).toBe(before('claude-sonnet-5-5', 'medium', 16_000, DEF));
+        expect(JSON.stringify(requestFor('claude-opus-5-5', PROFILE_DEF))).toBe(before('claude-opus-5-5', 'high', 20_000, PROFILE_DEF));
+        // And with no deployment override, the defaults are those two models.
+        delete configured.AGENT_TOOL_RUNNER_MODEL_BALANCED;
+        delete configured.AGENT_TOOL_RUNNER_MODEL_DEEP;
+        expect(lockedParams({ def: DEF, tools, message: 'Go.', caps, fromSeq: 0, toolCallsPerTurn: 1 }).model).toBe('claude-sonnet-5-5');
+    });
+
+    it('an unknown model fails closed: only the members every current model accepts', () => {
+        for (const id of ['claude-nonesuch-9', 'claude-opus-5-5-preview', 'claude-opus-5-6', 'gpt-4', '']) {
+            expect(modelFamilyOf(id)).toBeNull();
+            expect(modelCapabilitiesFor(id)).toBe(CONSERVATIVE_CAPABILITIES);
+        }
+        expect(CONSERVATIVE_CAPABILITIES).toEqual({ thinking: 'none', effort: false, fallbacks: false });
+        const p = lockedParams({
+            def: DEF,
+            tools,
+            message: 'Go.',
+            caps,
+            fromSeq: 0,
+            toolCallsPerTurn: 1,
+            resume: { model: 'claude-nonesuch-9', system: [{ type: 'text', text: 's' }], messages: [{ role: 'user', content: 'Go.' }] },
+        });
+        expect(Object.keys(p).sort()).toEqual([...BASE_KEYS].sort());
+    });
+
+    it('a family matches only itself or its dated snapshot: claude-opus-5 is not claude-opus-5-5', () => {
+        expect(modelFamilyOf('claude-opus-5')).toBe('claude-opus-5');
+        expect(modelFamilyOf('claude-opus-5-5')).toBe('claude-opus-5-5');
+        expect(modelFamilyOf('claude-opus-5-20260101')).toBe('claude-opus-5');
+        expect(modelFamilyOf('claude-opus-5-5-20260101')).toBe('claude-opus-5-5');
+        expect(modelFamilyOf('claude-opus-5-2026')).toBeNull();
+    });
+
+    it('a compaction of a model with no conditional members carries none either', () => {
+        const runner = requestFor('claude-haiku-4-5');
+        const summary = compactionParams(runner, [{ role: 'user', content: 'Go.' }]);
+        expect(Object.keys(summary).sort()).toEqual(
+            ['max_tokens', 'messages', 'model', 'stream', 'system', 'tool_choice', 'tools'].sort(),
+        );
     });
 });

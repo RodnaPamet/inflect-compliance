@@ -25,7 +25,9 @@
  *                catalogue (Step 2d), then the pinned profile instructions,
  *                fenced and labelled as the operator's text, with a cache
  *                breakpoint after them.
- *   thinking     adaptive, `display: 'summarized'`. The summarised thinking
+ *   thinking     adaptive, `display: 'summarized'`, to a model whose row in
+ *                `model-capabilities.ts` accepts adaptive thinking; no
+ *                thinking member at all to any other. The summarised thinking
  *                blocks travel in the conversation and a deferral's parked
  *                transcript as returned. They are NOT egress-scanned and NOT
  *                in the decision log's output summary: both read the call's
@@ -33,9 +35,18 @@
  *                only output is thinking plus a tool call records an empty
  *                summary and runs no scan (#5304).
  *   effort       from the profile, explicit: the models' default is not ours to
- *                assume.
- *   fallbacks    'default': a policy decline reroutes inside the call, and
- *                each MODEL_CALL step records the model that answered.
+ *                assume. Sent only to a model whose row accepts it.
+ *   fallbacks    'default', with its beta: a policy decline reroutes inside the
+ *                call, and each MODEL_CALL step records the model that
+ *                answered. Sent only to a model whose row accepts it.
+ *
+ * THE THREE CONDITIONAL MEMBERS (owner decision, 2026-11-15) are decided by the
+ * row of the model the request names, and nothing else: `lockedParams` chooses
+ * the model, reads `modelCapabilitiesFor` once, and the request is a function
+ * of the definition and that row. A model with no row gets none of the three
+ * (`CONSERVATIVE_CAPABILITIES`). Every other value above is sent to every
+ * model, and the order of the members is unchanged, so a model whose row
+ * accepts all three gets the request it got before, byte for byte.
  *   max_iterations  the run's step cap, or the profile's turn limit if lower.
  *   stream       false: every call stays under the SDK's non-streaming ceiling
  *                (`MAX_TOKENS_PER_TIER`), so each yield is one whole message.
@@ -55,8 +66,8 @@
  *
  * THE SUMMARY REQUEST OF A COMPACTION (Step 2g, #5531) is shaped here too, by
  * `compactionParams`, from the runner's own parameters: the same system,
- * tools, model, thinking, effort and fallbacks, so the cached prefix and every
- * thinking block in the history stay valid; `tool_choice: none`, so no tool
+ * tools, model, thinking, effort and fallbacks (each where the runner has
+ * it), so the cached prefix and every thinking block in the history stay valid; `tool_choice: none`, so no tool
  * can be called; the history unchanged with Inflect's fixed instruction
  * appended; and `COMPACTION_SUMMARY_MAX_TOKENS`. It is a plain Messages call,
  * not a runner, so it carries no `thread` member at all (the client's
@@ -83,6 +94,7 @@ import type { EffectiveRunCaps } from '@/lib/agentic/run-caps';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 
 import { toolRunnerModelFor } from './client';
+import { modelCapabilitiesFor, type ModelCapabilities } from './model-capabilities';
 
 /** The beta that `fallbacks` needs. */
 export const SERVER_SIDE_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
@@ -166,10 +178,12 @@ export function compactionParams(
         messages: [...history, { role: 'user', content: COMPACTION_INSTRUCTION }],
         tools: runner.tools.map(toolDefinitionOf),
         tool_choice: { type: 'none' },
-        thinking: runner.thinking,
-        output_config: runner.output_config,
-        fallbacks: runner.fallbacks,
-        betas: runner.betas,
+        // The runner's own capability-dependent members, and only those it
+        // has (`lockedParams` sends each only to a model that accepts it).
+        ...(runner.thinking !== undefined ? { thinking: runner.thinking } : {}),
+        ...(runner.output_config !== undefined ? { output_config: runner.output_config } : {}),
+        ...(runner.fallbacks !== undefined ? { fallbacks: runner.fallbacks } : {}),
+        ...(runner.betas !== undefined ? { betas: runner.betas } : {}),
     };
 }
 
@@ -336,10 +350,14 @@ export function lockedParams(input: {
     const effort = input.def.profile?.effort ?? DEFAULT_EFFORT;
     const sub = input.subagent;
     const resume = sub ? undefined : input.resume;
+    // The model first, then its row: a resumed segment sends the stored model,
+    // and the row is that model's, not the tier's current one.
+    const model = resume ? resume.model : toolRunnerModelFor(tier);
+    const accepts: ModelCapabilities = modelCapabilitiesFor(model);
     return {
         stream: false,
         thread: false,
-        model: resume ? resume.model : toolRunnerModelFor(tier),
+        model,
         max_tokens: MAX_TOKENS_PER_TIER[tier],
         max_iterations: sub
             ? Math.min(sub.maxTurns, Math.max(input.caps.STEPS.limit - input.fromSeq, 0))
@@ -354,9 +372,11 @@ export function lockedParams(input: {
             : [{ role: 'user', content: sub ? delegatedTaskMessage(sub.task) : input.message }],
         tools: [...input.tools],
         tool_choice: toolChoiceFor(input.toolCallsPerTurn),
-        thinking: { type: 'adaptive', display: 'summarized' },
-        output_config: { effort },
-        fallbacks: 'default',
-        betas: [SERVER_SIDE_FALLBACK_BETA],
+        // Each member is present only when the model's row accepts it, in the
+        // order it always had: absent, not `undefined`, so the key set a
+        // model is sent is exactly what it accepts.
+        ...(accepts.thinking === 'adaptive' ? { thinking: { type: 'adaptive' as const, display: 'summarized' as const } } : {}),
+        ...(accepts.effort ? { output_config: { effort } } : {}),
+        ...(accepts.fallbacks ? { fallbacks: 'default' as const, betas: [SERVER_SIDE_FALLBACK_BETA] } : {}),
     };
 }

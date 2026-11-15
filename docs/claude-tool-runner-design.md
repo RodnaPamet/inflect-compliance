@@ -301,12 +301,21 @@ in `src/` constructs a runner. A guard pins that, and pins the values below.
 | `tools` | one `betaTool` per resolved tool, plus `activate_skill` when skills are mounted | the resolved, narrowed set; no server tools |
 | `tool_choice` | `{ type: 'auto', disable_parallel_tool_use: true }` | serial dispatch keeps the hash-chained `TOOL_CALL` order, cap charging and the guard latch exact. Forced `any`/`tool` is a 400 on Opus 5.5 and Sonnet 5.5 anyway |
 | `system` | Inflect's fixed preamble + the pinned profile instructions, fenced and labelled, with a `cache_control` breakpoint | stable prefix for caching |
-| `model`, `output_config.effort` | from the profile's tier, through the residency resolver | Opus 5.5 defaults to `medium` effort; set it explicitly |
-| `thinking` | `{ type: 'adaptive', display: 'summarized' }` | the Art 12 output summary and the egress scan need readable text |
+| `model`, `output_config.effort` | from the profile's tier, through the residency resolver; effort only to a model whose capability row accepts it | Opus 5.5 defaults to `medium` effort; set it explicitly |
+| `thinking` | `{ type: 'adaptive', display: 'summarized' }`, only to a model whose capability row accepts adaptive thinking | the Art 12 output summary and the egress scan need readable text |
 | `max_iterations` | from `resolveRunCaps` | the iteration bound |
 | `max_tokens` | per tier, streaming above the SDK's non-streaming ceiling | |
-| `fallbacks` | `'default'` (beta `server-side-fallback-2026-07-01`) on the first-party client | a refusal reroutes inside the call; each step records `msg.model` |
+| `fallbacks` | `'default'` (beta `server-side-fallback-2026-07-01`) on the first-party client, only to a model whose capability row accepts it | a refusal reroutes inside the call; each step records `msg.model` |
 | request `signal` | the run's wall clock, the kill switch and SIGTERM drain | |
+
+`thinking`, `output_config.effort` and `fallbacks` (with its beta) are the
+three **conditional** members (owner decision, 2026-11-15). `lockedParams`
+chooses the model, reads its row in `src/lib/agentic/tool-runner/model-capabilities.ts`
+once, and sends each of the three only when the row accepts it. A model with
+no row gets none of them: the set every current model accepts. Every other
+row of the table above is sent to every model. Inspect run 43715891271 is why:
+with both tiers set to `claude-haiku-4-5`, which accepts neither adaptive
+thinking nor effort, every Tool Runner run failed on the provider's 400.
 
 Two things are deliberately **not** used in v1. The MCP connector
 (`mcp_servers` + `mcp_toolset`) would have Anthropic call `/api/mcp` itself,
