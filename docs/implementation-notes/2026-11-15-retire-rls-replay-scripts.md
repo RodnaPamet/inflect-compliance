@@ -89,3 +89,39 @@ gone false.
   immutable history and several mention the scripts in comments; the
   2026-11-12 note records the drift that led here. Both are correct about the
   past and were left alone.
+
+## Change class
+
+SIGNIFICANT, because the diff is RLS material — `scripts/check-significant-change-analysis.mjs`
+classifies on what a change TOUCHES, not on what it does, which is the right
+way round for a gate. The analysis the class requires, recorded here rather
+than only in the pull request:
+
+**Risk.** No policy is removed from any database. The deleted files were
+applied by nothing — not `prisma migrate deploy`, not the Docker entrypoint,
+not any npm script, CI job or runbook step — so no environment's RLS state
+changes, on deploy or on reset. No behavioural check is weakened: every
+DB-backed assertion in `rls-coverage.test.ts` reads `pg_policies` and is
+untouched. Three file-comparison assertions went; the two worth keeping were
+re-anchored to the migrations. No migration, schema, enum or dependency
+change, and nothing ships to the product.
+
+The residual risk is informational: somebody who had bookmarked
+`rls-setup.sql` as a repair tool no longer finds it. That is the intended
+effect, and `docs/epic-a-security.md` points at the migrations instead.
+
+**Rollback.** `git revert` the single commit; it restores both SQL files, the
+deleted guard and the previous assertions verbatim, the change being pure
+deletion plus two re-anchored tests.
+
+The policy's forward-fix doctrine asks: *if the app image is reverted without
+reverting a migration, does the app still work?* Here, trivially yes — this
+change contains no migration, nothing in it is applied to a database, so app
+and schema cannot diverge because of it. There is no state to unwind and no
+window in which a reverted app meets a migrated database, which is the
+situation that doctrine exists for.
+
+If the deletion later proves wrong because somebody genuinely wants a replay
+tool, the route is not a revert but generating one from the migrations with a
+set-equality guard (option 2 on #5423). Restoring a 26%-complete file
+re-creates the defect this closed.
