@@ -18,7 +18,9 @@
  *     auto-provisioned ADMIN membership in every child tenant
  *     (`org-provisioning.ts`), which is what opens it. An ORG_READER is
  *     provisioned nothing: a tenant row opens only where they hold a
- *     membership of their own.
+ *     membership of their own, so the switcher lists an ORG_READER only
+ *     the tenants the API marks `isMember` (#5309 item 16, owner decision
+ *     2026-11-15). An org admin or owner still sees every tenant.
  *
  * Visual semantics:
  *
@@ -65,6 +67,7 @@ import {
 
 import { Popover } from '@/components/ui/popover';
 import { formatInitials } from '@/lib/format-initials';
+import { isOrgAdminTier } from '@/lib/org-roles';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -72,6 +75,8 @@ export interface OrgSwitcherTenant {
     id: string;
     slug: string;
     name: string;
+    /** The viewer holds an ACTIVE membership in this tenant (from the API). */
+    isMember?: boolean;
 }
 
 export interface OrgSwitcherProps {
@@ -80,6 +85,12 @@ export interface OrgSwitcherProps {
     orgSlug: string;
     /** Display name of the current organization. */
     orgName: string;
+    /**
+     * The viewer's role in the organization. An admin or owner (by
+     * `isOrgAdminTier`) is listed every tenant; anybody else, or a viewer
+     * whose role is not given, only the tenants they are a member of.
+     */
+    orgRole?: string | null;
     /** Which context the user is currently viewing. */
     currentKind: 'org' | 'tenant';
     /** When `currentKind === 'tenant'`, the active tenant slug — used to
@@ -97,6 +108,7 @@ export interface OrgSwitcherProps {
 export function OrgSwitcher({
     orgSlug,
     orgName,
+    orgRole,
     currentKind,
     currentTenantSlug,
     initialTenants,
@@ -140,6 +152,13 @@ export function OrgSwitcher({
             cancelled = true;
         };
     }, [open, tenants, orgSlug, t]);
+
+    // What the list shows: every tenant to an org admin, otherwise only the
+    // tenants this viewer can open.
+    const seesEveryTenant = isOrgAdminTier(orgRole);
+    const listed = tenants === null
+        ? null
+        : seesEveryTenant ? tenants : tenants.filter((tn) => tn.isMember === true);
 
     const portfolioActive = currentKind === 'org';
     const close = useCallback(() => setOpen(false), []);
@@ -222,14 +241,14 @@ export function OrgSwitcher({
                         </p>
                     )}
 
-                    {!loading && !error && tenants !== null && tenants.length === 0 && (
+                    {!loading && !error && listed !== null && listed.length === 0 && (
                         <p className="px-2.5 py-1.5 text-xs text-content-muted">
                             {t('switcher.emptyTenants')}
                         </p>
                     )}
 
-                    {!loading && tenants !== null &&
-                        tenants.map((t) => {
+                    {!loading && listed !== null &&
+                        listed.map((t) => {
                             const isActive =
                                 currentKind === 'tenant' && currentTenantSlug === t.slug;
                             return (

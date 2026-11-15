@@ -32,7 +32,14 @@ jest.mock('@/lib/org-context-provider', () => ({
     useOrgHref: () => (p: string) => `/org/globex${p}`,
     useOrgPermissions: () => ({ canDrillDown: true, canManageMembers: true }),
 }));
-jest.mock('@/components/org-switcher', () => ({ OrgSwitcher: () => <div /> }));
+// Records the org role the sidebar hands the switcher (#5309 item 16).
+const mockSwitcherRoles: unknown[] = [];
+jest.mock('@/components/org-switcher', () => ({
+    OrgSwitcher: (props: { orgRole?: unknown }) => {
+        mockSwitcherRoles.push(props.orgRole);
+        return <div />;
+    },
+}));
 
 import type { Role } from '@prisma/client';
 
@@ -78,5 +85,12 @@ describe('the role under the user in the sidebar', () => {
         const lines = Array.from(container.querySelectorAll('p')).map((p) => p.textContent);
         expect(lines).toContain(en.orgRoles[role]);
         expect(lines).not.toContain(role);
+    });
+
+    it('hands the org switcher the viewer\'s org role, which decides the tenants it lists (#5309 item 16)', () => {
+        mockOrg.role = 'ORG_READER';
+        mockSwitcherRoles.length = 0;
+        render(<OrgSidebarContent user={{ name: 'Ada' }} onLogout={() => {}} />);
+        expect(mockSwitcherRoles).toContain('ORG_READER');
     });
 });

@@ -5,9 +5,10 @@
  */
 const tenantCount = jest.fn();
 const tenantFindMany = jest.fn();
+const membershipFindMany = jest.fn();
 
 jest.mock('@/app-layer/context', () => ({
-    getOrgCtx: async () => ({ organizationId: 'org-1', orgRole: 'ORG_ADMIN', permissions: {} }),
+    getOrgCtx: async () => ({ userId: 'user-1', organizationId: 'org-1', orgRole: 'ORG_ADMIN', permissions: {} }),
 }));
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -17,6 +18,7 @@ jest.mock('@/lib/prisma', () => ({
             findMany: (a: unknown) => tenantFindMany(a),
         },
         orgMembership: { count: async () => 2 },
+        tenantMembership: { findMany: (a: unknown) => membershipFindMany(a) },
         organization: { findUnique: async () => ({ id: 'org-1', slug: 'acme', name: 'Acme' }) },
     },
 }));
@@ -29,9 +31,9 @@ type Where = Record<string, unknown>;
 
 /** Applies a where clause's two keys the way Postgres would, over a fixture. */
 const ROWS = [
-    { organizationId: 'org-1', deletedAt: null },
-    { organizationId: 'org-1', deletedAt: null },
-    { organizationId: 'org-1', deletedAt: new Date('2026-11-01') },
+    { id: 't1', organizationId: 'org-1', deletedAt: null },
+    { id: 't2', organizationId: 'org-1', deletedAt: null },
+    { id: 't3', organizationId: 'org-1', deletedAt: new Date('2026-11-01') },
 ];
 function matching(where: Where) {
     return ROWS.filter(
@@ -46,6 +48,7 @@ const args = { params: Promise.resolve({ orgSlug: 'acme' }) };
 beforeEach(() => {
     tenantCount.mockReset().mockImplementation(async ({ where }: { where: Where }) => matching(where).length);
     tenantFindMany.mockReset().mockImplementation(async ({ where }: { where: Where }) => matching(where));
+    membershipFindMany.mockReset().mockResolvedValue([]);
 });
 
 it('the org detail tenant count agrees with the org tenants list', async () => {
@@ -53,4 +56,19 @@ it('the org detail tenant count agrees with the org tenants list', async () => {
     const list = await (await listTenants(new NextRequest('http://localhost/api/org/acme/tenants'), args as never)).json();
     expect(list.tenants).toHaveLength(2);
     expect(detail.counts.tenants).toBe(list.tenants.length);
+});
+
+// #5309 item 16 — each row says whether the CALLER can open it: an ACTIVE
+// membership of their own in that tenant. The switcher lists an ORG_READER
+// only those.
+it('marks each tenant isMember by the caller\'s own ACTIVE membership', async () => {
+    membershipFindMany.mockResolvedValue([{ tenantId: 't2' }]);
+    const list = await (await listTenants(new NextRequest('http://localhost/api/org/acme/tenants'), args as never)).json();
+    expect(list.tenants.map((t: { id: string; isMember: boolean }) => [t.id, t.isMember])).toEqual([
+        ['t1', false],
+        ['t2', true],
+    ]);
+    expect(membershipFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { userId: 'user-1', status: 'ACTIVE', tenantId: { in: ['t1', 't2'] } },
+    }));
 });

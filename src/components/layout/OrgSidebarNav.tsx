@@ -189,6 +189,7 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                     <OrgSwitcher
                         orgSlug={org.orgSlug}
                         orgName={org.orgName}
+                        orgRole={org.role}
                         currentKind="org"
                     />
                 )}
