@@ -88,10 +88,6 @@ jest.mock('@/app-layer/repositories/AssessmentRepository', () => ({
         submit: jest.fn(),
         decide: jest.fn(),
     },
-    VendorAnswerRepository: {
-        upsertMany: jest.fn(),
-        listByAssessment: jest.fn(),
-    },
 }));
 
 jest.mock('@/app-layer/services/vendor-scoring', () => ({

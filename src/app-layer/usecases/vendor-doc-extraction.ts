@@ -206,25 +206,23 @@ export async function extractVendorDocument(
             //    correct row.
             //  • Legacy World-A (templateId set): questions live in the legacy
             //    QuestionnaireQuestion table; answers key on questionId only.
-            let questionList: Array<{ id: string; prompt: string }>;
-            let isG3: boolean;
-            if (assessment.templateVersionId) {
-                isG3 = true;
-                questionList = await db.vendorAssessmentTemplateQuestion.findMany({
-                    where: { templateId: assessment.templateVersionId },
-                    select: { id: true, prompt: true },
-                    take: 500,
-                });
-            } else if (assessment.templateId) {
-                isG3 = false;
-                questionList = await db.questionnaireQuestion.findMany({
-                    where: { templateId: assessment.templateId },
-                    select: { id: true, prompt: true },
-                    take: 500,
-                });
-            } else {
-                return 0;
-            }
+            // Only the G-3 question set is mapped. The legacy World-A branch
+            // read `QuestionnaireQuestion` for an assessment with `templateId`
+            // and no `templateVersionId`, and since #5068 re-pointed
+            // `VendorAssessmentAnswer.questionId` at
+            // `VendorAssessmentTemplateQuestion` that produced a proposal
+            // NOBODY COULD APPROVE — the approve refused P2003 on the foreign
+            // key. Retired with the rest of that path (#5533, owner decision
+            // 2026-11-15): a legacy assessment now yields no proposal at all,
+            // which is the same outcome reached at the start rather than at
+            // the end. `QuestionnaireTemplate` itself stays — it is live,
+            // through `QuestionnaireRepository.listTemplates`.
+            if (!assessment.templateVersionId) return 0;
+            const questionList = await db.vendorAssessmentTemplateQuestion.findMany({
+                where: { templateId: assessment.templateVersionId },
+                select: { id: true, prompt: true },
+                take: 500,
+            });
 
             let created = 0;
             for (const q of questionList) {
@@ -240,7 +238,7 @@ export async function extractVendorDocument(
                         assessmentId: assessment.id,
                         questionId: q.id,
                         // G-3 answers key on both fields (= template-question id).
-                        templateQuestionId: isG3 ? q.id : undefined,
+                        templateQuestionId: q.id,
                         proposedAnswerJson: { value: hasException ? 'PARTIAL' : 'YES', controls: matched.map((c) => c.ref), source: citation },
                         confidence: hasException ? 'medium' : 'high',
                         sourceCitation: citation,
@@ -373,15 +371,22 @@ export async function approveProposal(
 
         // The question the answer is for, so the answer is written in its
         // vocabulary and scored by its own rule, as a vendor's submission is.
-        const question = proposal.templateQuestionId
-            ? await db.vendorAssessmentTemplateQuestion.findFirst({
-                  where: { id: proposal.templateQuestionId, tenantId: ctx.tenantId },
-                  select: { answerType: true, weight: true, optionsJson: true, riskPointsJson: true },
-              })
-            : await db.questionnaireQuestion.findFirst({
-                  where: { id: proposal.questionId },
-                  select: { answerType: true, weight: true, optionsJson: true, riskPointsJson: true },
-              });
+        // A proposal with no `templateQuestionId` is a LEGACY one, written
+        // before #5068 or by the retired mapping branch. It cannot be approved
+        // — `VendorAssessmentAnswer.questionId` references
+        // `VendorAssessmentTemplateQuestion`, so the write is refused by the
+        // foreign key. It used to reach a `questionnaireQuestion` read here and
+        // fail later as a raw P2003; refusing by name says which shape it is,
+        // which a database error code does not (#5533).
+        if (!proposal.templateQuestionId) {
+            throw badRequest('This proposal predates the current question set and cannot be approved', {
+                reason: 'LEGACY_PROPOSAL',
+            });
+        }
+        const question = await db.vendorAssessmentTemplateQuestion.findFirst({
+            where: { id: proposal.templateQuestionId, tenantId: ctx.tenantId },
+            select: { answerType: true, weight: true, optionsJson: true, riskPointsJson: true },
+        });
         if (!question) throw notFound('The question this proposal answers no longer exists');
         const answerJson = answerInQuestionVocabulary(
             question,

@@ -17,9 +17,10 @@
  * to `VendorAssessmentTemplateQuestion`, which is what `submitResponse`
  * actually writes into it. It used to reference the legacy
  * `QuestionnaireQuestion` table, which no path the product runs populates (the
- * one seed that writes it, prisma/seed-vendor-questionnaire.ts, is unwired and
- * run by hand; the container entrypoint runs the PLURAL
- * scripts/seed-vendor-questionnaires.ts, which writes the G-3 tables) — so
+ * one seed that wrote it, the SINGULAR prisma/seed-vendor-questionnaire.ts,
+ * was unwired, run by hand, and is retired as of #5533; the container
+ * entrypoint runs the PLURAL scripts/seed-vendor-questionnaires.ts, which
+ * writes the G-3 tables) — so
  * this fixture fabricated a matching legacy row with the same explicit id
  * to satisfy it. That workaround is GONE: it was the only reason this suite
  * passed while every real G-3 submission raised P2003, so the fixture was

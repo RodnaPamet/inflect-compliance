@@ -64,10 +64,6 @@ jest.mock('@/app-layer/repositories/AssessmentRepository', () => ({
         decide: jest.fn(),
         updateScore: jest.fn(),
     },
-    VendorAnswerRepository: {
-        upsertMany: jest.fn(),
-        listByAssessment: jest.fn(),
-    },
 }));
 
 jest.mock('@/lib/security/sanitize', () => ({

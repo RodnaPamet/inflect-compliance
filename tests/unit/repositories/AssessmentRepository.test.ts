@@ -6,14 +6,9 @@
  *   - QuestionnaireRepository.listTemplates / getByKey
  *   - VendorAssessmentRepository: list/get/create + submit + decide
  *     state-machine guards (not-found, wrong-status) + updateScore
- *   - VendorAnswerRepository.upsertMany (loop: 0/1/2 answers) + listByAssessment
  */
 
-import {
-    QuestionnaireRepository,
-    VendorAssessmentRepository,
-    VendorAnswerRepository,
-} from '@/app-layer/repositories/AssessmentRepository';
+import { QuestionnaireRepository, VendorAssessmentRepository } from '@/app-layer/repositories/AssessmentRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN');
@@ -154,35 +149,3 @@ describe('VendorAssessmentRepository.updateScore', () => {
     });
 });
 
-describe('VendorAnswerRepository', () => {
-    it('upsertMany returns [] for an empty answer set (zero-iteration branch)', async () => {
-        const res = await VendorAnswerRepository.upsertMany(db as any, ctx, 'as1', []);
-        expect(res).toEqual([]);
-        expect(db.vendorAssessmentAnswer.upsert).not.toHaveBeenCalled();
-    });
-
-    it('upsertMany loops over each answer with composite where + tenant on create', async () => {
-        const res = await VendorAnswerRepository.upsertMany(db as any, ctx, 'as1', [
-            { questionId: 'q1', answerJson: { v: 1 }, computedPoints: 5 },
-            { questionId: 'q2', answerJson: { v: 2 }, computedPoints: 7 },
-        ]);
-        expect(db.vendorAssessmentAnswer.upsert).toHaveBeenCalledTimes(2);
-        expect(res).toHaveLength(2);
-        const first = db.vendorAssessmentAnswer.upsert.mock.calls[0][0];
-        expect(first.where).toEqual({ assessmentId_questionId: { assessmentId: 'as1', questionId: 'q1' } });
-        expect(first.update).toEqual({ answerJson: { v: 1 }, computedPoints: 5 });
-        expect(first.create).toMatchObject({
-            tenantId: 'tenant-1',
-            assessmentId: 'as1',
-            questionId: 'q1',
-            computedPoints: 5,
-        });
-    });
-
-    it('listByAssessment scopes by tenant + assessment and includes question', async () => {
-        await VendorAnswerRepository.listByAssessment(db as any, ctx, 'as1');
-        const arg = db.vendorAssessmentAnswer.findMany.mock.calls[0][0];
-        expect(arg.where).toEqual({ tenantId: 'tenant-1', assessmentId: 'as1' });
-        expect(arg.include).toEqual({ question: true });
-    });
-});
