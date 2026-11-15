@@ -14,8 +14,8 @@
  *
  * The audit log is the one page an AUDITOR's render reads (owner decision
  * 2026-10-29); every other gated page refuses an AUDITOR — but the legacy
- * reconciliation queue, which every holder of `identity_reconciliation.view`
- * opens (owner decision 2026-11-15, #5695), and every built-in role holds it.
+ * reconciliation queue, which a holder of `identity_reconciliation.view` opens
+ * (owner decisions 2026-11-15, #5695): OWNER, ADMIN and AUDITOR.
  *
  * The structural rule (gate first, own route, from the real module) is
  * `tests/guardrails/admin-layout-guard.test.ts`; who each row admits is
@@ -253,11 +253,10 @@ beforeEach(() => {
     getTenantCtxMock.mockClear();
 });
 
-/** The one gated page a READER opens: the view key is enough (#5695, owner decision 2026-11-15). */
 const RECON = '/admin/integrations/[connectionId]/reconciliation';
 
 describe('a READER is refused by every gated admin page before any read', () => {
-    test.each(Object.keys(PAGES).filter((r) => r !== RECON))('%s', async (route) => {
+    test.each(Object.keys(PAGES))('%s', async (route) => {
         const el = await render(route, 'READER');
         expectAdminForbidden(el);
         expect(readsStarted()).toEqual([]);
@@ -266,8 +265,13 @@ describe('a READER is refused by every gated admin page before any read', () => 
     });
 });
 
-describe('reconciliation queue — the view key opens it (#5695, owner decision 2026-11-15)', () => {
-    test.each(['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN'])(
+describe('reconciliation queue — the view key opens it (#5695, owner decisions 2026-11-15)', () => {
+    test.each(['EDITOR', 'READER', 'AI_ADMIN'])('an %s, who does not hold the key, gets the forbidden page', async (role) => {
+        expectAdminForbidden(await render(RECON, role));
+        expect(readsStarted()).toEqual([]);
+    });
+
+    test.each(['OWNER', 'ADMIN', 'AUDITOR'])(
         'an %s, who holds identity_reconciliation.view, gets the queue and nothing is read on the server',
         async (role) => {
             const el = await render(RECON, role);

@@ -2,9 +2,10 @@
  * mirrors tests/unit/ai-admin-edge-allowlist.test.ts (NextRequest fixtures +
  * mocked rate-limiters + getToken). */
 /**
- * #5695, owner decision 2026-11-15: holding `identity_reconciliation.view` is
- * enough to open the legacy-access reconciliation queue. Decisions stay on
- * their existing keys.
+ * #5695, owner decisions 2026-11-15: holding `identity_reconciliation.view` is
+ * enough to open the legacy-access reconciliation queue, and the built-in
+ * roles that hold it are OWNER, ADMIN and AUDITOR ("Auditors only"). Decisions
+ * stay on their existing keys.
  *
  * What a view-key holder who is not an OWNER or ADMIN met before this change,
  * gate by gate, each asked of the REAL code:
@@ -21,7 +22,11 @@
  *      `admin.manage`, which none of those roles holds.
  *
  * This file pins the edge half: exactly two GET templates, segment-exact, for
- * exactly the built-in roles that hold the view key, and nothing else.
+ * exactly the built-in roles below the admin roles that hold the view key —
+ * AUDITOR — and nothing else. EDITOR, READER and AI_ADMIN no longer hold the
+ * key and are refused at the edge as before; a custom role granting the key
+ * on one of those memberships is refused too, because the edge reads the
+ * membership role.
  */
 import { NextRequest } from 'next/server';
 
@@ -56,6 +61,10 @@ const ALL_ROLES: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_
 /** Every built-in role below the edge's admin roles that holds the view key. */
 const VIEW_HOLDERS_BELOW_ADMIN = ALL_ROLES.filter(
     (r) => !EDGE_ADMIN_ROLES.has(r) && getPermissionsForRole(r).identity_reconciliation.view,
+);
+/** The built-in roles below the admin roles that do NOT hold it. */
+const NON_HOLDERS = ALL_ROLES.filter(
+    (r) => !EDGE_ADMIN_ROLES.has(r) && !getPermissionsForRole(r).identity_reconciliation.view,
 );
 
 const PAGE = '/t/acme/admin/integrations/conn-1/reconciliation';
@@ -105,9 +114,12 @@ async function refusedAtEdge(role: string, pathname: string, method = 'GET'): Pr
 beforeEach(() => jest.clearAllMocks());
 
 describe('who holds the view key (the population this change admits)', () => {
-    it('is every built-in role; the four below the admin roles are the ones the edge newly admits', () => {
-        expect(ALL_ROLES.filter((r) => getPermissionsForRole(r).identity_reconciliation.view)).toEqual(ALL_ROLES);
-        expect(VIEW_HOLDERS_BELOW_ADMIN.sort()).toEqual(['AI_ADMIN', 'AUDITOR', 'EDITOR', 'READER']);
+    it('is OWNER, ADMIN and AUDITOR; AUDITOR is the one the edge newly admits (owner decision 2026-11-15)', () => {
+        expect(ALL_ROLES.filter((r) => getPermissionsForRole(r).identity_reconciliation.view).sort()).toEqual(
+            ['ADMIN', 'AUDITOR', 'OWNER'],
+        );
+        expect(VIEW_HOLDERS_BELOW_ADMIN).toEqual(['AUDITOR']);
+        expect(NON_HOLDERS.sort()).toEqual(['AI_ADMIN', 'EDITOR', 'READER']);
     });
 
     it('the edge role set is exactly those holders — derived, not hand-copied', () => {
@@ -189,7 +201,7 @@ describe('the real middleware, for each view-key holder in the URL tenant', () =
         expect(admitted).toEqual([]);
     });
 
-    it.each(['AUDITOR', 'READER', 'EDITOR'])('%s is refused a GET of the admin connection routes the page used to call', async (role) => {
+    it.each(['AUDITOR', 'READER', 'EDITOR', 'AI_ADMIN'])('%s is refused a GET of the admin connection routes the page used to call', async (role) => {
         for (const p of [
             '/api/t/acme/admin/integrations/conn-1/executions/latest',
             '/api/t/acme/admin/integrations/conn-1/executions',
@@ -202,8 +214,8 @@ describe('the real middleware, for each view-key holder in the URL tenant', () =
     });
 
     it('the role that counts is the one in the URL tenant', async () => {
-        // tokenFor() makes the caller READER in `beta`: still a view holder there.
-        expect(await refusedAtEdge('AUDITOR', '/api/t/beta/admin/legacy-access/queue')).toBe(false);
+        // tokenFor() makes the caller READER in `beta`, which holds no view key.
+        expect(await refusedAtEdge('AUDITOR', '/api/t/beta/admin/legacy-access/queue')).toBe(true);
         // A tenant missing from the claim defers, as for every role.
         expect(checkAdminAccess('/api/t/gamma/admin/legacy-access/queue', 'AUDITOR', tokenFor('AUDITOR').memberships, 'GET')).toBe(
             'defer',
@@ -215,6 +227,28 @@ describe('the real middleware, for each view-key holder in the URL tenant', () =
     it.each(['ADMIN', 'OWNER'])('%s is unchanged: every path, every method', async (role) => {
         for (const [p, m] of [[QUEUE, 'GET'], [LATEST_RUN, 'GET'], [DECIDE, 'POST'], [BULK, 'POST']] as const) {
             expect({ p, refused: await refusedAtEdge(role, p, m) }).toEqual({ p, refused: false });
+        }
+    });
+});
+
+describe('the roles that do not hold the key are refused, at the edge and by the key', () => {
+    it.each(['EDITOR', 'READER', 'AI_ADMIN'])('%s is refused the queue read and the run lookup at the edge', async (role) => {
+        for (const p of [QUEUE, LATEST_RUN]) {
+            expect({ p, refused: await refusedAtEdge(role, p) }).toEqual({ p, refused: true });
+            expect({ p, refused: await refusedAtEdge(role, p, 'HEAD') }).toEqual({ p, refused: true });
+        }
+        expect(checkAdminAccess(QUEUE, role, tokenFor(role).memberships, 'GET')).toBe('deny');
+    });
+
+    it.each(['EDITOR', 'READER', 'AI_ADMIN'] as Role[])('%s does not hold the key the handlers ask for', (role) => {
+        expect(getPermissionsForRole(role).identity_reconciliation).toEqual({ view: false, confirm: false });
+    });
+
+    it('a custom role granting the key on a READER membership is still refused at the edge: it reads the membership role', async () => {
+        // The token carries the MEMBERSHIP role; a custom role's keys never
+        // reach the edge, so this is a READER whatever its custom role grants.
+        for (const p of [QUEUE, LATEST_RUN]) {
+            expect({ p, refused: await refusedAtEdge('READER', p) }).toEqual({ p, refused: true });
         }
     });
 });

@@ -1,8 +1,8 @@
 /**
  * The reconciliation review queue for one legacy connection — the server gate.
  *
- * #5695, owner decision 2026-11-15: holding `identity_reconciliation.view` is
- * enough to open the queue. Every built-in role holds that key, but the admin
+ * #5695, owner decisions 2026-11-15: holding `identity_reconciliation.view` is
+ * enough to open the queue, and OWNER, ADMIN and AUDITOR hold it. The admin
  * layout shows a page only to an OWNER or ADMIN membership unless the page's
  * own row in `ADMIN_PAGE_REQUIREMENTS` admits the caller, and a row belongs
  * only to a page that applies it on the server. So this page is that server

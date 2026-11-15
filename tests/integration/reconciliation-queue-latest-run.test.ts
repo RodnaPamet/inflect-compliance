@@ -1,14 +1,17 @@
 /**
- * #5695, owner decision 2026-11-15 — the run the reconciliation queue opens,
- * read under the queue's own key, `identity_reconciliation.view`.
+ * #5695, owner decisions 2026-11-15 — the run the reconciliation queue opens,
+ * read under the queue's own key, `identity_reconciliation.view`, which OWNER,
+ * ADMIN and AUDITOR hold ("Auditors only").
  *
  * Real route, real `requirePermission`, real usecase, real database and RLS.
  * Only `getTenantCtx` is mocked: it is the one thing in the path that needs a
  * browser session.
  *
- *   · every built-in role holds the view key and gets the latest PASSED match
- *     run of its OWN tenant's connection — an AUDITOR included, whom the admin
- *     connection read (`admin.manage`) refuses;
+ *   · OWNER, ADMIN and AUDITOR get the latest PASSED match run of their OWN
+ *     tenant's connection — an AUDITOR included, whom the admin connection read
+ *     (`admin.manage`) refuses;
+ *   · EDITOR, READER and AI_ADMIN, which no longer hold the key, are a 403
+ *     with exactly one `AUTHZ_DENIED` row;
  *   · another tenant's connection is a 404 and its newer run never appears;
  *   · a member whose custom role withholds the key is a 403 with exactly one
  *     `AUTHZ_DENIED` row;
@@ -43,6 +46,8 @@ const B = `tb-${SUITE}`;
 const TENANTS = [A, B];
 const RECONCILE = 'legacy-mcp.reconcile';
 const ROLES: Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'AI_ADMIN' as Role];
+const HOLDERS: Role[] = ['OWNER', 'ADMIN', 'AUDITOR'];
+const NON_HOLDERS: Role[] = ['EDITOR', 'READER', 'AI_ADMIN' as Role];
 
 let connA = '';
 let connB = '';
@@ -129,7 +134,7 @@ describeFn('the reconciliation queue run, read under the view key (#5695)', () =
         await prisma.tenant.deleteMany({ where: { id: { in: TENANTS } } });
     });
 
-    it.each(ROLES)('%s holds the view key and gets its own tenant\'s latest PASSED match run', async (role) => {
+    it.each(HOLDERS)('%s holds the view key and gets its own tenant\'s latest PASSED match run', async (role) => {
         expect(getPermissionsForRole(role).identity_reconciliation.view).toBe(true);
         getTenantCtxMock.mockResolvedValue(ctxAs(role));
 
@@ -142,6 +147,19 @@ describeFn('the reconciliation queue run, read under the view key (#5695)', () =
             execution: { id: runA, automationKey: RECONCILE, status: 'PASSED', executedAt: at(0).toISOString() },
         });
         expect(await denialsBy(users[`${A}:${role}`])).toBe(0);
+    });
+
+    it.each(NON_HOLDERS)('%s does not hold the view key: a 403 with exactly one AUTHZ_DENIED row', async (role) => {
+        expect(getPermissionsForRole(role).identity_reconciliation.view).toBe(false);
+        const userId = users[`${A}:${role}`];
+        const before = await denialsBy(userId);
+        getTenantCtxMock.mockResolvedValue(ctxAs(role));
+
+        const res = await get(A, connA);
+
+        expect(res.status).toBe(403);
+        expect(await res.text()).not.toContain(runA);
+        expect((await denialsBy(userId)) - before).toBe(1);
     });
 
     it('the admin connection read the page used to call still refuses an AUDITOR (admin.manage)', async () => {
@@ -167,7 +185,7 @@ describeFn('the reconciliation queue run, read under the view key (#5695)', () =
     });
 
     it('each tenant reads its own run on its own connection', async () => {
-        getTenantCtxMock.mockResolvedValue(ctxAs('READER', B));
+        getTenantCtxMock.mockResolvedValue(ctxAs('AUDITOR', B));
         const body = await (await get(B, connB)).json();
         expect(body.execution.id).toBe(runB);
         expect(body.connection.id).toBe(connB);
@@ -184,7 +202,7 @@ describeFn('the reconciliation queue run, read under the view key (#5695)', () =
     });
 
     it('a connection that is not a legacy connection is not found: the key reads no other integration', async () => {
-        getTenantCtxMock.mockResolvedValue(ctxAs('READER'));
+        getTenantCtxMock.mockResolvedValue(ctxAs('AUDITOR'));
         const res = await get(A, otherA);
         expect(res.status).toBe(404);
         expect(await res.text()).not.toContain(`okta-${SUITE}`);
@@ -203,7 +221,7 @@ describeFn('the reconciliation queue run, read under the view key (#5695)', () =
         expect((await get(A, null)).status).toBe(400);
     });
 
-    it.each(['AUDITOR', 'READER', 'ADMIN'] as Role[])(
+    it.each(['AUDITOR', 'ADMIN', 'OWNER'] as Role[])(
         'a %s membership whose custom role withholds the view key is refused with exactly one AUTHZ_DENIED row',
         async (role) => {
             const userId = users[`${A}:${role}`];

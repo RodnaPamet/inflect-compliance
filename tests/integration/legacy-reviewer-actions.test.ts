@@ -214,9 +214,17 @@ describe('authorisation', () => {
         expect(r.outcome).toBe('WRITTEN');
     });
 
+    // The view key is OWNER, ADMIN and AUDITOR since #5695 (owner decision
+    // 2026-11-15); AUDITOR is the role that holds it and nothing that decides.
     it('viewing the queue needs only the view key', async () => {
-        const q = await listReconciliationQueue(ctx('READER'), { executionId, connectionId });
+        const q = await listReconciliationQueue(ctx('AUDITOR'), { executionId, connectionId });
         expect(q.map((x) => x.accountKey)).toEqual(['alovelace']);
+    });
+
+    it('a READER, which no longer holds the view key, is refused the queue', async () => {
+        await expect(listReconciliationQueue(ctx('READER'), { executionId, connectionId })).rejects.toThrow(
+            /identity_reconciliation\.view/,
+        );
     });
 });
 
