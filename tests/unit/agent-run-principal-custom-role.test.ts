@@ -23,7 +23,13 @@ import { getPermissionsForRole } from '@/lib/permissions';
 
 const EDITOR = getPermissionsForRole('EDITOR');
 
-const RUN = { id: 'run-1', tenantId: 'tenant-A', startedByUserId: 'user-1', triggeredViaKeyId: null, agentId: 'agent-1' };
+// `agentInvokeDepth` is REQUIRED on the row (#5716) rather than optional, so a
+// future caller cannot forget the recursion counter silently — which is the
+// failure the column exists to fix. `null` here: no rule invoked these runs.
+const RUN = {
+    id: 'run-1', tenantId: 'tenant-A', startedByUserId: 'user-1', triggeredViaKeyId: null,
+    agentId: 'agent-1', agentInvokeDepth: null,
+};
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -64,6 +70,25 @@ describe('the rebuilt context names its run (#5318)', () => {
         const b = await rebuildRunContext({ ...RUN, id: 'run-2' });
         expect(a?.requestId).toBe('agent-run-run-1');
         expect(b?.requestId).toBe('agent-run-run-2');
+    });
+});
+
+/**
+ * #5716. The worker rebuilds a continuation's authority FROM THE ROW, so the
+ * recursion counter has to come from there too. A depth that lived only in the
+ * first job's payload would be lost at exactly the hop a human approval
+ * introduces — a run parked at a deferral, resumed by a later job, going on to
+ * cause events that carry no depth and restart the next lap at 1.
+ */
+describe('a resumed run carries its recursion depth from the row', () => {
+    it('puts the row depth on the rebuilt context', async () => {
+        const ctx = await rebuildRunContext({ ...RUN, agentInvokeDepth: 3 });
+        expect(ctx?.agentInvokeDepth).toBe(3);
+    });
+
+    it('leaves it absent when no rule invoked the run', async () => {
+        const ctx = await rebuildRunContext({ ...RUN, agentInvokeDepth: null });
+        expect(ctx?.agentInvokeDepth).toBeUndefined();
     });
 });
 

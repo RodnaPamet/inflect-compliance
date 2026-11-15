@@ -60,6 +60,7 @@ jest.mock('@/app-layer/usecases/risk', () => ({
 }));
 
 import { executeAction } from '@/app-layer/automation/action-executor';
+import { MAX_AGENT_INVOKE_DEPTH } from '@/app-layer/jobs/agent-invoke-dispatch';
 
 const db = {
     tenantMembership: { findMany: jest.fn(), findUnique: jest.fn() },
@@ -910,6 +911,17 @@ describe('INVOKE_SUBFLOW', () => {
         await invoke({ targetGroupId: 'g-1' }, { data: {} });
         expect(enqueue.mock.calls[0][1].parentExecutionId).toBe('');
     });
+
+    // #5716. A cycle must not be able to launder itself through a sub-flow. The
+    // agent depth rides `data`, and `invokeSubflow` forwards `data` whole, so
+    // the number survives the hop — which is exactly why the depth lives in
+    // `data` rather than in a typed field each hop would have to hand over.
+    it('forwards the agent depth, so a lap through a sub-flow does not reset it', async () => {
+        await invoke({ targetGroupId: 'g-1' }, { data: { __agentInvokeDepth: 3 } });
+        expect(enqueue.mock.calls[0][1].data).toEqual(
+            expect.objectContaining({ __agentInvokeDepth: 3 }),
+        );
+    });
 });
 
 describe('INVOKE_AGENT', () => {
@@ -927,5 +939,32 @@ describe('INVOKE_AGENT', () => {
     it("keeps '' (a rule caused it, execution unknown) rather than null when no execution is given", async () => {
         await invoke({ data: {} });
         expect(enqueue.mock.calls[0][1].parentExecutionId).toBe('');
+    });
+
+    // #5716. `__agentInvokeDepth` rides `event.data`, stamped by the bus from
+    // the run's context. This read has always been here; what was missing was
+    // anything writing the number, so every invoke arrived at 1 and
+    // `depth_exceeded` could not trip through a real cycle.
+    it('enqueues one deeper than the depth the event carries', async () => {
+        await invoke({ data: { __agentInvokeDepth: 3 } });
+        expect(enqueue.mock.calls[0][1].depth).toBe(4);
+    });
+
+    it('starts at 1 when the event carries no depth, so an ordinary rule is unchanged', async () => {
+        await invoke({ data: {} });
+        expect(enqueue.mock.calls[0][1].depth).toBe(1);
+    });
+
+    // The lap that reaches the cap. Paired with the refusal in
+    // `agent-invoke-dispatch.test.ts`, which drives `runAgentInvokeDispatch`
+    // with exactly this number and expects `depth_exceeded`.
+    it('carries a capped event one past the cap, which is what the counter is for', async () => {
+        await invoke({ data: { __agentInvokeDepth: MAX_AGENT_INVOKE_DEPTH } });
+        expect(enqueue.mock.calls[0][1].depth).toBe(MAX_AGENT_INVOKE_DEPTH + 1);
+    });
+
+    it('reads a non-numeric depth as zero rather than NaN', async () => {
+        await invoke({ data: { __agentInvokeDepth: 'not-a-number' } });
+        expect(enqueue.mock.calls[0][1].depth).toBe(1);
     });
 });

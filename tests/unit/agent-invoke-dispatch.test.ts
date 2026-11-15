@@ -191,6 +191,20 @@ describe('an automation rule invoking an agent', () => {
         expect(startWorkflowRun).not.toHaveBeenCalled();
     });
 
+    // #5716. THE HALF THAT WAS MISSING. The cases above drive the comparison
+    // with a hand-written `depth`, which proves the arithmetic and says nothing
+    // about whether the number is ever anything but 1 — a dead gate's shape.
+    // The depth now reaches the RUN, so the events the run's effects emit carry
+    // it and the next lap arrives one deeper.
+    it('puts the depth on the run context, so the events the run causes carry it', async () => {
+        mockPrisma.registeredAgent.findFirst.mockResolvedValue({
+            id: 'ag-1', status: 'ACTIVE', riskTier: 'LOW',
+        });
+        await runAgentInvokeDispatch(payload({ depth: 2 }) as never);
+        expect(startWorkflowRun).toHaveBeenCalled();
+        expect((startWorkflowRun.mock.calls[0][0] as { agentInvokeDepth?: number }).agentInvokeDepth).toBe(2);
+    });
+
     it('allows the last permitted depth — the cap is off-by-one safe', async () => {
         // Without this, a cap written `>=` would pass every test above while
         // refusing one lap earlier than it says it does.
