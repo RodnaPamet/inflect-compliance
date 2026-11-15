@@ -136,7 +136,8 @@ tests and its operator variables, off by default, with nothing deployed behind
 it and nothing in the product calling it yet. Each bullet below says which.
 Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
 3.164.1), F5 and F12 were re-verified and closed on 2026-11-11 against
-3.364.1; F3 is unchanged.
+3.364.1; F3 is unchanged, and is now recorded as a decision
+([note](./implementation-notes/2026-11-15-flue-f3-telemetry-stays-hand-rolled.md)).
 
 ### Layer 1 — Security, guards & alignment
 
@@ -280,11 +281,18 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   merges **nine** artifacts (the trailing argument to
   `check-merged-coverage.ts` in `ci.yml` is the authority).
 - **Residuals from the 2026-10-09 audit, re-verified 2026-11-11 against
-  3.364.1:** F3 is unchanged — the one-member `PERMITTED_FLUE_PACKAGES`
-  allowlist (`['@flue/runtime']`, exact set equality against `package.json`)
-  blocks `@flue/opentelemetry`, so telemetry stays hand-rolled
-  (`flue/telemetry.ts`, content-free by guard) — a decision to record, not a
-  gap. F12, the stale comment in `usecases/workflow-runs.ts` claiming no
+  3.364.1, and again 2026-11-15 against 3.387.2:** F3 is unchanged and is now
+  RECORDED ([note](./implementation-notes/2026-11-15-flue-f3-telemetry-stays-hand-rolled.md)). The one-member
+  `PERMITTED_FLUE_PACKAGES` allowlist (`['@flue/runtime']`, exact set equality
+  against `package.json`) refuses `@flue/opentelemetry`, so Flue spans go
+  through the tracer every usecase already writes to rather than a second
+  exporter with its own sampling, retention and credentials. It is NOT what
+  keeps content off those spans: subpaths of a permitted package are permitted
+  by decision, `@flue/runtime/telemetry` among them, and that subpath ships the
+  helpers that would put prompts, answers and tool arguments on spans —
+  `tests/guards/flue-telemetry-carries-no-content.test.ts` is what refuses
+  them, structurally, because a version that forwarded content would pass every
+  functional test. A decision, not a gap. F12, the stale comment in `usecases/workflow-runs.ts` claiming no
   definition sets `driver`, is fixed. F5 is closed (Layer 1).
 - **The canvas, the rule builder and agent profiles are the authoring
   surfaces.** Profiles (Claude engines Step 1a): approved by a second person,
@@ -523,7 +531,7 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
 
 | Roadmap | Tracks | Status |
 | --- | --- | --- |
-| Flue × Inflect integration plan (artifact, v4, 2026-10-09 audit) | Flue Phases 1–3 | shipped; F5 closed and F12 fixed 2026-11-11; F3 carried here as a decision to record |
+| Flue × Inflect integration plan (artifact, v4, 2026-10-09 audit) | Flue Phases 1–3 | shipped; F5 closed and F12 fixed 2026-11-11; F3 recorded as a decision 2026-11-15 |
 | `docs/claude-agent-sdk-design.md`, `claude-tool-runner-design.md`, `claude-managed-agents-design.md` | Claude engines, #4135 | the Tool Runner built and on (Steps 2a–2d, the flag since 2c, #4512), the connect wizard and the scanner recogniser (3a, 3b) on `main`; the Agent SDK engine (Phase 4) and Managed Agents (Phases 5–6) designed |
 | `docs/agentic-iam-roadmap.md` | agentic IAM, #3654 | in progress |
 | `docs/sap-agent-integration-roadmap.md` | SAP routes, #3859 | Phase 0 re-scoped 2026-10-20 |
@@ -929,7 +937,7 @@ completion.
 | Web Bot Auth (added 2026-10-30, not in v6) | 1 | [`web-bot-auth.md`](./ai-architecture/web-bot-auth.md) | 1 (sign the crawler) / 3 (verify at the door) | Phase 0's sub-phases done; its done-when waits for the outcome metric to be observed in production. Phase 1 partly (1.1, 1.3, 1.5): the deployment Ed25519 key, set in production 2026-11-13, and the signed key directory; 1.2 and 1.4 open. Phase 2 partly (2.1–2.3, 2026-11-12): the vendor monitor signs through `botFetch`, honours robots.txt on every hop, and names itself on `/bots/vendor-monitor`; the conformance record's request half is recomputed in CI. 2.4 (registration, after `content-digest` and D-L1-13's crawl-delay) and 2.5 (the 14-day measurement) open | — | 3 | — |
 | Mastercard Agent Pay (added 2026-10-30, not in v6) | 1 | [`mastercard-agent-pay.md`](./ai-architecture/mastercard-agent-pay.md) | 2 (register) / 3 (discover, evidence) / 4 (Mastercard API, if access) | Phase 0 partly: the card-number refusal in code (0.4); 0.2, 0.3 and 0.5 done in substance, their boxes to be ticked in the child now that D-L1-8 to D-L1-10 are initialled here; 0.1 (primary sources, a conversation with Mastercard) open. Phase 1 partly: spending authority on the register (1.1, 1.2, 1.3, 1.5), four-eyes, refused at activation, suspended by a kill; 1.4 and 1.6 open. Phase 2 partly (2.1–2.3, 2.5, 2026-11-12): the scanner finds agents whose code can pay (contract `/4`, DPIA amendment signed) and `SPENDING_AGENT_UNDECLARED` is raised and closed only by a reviewed envelope or a person; 2.4 blocked on Web Bot Auth Phase 3 | — | 3 (4 waits on access) | — |
 | Agent-flow canvas (Langflow's box) | 2 | [`langflow.md`](./ai-architecture/langflow.md) | 2 (view, author, preview) / 3 (run) | Phase 1 done: a flow as data on the profile version, refused on every engine until Phase 5. Phase 2 partly: the read-only agent view; 2.3 (open on canvas, drill-down) and 2.4 (the diff for form-edited versions) open. Phase 3 (the editor, saving a DRAFT version; 3.2's stored layout record open) and Phase 4 (the engine's own run message beside the flow) built 2026-11-12. Langflow not adopted | 1 | 5 | — |
-| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3); F5 closed and F12 fixed 2026-11-11 | 3 | 3 (met) | F3 decision to record |
+| Flue | 2 | artifact v4 + residuals here | — | **shipped** (Phases 1–3); F5 closed and F12 fixed 2026-11-11 | 3 | 3 (met) | — |
 | Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | Phase 1 done: the role axis, worker by API key (`AGENT_FLUE_WORKER_MODEL`, unset by default, so the worker runs the supervisor's model). Phase 3 and the optional Phases 0 and 2 unchanged | 1 | 1 and 3, worker by API key | — |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
 | cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | — | **declined** — no optimisation problem in the product, none at GPU scale (D-L3-3, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decline (met) | — |
@@ -966,7 +974,7 @@ timeline
   section Decide
     Wave 0 : Owner initials the D-* table, all initialled, done
            : Close F5 and fix F12, done 2026-11-11
-           : Record F3 as a decision
+           : Record F3 as a decision, done 2026-11-15
            : Langfuse 0, OTel-only, done
            : cuOpt 0 and SWE-bench 0, declined, done
            : Capacity C0-C1, measure the VM and limit every container
