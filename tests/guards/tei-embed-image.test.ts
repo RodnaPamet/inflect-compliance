@@ -188,9 +188,16 @@ describe('production never runs the unpatched upstream TEI image', () => {
     });
 
     it('a tei-embed service, wherever it appears, runs our image by digest', () => {
+        // Split and compare as strings: the repository part must be ours
+        // (with or without a tag) and the digest a full sha256.
+        const ours = (image: string): boolean => {
+            const [repoAndTag, digest, ...rest] = image.split('@');
+            const repoOk = repoAndTag === OURS || repoAndTag.startsWith(`${OURS}:`);
+            return rest.length === 0 && repoOk && /^sha256:[0-9a-f]{64}$/.test(digest ?? '');
+        };
         const bad = services
             .filter((s) => s.name === 'tei-embed')
-            .filter((s) => !new RegExp(`^${OURS.replace(/[.]/g, '\\.')}(:[^@]+)?@sha256:[0-9a-f]{64}$`).test(s.image));
+            .filter((s) => !ours(s.image));
         expect(bad.map((s) => `${s.rel}: ${s.image}`)).toEqual([]);
     });
 });
