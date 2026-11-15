@@ -224,7 +224,15 @@ and, for the seed,
       types.
 - [x] 1.3 Deterministic scorers per Phase 0 task; the kill task uses the
       product's kill-switch API mid-run. Python for Inspect's log, held to one
-      golden file with the record module.
+      golden file with the record module. A sample scored FAIL, VACUOUS,
+      INCOMPLETE or UNSCORABLE prints its facts to the job log as one
+      `explain` block (owner decision 2026-11-15; `inflect_inspect/explain.py`):
+      the run's status and error code, every step's kind, tool, status, guard
+      verdict and rule ids, the marker boolean, and the scorer inputs that
+      decided it. The fields are an allowlist and every string must be
+      code-shaped, holding no seeded marker and no secret-shaped run, because
+      the log is public. A FAILED Tool Runner run also logs the provider's
+      error type and message, redacted the same way.
 - [x] 1.4 `src/lib/ai/evals/inspect-record.ts`: the record shape (task set
       hash, engine + model revision, per-sample raw ledger facts), strict.
       Verdicts are recomputed from the facts and never stored.
