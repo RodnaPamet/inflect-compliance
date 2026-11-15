@@ -695,6 +695,10 @@ describe('an image push is gated by a scan that ran before it', () => {
             // `scanner-image.yml:build-scan-push`, the harness scanner's
             // dispatch-only publish (2026-10-20 to 2026-11-15), was deleted with
             // the in-repo scanner: the VM runs scanent's own image (scanent #26).
+            // TWO again from 2026-11-15: tei-embed's patched TEI image, published
+            // by dispatch and weekly, pinned by digest in the canonical Compose
+            // file (owner decision, option B on #5687).
+            'tei-embed-image.yml:build-scan-push',
         ].sort());
         expect(() => assertPopulation(sites)).not.toThrow();
     });

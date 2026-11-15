@@ -168,7 +168,15 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // Updated 2026-11-15 by a DELETION: `scanner-image.yml:build-scan-push`
         // went with the workflow and the in-repo harness scanner (scanent #26;
         // the VM runs scanent's own image). -5/+0; no other key moved.
-        keyOrderSha: 'dc9b22218ecc1b041aeb7fc2e103b6bcefcbdce8ac0916e41730f71130e1ba95',
+        // Updated 2026-11-15 for tei-embed's patched TEI image (Retriever 1.1,
+        // owner decision option B on #5687): `ci.yml:tei-embed-image`, its
+        // path-scoped PR build, before `ci.yml:test-summary` ('tei' < 'tes'),
+        // and `tei-embed-image.yml:build-scan-push`, its dispatch and weekly
+        // publish, before `vm-apply.yml` ('t' < 'v'). Two mid-file inserts,
+        // +10/-0.
+        // Merged 2026-11-15: the digest is over the file without the scanner's
+        // entry and with both tei-embed entries.
+        keyOrderSha: 'dd5bc007344c884ee285fd6e328fbc81ba2ad6e1d69735c73509aa4865acc755',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

@@ -78,7 +78,12 @@ export const EMBED_CANDIDATES: readonly EmbedCandidate[] = [
     {
         id: 'multilingual-e5-small',
         model: 'intfloat/multilingual-e5-small',
-        revision: null,
+        // D-L4-3's embedder, pinned with the service that deploys it
+        // (Retriever 1.1, 2026-11-15): the Hub's `main` then, last modified
+        // 2026-04-02, before the 2026-11-13 run resolved `main`, so it is the
+        // commit that run measured. `deploy/docker-compose.prod.yml`'s
+        // `tei-embed --revision` must equal it (deploy-compose-canonical).
+        revision: '614241f622f53c4eeff9890bdc4f31cfecc418b3',
         parametersM: 118,
         queryPrefix: 'query: ',
         passagePrefix: 'passage: ',
@@ -90,7 +95,10 @@ export const RERANK_CANDIDATES: readonly RerankCandidate[] = [
     {
         id: 'bge-reranker-base',
         model: 'BAAI/bge-reranker-base',
-        revision: null,
+        // D-L4-3's reranker: the Hub's `main` on 2026-11-15, last modified
+        // 2024-06-24, so the commit the 2026-11-13 run measured. Read with
+        // the embedder's pin; the service that deploys it is Retriever 2.
+        revision: '2cfc18c9415c912f9d8155881c133215df768a70',
         parametersM: 278,
         multilingual: false,
     },

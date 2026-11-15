@@ -2,6 +2,7 @@
 #  CI — Enterprise-grade pipeline
 #  Jobs: lint · typecheck · test · coverage · build · e2e
 #        load-smoke · security · codeql · docker · trivy
+#        tei-embed-image
 #
 #  Job graph:
 #    lint ─────────────┐
@@ -14,14 +15,15 @@
 #      └──→ docker ────┤
 #           └──→ trivy ┤
 #    security ─────────┤
-#    codeql ───────────┘
+#    codeql ───────────┤
+#    tei-embed-image ──┘
 #
 #  Runs on PRs, pushes to main, and merge-queue groups.
 #
 #  Merge-queue lean set (see docs/implementation-notes/2026-08-01-merge-queue.md):
 #    RUN  in the queue — changes · lint · typecheck · test · test-summary
 #                        · build · security   (the semantic-collision gate)
-#    SKIP in the queue — e2e · docker · trivy · codeql
+#    SKIP in the queue — e2e · docker · trivy · codeql · tei-embed-image
 #                        (different failure class; each already runs on the
 #                        PR AND on push to main)
 #    Already push/schedule-only — coverage · load-smoke.
@@ -309,6 +311,9 @@ jobs:
       # own explicit condition, so today this fallback is belt-and-braces
       # for any FUTURE consumer of this output.)
       container: ${{ steps.filter.outputs.container || 'true' }}
+      # tei-embed's image (deploy/tei-embed/). Its build context IS that
+      # directory, so nothing else can change it; the same `|| 'true'` fallback.
+      tei_embed: ${{ steps.filter.outputs.tei_embed || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -350,6 +355,12 @@ jobs:
               # Governs the Trivy gate itself. Without this, a PR adding an
               # exemption cannot verify that the exemption works — the scan
               # that would prove it does not run.
+              - '.trivyignore'
+              - '.github/workflows/ci.yml'
+            tei_embed:
+              - 'deploy/tei-embed/**'
+              - '.github/workflows/tei-embed-image.yml'
+              # Governs its Trivy gate, as for `container`.
               - '.trivyignore'
               - '.github/workflows/ci.yml'
 
@@ -3168,3 +3179,52 @@ jobs:
         # or fail the job loudly. Silent upload failures were
         # showing up as "Code scanning configuration error" banners
         # on the Security tab without breaking CI.
+
+  # ═══════════════════════════════════════════════════════════════
+  #  Job 11: TEI image — tei-embed's container (Retriever 1.1)
+  #  Builds deploy/tei-embed/Dockerfile (the upstream TEI CPU digest
+  #  plus `apt-get upgrade`), smoke-tests it the way production runs it,
+  #  and blocks on CRITICAL and HIGH vulnerabilities with fixes, as the
+  #  application image's gate does. Never published from here: the dispatch
+  #  and weekly tei-embed-image.yml publishes it by digest (owner
+  #  decision, 2026-11-15, option B on #5687).
+  # ═══════════════════════════════════════════════════════════════
+  tei-embed-image:
+    name: "TEI image"
+    needs: [changes]
+    # Behind its own path filter, on pull requests AND pushes: the build context
+    # is deploy/tei-embed/ alone, so nothing outside it can change the image (the
+    # retired Laya image's job made the same argument). Debian's fixes reach the
+    # published image through the weekly rebuild in tei-embed-image.yml, not
+    # through this job. Skipped in the merge queue with docker and trivy:
+    # it already ran on the pull request.
+    if: ${{ github.event_name != 'merge_group' && needs.changes.outputs.tei_embed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # `--pull --no-cache`: re-read the FROM digest and re-run the upgrade, so
+      # this job judges the packages Debian ships today, as the publish does.
+      - name: Build the tei-embed image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build --pull --no-cache -f deploy/tei-embed/Dockerfile -t "tei-embed:ci-${{ github.sha }}" deploy/tei-embed
+
+      - name: Smoke-test the tei-embed image
+        run: deploy/tei-embed/smoke.sh "tei-embed:ci-${{ github.sha }}"
+
+      # The same gate as the application image's:
+      # CRITICAL,HIGH, blocking, fixed vulnerabilities only, with the
+      # repository's narrow exemptions.
+      - name: "Gate: Trivy scan of the tei-embed image (critical+high)"
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: "tei-embed:ci-${{ github.sha }}"
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          timeout: "15m"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: ".trivyignore"

@@ -109,6 +109,8 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
      */
     const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
     const appImageGate = stepOf(ci, 'trivy', 'Gate: Trivy vulnerability scan');
+    // tei-embed's patched TEI image (Retriever 1.1, owner decision 2026-11-15).
+    const teiImageGate = stepOf(ci, 'tei-embed-image', 'Gate: Trivy scan of the tei-embed image');
 
     it('npm audit gate blocks on MODERATE+ severity (production deps)', () => {
         // 2026-08-08: the gate moved from a bare `npm audit` line in the
@@ -177,6 +179,7 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // The Trivy gate must declare both severities, asserted inside the
         // gate's own step so the SARIF report cannot satisfy it.
         expect(appImageGate).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
+        expect(teiImageGate).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
         // Regression: a future PR that downgrades to severity:
         // "CRITICAL" alone reintroduces the lowered-gate posture
         // GAP-05 closed.
@@ -215,6 +218,7 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // the SARIF upload too, so the gate's exit code is asserted inside
         // its own step rather than anywhere in the file.
         expect(appImageGate).toMatch(/exit-code:\s*["']1["']/);
+        expect(teiImageGate).toMatch(/exit-code:\s*["']1["']/);
         expect(publish).toMatch(/exit-code:\s*["']1["']/);
     });
 
