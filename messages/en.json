@@ -11603,6 +11603,11 @@
         "noSignIn": "No sign-in recorded",
         "daysSinceSignIn": "{days, plural, one {# day ago} other {# days ago}}",
         "noOpenFindings": "None open",
+        "colVendor": "In the vendor’s console",
+        "aboutLink": "What is this?",
+        "manageLink": "Manage / deactivate",
+        "opensInNewTab": "(opens the vendor’s own site in a new tab)",
+        "vendorConsoleNote": "Inflect does not change these applications. “Manage / deactivate” opens an application in its vendor’s own console — Microsoft Entra, Okta or GitHub — where an administrator removes or disables it; the next scan shows the result.",
         "morePermissions": "and {count} more",
         "unknownPermissions": "{count, plural, one {# permission} other {# permissions}} the classification does not know: neither high nor low.",
         "privilege": {
