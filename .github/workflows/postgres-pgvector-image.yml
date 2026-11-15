@@ -1,0 +1,258 @@
+#
+# postgres-pgvector's image: built, smoke-tested, scanned, then published.
+#
+# WHY THERE IS AN IMAGE OF OURS AT ALL. The vector store (docs/ai-architecture/
+# weaviate.md, Phase 1.1; owner decision D-L4-1, 2026-11-11) puts pgvector inside
+# the existing Postgres. The official postgres:16-alpine does not ship it, and the
+# images that do are Debian, which would change the C library under the
+# production data volume. So every Postgres the repository runs becomes
+# deploy/postgres/Dockerfile: postgres:16-alpine plus pgvector at a pinned tag
+# and commit. The VM and CI build nothing, so the image has to come from a
+# registry; this workflow puts it in the repository's GHCR package.
+#
+# A LINE TAG, NOT A DIGEST (owner decision D-L4-8, 2026-11-12, keeping the
+# owner's 2026-10-10 rule for postgres): the base is the upstream tag, and the
+# stack references the moving tag ghcr.io/rodnapamet/postgres-pgvector:16-alpine,
+# so a patched upstream reaches the VM on the next pull, as it does today. Each
+# publish also pushes an immutable per-build tag
+# (16-alpine-pgvector<version>-<yyyymmdd>-<sha9>) for rollback.
+#
+# THE CADENCE (D-L4-8): rebuilt every Wednesday whatever happened upstream, and
+# on every other day when the upstream 16-alpine digest differs from the one the
+# published line tag was built from (its org.opencontainers.image.base.digest
+# label). A dispatch always rebuilds. The `decide` job reads the two digests; the
+# publishing job builds FROM exactly the digest it read, so the label is true.
+#
+# THE SHAPE tei-embed-image.yml has, for its reasons:
+#   - BUILD -> SMOKE -> SCAN -> PUSH on one runner. A scan after the push gates
+#     nothing. The smoke test and the gate are the ones ci.yml's
+#     `Postgres image` job runs on every change to deploy/postgres/.
+#   - Only main publishes.
+#
+# `tests/guardrails/publish-scans-before-push.test.ts` names this job as a push
+# site and requires a blocking Trivy step above every step that can reach a
+# registry; `tests/guards/postgres-pgvector-image.test.ts` holds the rest.
+#
+name: Postgres pgvector image
+
+on:
+    workflow_dispatch:
+    schedule:
+        # Wednesdays 06:37 UTC: the weekly rebuild, unconditional. Clear of the
+        # 02:00-05:30 nightly window and of the Monday image jobs.
+        - cron: '37 6 * * 3'
+        # Every day 06:07 UTC: rebuild only when the upstream digest moved.
+        - cron: '7 6 * * *'
+
+concurrency:
+    group: postgres-pgvector-image-${{ github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    packages: write
+
+env:
+    REGISTRY: ghcr.io
+    IMAGE_NAME: rodnapamet/postgres-pgvector
+    LINE_TAG: 16-alpine
+    UPSTREAM: docker.io/library/postgres:16-alpine
+    # Registry-less on purpose, as ghcr-publish.yml's SCAN_REF: a `ghcr.io/...` ref lets
+    # a typo scan an image pulled from the registry instead of the one built.
+    SCAN_REF: postgres-pgvector:publish-${{ github.sha }}
+
+jobs:
+    decide:
+        # Only main publishes. A dispatch from another branch would put an image
+        # built from unreviewed files on the line tag every Postgres pulls.
+        if: github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        outputs:
+            build: ${{ steps.decide.outputs.build }}
+            upstream_digest: ${{ steps.decide.outputs.upstream_digest }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Read the upstream and published base digests
+              id: decide
+              env:
+                  EVENT: ${{ github.event_name }}
+                  SCHEDULE: ${{ github.event.schedule }}
+              run: |
+                  set -euo pipefail
+                  UPSTREAM_DIGEST=$(docker buildx imagetools inspect "${UPSTREAM}" --format '{{json .Manifest}}' \
+                      | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["digest"])')
+                  case "${UPSTREAM_DIGEST}" in
+                      sha256:*) ;;
+                      *) echo "::error::could not read the upstream ${UPSTREAM} digest"; exit 1 ;;
+                  esac
+                  # The base digest the published line tag was built from, or
+                  # nothing when the line tag does not exist yet.
+                  PUBLISHED=""
+                  if docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${LINE_TAG}" --format '{{json .Image}}' \
+                      > "${RUNNER_TEMP}/published-image.json" 2>/dev/null; then
+                      PUBLISHED=$(python3 -I -c '
+                  import json, sys
+                  d = json.load(open(sys.argv[1]))
+                  if "config" not in d:
+                      d = d.get("linux/amd64", {})
+                  print((d.get("config", {}).get("Labels") or {}).get("org.opencontainers.image.base.digest", ""))
+                  ' "${RUNNER_TEMP}/published-image.json")
+                  fi
+
+                  BUILD=false
+                  REASON=""
+                  if [ "${EVENT}" = "workflow_dispatch" ]; then
+                      BUILD=true; REASON="dispatched"
+                  elif [ "${SCHEDULE}" = "37 6 * * 3" ]; then
+                      BUILD=true; REASON="the weekly rebuild"
+                  elif [ -z "${PUBLISHED}" ]; then
+                      BUILD=true; REASON="no published line tag carries a base digest"
+                  elif [ "${PUBLISHED}" != "${UPSTREAM_DIGEST}" ]; then
+                      BUILD=true; REASON="the upstream 16-alpine digest moved"
+                  else
+                      REASON="the line tag is built from the current upstream digest"
+                  fi
+                  echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
+                  echo "upstream_digest=${UPSTREAM_DIGEST}" >> "$GITHUB_OUTPUT"
+                  {
+                    echo '### postgres-pgvector: rebuild?'
+                    echo
+                    echo '| field | value |'
+                    echo '| --- | --- |'
+                    echo "| upstream \`postgres:16-alpine\` | \`${UPSTREAM_DIGEST}\` |"
+                    echo "| published line tag built from | \`${PUBLISHED:-none}\` |"
+                    echo "| rebuild | ${BUILD} (${REASON}) |"
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+            # REPORT ONLY: is there a pgvector release newer than the one the
+            # Dockerfile pins? Moving it is a reviewed pull request (the tag
+            # AND its commit), never an automatic rebuild.
+            - name: Report a newer pgvector release, if any
+              run: |
+                  set -euo pipefail
+                  CURRENT=$(sed -n 's/^ARG PGVECTOR_VERSION=v\([0-9.]*\)$/\1/p' deploy/postgres/Dockerfile)
+                  NEWEST=$(git ls-remote --tags --refs https://github.com/pgvector/pgvector.git 'v*' \
+                      | sed -n 's#.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -V | tail -n 1)
+                  if [ -z "${NEWEST}" ] || [ -z "${CURRENT}" ]; then
+                      echo "| newer pgvector | unknown (could not read the tags or the Dockerfile) |" >> "$GITHUB_STEP_SUMMARY"
+                  elif [ "${NEWEST}" != "${CURRENT}" ] && [ "$(printf '%s\n%s\n' "${CURRENT}" "${NEWEST}" | sort -V | tail -n 1)" = "${NEWEST}" ]; then
+                      echo "::warning::pgvector v${NEWEST} is newer than the Dockerfile's v${CURRENT}: move PGVECTOR_VERSION and PGVECTOR_COMMIT in a pull request"
+                      echo "| newer pgvector | \`v${NEWEST}\` (the Dockerfile pins \`v${CURRENT}\`) |" >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      echo "| newer pgvector | none (\`v${CURRENT}\` is the newest release) |" >> "$GITHUB_STEP_SUMMARY"
+                  fi
+
+    build-scan-push:
+        needs: [decide]
+        if: github.ref == 'refs/heads/main' && needs.decide.outputs.build == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v4
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # Loaded into this runner's daemon and nowhere else; the registry
+            # does not see it until the push step, downstream of the gate.
+            # The Dockerfile's FROM is the tag; `build-contexts` resolves it to
+            # the exact digest `decide` read, so the base-digest label is true.
+            # `no-cache` recompiles pgvector against that base every time.
+            - name: Build the postgres-pgvector image (load locally, NO push)
+              uses: docker/build-push-action@v7
+              with:
+                  context: deploy/postgres
+                  file: deploy/postgres/Dockerfile
+                  push: false
+                  load: true
+                  no-cache: true
+                  build-contexts: |
+                      postgres:16-alpine=docker-image://${{ env.UPSTREAM }}@${{ needs.decide.outputs.upstream_digest }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                      org.opencontainers.image.revision=${{ github.sha }}
+                      org.opencontainers.image.base.name=${{ env.UPSTREAM }}
+                      org.opencontainers.image.base.digest=${{ needs.decide.outputs.upstream_digest }}
+                  tags: ${{ env.SCAN_REF }}
+                  platforms: linux/amd64
+
+            - name: Smoke-test the postgres-pgvector image
+              run: deploy/postgres/smoke.sh "${SCAN_REF}"
+
+            # The same gate as ci.yml's `Postgres image` job and the application
+            # image's: CRITICAL,HIGH, blocking, fixed vulnerabilities only,
+            # with the repository's narrow exemptions.
+            - name: "Gate: Trivy scan of the postgres-pgvector image (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.SCAN_REF }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  timeout: "15m"
+
+            # PUSH THE BYTES TRIVY SAW, by tagging the local image, never by a
+            # second build. The immutable tag first, then the moving line tag:
+            # a failure between the two leaves the line where it was.
+            - name: Push the scanned image
+              id: push
+              run: |
+                  set -euo pipefail
+                  PGVECTOR=$(sed -n 's/^ARG PGVECTOR_VERSION=v\([0-9.]*\)$/\1/p' deploy/postgres/Dockerfile)
+                  if [ -z "${PGVECTOR:-}" ]; then
+                      echo "::error::could not read PGVECTOR_VERSION from the Dockerfile"
+                      exit 1
+                  fi
+                  BUILD_TAG="${REGISTRY}/${IMAGE_NAME}:${LINE_TAG}-pgvector${PGVECTOR}-$(date -u +%Y%m%d)-${GITHUB_SHA::9}"
+                  LINE="${REGISTRY}/${IMAGE_NAME}:${LINE_TAG}"
+
+                  docker image inspect "${SCAN_REF}" > /dev/null
+                  docker tag "${SCAN_REF}" "${BUILD_TAG}"
+                  docker push "${BUILD_TAG}"
+                  docker tag "${SCAN_REF}" "${LINE}"
+                  docker push "${LINE}"
+
+                  DIGEST=$(docker image inspect "${BUILD_TAG}" \
+                      --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+                      | grep "^${REGISTRY}/${IMAGE_NAME}@" | head -1 | cut -d@ -f2)
+                  if [ -z "${DIGEST:-}" ]; then
+                      echo "::error::pushed ${BUILD_TAG} but could not read its manifest digest"
+                      exit 1
+                  fi
+                  echo "pgvector=${PGVECTOR}" >> "$GITHUB_OUTPUT"
+                  echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
+                  echo "line=${LINE}" >> "$GITHUB_OUTPUT"
+                  echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+            - name: Report what was published
+              run: |
+                  {
+                    echo '### postgres-pgvector image published'
+                    echo
+                    echo '| field | value |'
+                    echo '| --- | --- |'
+                    echo "| commit | \`${GITHUB_SHA}\` |"
+                    echo "| base | \`${UPSTREAM}@${{ needs.decide.outputs.upstream_digest }}\` |"
+                    echo "| pgvector | \`${{ steps.push.outputs.pgvector }}\` |"
+                    echo "| line tag | \`${{ steps.push.outputs.line }}\` |"
+                    echo "| build tag (rollback) | \`${{ steps.push.outputs.build_tag }}\` |"
+                    echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+                    echo
+                    echo 'Nothing is deployed by this workflow. CI pulls the line tag on its next run;'
+                    echo 'the production VM pulls it on the next `deploy/apply.sh` (`VM apply`).'
+                  } >> "$GITHUB_STEP_SUMMARY"

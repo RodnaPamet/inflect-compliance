@@ -176,7 +176,13 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // +10/-0.
         // Merged 2026-11-15: the digest is over the file without the scanner's
         // entry and with both tei-embed entries.
-        keyOrderSha: 'dd5bc007344c884ee285fd6e328fbc81ba2ad6e1d69735c73509aa4865acc755',
+        // Updated 2026-11-15 for the postgres-pgvector image (vector store
+        // Phase 1.1, D-L4-1 and D-L4-8): `ci.yml:postgres-image`, its
+        // path-scoped PR build, before `ci.yml:tei-embed-image` ('p' < 't'), and
+        // `postgres-pgvector-image.yml:build-scan-push` and `:decide`, its
+        // scheduled publish, before `queue-candidate-sweep.yml` ('p' < 'q').
+        // Three mid-file inserts, +15/-0.
+        keyOrderSha: '4d38a9daf3f1ffd2250159ccaee078ba74eb6f77e043d99d770aed107a94ccbd',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,

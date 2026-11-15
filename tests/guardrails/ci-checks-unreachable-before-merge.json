@@ -29,6 +29,11 @@
         "reason": "k6 load smoke is push/schedule/dispatch-only. It carries the same event_name condition as Coverage and has never been counted alongside it.",
         "coveredBy": "PARTIAL: Build and E2E exercise the app at PR time, but nothing checks that a production-mode server BOOTS at PR time. Accepted: k6 needs a running stack and its cost on every PR is not justified at this repo's CI volume."
     },
+    "ci.yml:postgres-image": {
+        "kind": "conditional",
+        "reason": "Runs only when the `postgres_image` path filter fires: deploy/postgres/**, the publish workflow, .trivyignore or ci.yml. The image's build context is deploy/postgres/ alone, so no other change can alter it; ci.yml's `TEI image` job is gated the same way and for the same reason.",
+        "coveredBy": "Every pull request that can change the image runs it: the Dockerfile, the smoke test and the publish workflow all sit inside the filter, and so does the Trivy exemptions file. tests/guards/postgres-pgvector-image.test.ts runs in Ratchets on every pull request and holds the filter, the job's condition, the gate's settings and the Dockerfile's instruction set. RESIDUAL: an upstream postgres:16-alpine rebuild or a new CVE published after the last change to that directory is seen by the rebuilds in postgres-pgvector-image.yml, not by a pull request."
+    },
     "ci.yml:tei-embed-image": {
         "kind": "conditional",
         "reason": "Runs only when the `tei_embed` path filter fires: deploy/tei-embed/**, the publish workflow, .trivyignore or ci.yml. The image's build context is deploy/tei-embed/ alone, so no other change can alter it; the retired Laya image's job was gated the same way and for the same reason.",
@@ -78,6 +83,16 @@
         "kind": "never",
         "reason": "Weekly check comparing pinned dependency overrides against the live npm registry; it needs network access to a moving external source, so its result is a function of time rather than of the diff.",
         "coveredBy": "tests/guards/overrides-effective.test.ts runs on every PR and enforces that each override is registered, effective and non-stale against the LOCKFILE. Only the 'is the upstream fix newer than our floor' half needs the registry."
+    },
+    "postgres-pgvector-image.yml:build-scan-push": {
+        "kind": "never",
+        "reason": "Manual dispatch and a schedule only (weekly, and daily when the upstream postgres:16-alpine digest moves), from main only. It publishes the postgres-pgvector image's moving line tag and an immutable per-build tag to GHCR (owner decisions D-L4-1 and D-L4-8), and publishing cannot meaningfully happen from a pull request: a PR's token must not reach `packages: write`.",
+        "coveredBy": "ci.yml `Postgres image` builds the same Dockerfile, runs the same deploy/postgres/smoke.sh and the same blocking Trivy gate on every pull request that touches deploy/postgres/ or the workflow. tests/guardrails/publish-scans-before-push.test.ts names this job as a push site and requires its blocking Trivy step above every step that can reach a registry, and tests/guards/postgres-pgvector-image.test.ts holds its triggers, permissions, main-only condition, the base digest it builds on and its step order. RESIDUAL: the push, the two tags and the report run only on dispatch or the schedule."
+    },
+    "postgres-pgvector-image.yml:decide": {
+        "kind": "never",
+        "reason": "Manual dispatch and a schedule only, from main only. It reads the upstream postgres:16-alpine digest and the one the published line tag was built from, decides whether the publishing job runs, and reports a newer pgvector release; none of it has a meaning on a pull request.",
+        "coveredBy": "tests/guards/postgres-pgvector-image.test.ts holds its main-only condition, that the weekly cron it compares against is the workflow's own, that a moved digest rebuilds and that an unreadable upstream digest fails the run rather than skipping it. RESIDUAL: the registry reads run only on dispatch or the schedule."
     },
     "queue-candidate-sweep.yml:sweep": {
         "kind": "never",

@@ -188,6 +188,9 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     'tei-embed-image': 'Skipped with `docker` and `trivy`, per the job\'s own comment: it ' +
         'already ran on the pull request. Its build context is deploy/tei-embed/ alone, so a merge ' +
         'collision with another diff cannot change the image it builds or the findings Trivy reports.',
+    'postgres-image': 'Skipped with `docker`, `trivy` and `tei-embed-image`, per the job\'s own ' +
+        'comment: it already ran on the pull request. Its build context is deploy/postgres/ alone, so a ' +
+        'merge collision with another diff cannot change the image it builds or the findings Trivy reports.',
     // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
     // estate, and a stale entry here is not inert — the sibling "no entry names
     // a job that no longer exists" check reads this map as the authority on
