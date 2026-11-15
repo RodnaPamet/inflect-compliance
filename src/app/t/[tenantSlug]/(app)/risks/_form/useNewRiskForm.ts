@@ -112,6 +112,8 @@ export function useNewRiskForm({
             if (payload.nextReviewAt) {
                 body.nextReviewAt = new Date(payload.nextReviewAt).toISOString();
             }
+            // Provenance: the server checks it names a template and records it
+            // in the risk's creation audit row (#5313 item 48).
             if (templateId) body.templateId = templateId;
 
             const res = await fetch(apiUrl('/risks'), {

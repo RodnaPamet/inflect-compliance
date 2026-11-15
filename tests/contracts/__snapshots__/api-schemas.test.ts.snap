@@ -4285,6 +4285,13 @@ exports[`API contract — per-schema snapshots schema: RiskCreateRequest 1`] = `
         "string",
         "null"
       ]
+    },
+    "templateId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
     }
   },
   "required": [

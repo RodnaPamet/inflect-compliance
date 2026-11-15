@@ -4138,6 +4138,13 @@
               "string",
               "null"
             ]
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           }
         },
         "required": [
@@ -35085,6 +35092,41 @@
       },
       "put": {
         "summary": "PUT /api/t/{tenantSlug}/risk-appetite",
+        "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
+        "tags": [
+          "risk-appetite"
+        ],
+        "x-stub": true,
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Successful response. The success schema is not yet published in the contract."
+          },
+          "default": {
+            "description": "Error — see the ErrorResponse envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/risk-appetite/approve": {
+      "post": {
+        "summary": "POST /api/t/{tenantSlug}/risk-appetite/approve",
         "description": "Stub entry — this route exists but its request/response schema is not yet published in the machine-readable contract. The path, method, and required path parameters are accurate; the body and success shape are not yet formally documented. See `docs/api-consumer-guide.md`. (The critical-endpoint set carries full request/response/permission/rate-limit entries.)",
         "tags": [
           "risk-appetite"

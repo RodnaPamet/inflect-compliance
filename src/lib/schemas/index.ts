@@ -148,6 +148,10 @@ export const CreateRiskSchema = z.object({
     ownerUserId: z.string().optional().nullable(),    // Real user reference — the risk owner (people picker)
     targetDate: z.string().optional().nullable(),
     nextReviewAt: z.string().optional().nullable(),
+    // The template the form started from (#5313 item 48). Provenance only:
+    // validated against the template library and recorded in the creation
+    // audit row's detailsJson. It was stripped here while the form sent it.
+    templateId: z.string().min(1).optional().nullable(),
 }).strip().openapi('RiskCreateRequest', {
     description: 'Payload for creating a risk. Inherent score = impact × likelihood; the server computes residualScore separately when treatment data lands. treatmentNotes is encrypted at rest (Epic B field-encryption manifest).',
 });
