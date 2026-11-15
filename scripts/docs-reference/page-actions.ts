@@ -980,23 +980,47 @@ function methodsOf(call: ts.CallExpression, how: HttpMethod | 'init' | 'arg1', s
     return r.methods(ts.isShorthandPropertyAssignment(prop) ? prop.name : prop.initializer, sf);
 }
 
+/**
+ * JSX attributes whose value the browser GETs on the reader's behalf (#5713).
+ *
+ * `<a href={apiUrl(`/policies/${id}/export`)}>` is a GET this page performs,
+ * and ten of them — every audit-pack, readiness, risk-report, test and
+ * evidence export — were reported as called by nobody, because `apiCalls`
+ * walked call expressions alone.
+ *
+ * There is deliberately no element-name test. Whatever component carries the
+ * attribute renders a link, and the URL still has to resolve to an `/api/`
+ * path, which is the filter that does the work — the same reason the builder
+ * name test was retired in #5707. `src` and `action` carry no `apiUrl(…)`
+ * anywhere in the tree today; a new one belongs in this set.
+ */
+const GET_ATTRIBUTES = new Set(['href']);
+
 /** Every API call a file makes. */
 export function apiCalls(file: string, sf: ts.SourceFile, r: UrlResolver): ApiCall[] {
     const calls: ApiCall[] = [];
-    walk(sf, (n) => {
-        if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression)) return;
-        const how = CALLEES[n.expression.text];
-        if (!how || n.arguments.length === 0) return;
-        const arg = n.arguments[0];
-        // useTenantSWR(null) is the SWR "do not fetch" idiom.
-        if (arg.kind === ts.SyntaxKind.NullKeyword) return;
-        if (isSwrFetcherParam(arg)) return;
-        const methods = methodsOf(n, how.method, sf, r);
-        let paths = r.paths(arg, sf);
-        if (paths && how.tenantRelative) paths = paths.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`);
-        const base = { file, line: lineOf(sf, n), expression: arg.getText(sf).replace(/\s+/g, ' ').slice(0, 120) };
+    /**
+     * `reportUnresolved` is the whole difference between a call and a link, and
+     * it is load-bearing.
+     *
+     * A `fetch(…)` IS an API call, so a URL this scan cannot read is a gap
+     * worth naming. An `href` might be anything — a page route, an external
+     * site, a `mailto:` — so an unreadable one evidences nothing, and
+     * reporting it would bury the real gaps under every internal link the
+     * resolver cannot follow. A link is counted only when it resolves.
+     */
+    const record = (
+        at: ts.Node,
+        expr: ts.Expression,
+        methods: HttpMethod[] | null,
+        tenantRelative: boolean,
+        reportUnresolved: boolean,
+    ) => {
+        let paths = r.paths(expr, sf);
+        if (paths && tenantRelative) paths = paths.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`);
+        const base = { file, line: lineOf(sf, at), expression: expr.getText(sf).replace(/\s+/g, ' ').slice(0, 120) };
         if (!paths) {
-            calls.push({ ...base, methods: methods ?? [], segments: null });
+            if (reportUnresolved) calls.push({ ...base, methods: methods ?? [], segments: null });
             return;
         }
         for (const p of new Set(paths)) {
@@ -1005,8 +1029,36 @@ export function apiCalls(file: string, sf: ts.SourceFile, r: UrlResolver): ApiCa
             if (!p.includes('\u0000') && !p.startsWith('/')) continue;
             const segs = toSegments(p);
             if (segs && segs[0] !== 'api') continue;
+            // A path that resolves but cannot be SEGMENTED is a reportable gap
+            // for a call and nothing at all for a link. `tenantHref('/agents/
+            // proposals')` and a `mailto:${…}` both land here — two run-time
+            // values in one segment, or no leading slash — and neither is an
+            // API call. Twelve page links were reported as unreadable calls
+            // before this second gate, which is why the link arm needs both.
+            if (!segs && !reportUnresolved) continue;
             calls.push({ ...base, methods: methods ?? [], segments: segs });
         }
+    };
+    walk(sf, (n) => {
+        if (ts.isJsxAttribute(n)) {
+            if (!ts.isIdentifier(n.name) || !GET_ATTRIBUTES.has(n.name.text)) return;
+            const init = n.initializer;
+            // `href="/static"` (a string literal) resolves through `paths` too;
+            // only a shorthand `href` with no value has nothing to read.
+            if (!init) return;
+            const expr = ts.isJsxExpression(init) ? init.expression : init;
+            if (!expr) return;
+            record(n, expr, ['GET'], false, false);
+            return;
+        }
+        if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression)) return;
+        const how = CALLEES[n.expression.text];
+        if (!how || n.arguments.length === 0) return;
+        const arg = n.arguments[0];
+        // useTenantSWR(null) is the SWR "do not fetch" idiom.
+        if (arg.kind === ts.SyntaxKind.NullKeyword) return;
+        if (isSwrFetcherParam(arg)) return;
+        record(n, arg, methodsOf(n, how.method, sf, r), how.tenantRelative, true);
     });
     return calls;
 }
