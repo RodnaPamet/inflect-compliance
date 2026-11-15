@@ -156,6 +156,61 @@ function getLookupHashKeyMaterial(): string {
 }
 
 /**
+ * The material every HKDF SUBKEY derives from — #5500.
+ *
+ * `DERIVED_SUBKEY_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the change
+ * invisible to a deployment that does nothing: the derivation is byte-identical,
+ * so no stored sample seed, seal or outstanding token moves.
+ *
+ * ═══ WHY A SUBKEY MUST NOT FOLLOW THE KEK ═══
+ *
+ * `deriveSubkey` has six consumers and for most of them stability is a
+ * documented property the subsystem relies on, not an incidental one:
+ *
+ *   * four SAMPLING SEEDS — the workpaper review draw, the ASI09 proposal
+ *     audit, the audit-procedure sample and the agent-recertification sample.
+ *     A sample is the record that a population was checked. The workpaper draw
+ *     is specified as "a keyed decision PER WORKPAPER … re-derived identically
+ *     by every sweep", which is the whole reason the daily sweep is idempotent
+ *     and a second run the same day changes nothing. After a KEK rotation it
+ *     re-decides every workpaper differently, and each row records the seed
+ *     fingerprint it was drawn under, so rows from either side of the rotation
+ *     stop being comparable — an evidence record that silently disagrees with
+ *     itself.
+ *   * the assistant ANSWER SEAL. Its purpose string carries a version for the
+ *     express purpose of retiring every seal deliberately; a KEK rotation pulls
+ *     that lever by accident, and stored seals stop verifying.
+ *   * the MCP exchanged-token signing key. Outstanding `ifxt_` tokens fail, and
+ *     the token's `kid` names the API KEY rather than a signing-key version, so
+ *     nothing can verify one signed under the old material.
+ *
+ * None of those has the fallback a ciphertext has: `decryptField` can read
+ * under `DATA_ENCRYPTION_KEY_PREVIOUS`, a derived seed cannot.
+ *
+ * This is #5071's defect one subsystem over, and takes #5071's remedy: its own
+ * secret, so the coupling is removed permanently rather than papered over for
+ * one rotation. The zero-backfill adoption path is to set `DERIVED_SUBKEY_KEY`
+ * to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating — the material is
+ * unchanged, every existing seed and seal still derives, and the KEK is then
+ * free to rotate without touching any of them.
+ *
+ * It is a SIBLING of `LOOKUP_HASH_KEY`, not the same variable (owner decision,
+ * 2026-11-15). A lookup hash is an index that can never rotate, because the
+ * stored value IS the lookup key; a token signing key should be rotatable
+ * deliberately. Sharing one secret would mean neither could move without the
+ * other — rotating the signing material would re-index every email hash and
+ * break sign-in, which is the failure #5071 exists to prevent.
+ */
+function getDerivedSubkeyMaterial(): string {
+    const key = process.env.DERIVED_SUBKEY_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
  * Gets the encryption key, caching it for performance.
  * Cache is invalidated if the underlying key material changes.
  */
@@ -249,7 +304,7 @@ export function deriveSubkey(purpose: string): Buffer {
     if (!purpose || purpose.length < 8) {
         throw new Error('deriveSubkey: purpose must be a stable, descriptive string');
     }
-    return deriveKey(getRawKeyMaterial(), purpose);
+    return deriveKey(getDerivedSubkeyMaterial(), purpose);
 }
 
 /**

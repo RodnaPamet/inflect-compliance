@@ -95,6 +95,34 @@ export function checkProductionEncryptionKey(
         };
     }
 
+    // The same refusal for every HKDF SUBKEY (#5500). `deriveSubkey` falls back
+    // to DATA_ENCRYPTION_KEY when DERIVED_SUBKEY_KEY is unset, and its six
+    // consumers have no previous-key fallback either: four sampling seeds whose
+    // stability IS the evidence (the workpaper draw is specified as re-derived
+    // identically by every sweep), the assistant answer seal, and the MCP
+    // exchanged-token signing key.
+    //
+    // A separate block from the lookup-hash one above, with its own remedy,
+    // because the two variables are siblings rather than one setting: an
+    // operator can have pinned one and not the other, and a message naming the
+    // wrong variable is a message that does not fix anything.
+    const subkeyKey = env.DERIVED_SUBKEY_KEY;
+    if (env.DATA_ENCRYPTION_KEY_PREVIOUS && !(subkeyKey && subkeyKey.length >= 32)) {
+        return {
+            ok: false,
+            reason:
+                'DATA_ENCRYPTION_KEY_PREVIOUS is set (a master-KEK rotation is in ' +
+                'progress) but DERIVED_SUBKEY_KEY is not. Every HKDF subkey derives ' +
+                'from DATA_ENCRYPTION_KEY when it is unset, so the audit sampling ' +
+                'seeds would re-decide every population, stored assistant answer ' +
+                'seals would stop verifying, and outstanding ifxt_ exchanged tokens ' +
+                'would fail — none of which has a previous-key fallback. Set ' +
+                'DERIVED_SUBKEY_KEY to the value now in DATA_ENCRYPTION_KEY_PREVIOUS ' +
+                '— the key those seeds and seals were derived under — and restart. ' +
+                'No backfill is needed.',
+        };
+    }
+
     return { ok: true };
 }
 

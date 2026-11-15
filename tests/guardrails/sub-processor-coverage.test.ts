@@ -250,6 +250,12 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
         'HMAC key material for the deterministic lookup hashes (env-provided, not an '
         + 'external endpoint). Held apart from the master KEK so a rotation does not move '
         + 'an index (#5071); nothing is sent anywhere.',
+    DERIVED_SUBKEY_KEY:
+        'HKDF material for every derived subkey (env-provided, not an external '
+        + 'endpoint). Held apart from the master KEK so a rotation does not move an '
+        + 'audit sampling seed, the assistant answer seal or the exchanged-token '
+        + 'signing key (#5500), and apart from LOOKUP_HASH_KEY so an index and a '
+        + 'signing key can rotate independently; nothing is sent anywhere.',
     DATA_ENCRYPTION_KEY_PREVIOUS: 'previous master KEK for rotation',
     AV_WEBHOOK_SECRET: 'internal HMAC secret for the AV webhook',
     // Operator config / URLs.

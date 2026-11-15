@@ -292,6 +292,7 @@ export const env = createEnv({
         // value is valid but rewrites every hash, so it needs a backfill of
         // every *Hash column first.
         LOOKUP_HASH_KEY: z.string().min(32).optional(),
+        DERIVED_SUBKEY_KEY: z.string().min(32).optional(),
 
         // Web Bot Auth (docs/ai-architecture/web-bot-auth.md Phase 1, D-L1-5):
         // ONE Ed25519 signing seed for the DEPLOYMENT, never per tenant — a
@@ -942,6 +943,7 @@ export const env = createEnv({
         CLAMAV_HOST: process.env.CLAMAV_HOST,
 
         LOOKUP_HASH_KEY: process.env.LOOKUP_HASH_KEY,
+        DERIVED_SUBKEY_KEY: process.env.DERIVED_SUBKEY_KEY,
 
         PIPELOCK_PUBLIC_KEY: process.env.PIPELOCK_PUBLIC_KEY,
         PIPELOCK_STRICT_MODE: process.env.PIPELOCK_STRICT_MODE,

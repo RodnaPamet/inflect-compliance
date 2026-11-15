@@ -386,9 +386,10 @@ The runtime + structural enforcement is unit-tested in
 `tests/unit/env.test.ts`, and the wiring across all five surfaces
 is locked by `tests/guardrails/encryption-key-enforcement.test.ts`.
 
-Master-KEK rotation: **set `LOOKUP_HASH_KEY` to the CURRENT
-(outgoing) `DATA_ENCRYPTION_KEY` value and deploy that FIRST**
-(#5071), then set `DATA_ENCRYPTION_KEY_PREVIOUS` alongside
+Master-KEK rotation: **set BOTH `LOOKUP_HASH_KEY` (#5071) and
+`DERIVED_SUBKEY_KEY` (#5500) to the CURRENT (outgoing)
+`DATA_ENCRYPTION_KEY` value and deploy that FIRST**, then set
+`DATA_ENCRYPTION_KEY_PREVIOUS` alongside
 the new primary, under which `decryptField` falls back
 transparently. The deterministic lookup hashes (`hashForLookup` —
 `User.emailHash` and friends) get no such fallback: they are an
@@ -399,6 +400,20 @@ and invite redemption from the first request. Unset,
 `LOOKUP_HASH_KEY` reproduces the old derivation exactly, so no
 stored hash moves and no backfill is needed; a production boot with
 `DATA_ENCRYPTION_KEY_PREVIOUS` set and it unset REFUSES to start.
+
+`DERIVED_SUBKEY_KEY` is its SIBLING and the same story for every
+HKDF subkey (#5500): the four audit sampling seeds — the workpaper
+draw is specified as re-derived identically by every sweep, which is
+why the daily sweep is idempotent — the assistant answer seal, and
+the MCP exchanged-token signing key, whose `kid` names the API key
+rather than a signing-key version. None has a previous-key fallback,
+so a rotation re-decided every sampled population and invalidated
+every stored seal and outstanding token, silently. Unset it
+reproduces the old derivation exactly; a production boot mid-rotation
+with it unset REFUSES to start, naming it. It is deliberately NOT the
+same variable as `LOOKUP_HASH_KEY`: an index can never rotate, a
+signing key should be able to, and one secret for both would mean
+neither could move without the other.
 Admins trigger the v1→v2 re-encryption sweep via
 `POST /api/t/{slug}/admin/key-rotation`, which enqueues the
 background job in `src/app-layer/jobs/key-rotation.ts`. The job
@@ -3408,6 +3423,14 @@ one careless edit from being undone:
     sub-processor step's diff, not an engine's.
   - **SDK 1.x speaks API version `2026-10-21`**, which refuses `temperature`,
     `top_p` and `top_k`. A unit test pins the version; read it on any bump.
+  - **A model is sent only the parameters its row accepts** (owner decision
+    2026-11-15). `tool-runner/model-capabilities.ts` is a closed `Record` over
+    model families saying whether each takes adaptive thinking, `effort` and
+    `fallbacks`; `lockedParams` reads the row of the model it chose (a resume's
+    STORED model) and sends those three members only where the row says so.
+    An unknown model gets none of them, the set every current model accepts:
+    never "assume the newest". A refused request logs one line with the
+    provider's status, error type and message (truncated), never the body.
 
 **The Tool Runner driver runs agent profiles** (`src/lib/agentic/tool-runner/`,
 built in Step 2b, #4149, and turned on in Step 2c, #4150).

@@ -337,7 +337,9 @@ import type { RequestContext } from '@/app-layer/types';
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import { runToolRunnerDriver, planToolRunnerRun, refusalMessage } from '@/lib/agentic/tool-runner/driver';
-import { KILL_UNREADABLE_MESSAGE } from '@/lib/agentic/tool-runner/execute';
+import { KILL_UNREADABLE_MESSAGE, PROVIDER_ERROR_MESSAGE_MAX_CHARS } from '@/lib/agentic/tool-runner/execute';
+import { env } from '@/env';
+import { logger } from '@/lib/observability';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
 import { ENGINE_CAPS } from '@/lib/agentic/workflow-types';
@@ -358,7 +360,7 @@ import { pinForRow } from '@/lib/agentic/flue/skills/mount-gate';
 import { toolRunnerSuppliedToolNamesFor } from '@/lib/agentic/tool-runner/supplied-tools';
 import { catalogBytes, loadSkill, loadSkillCorpus, MAX_CATALOG_BYTES } from '@/lib/agentic/flue/skills';
 import { skillContentHash } from '@/lib/agentic/flue/skills/evaluation-record';
-import { TOOL_RUNNER_PREAMBLE } from '@/lib/agentic/tool-runner/params';
+import { SERVER_SIDE_FALLBACK_BETA, TOOL_RUNNER_PREAMBLE } from '@/lib/agentic/tool-runner/params';
 import { SKILL_CATALOGUE_CLOSE, SKILL_CATALOGUE_OPEN } from '@/lib/agentic/tool-runner/skills';
 import { createHash } from 'crypto';
 import { COMPACTION_INSTRUCTION, COMPACTION_SUMMARY_MAX_TOKENS } from '@/lib/agentic/tool-runner/params';
@@ -382,6 +384,10 @@ const wire = {
     turns: [] as FauxTurn[],
     bodies: [] as Array<Record<string, unknown>>,
     urls: [] as string[],
+    /** Each request's `anthropic-beta` header, or null when it sent none. */
+    betaHeaders: [] as Array<string | null>,
+    /** The provider refuses every request with this status and JSON body (2026-11-15). */
+    providerError: null as { status: number; body: unknown } | null,
 };
 
 const originalFetch = global.fetch;
@@ -405,7 +411,14 @@ beforeEach(() => {
         const n = wire.bodies.length;
         wire.bodies.push(body);
         wire.urls.push(String(input));
+        wire.betaHeaders.push(new Headers(init?.headers).get('anthropic-beta'));
         mockState.modelCalls += 1;
+        if (wire.providerError) {
+            return new Response(JSON.stringify(wire.providerError.body), {
+                status: wire.providerError.status,
+                headers: { 'content-type': 'application/json', 'request-id': `req_provider_${n}` },
+            });
+        }
         const answer = fauxResponse(wire.turns[n], n);
         return new Response(
             JSON.stringify({
@@ -498,6 +511,7 @@ function reset(
     wire.turns = [...turns];
     wire.bodies = [];
     wire.urls = [];
+    wire.betaHeaders = [];
 }
 
 async function drive(
@@ -706,6 +720,86 @@ describe('Step 2b hardening', () => {
         expect(wire.bodies).toHaveLength(1);
         expect(mockState.funnelCalls).toEqual([]);
         expect(recordedSettlement()).toEqual({ status: 'FAILED', reason: KILL_UNREADABLE_MESSAGE, cap: null });
+    });
+});
+
+// ─── The model's own capabilities, and the provider's own reason (2026-11-15) ─
+
+describe('each model is sent only the parameters it accepts, and a refusal names its reason', () => {
+    const configured = env as unknown as Record<string, string | undefined>;
+    afterEach(() => {
+        delete configured.AGENT_TOOL_RUNNER_MODEL_BALANCED;
+        // Set before `drive`, whose reset leaves it alone; cleared here.
+        wire.providerError = null;
+        jest.restoreAllMocks();
+    });
+
+    it('a deployment on claude-haiku-4-5 sends no effort, no adaptive thinking, no fallbacks and no fallback beta', async () => {
+        configured.AGENT_TOOL_RUNNER_MODEL_BALANCED = 'claude-haiku-4-5';
+        await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+        expect(wire.bodies).toHaveLength(1);
+        const [body] = wire.bodies;
+        expect(body.model).toBe('claude-haiku-4-5');
+        for (const member of ['thinking', 'output_config', 'fallbacks', 'betas', 'temperature', 'thread']) {
+            expect({ member, present: member in body }).toEqual({ member, present: false });
+        }
+        expect(body.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+        // The beta travels as a header: none names the fallback beta.
+        expect(wire.betaHeaders[0] ?? '').not.toContain(SERVER_SIDE_FALLBACK_BETA);
+        expect(recordedSettlement()?.status).toBe('COMPLETED');
+    });
+
+    it('the default balanced model is sent the request it always was (positive control)', async () => {
+        await drive({ tools: [LIST_RISKS], turns: [{ text: 'done' }] });
+        const [body] = wire.bodies;
+        expect(body.model).toBe('claude-sonnet-5-5');
+        expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+        expect(body.output_config).toEqual({ effort: 'medium' });
+        expect(body.fallbacks).toBe('default');
+        expect(wire.betaHeaders[0]).toContain(SERVER_SIDE_FALLBACK_BETA);
+    });
+
+    it('a provider 400 is logged in one line with its status, type and message, and the stored error carries them', async () => {
+        const warn = jest.spyOn(logger, 'warn');
+        const said = 'thinking.type: Input tag \'adaptive\' found using \'type\' does not match any of the expected tags';
+        wire.providerError = {
+            status: 400,
+            body: { type: 'error', error: { type: 'invalid_request_error', message: said }, request_id: 'req_provider_body' },
+        };
+        await drive({ tools: [LIST_RISKS], turns: [] });
+        expect(wire.bodies).toHaveLength(1); // a 400 is not retried
+        expect(recordedSettlement()?.status).toBe('FAILED');
+        const stored = recordedSettlement()?.reason ?? '';
+        expect(stored.startsWith('tool_runner_run_failed: 400 ')).toBe(true);
+        expect(stored).toContain('"type":"invalid_request_error"');
+        expect(stored).toContain(said);
+
+        const lines = warn.mock.calls.filter(([message]) => message === 'tool-runner: the model provider refused the request');
+        expect(lines).toHaveLength(1);
+        const fields = lines[0][1] as Record<string, unknown>;
+        expect(fields).toEqual({
+            component: 'agentic',
+            runId: expect.any(String),
+            subagent: null,
+            model: 'claude-sonnet-5-5',
+            status: 400,
+            providerErrorType: 'invalid_request_error',
+            providerErrorMessage: said,
+            providerRequestId: 'req_provider_0',
+        });
+        // No request content on the line: neither the run's message nor its system prompt.
+        expect(JSON.stringify(fields)).not.toContain(TOOL_RUNNER_PREAMBLE.slice(0, 40));
+        expect(JSON.stringify(fields)).not.toContain(DEFINITION.description);
+    });
+
+    it('the provider\'s message is truncated on the log line', async () => {
+        const warn = jest.spyOn(logger, 'warn');
+        wire.providerError = { status: 400, body: { type: 'error', error: { type: 'invalid_request_error', message: 'x'.repeat(2_000) } } };
+        await drive({ tools: [LIST_RISKS], turns: [] });
+        const [line] = warn.mock.calls.filter(([message]) => message === 'tool-runner: the model provider refused the request');
+        const logged = (line[1] as { providerErrorMessage: string }).providerErrorMessage;
+        expect(logged.length).toBe(PROVIDER_ERROR_MESSAGE_MAX_CHARS);
+        expect(logged.endsWith('…')).toBe(true);
     });
 });
 

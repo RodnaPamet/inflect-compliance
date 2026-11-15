@@ -252,6 +252,93 @@ services:
       retries: 5
       start_period: 180s
 
+  # ── tei-embed (Retriever Phase 1.1) — the in-deployment embedder ──
+  #
+  # Hugging Face Text Embeddings Inference on CPU, serving the one model
+  # D-L4-3 chose (owner, 2026-11-13): intfloat/multilingual-e5-small, 384
+  # dimensions. It is the backend of the embedding seam in
+  # src/lib/ai/embeddings/, which dials it only while the operator sets
+  # AI_EMBED_LOCAL_BASE_URL (http://tei-embed:8080), AI_EMBED_LOCAL_MODEL
+  # (exactly the --model-id below), AI_EMBED_LOCAL_DIMENSIONS (384) and the
+  # E5 prefixes in .env.prod. Unset — as shipped — the factory refuses by
+  # name and nothing calls this service. Running it is not switching it on.
+  #
+  # Not a sub-processor: it runs here, on this network, and nothing it is sent
+  # leaves the stack. No published port and no Caddy vhost, as for postgres,
+  # redis and clamav.
+  #
+  # Pinned twice. The image by digest (the runtime-image pillar), and it is
+  # ours, not upstream's (see the image line); the model by --revision, a Hub
+  # commit, so a push to the model's `main` cannot change what answers. The
+  # model is NOT in the image: its weights are fetched from the Hub on FIRST
+  # start into the tei-embed-data volume (465 MiB: onnx/model.onnx, which TEI's
+  # CPU build serves, the tokenizer and the configs) and read from it on every
+  # later start, so a recreate does not touch the Hub. The commit and the weights' SHA-256 are
+  # recorded in docs/implementation-notes/2026-11-15-retriever-tei-embed.md.
+  #
+  # It receives no environment file and interpolates nothing: no secret of
+  # this stack reaches it, and the model is public, so no Hub token either.
+  tei-embed:
+    logging: *default-logging
+    # Capacity budget, Embeddings line. Measured 2026-11-15 on CI runners,
+    # five runs with these exact flags at 1.0 CPU: memory.peak 1,600-1,664 MiB
+    # after 64 x 512-token batches (anonymous 1,120-1,180, page cache 465: the
+    # model file). TEI's
+    # CPU build serves through ONNX Runtime, which holds about 2.5 times the
+    # 470 MB of weights; under a 1g limit it was OOM-killed while loading,
+    # before it served anything. 1.5 x 1,664 = 2,496, rounded up to 2,560.
+    # The capacity recorder measures it on the VM once applied; re-size from
+    # that, not from this.
+    mem_limit: 2560m
+    # Batch-shaped (indexing passes), so capped at one core with half the CPU
+    # weight: the request path keeps the other core. The Laya precedent.
+    cpus: 1.0
+    cpu_shares: 512
+    # OUR patched copy of upstream TEI cpu-1.9.4 (deploy/tei-embed/Dockerfile:
+    # the upstream digest plus `apt-get upgrade`), published by
+    # .github/workflows/tei-embed-image.yml after its smoke test and Trivy gate
+    # (run 43715894440, 2026-11-15; tag cpu-1.9.4-20261115-046ef5cc8). Never
+    # the upstream image: tests/guards/tei-embed-image.test.ts refuses it. A
+    # weekly rebuild changes nothing here until a pull request moves this digest.
+    image: ghcr.io/rodnapamet/tei-embed@sha256:90f7be794f9451e84381b385ad1d4c16883035686dfa658b1d1ccb3c7ed53b55
+    restart: unless-stopped
+    command:
+      - --model-id
+      - intfloat/multilingual-e5-small
+      - --revision
+      - 614241f622f53c4eeff9890bdc4f31cfecc418b3
+      - --port
+      - "8080"
+      # The seam's own bound (MAX_EMBED_BATCH, src/lib/ai/embeddings/types.ts);
+      # TEI's default is 32, which would refuse the seam's largest batch.
+      - --max-client-batch-size
+      - "64"
+      # A passage longer than the model's 512 tokens is truncated rather than
+      # refused, as the benchmark that chose the model ran it.
+      - --auto-truncate
+    volumes:
+      - tei-embed-data:/data
+    # A third party's process holding tenants' text: as narrow as it starts.
+    # Measured with exactly these settings (healthy in 12 s, same peak): TEI
+    # writes only to /data (the Hub cache) and /tmp (its UDS path), runs as
+    # root inside the image, and needs no capability to serve on 8080.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # The first start downloads the weights; later starts load them from
+      # the volume in seconds.
+      start_period: 300s
+
   # ── Laya (System One) — serves LOCAL_ONLY adjudication ────────
   #
   # Step 6d. The open-weights model that answers identity-adjudication
@@ -496,3 +583,4 @@ volumes:
   app-uploads:
   caddy-data:
   caddy-config:
+  tei-embed-data:

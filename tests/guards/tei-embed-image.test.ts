@@ -10,6 +10,7 @@
  * was not published yet. Parsed (YAML, Dockerfile instructions), so each is on
  * a value rather than a needle in a file.
  */
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
@@ -22,6 +23,7 @@ const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel),
 
 const DOCKERFILE = 'deploy/tei-embed/Dockerfile';
 const SMOKE = 'deploy/tei-embed/smoke.sh';
+const NEWER_UPSTREAM = 'deploy/tei-embed/newer-upstream.sh';
 const PUBLISH = '.github/workflows/tei-embed-image.yml';
 const UPSTREAM_REPO = 'ghcr.io/huggingface/text-embeddings-inference';
 const OURS = 'ghcr.io/rodnapamet/tei-embed';
@@ -135,6 +137,63 @@ describe('the publish workflow — dispatch and weekly only, gated before it pus
         expect(build?.with?.context).toBe('deploy/tei-embed');
         expect(build?.with?.file).toBe(DOCKERFILE);
         expect(`ghcr.io/${(yaml.load(read(PUBLISH)) as { env: Record<string, string> }).env.IMAGE_NAME}`).toBe(OURS);
+    });
+});
+
+/**
+ * The publish's "newer upstream release" report. On 2026-11-15 (run
+ * 43715894440) it warned that cpu-1.2.1 was newer than cpu-1.9.4: GHCR returns
+ * at most 1,000 tags a page, the step read one page, which ended at cpu-1.2.1,
+ * and it called the list's largest release "newer" whenever it merely
+ * DIFFERED from the current one. The comparison now lives in a script, run
+ * here on fixed inputs: by version, never as text, and never a verdict from a
+ * list that does not contain the current release.
+ */
+describe('the newer-upstream report compares versions, not text', () => {
+    const verdict = (current: string, tags: readonly string[]): string =>
+        execFileSync('bash', [path.join(REPO_ROOT, NEWER_UPSTREAM), current], {
+            input: tags.join('\n') + '\n',
+            encoding: 'utf-8',
+        }).trim();
+
+    it('an older release is never reported as newer (the 2026-11-15 false alarm)', () => {
+        expect(verdict('cpu-1.9.4', ['cpu-1.2.1', 'cpu-1.9.4', 'cpu-1.9.3'])).toBe('current');
+    });
+
+    it('1.10.0 is newer than 1.9.4, which a text comparison gets backwards', () => {
+        expect(verdict('cpu-1.9.4', ['cpu-1.10.0', 'cpu-1.9.4', 'cpu-1.2.1'])).toBe('newer cpu-1.10.0');
+        expect(verdict('cpu-1.9.4', ['cpu-1.9.4', 'cpu-2.0.0'])).toBe('newer cpu-2.0.0');
+        expect(verdict('cpu-1.9.4', ['cpu-1.9.4', 'cpu-1.9.10'])).toBe('newer cpu-1.9.10');
+    });
+
+    it('counts only cpu-x.y.z releases: other tags and CRLF line ends do not decide', () => {
+        expect(verdict('cpu-1.9.4', [
+            'cpu-1.9.4\r', 'cpu-1.9', 'latest', '1.99.0', 'cpu-sha-0123abc', 'turing-9.9.9', 'cpu-9.9.9-rc1',
+        ])).toBe('current');
+    });
+
+    it('a list without the current release concludes nothing (a truncated page)', () => {
+        expect(verdict('cpu-1.9.4', ['cpu-0.1.0', 'cpu-1.2.0', 'cpu-1.2.1'])).toBe('incomplete');
+        expect(verdict('cpu-1.9.4', [])).toBe('incomplete');
+    });
+
+    it('refuses a current tag that is not a cpu-x.y.z release', () => {
+        const r = spawnSync('bash', [path.join(REPO_ROOT, NEWER_UPSTREAM), 'latest'], { input: '', encoding: 'utf-8' });
+        expect(r.status).toBe(2);
+    });
+
+    it('the publish step runs the script and follows every page of the tag list', () => {
+        const step = loadWorkflow(PUBLISH).jobs['build-scan-push'].steps
+            .find((s) => s.name === 'Report a newer upstream release, if any');
+        const run = step?.run ?? '';
+        expect(run.includes(`${NEWER_UPSTREAM} "\${CURRENT}"`)).toBe(true);
+        expect(run.includes('rel="next"')).toBe(true);
+        // The old verdict: "newer" whenever the largest tag merely differed.
+        expect(run.includes('!= "${CURRENT}"')).toBe(false);
+    });
+
+    it('the script is executable, as the workflow invokes it directly', () => {
+        expect(fs.statSync(path.join(REPO_ROOT, NEWER_UPSTREAM)).mode & 0o111).not.toBe(0);
     });
 });
 
