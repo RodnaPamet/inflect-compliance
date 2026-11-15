@@ -112,6 +112,18 @@ function toolMention(name: string): RegExp {
         : new RegExp(`[\`'"]${n}[\`'"]|\\b${n}\\s*\\(|\\b${n} tool\\b`);
 }
 
+/**
+ * The tools this build knows by name that `text` names, in `KNOWN_TOOL_NAMES`
+ * order, recognised as `toolMention` recognises them. One reader for the skill
+ * scan below and for any other text that must be held to naming no tool (the
+ * Inspect task set's Flue questions), so the two cannot disagree about what a
+ * mention is.
+ */
+export function knownToolsNamedIn(text: string): string[] {
+    const lowered = text.toLowerCase();
+    return KNOWN_TOOL_NAMES.filter((name) => toolMention(name).test(lowered));
+}
+
 function anyMatch(re: RegExp, texts: readonly string[]): boolean {
     return texts.some((t) => re.test(t));
 }
@@ -153,8 +165,7 @@ export function scanSkillText(input: {
     if (anyMatch(REVEAL_CONTEXT, views)) rules.add('skill.reveal_context');
 
     const declared = new Set(input.declaredTools);
-    const lowered = fields.map((f) => f.toLowerCase());
-    if (KNOWN_TOOL_NAMES.some((name) => !declared.has(name) && anyMatch(toolMention(name), lowered))) {
+    if (fields.flatMap(knownToolsNamedIn).some((name) => !declared.has(name))) {
         rules.add('skill.undeclared_tool');
     }
 
