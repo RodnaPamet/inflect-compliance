@@ -147,7 +147,6 @@ jest.mock('@/app-layer/repositories/VendorRepository', () => ({
 jest.mock('@/app-layer/repositories/AssessmentRepository', () => ({
     QuestionnaireRepository: {},
     VendorAssessmentRepository: {},
-    VendorAnswerRepository: {},
 }));
 
 jest.mock('@/app-layer/repositories/AuditRepository', () => ({

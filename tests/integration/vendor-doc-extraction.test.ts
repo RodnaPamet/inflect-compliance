@@ -445,17 +445,22 @@ describeFn('vendor-doc extraction (integration)', () => {
         expect(proposals[0].templateQuestionId).toBe(g3QuestionId);
     });
 
-    it('a legacy proposal is still MAPPED, but can no longer be approved (#5068)', async () => {
-        // The legacy branch of the mapping is reachable only for an assessment
-        // whose templateId names a QuestionnaireTemplate that HAS questions,
-        // and the product has no writer for that table: the only seed that
-        // writes it (prisma/seed-vendor-questionnaire.ts, via a nested
-        // `questions: { create: … }`) is unwired and run by hand, while the
-        // one the container entrypoint runs
-        // (scripts/seed-vendor-questionnaires.ts) writes the G-3 tables. So
-        // this fixture is a hand-seeded shape, created and removed here rather
-        // than in `beforeAll` — the row is GLOBAL (no tenantId), so leaving it
-        // behind would leak into every other suite on the shared test DB.
+    it('a legacy assessment is not mapped at all, and a stored legacy proposal is refused BY NAME (#5533)', async () => {
+        // The legacy branch of the mapping is gone (owner decision,
+        // 2026-11-15). It read `QuestionnaireQuestion` for an assessment with
+        // `templateId` and no `templateVersionId`, and since #5068 re-pointed
+        // `VendorAssessmentAnswer.questionId` at
+        // `VendorAssessmentTemplateQuestion` the proposal it produced could
+        // never be approved — so the dead end is now refused at the START
+        // rather than at the approve.
+        //
+        // The fixture is still a hand-seeded shape: the product has no writer
+        // for that table (the only seed that did, the SINGULAR
+        // prisma/seed-vendor-questionnaire.ts, is retired with this change;
+        // the entrypoint runs the PLURAL scripts/seed-vendor-questionnaires.ts,
+        // which writes the G-3 tables). The row is GLOBAL — no tenantId — so
+        // it is created and removed here rather than in `beforeAll`, or it
+        // would leak into every other suite on the shared test DB.
         const legacyQuestionId = (
             await prisma.questionnaireQuestion.create({
                 data: { templateId: legacyTemplateId, section: 'Security', prompt: 'Do you enforce access control?', answerType: 'YES_NO' },
@@ -472,27 +477,40 @@ describeFn('vendor-doc extraction (integration)', () => {
                 text: 'SOC 2 Type II — CC6.1 access control operating effectively.',
             });
 
-            // Mapping is unchanged: it still proposes against the legacy set.
-            expect(res.proposalsCreated).toBe(1);
-            const proposals = await prisma.vendorAnswerProposal.findMany({
-                where: { tenantId, extractionId: res.extractionId },
-                take: 10,
-            });
-            expect(proposals).toHaveLength(1);
-            expect(proposals[0].questionId).toBe(legacyQuestionId);
-            expect(proposals[0].templateQuestionId).toBeNull();
+            // NOTHING is proposed. The extraction still happens — the refusal
+            // is of the mapping, not of the document — so a zero here beside a
+            // real extractionId is the assertion, not an error.
+            expect(res.proposalsCreated).toBe(0);
+            expect(res.extractionId).toBeTruthy();
+            expect(
+                await prisma.vendorAnswerProposal.count({ where: { tenantId, extractionId: res.extractionId } }),
+            ).toBe(0);
 
-            // Approving it is the dead end this change creates, and it is the
-            // mirror of the bug it fixes: `VendorAssessmentAnswer.questionId`
-            // now references VendorAssessmentTemplateQuestion, so a legacy
-            // question id in that column is refused by the database. Asserted
-            // on the CODE, not the prose, so a reworded driver message cannot
-            // turn this green.
-            await expect(approveProposal(ctx, proposals[0].id)).rejects.toMatchObject({ code: 'P2003' });
-            // Keyed on the LEGACY question, not on the assessment: an earlier
-            // test in this suite approves a proposal onto the same assessment,
-            // so an assessment-wide count of 0 would be false for a reason
-            // that has nothing to do with this refusal.
+            // A proposal STORED before this change still exists in the wild, so
+            // approve must still refuse one — by name now, not as a raw P2003
+            // from the foreign key. Hand-written, because the mapping no longer
+            // produces this shape.
+            const stale = await prisma.vendorAnswerProposal.create({
+                data: {
+                    tenantId,
+                    extractionId: res.extractionId,
+                    assessmentId,
+                    questionId: legacyQuestionId,
+                    templateQuestionId: null,
+                    proposedAnswerJson: { value: 'YES' },
+                    // `sourceCitation` is required by the model; `status`
+                    // defaults to PENDING, which is what the approve gate
+                    // wants (it refuses only ACCEPTED or REJECTED).
+                    sourceCitation: 'SOC 2 CC6.1 — hand-written legacy fixture',
+                },
+            });
+            // Asserted on the CODE, not the prose, so a reworded message
+            // cannot turn this green — and `LEGACY_PROPOSAL` rather than
+            // `P2003` is the point: the database error named a constraint, not
+            // the shape an operator has to act on.
+            await expect(approveProposal(ctx, stale.id)).rejects.toMatchObject({
+                details: { reason: 'LEGACY_PROPOSAL' },
+            });
             expect(
                 await prisma.vendorAssessmentAnswer.count({ where: { tenantId, questionId: legacyQuestionId } }),
             ).toBe(0);
