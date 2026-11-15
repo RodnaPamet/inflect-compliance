@@ -23,14 +23,24 @@ VM_NAME="${VM_NAME:-inflect-compliance}"
 VM_ZONE="${VM_ZONE:-europe-west1-b}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+# Every check is read-only, so every call here is safe to run twice: a dropped
+# IAP connection (ssh exit 255) is retried, and stops the run when it stays
+# dropped (deploy/lib/iap.sh). For the same reason the check's own call does not
+# remove the stage — a retry must find remote.sh still there — and a separate
+# call removes it afterwards.
+# shellcheck source=deploy/lib/iap.sh
+. "$HERE/../lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
 
 ssh_vm 'rm -rf "$HOME/vm-check-stage" && mkdir -m 700 "$HOME/vm-check-stage"'
-gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$HERE/remote.sh" "$VM_NAME:vm-check-stage/remote.sh"
+iap_retry scp any - gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$HERE/remote.sh" "$VM_NAME:vm-check-stage/remote.sh"
 
 REPORT="$(mktemp)"
 trap 'rm -f "$REPORT"' EXIT
-ssh_vm "sudo bash \"\$HOME/vm-check-stage/remote.sh\" '$CHECK'; rc=\$?; rm -rf \"\$HOME/vm-check-stage\"; exit \$rc" | tee "$REPORT"
+rc=0
+ssh_vm "sudo bash \"\$HOME/vm-check-stage/remote.sh\" '$CHECK'" | tee "$REPORT" || rc=$?
+ssh_vm 'rm -rf "$HOME/vm-check-stage"'
+[ "$rc" -eq 0 ] || exit "$rc"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     { echo "# VM check: $CHECK"; echo; cat "$REPORT"; } >> "$GITHUB_STEP_SUMMARY"

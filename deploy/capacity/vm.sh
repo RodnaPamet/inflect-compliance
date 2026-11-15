@@ -47,16 +47,26 @@ else
     TITLE="VM capacity snapshot"
 fi
 
-ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
+# Both modes are read-only, so every call here is safe to run twice: a dropped
+# IAP connection (ssh exit 255) is retried, and stops the run when it stays
+# dropped (deploy/lib/iap.sh). For the same reason the report's own call does
+# not remove the stage — a retry must find the script still there — and a
+# separate call removes it afterwards.
+# shellcheck source=deploy/lib/iap.sh
+. "$HERE/../lib/iap.sh"
+ssh_vm() { iap_retry ssh 255 - gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --tunnel-through-iap --quiet --command "$1"; }
 
 # Its stdout is discarded: on a runner this is the first ssh, which makes a key
 # and prints ssh-keygen's banner and randomart on stdout.
 ssh_vm 'rm -rf "$HOME/vm-capacity-stage" && mkdir -m 700 "$HOME/vm-capacity-stage"' >/dev/null
-gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$HERE/$SCRIPT" "$VM_NAME:vm-capacity-stage/$SCRIPT"
+iap_retry scp any - gcloud compute scp --zone "$VM_ZONE" --tunnel-through-iap --quiet "$HERE/$SCRIPT" "$VM_NAME:vm-capacity-stage/$SCRIPT"
 
 REPORT="$(mktemp)"
 trap 'rm -f "$REPORT"' EXIT
-ssh_vm "sudo bash \"\$HOME/vm-capacity-stage/$SCRIPT\" $ARGS; rc=\$?; rm -rf \"\$HOME/vm-capacity-stage\"; exit \$rc" | tee "$REPORT"
+rc=0
+ssh_vm "sudo bash \"\$HOME/vm-capacity-stage/$SCRIPT\" $ARGS" | tee "$REPORT" || rc=$?
+ssh_vm 'rm -rf "$HOME/vm-capacity-stage"' >/dev/null
+[ "$rc" -eq 0 ] || exit "$rc"
 
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     { echo "# $TITLE"; echo; cat "$REPORT"; } >> "$GITHUB_STEP_SUMMARY"
