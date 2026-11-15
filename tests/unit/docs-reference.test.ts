@@ -425,6 +425,132 @@ describe('page actions — a name resolves from the scopes its use site can see'
     });
 });
 
+/**
+ * #5662. A URL builder is recognised by what the callee is BOUND to, never by
+ * its name. The retired name test (`apiUrl` / `buildApiUrl` / `tenantApiUrl`
+ * -> always the tenant prefix) was right 144 times and wrong three: an
+ * org-scoped builder published two live routes as "no API route matches", and
+ * a slug-first helper had its FIRST argument read as the path.
+ */
+describe('page actions — a URL builder is read from its binding', () => {
+    const file = 'src/app/t/[tenantSlug]/(app)/x/C.tsx';
+    const run = (text: string) => {
+        const src = memory({ [file]: text });
+        const r = new UrlResolver(src);
+        return { segments: apiCalls(file, src.parsed(file), r).map((c) => c.segments), resolver: r };
+    };
+    const segmentsOf = (text: string) => run(text).segments;
+
+    it('gives an org-scoped builder the org prefix, not the tenant one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S() {',
+                    '    const apiUrl = useOrgApiUrl();',
+                    "    return fetch(apiUrl('/agent-switches'), { method: 'PUT' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 'org', null, 'agent-switches']]);
+    });
+
+    it('keeps the tenant prefix for a tenant-scoped builder', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S() {',
+                    '    const apiUrl = useTenantApiUrl();',
+                    "    return fetch(apiUrl('/risks'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'risks']]);
+    });
+
+    // 17 of this repo's local builders are declared inside useCallback against
+    // 10 bare arrows, so treating the wrapper as "not a builder" cost 42 route
+    // rows — measured, which is why the unwrap exists.
+    // Named OUTSIDE the legacy set on purpose. With `apiUrl` the name fallback
+    // returns the same answer, so the case cannot tell the unwrap from the
+    // fallback and stays green when the unwrap is removed — it proved nothing
+    // until the name changed. It now also pins the claim that keying on the
+    // hook is wider than the three names it replaced.
+    it('unwraps a builder declared inside useCallback, whatever the local name', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S({ tenantSlug }: Props) {',
+                    '    const buildUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);',
+                    "    return fetch(buildUrl('/assets/bulk/delete'), { method: 'POST' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'assets', 'bulk', 'delete']]);
+    });
+
+    // Reading the body beats any fixed prefix: this shape is live in
+    // incidents/[incidentId]/page.tsx, and the name test emitted
+    // `/api/t/<slug>` for it, silently dropping two segments.
+    it('reads a local builder whose body carries more than the prefix', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function S({ tenantSlug, incidentId }: Props) {',
+                    '    const apiUrl = (path: string) => `/api/t/${tenantSlug}/incidents/${incidentId}${path}`;',
+                    "    return fetch(apiUrl('/timeline'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'incidents', null, 'timeline']]);
+    });
+
+    // The #5662 defect itself: argument 0 is the SLUG here. Binding each
+    // parameter to the argument in its own position makes the arity irrelevant
+    // and the answer exact, where reading argument 0 as the path built a URL
+    // out of the workspace slug.
+    it('binds a slug-first helper by position rather than reading argument 0 as the path', () => {
+        expect(
+            segmentsOf(
+                [
+                    'function apiUrl(tenantSlug: string, path: string) {',
+                    '    return `/api/t/${tenantSlug}/onboarding/${path}`;',
+                    '}',
+                    'export function W({ tenantSlug }: Props) {',
+                    "    return fetch(apiUrl(tenantSlug, 'step'), { method: 'POST' });",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([['api', 't', null, 'onboarding', 'step']]);
+    });
+
+    it('reports a call whose builder cannot be read and whose name is not a legacy one', () => {
+        expect(
+            segmentsOf(
+                [
+                    'export function U({ fetchUrl }: { fetchUrl: (p: string) => string }) {',
+                    "    return fetch(fetchUrl('/widgets'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
+    });
+
+    // The residual, and it is COUNTED rather than assumed: a builder arriving
+    // as a prop from another file cannot be read by a one-file resolver, and
+    // removing the name fallback outright was measured at 14 route rows lost.
+    it('falls back to the legacy name when no binding can be read, and counts it', () => {
+        const { segments, resolver } = run(
+            [
+                'export function L({ apiUrl }: { apiUrl: (p: string) => string }) {',
+                "    return fetch(apiUrl('/widgets'));",
+                '}',
+            ].join('\n'),
+        );
+        expect(segments).toEqual([['api', 't', null, 'widgets']]);
+        expect(resolver.nameFallbacks).toBe(1);
+    });
+});
+
 describe('the page inventory', () => {
     const sidebar = parse(
         'SidebarNav.tsx',

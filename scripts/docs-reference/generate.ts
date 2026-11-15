@@ -58,7 +58,7 @@ const AREA_ORDER = ['sidebar', 'other-tenant', 'admin', 'org', 'outside'];
 
 export interface Generated {
     fragments: Record<string, string>;
-    summary: { pages: number; documented: number; undocumented: number; redirects: number; resolved: number; unresolved: number };
+    summary: { pages: number; documented: number; undocumented: number; redirects: number; resolved: number; unresolved: number; nameFallbacks: number };
 }
 
 export function generate(root: string = REPO_ROOT): Generated {
@@ -158,6 +158,7 @@ export function generate(root: string = REPO_ROOT): Generated {
             redirects: rows.length - real.length,
             resolved,
             unresolved,
+            nameFallbacks: resolver.nameFallbacks,
         },
     };
 }
@@ -172,6 +173,10 @@ function main(): void {
         `docs reference: ${Object.keys(fragments).length} fragments written to ${path.relative(REPO_ROOT, OUT_DIR)}`,
         `docs reference: ${summary.pages} pages; ${summary.documented} documented, ${summary.undocumented} without a page guide, ${summary.redirects} redirects`,
         `docs reference: ${summary.resolved} of ${summary.resolved + summary.unresolved} API calls matched (${(share * 100).toFixed(1)}%)`,
+        // The residual guess, printed rather than assumed (#5662): calls whose
+        // URL builder could not be read from its binding and fell back to the
+        // callee's NAME. Every one is a call a future reader could make exact.
+        `docs reference: ${summary.nameFallbacks} call(s) took the legacy builder-name fallback`,
     ];
     process.stdout.write(`${lines.join('\n')}\n`);
     if (process.env.GITHUB_ACTIONS) {

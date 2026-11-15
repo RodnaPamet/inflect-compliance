@@ -189,7 +189,88 @@ function propValues(sf: ts.SourceFile, component: string, attribute: string): ts
     return unknown || values.length === 0 ? null : values;
 }
 
-const TENANT_URL_BUILDERS = new Set(['apiUrl', 'buildApiUrl', 'tenantApiUrl']);
+/**
+ * The URL prefix each context hook BUILDS, read off the hook rather than off
+ * the name a caller happens to give it (#5662).
+ *
+ * This was a set of three names — `apiUrl`, `buildApiUrl`, `tenantApiUrl` —
+ * every one of which got the tenant prefix. It was right 147 times and wrong
+ * three: `const apiUrl = useOrgApiUrl()` builds `/api/org/<slug>`, so the two
+ * org-settings calls were published as "no API route matches this path" about
+ * routes that are there and serving, and a local `apiUrl(tenantSlug, path)`
+ * helper had its FIRST argument read as the path.
+ *
+ * Keying on the hook is also wider than the list it replaces: any local name
+ * bound to one of these resolves, with nothing to add here. The values are the
+ * prefixes the hooks themselves write (`src/lib/tenant-context-provider.tsx`,
+ * `src/lib/org-context-provider.tsx`), with `\u0000` for the slug.
+ */
+/**
+ * A `function <name>(…)` declaration visible from `at`. A declaration is not a
+ * `const`, so the scope resolver never sees one — and `OnboardingWizard.tsx`
+ * declares `function apiUrl(tenantSlug, path)`, whose FIRST argument is the
+ * workspace slug. Finding it is what lets its calls be refused instead of
+ * falling through to the legacy name test that produced the wrong path.
+ */
+function functionDeclarationNamed(name: string, at: ts.Node): ts.FunctionDeclaration | null {
+    for (let n: ts.Node | undefined = at; n; n = n.parent) {
+        if (!ts.isBlock(n) && !ts.isSourceFile(n)) continue;
+        for (const st of n.statements) {
+            if (ts.isFunctionDeclaration(st) && st.name?.text === name) return st;
+        }
+    }
+    return null;
+}
+
+/**
+ * The function a builder binding holds, unwrapping the `useCallback` /
+ * `useMemo` a React builder is almost always declared inside:
+ * `const apiUrl = useCallback((path) => `/api/t/${slug}${path}`, [slug])`.
+ *
+ * 17 of the repo's local builders are declared that way against 10 bare
+ * arrows, so treating the wrapper as "not a builder" lost 42 route rows —
+ * measured, which is the only reason this arm exists.
+ */
+function builderFunction(e: ts.Expression): ts.ArrowFunction | ts.FunctionExpression | null {
+    if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return e;
+    if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && /^use(Memo|Callback)$/.test(e.expression.text)) {
+        const inner = e.arguments[0];
+        if (inner && (ts.isArrowFunction(inner) || ts.isFunctionExpression(inner))) {
+            // useMemo returns the VALUE its factory returns; useCallback returns
+            // the callback itself. Only the latter is the builder.
+            return e.expression.text === 'useCallback' ? inner : builderFunction(inner.body as ts.Expression);
+        }
+    }
+    return null;
+}
+
+/** The one expression a block body returns, or null if it does not return exactly one. */
+function soleReturn(body: ts.Block): ts.Expression | null {
+    const returns: ts.Expression[] = [];
+    walk(body, (n) => {
+        if (ts.isReturnStatement(n) && n.expression) returns.push(n.expression);
+    });
+    return returns.length === 1 ? returns[0] : null;
+}
+
+/**
+ * The names this scan used to treat as tenant URL builders unconditionally.
+ *
+ * They are kept as a LAST RESORT, below every binding test, because removing
+ * them outright was measured at 14 route rows lost — builders reach a call
+ * site through more shapes than a file-local resolver can read (a prop from
+ * another file, a hook of a hook). The binding tests above still DISQUALIFY:
+ * a callee bound to `useOrgApiUrl`, or to a function of the wrong arity, never
+ * reaches this line, which is what #5662 is about. `nameFallbacks` counts how
+ * often it fires so the residual is a number somebody can watch shrink rather
+ * than a silent assumption.
+ */
+const LEGACY_BUILDER_NAMES = new Set(['apiUrl', 'buildApiUrl', 'tenantApiUrl']);
+
+const URL_BUILDER_HOOKS: Record<string, string> = {
+    useTenantApiUrl: '/api/t/\u0000',
+    useOrgApiUrl: '/api/org/\u0000',
+};
 
 /**
  * A trailing `${query}` on a path is its query string, not a path segment:
@@ -215,6 +296,19 @@ interface KeyEntry {
 export class UrlResolver {
     private swrKeys: Map<string, KeyEntry> | null = null;
 
+    /**
+     * Parameters bound to a call's arguments while a local builder's BODY is
+     * being read — `apiUrl('/assets/bulk')` against
+     * `const apiUrl = (path) => `/api/t/${tenantSlug}${path}``. A frame is
+     * pushed for the body and popped after, so the binding reaches only that
+     * body; every other name in it still resolves in its own scope, which is
+     * how `tenantSlug` stays a run-time value while `path` becomes the literal.
+     */
+    private bound: { name: string; expr: ts.Expression; sf: ts.SourceFile }[] = [];
+
+    /** How many calls took the legacy NAME test because no binding could be read. */
+    nameFallbacks = 0;
+
     constructor(private readonly src: Source) {}
 
     /**
@@ -239,6 +333,11 @@ export class UrlResolver {
      * is what let this one be wrong on its own.
      */
     private identifier(name: string, sf: ts.SourceFile, at: ts.Node): { sf: ts.SourceFile; expr: ts.Expression } | null {
+        // Innermost binding first: a parameter under substitution shadows
+        // everything, exactly as it does at run time.
+        for (let i = this.bound.length - 1; i >= 0; i--) {
+            if (this.bound[i].name === name) return { sf: this.bound[i].sf, expr: this.bound[i].expr };
+        }
         if (enclosingParam(name, at)) return null;
 
         const scoped = enclosingConst(name, at);
@@ -259,6 +358,102 @@ export class UrlResolver {
             return found ? { sf: tsf, expr: found } : null;
         }
         return null;
+    }
+
+    /**
+     * A call whose callee is bound to a URL builder, resolved from the binding.
+     * `undefined` when the callee is not a builder at all.
+     *
+     * Two bindings count. A context HOOK contributes a fixed prefix. A local
+     * ONE-parameter function contributes its whole body, read with the
+     * argument bound to the parameter — which is both commoner and more
+     * accurate than a prefix: `incidents/[incidentId]/page.tsx` writes
+     * `(path) => `/api/t/${tenantSlug}/incidents/${incidentId}${path}``, and
+     * the retired name heuristic emitted `/api/t/<slug>` for it, silently
+     * dropping two segments.
+     *
+     * A local function with any other arity is NOT a builder: the slug-first
+     * `function apiUrl(tenantSlug, path)` in `OnboardingWizard.tsx` is the
+     * reason — reading `arguments[0]` as the path there produced a path built
+     * from the workspace slug.
+     */
+    private builderCall(e: ts.CallExpression, sf: ts.SourceFile, depth: number): string[] | null | undefined {
+        if (!ts.isIdentifier(e.expression)) return undefined;
+        const arg = e.arguments[0];
+
+        const prefix = this.builderPrefix(e.expression, sf);
+        if (prefix) {
+            const inner = arg ? this.paths(arg, sf, depth + 1) : null;
+            return inner ? inner.map((p) => `${prefix}${p.startsWith('/') ? '' : '/'}${p}`) : null;
+        }
+
+        const bound = this.identifier(e.expression.text, sf, e.expression);
+        const decl = functionDeclarationNamed(e.expression.text, e.expression);
+        const fn = bound ? builderFunction(bound.expr) : decl;
+
+        if (fn) {
+            const body = ts.isBlock(fn.body!) ? soleReturn(fn.body as ts.Block) : (fn.body as ts.Expression);
+            if (!body) return null;
+
+            // Every parameter is bound to the argument in its own position —
+            // which is just how a call works, and is where #5662's defect
+            // actually was: the old code assumed argument 0 was the PATH, so a
+            // slug-first `apiUrl(tenantSlug, path)` had the workspace slug read
+            // as the path. Binding by position makes the arity irrelevant and
+            // the result exact: that helper now resolves to the onboarding
+            // route its second argument names. A parameter with no argument is
+            // left unbound and reads as a run-time value.
+            const names = fn.parameters.map((x) => (ts.isIdentifier(x.name) ? x.name.text : null));
+            let pushed = 0;
+            names.forEach((name, i) => {
+                const a = e.arguments[i];
+                if (name && a) {
+                    this.bound.push({ name, expr: a, sf });
+                    pushed++;
+                }
+            });
+            try {
+                return this.paths(body, bound?.sf ?? sf, depth + 1);
+            } finally {
+                for (let i = 0; i < pushed; i++) this.bound.pop();
+            }
+        }
+
+        // No binding could be read. Fall back to the name, and count it.
+        if (!LEGACY_BUILDER_NAMES.has(e.expression.text)) return undefined;
+        this.nameFallbacks++;
+        const inner = arg ? this.paths(arg, sf, depth + 1) : null;
+        return inner ? inner.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`) : null;
+    }
+
+    /**
+     * The prefix the callee is bound to build, or null when the binding does
+     * not say so — a local function with its own body, a parameter, an import
+     * this cannot follow. Null means the call falls through and is reported,
+     * which is the whole point: the old name test could not tell
+     * `useOrgApiUrl` from `useTenantApiUrl`, and answered for both.
+     *
+     * A builder handed down as a PROP is resolved from the render sites, and
+     * only when every one of them agrees: two parents passing different
+     * builders to one child make the prefix unknown, not a majority verdict.
+     */
+    private builderPrefix(id: ts.Identifier, sf: ts.SourceFile): string | null {
+        const hookOf = (e: ts.Expression): string | null =>
+            ts.isCallExpression(e) && ts.isIdentifier(e.expression) ? (URL_BUILDER_HOOKS[e.expression.text] ?? null) : null;
+
+        const bound = this.identifier(id.text, sf, id);
+        if (bound) return hookOf(bound.expr);
+
+        const prop = destructuredProp(id.text, id);
+        const values = prop ? propValues(sf, prop.component, prop.attribute) : null;
+        if (!values) return null;
+        const prefixes = new Set(
+            values.map((v) => {
+                if (ts.isIdentifier(v)) return this.builderPrefix(v, sf);
+                return hookOf(v);
+            }),
+        );
+        return prefixes.size === 1 && !prefixes.has(null) ? [...prefixes][0] : null;
     }
 
     private keys(): Map<string, KeyEntry> {
@@ -361,9 +556,13 @@ export class UrlResolver {
             const b = this.paths(e.whenFalse, sf, depth + 1);
             return a && b ? [...a, ...b] : null;
         }
-        if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && TENANT_URL_BUILDERS.has(e.expression.text)) {
-            const inner = e.arguments[0] ? this.paths(e.arguments[0], sf, depth + 1) : null;
-            return inner ? inner.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`) : null;
+        if (ts.isCallExpression(e) && ts.isIdentifier(e.expression)) {
+            // A URL builder is recognised by what it is BOUND to, never by its
+            // name. `undefined` means "not a builder" and falls through to the
+            // arms below; `null` means "a builder this cannot read", which is
+            // reported rather than given a guessed prefix.
+            const built = this.builderCall(e, sf, depth);
+            if (built !== undefined) return built;
         }
         if (ts.isCallExpression(e)) {
             const key = this.keyPath(e.expression);
