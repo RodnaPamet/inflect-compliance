@@ -144,7 +144,35 @@ function isSwrFetcherParam(arg: ts.Expression): boolean {
  * the file, as the old resolver did, is a guess that happened to be right.
  * Reading the render site is neither.
  */
-function destructuredProp(name: string, at: ts.Node): { component: string; attribute: string } | null {
+/**
+ * How a component leaves its file: the export another file would import it by,
+ * or `null` for one that never leaves (only its own file can render it).
+ *
+ * `'default'` is NOT a name. A default export's LOCAL name is invisible to
+ * every importer, which is why #5707 exists: matching a render site by the
+ * declaring function's own name worked for `export function Child` and failed
+ * for `export default function PolicyTraceabilityPanel`, whose parent is free
+ * to call it anything.
+ */
+type ExportedAs = 'default' | { named: string } | null;
+
+function exportedAs(n: ts.Node): ExportedAs {
+    // The node carrying the modifiers: a declaration itself, or the
+    // `VariableStatement` around `export const X = …`.
+    const carrier =
+        ts.isVariableDeclaration(n.parent) && ts.isVariableDeclarationList(n.parent.parent) ? n.parent.parent.parent : n;
+    const flags = ts.getCombinedModifierFlags(carrier as ts.Declaration);
+    if (!(flags & ts.ModifierFlags.Export)) return null;
+    if (flags & ts.ModifierFlags.Default) return 'default';
+    if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) return { named: n.name.text };
+    if (ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name)) return { named: n.parent.name.text };
+    return null;
+}
+
+function destructuredProp(
+    name: string,
+    at: ts.Node,
+): { component: string; attribute: string; exported: ExportedAs } | null {
     for (let n: ts.Node | undefined = at.parent; n; n = n.parent) {
         if (!ts.isFunctionLike(n)) continue;
         let attribute: string | null = null;
@@ -154,13 +182,75 @@ function destructuredProp(name: string, at: ts.Node): { component: string; attri
             if (el) attribute = el.propertyName && ts.isIdentifier(el.propertyName) ? el.propertyName.text : name;
         }
         if (!attribute) continue;
-        // Only a NAMED component can be found again in JSX.
-        if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) return { component: n.name.text, attribute };
+
+        // `component` is the LOCAL name, which is what a render site in this
+        // same file would use. `exported` is how another file reaches it.
+        if ((ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n)) && n.name) {
+            return { component: n.name.text, attribute, exported: exportedAs(n) };
+        }
         if (ts.isArrowFunction(n) || ts.isFunctionExpression(n)) {
             const d = n.parent;
-            return ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) ? { component: d.name.text, attribute } : null;
+            if (!ts.isVariableDeclaration(d) || !ts.isIdentifier(d.name)) return null;
+            return { component: d.name.text, attribute, exported: exportedAs(n) };
         }
         return null;
+    }
+    return null;
+}
+
+/**
+ * The LOCAL name `importer` binds to one export of `fromFile`, or null if it
+ * does not import it.
+ *
+ * Keyed on the resolved specifier, never on the name — which is the whole
+ * point. Three shapes bind a component here:
+ *
+ *   * `import { Child } from './Child'` (and `{ Child as Panel }`);
+ *   * `import Panel from './Child'`, a default import under any name;
+ *   * `const Panel = dynamic(() => import('./Child'), …)`, which is how this
+ *     repo loads a component it does not want server-rendered — CLAUDE.md
+ *     requires it for the read-only process canvas. It is not an
+ *     `ImportDeclaration` at all, so the named-import check #5688 shipped saw
+ *     nothing, and `PolicyTraceabilityPanel`'s three calls fell back to the
+ *     callee's name (#5707).
+ */
+function localAliasFor(
+    importer: ts.SourceFile,
+    fromFile: string,
+    exported: Exclude<ExportedAs, null>,
+    exists: (f: string) => boolean,
+): string | null {
+    const targets = (spec: ts.Expression): boolean => {
+        const text = literalText(spec);
+        return !!text && resolveImport(importer.fileName, text, exists) === fromFile;
+    };
+
+    for (const st of importer.statements) {
+        if (ts.isImportDeclaration(st) && st.importClause && targets(st.moduleSpecifier)) {
+            if (exported === 'default') {
+                if (st.importClause.name) return st.importClause.name.text;
+                continue;
+            }
+            const nb = st.importClause.namedBindings;
+            if (!nb || !ts.isNamedImports(nb)) continue;
+            const el = nb.elements.find((x) => (x.propertyName ?? x.name).text === exported.named);
+            if (el) return el.name.text;
+            continue;
+        }
+        // `const X = dynamic(() => import('…'), …)` binds X to the DEFAULT
+        // export, so it answers only for one.
+        if (exported !== 'default' || !ts.isVariableStatement(st)) continue;
+        for (const d of st.declarationList.declarations) {
+            if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+            let spec: ts.Expression | null = null;
+            walk(d.initializer, (x) => {
+                if (spec) return;
+                if (ts.isCallExpression(x) && x.expression.kind === ts.SyntaxKind.ImportKeyword && x.arguments[0]) {
+                    spec = x.arguments[0];
+                }
+            });
+            if (spec && targets(spec)) return d.name.text;
+        }
     }
     return null;
 }
@@ -197,28 +287,6 @@ function renderSitesIn(
     return { values, unknown };
 }
 
-/**
- * Does `sf` import `name` from `fromFile`?
- *
- * The guard that makes a cross-file search sound. Two files can each declare a
- * component called `Child`, and searching the reach for `<Child …>` by name
- * alone would read one component's render site as another's — a wrong answer
- * dressed as a resolution, which is the whole class #5661 was about. A render
- * site counts only where the name is bound to the component that declared the
- * prop.
- */
-function importsFrom(sf: ts.SourceFile, name: string, fromFile: string, exists: (f: string) => boolean): boolean {
-    for (const st of sf.statements) {
-        if (!ts.isImportDeclaration(st) || !st.importClause?.namedBindings) continue;
-        const nb = st.importClause.namedBindings;
-        if (!ts.isNamedImports(nb)) continue;
-        if (!nb.elements.some((el) => el.name.text === name)) continue;
-        const spec = literalText(st.moduleSpecifier);
-        const target = spec ? resolveImport(sf.fileName, spec, exists) : null;
-        if (target === fromFile) return true;
-    }
-    return false;
-}
 
 /**
  * The URL prefix each context hook BUILDS, read off the hook rather than off
@@ -284,20 +352,6 @@ function soleReturn(body: ts.Block): ts.Expression | null {
     return returns.length === 1 ? returns[0] : null;
 }
 
-/**
- * The names this scan used to treat as tenant URL builders unconditionally.
- *
- * They are kept as a LAST RESORT, below every binding test, because removing
- * them outright was measured at 14 route rows lost — builders reach a call
- * site through more shapes than a file-local resolver can read (a prop from
- * another file, a hook of a hook). The binding tests above still DISQUALIFY:
- * a callee bound to `useOrgApiUrl`, or to a function of the wrong arity, never
- * reaches this line, which is what #5662 is about. `nameFallbacks` counts how
- * often it fires so the residual is a number somebody can watch shrink rather
- * than a silent assumption.
- */
-const LEGACY_BUILDER_NAMES = new Set(['apiUrl', 'buildApiUrl', 'tenantApiUrl']);
-
 const URL_BUILDER_HOOKS: Record<string, string> = {
     useTenantApiUrl: '/api/t/\u0000',
     useOrgApiUrl: '/api/org/\u0000',
@@ -337,9 +391,6 @@ export class UrlResolver {
      */
     private bound: { name: string; expr: ts.Expression; sf: ts.SourceFile }[] = [];
 
-    /** How many calls took the legacy NAME test because no binding could be read. */
-    nameFallbacks = 0;
-
     /**
      * The files of the page being read, set by `pageActions` for the duration
      * of one page — the scope within which a prop's render site is looked for
@@ -374,22 +425,34 @@ export class UrlResolver {
      * population this can see — a component rendered from outside it resolves
      * to nothing rather than to the sites that happen to be inside.
      */
-    private propValues(sf: ts.SourceFile, component: string, attribute: string): { expr: ts.Expression; sf: ts.SourceFile }[] | null {
+    private propValues(
+        sf: ts.SourceFile,
+        prop: { component: string; attribute: string; exported: ExportedAs },
+    ): { expr: ts.Expression; sf: ts.SourceFile }[] | null {
         const out: { expr: ts.Expression; sf: ts.SourceFile }[] = [];
         let unknown = false;
 
-        const take = (f: ts.SourceFile) => {
-            const found = renderSitesIn(f, component, attribute);
+        const take = (f: ts.SourceFile, tag: string) => {
+            const found = renderSitesIn(f, tag, prop.attribute);
             if (found.unknown) unknown = true;
             for (const expr of found.values) out.push({ expr, sf: f });
         };
 
-        take(sf);
-        for (const file of this.reach) {
-            if (file === sf.fileName) continue;
-            const other = this.src.parsed(file);
-            if (!importsFrom(other, component, sf.fileName, this.src.exists)) continue;
-            take(other);
+        // Its own file renders it under its LOCAL name.
+        take(sf, prop.component);
+
+        // Another file renders it under whatever name IT binds — resolved from
+        // the import, never assumed to match (#5707). A component that is not
+        // exported cannot be rendered elsewhere at all, so there is nothing to
+        // look for.
+        if (prop.exported) {
+            for (const file of this.reach) {
+                if (file === sf.fileName) continue;
+                const other = this.src.parsed(file);
+                const alias = localAliasFor(other, sf.fileName, prop.exported, this.src.exists);
+                if (!alias) continue;
+                take(other, alias);
+            }
         }
 
         return unknown || out.length === 0 ? null : out;
@@ -489,7 +552,16 @@ export class UrlResolver {
             const read = this.readBuilderBody(only.fn, only.sf, e, depth);
             return read;
         }
-        return this.legacyNameFallback(e, sf, depth);
+        // No binding reads. The call is REPORTED, not guessed.
+        //
+        // This used to consult a set of three builder NAMES as a last resort
+        // (#5662) and count how often it fired, so the residual could be
+        // watched down: 19 at #5690, 3 after #5688, 0 after #5707. At zero the
+        // heuristic was dead code with a counter attached, and a name test is
+        // the thing this resolver exists to not have — a future builder shape
+        // it cannot read now reaches the `unresolved` list with its file, line
+        // and reason, which is an answer somebody can act on.
+        return undefined;
     }
 
     /**
@@ -517,7 +589,7 @@ export class UrlResolver {
         if (decl) return [{ fn: decl, sf }];
 
         const prop = destructuredProp(id.text, id);
-        const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
+        const values = prop ? this.propValues(sf, prop) : null;
         if (!values) return null;
 
         const out: { fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration; sf: ts.SourceFile }[] = [];
@@ -573,14 +645,6 @@ export class UrlResolver {
         }
     }
 
-    /** No binding could be read: fall back to the callee's NAME, and count it. */
-    private legacyNameFallback(e: ts.CallExpression, sf: ts.SourceFile, depth: number): string[] | null | undefined {
-        if (!ts.isIdentifier(e.expression) || !LEGACY_BUILDER_NAMES.has(e.expression.text)) return undefined;
-        this.nameFallbacks++;
-        const arg = e.arguments[0];
-        const inner = arg ? this.paths(arg, sf, depth + 1) : null;
-        return inner ? inner.map((p) => `/api/t/\u0000${p.startsWith('/') ? '' : '/'}${p}`) : null;
-    }
 
     /**
      * The prefix the callee is bound to build, or null when the binding does
@@ -601,7 +665,7 @@ export class UrlResolver {
         if (bound) return hookOf(bound.expr);
 
         const prop = destructuredProp(id.text, id);
-        const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
+        const values = prop ? this.propValues(sf, prop) : null;
         if (!values) return null;
         const prefixes = new Set(
             values.map((v) => {
@@ -744,7 +808,7 @@ export class UrlResolver {
             const target = this.identifier(e.text, sf, e);
             if (target && !ts.isObjectLiteralExpression(target.expr)) return this.paths(target.expr, target.sf, depth + 1);
             const prop = destructuredProp(e.text, e);
-            const values = prop ? this.propValues(sf, prop.component, prop.attribute) : null;
+            const values = prop ? this.propValues(sf, prop) : null;
             if (values) {
                 const each = values.map((v) => this.paths(v.expr, v.sf, depth + 1));
                 if (each.every((x) => x !== null)) return [...new Set((each as string[][]).flat())];

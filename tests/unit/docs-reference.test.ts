@@ -165,6 +165,12 @@ describe('page actions — the calls a page makes', () => {
             "import { Panel } from '@/components/risks/Panel';",
             "import { BULK } from './endpoints';",
             'export function RisksClient({ endpoint, open, query }: Props) {',
+            // BOUND, as real code binds it. This fixture used `apiUrl(…)` with
+            // no binding anywhere and resolved through the legacy NAME test,
+            // which #5707 deleted — so it was exercising the heuristic rather
+            // than the resolver. Every one of the 147 real call sites writes
+            // this line.
+            '    const apiUrl = useTenantApiUrl();',
             '    useTenantSWR(CACHE_KEYS.risks.list());',
             "    useTenantSWR(open ? CACHE_KEYS.risks.detail('x') : null);",
             "    fetch(apiUrl(BULK), { method: 'POST' });",
@@ -212,10 +218,10 @@ describe('page actions — the calls a page makes', () => {
             'GET /api/t/[tenantSlug]/risks/staleness (use case)',
         ]);
         expect(a.unresolved.map((u) => `${u.line} ${u.why} ${u.expression}`)).toEqual([
-            '10 the URL is built in a way the scan cannot follow endpoint',
+            '11 the URL is built in a way the scan cannot follow endpoint',
         ]);
         // The list key built in a useMemo is one call site, however many returns it has.
-        expect(a.resolved.find((r) => r.method === 'GET' && r.route.url === '/api/t/[tenantSlug]/risks')!.sites.map((s) => s.line)).toEqual([5, 13]);
+        expect(a.resolved.find((r) => r.method === 'GET' && r.route.url === '/api/t/[tenantSlug]/risks')!.sites.map((s) => s.line)).toEqual([6, 14]);
     });
 
     it('reads a template ending in a query-named value as the query string, and one after a slash as a segment', () => {
@@ -535,19 +541,24 @@ describe('page actions — a URL builder is read from its binding', () => {
         ).toEqual([null]);
     });
 
-    // The residual, and it is COUNTED rather than assumed: a builder arriving
-    // as a prop from another file cannot be read by a one-file resolver, and
-    // removing the name fallback outright was measured at 14 route rows lost.
-    it('falls back to the legacy name when no binding can be read, and counts it', () => {
-        const { segments, resolver } = run(
-            [
-                'export function L({ apiUrl }: { apiUrl: (p: string) => string }) {',
-                "    return fetch(apiUrl('/widgets'));",
-                '}',
-            ].join('\n'),
-        );
-        expect(segments).toEqual([['api', 't', null, 'widgets']]);
-        expect(resolver.nameFallbacks).toBe(1);
+    // The legacy NAME test is GONE (#5707). It survived #5662 as a last
+    // resort because deleting it then cost 14 route rows — builders reached a
+    // call site through shapes the resolver could not yet read. #5688 taught it
+    // the page's reach and #5707 the import binding, which took the count 19 ->
+    // 3 -> 0, and at zero a name test is exactly what this resolver exists not
+    // to have. A builder it cannot read is now REPORTED.
+    it('reports a call whose builder cannot be read, even under a legacy builder name', () => {
+        // `apiUrl` was one of the three privileged names. With no render site
+        // for `L` anywhere, nothing says what it is bound to.
+        expect(
+            segmentsOf(
+                [
+                    'export function L({ apiUrl }: { apiUrl: (p: string) => string }) {',
+                    "    return fetch(apiUrl('/widgets'));",
+                    '}',
+                ].join('\n'),
+            ),
+        ).toEqual([null]);
     });
 });
 
@@ -623,6 +634,78 @@ describe('page actions — a prop is resolved across the files of one page', () 
         // A union missing a member is not a union — reported, not answered
         // from the site that does supply it.
         expect(a.resolved).toEqual([]);
+    });
+});
+
+/**
+ * #5707. A component is found at a render site by the name THAT FILE binds it
+ * to, resolved from the import — never by the name it declares itself. For a
+ * DEFAULT export the two need not match at all, and `next/dynamic` binds one
+ * without an `ImportDeclaration` to read.
+ */
+describe('page actions — a render site is matched by the importer\'s own alias', () => {
+    const page = 'src/app/t/[tenantSlug]/(app)/y/page.tsx';
+    const child = 'src/app/t/[tenantSlug]/(app)/y/Child.tsx';
+    const decoy = 'src/app/t/[tenantSlug]/(app)/y/Decoy.tsx';
+    const other = 'src/app/t/[tenantSlug]/(app)/y/Other.tsx';
+    const route = (f: string, t: string) => parseApiRoute(f, t);
+    const table: ApiRoute[] = [
+        route('src/app/api/t/[tenantSlug]/widgets/route.ts', 'export const GET = a;'),
+        route('src/app/api/t/[tenantSlug]/gadgets/route.ts', 'export const GET = a;'),
+    ];
+    const act = (files: Record<string, string>) => pageActions(page, memory(files), table);
+    const CHILD = "export default function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <button onClick={() => fetch(buildUrl('/widgets'))} />;\n}";
+
+    it('follows a default export loaded through next/dynamic under a different local name', () => {
+        // The shape that left PolicyTraceabilityPanel's three calls guessing.
+        // CLAUDE.md requires `next/dynamic` for a component that must not be
+        // server-rendered, so this is a recurring shape, not one file's quirk.
+        const a = act({
+            [page]: "const Panel = dynamic(() => import('./Child'), { ssr: false });\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Panel buildUrl={buildUrl} />;\n}",
+            [child]: CHILD,
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+    });
+
+    it('follows a plain default import under a different local name', () => {
+        const a = act({
+            [page]: "import Panel from './Child';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <Panel buildUrl={buildUrl} />;\n}",
+            [child]: CHILD,
+        });
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`)).toEqual(['GET /api/t/[tenantSlug]/widgets']);
+    });
+
+    it('keys on the import SPECIFIER, so two default exports under one local name do not mix', () => {
+        // The acceptance test for #5707, and the reason it is not done by
+        // name: both files bind a DEFAULT export to the local name `Child`,
+        // but to DIFFERENT files. Matching `<Child …>` by name would union the
+        // decoy's render site into this one and report a route the declaring
+        // component never calls — the exact failure #5662 removed.
+        const a = act({
+            [page]: "import Child from './Child';\nimport { Other } from './Other';\nexport default function P() {\n    const buildUrl = useTenantApiUrl();\n    return <><Child buildUrl={buildUrl} /><Other /></>;\n}",
+            [child]: CHILD,
+            [decoy]: "export default function Decoy({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/gadgets'))} />;\n}",
+            // Binds the DECOY under the name `Child`.
+            [other]: "import Child from './Decoy';\nexport function Other() {\n    const gadgetUrl = useTenantApiUrl();\n    return <Child buildUrl={gadgetUrl} />;\n}",
+        });
+        // `/widgets` from the real Child, `/gadgets` from the decoy — each from
+        // its OWN render site. Neither call reports both.
+        expect(a.resolved.map((r) => `${r.method} ${r.route.url}`).sort()).toEqual([
+            'GET /api/t/[tenantSlug]/gadgets',
+            'GET /api/t/[tenantSlug]/widgets',
+        ]);
+        expect(a.unresolved).toEqual([]);
+    });
+
+    it('does not look outside its own file for a component that is not exported', () => {
+        // Nothing else can render it, so there is nothing to find — and a
+        // same-named component elsewhere must not stand in for it.
+        const a = act({
+            [page]: "import { Other } from './Other';\nexport default function P() {\n    return <Other />;\n}",
+            [other]: "function Child({ buildUrl }: { buildUrl: (p: string) => string }) {\n    return <i onClick={() => fetch(buildUrl('/gadgets'))} />;\n}\nexport function Other() {\n    return <div />;\n}",
+        });
+        expect(a.resolved).toEqual([]);
+        expect(a.unresolved.map((u) => u.expression)).toContain("buildUrl('/gadgets')");
     });
 });
 
