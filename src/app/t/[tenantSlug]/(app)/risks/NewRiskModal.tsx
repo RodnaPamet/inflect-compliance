@@ -18,8 +18,10 @@
  *   - `POST /api/t/:slug/risks` with
  *       { title, description?, category?, likelihood, impact,
  *         treatmentOwner?, nextReviewAt?, templateId? }
- *   - When a template is selected, `templateId` rides along so the
- *     server-side usecase can record the provenance.
+ *   - When a template is selected, `templateId` rides along. The server
+ *     checks it names a template and records it in the risk's creation
+ *     audit row (`detailsJson.templateId`); the risk itself has no column
+ *     for it (#5313 item 48).
  *   - After the risk is created, sequential best-effort POSTs to
  *     `/risks/:id/controls` for every selected control id — identical
  *     to the legacy wizard's two-phase behaviour.
@@ -137,7 +139,9 @@ export function NewRiskModal({
     // `useZodForm` shape every other entity surface uses). `templateId` and
     // `selectedControlIds` stay HERE deliberately: the first drives a fetch
     // and rewrites fields, the second is a second-phase write after the risk
-    // exists. Neither is part of the risk payload.
+    // exists. Neither is form state. `templateId` is still SENT with the risk,
+    // as provenance the server records in the creation audit row; the
+    // control ids are not sent with it at all.
     const [templateId, setTemplateId] = useState('');
     const [selectedControlIds, setSelectedControlIds] = useState<Set<string>>(
         new Set(),

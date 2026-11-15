@@ -38,7 +38,8 @@ const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const appetite = read('src/app-layer/usecases/risk-appetite.ts');
 const engine = read('src/app-layer/usecases/monte-carlo.ts');
-const route = read('src/app/api/t/[tenantSlug]/risk-appetite/route.ts');
+// The PUT body schema lives beside the other app-layer schemas (#5313).
+const routeSchema = read('src/app-layer/schemas/risk-appetite.schemas.ts');
 const adminPage = read('src/app/t/[tenantSlug]/(app)/admin/risk-appetite/page.tsx');
 const schema = readPrismaSchema();
 const migration = readSql('prisma/migrations/20260612020000_rq3_3_tested_percentile/migration.sql');
@@ -87,8 +88,8 @@ describe('RQ3-3 — appetite checks honour the tested percentile', () => {
     test('schema + migration + route schema stay paired', () => {
         expect(schema).toMatch(/testedPercentile\s+Int\s+@default\(80\)/);
         expect(migration).toMatch(/ADD COLUMN "testedPercentile" INTEGER NOT NULL DEFAULT 80/);
-        expect(route).toMatch(/testedPercentile: z/);
-        expect(route).toMatch(/z\.literal\(50\), z\.literal\(80\), z\.literal\(90\), z\.literal\(95\), z\.literal\(99\)/);
+        expect(routeSchema).toMatch(/testedPercentile: z/);
+        expect(routeSchema).toMatch(/z\.literal\(50\), z\.literal\(80\), z\.literal\(90\), z\.literal\(95\), z\.literal\(99\)/);
     });
 
     test('the admin page exposes the board-level percentile choice', () => {

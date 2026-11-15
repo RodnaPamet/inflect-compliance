@@ -241,6 +241,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Read-only sibling at /risk-matrix-config (risks.view).',
     },
 
+    // ── Risk appetite approval (#5313 item 11) ──────────────────────
+    {
+        path: new RegExp(`^${T}\\/risk-appetite\\/approve$`),
+        methods: ['POST'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Approves the risk appetite statement and its limits, stamping the '
+            + 'caller and the time. OWNER-only by owner decision (2026-11-15): '
+            + 'the approval is the board\'s sign-off, so the role that edits the '
+            + 'limits (ADMIN) does not also approve them. Any save that changes '
+            + 'the statement or a limit clears it.',
+    },
+
     // ── M2M API keys ────────────────────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/api-keys(\\/.*)?$`),

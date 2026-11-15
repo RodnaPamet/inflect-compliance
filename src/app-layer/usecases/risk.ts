@@ -229,8 +229,23 @@ export async function createRisk(ctx: RequestContext, data: {
     ownerUserId?: string | null;
     targetDate?: string | null;
     nextReviewAt?: string | null;
+    /**
+     * The template the New Risk form started from, if any (#5313 item 48,
+     * owner decision 2026-11-15). Provenance only: it changes nothing about
+     * the risk, which carries the values the person submitted, and it is
+     * recorded in the creation audit row's `detailsJson` rather than on the
+     * risk (no column, by decision).
+     */
+    templateId?: string | null;
 }) {
     assertCanCreateRisk(ctx);
+
+    // An id that names no template is refused rather than recorded: the
+    // audit row would otherwise vouch for a provenance that does not exist.
+    const templateId = data.templateId || null;
+    if (templateId && !(await RiskTemplateRepository.getById(templateId))) {
+        throw badRequest('Risk template not found', { reason: 'RISK_TEMPLATE_NOT_FOUND' });
+    }
 
     const created = await runInTenantContext(ctx, async (db) => {
         if (data.ownerUserId) await assertActiveOwner(db, ctx.tenantId, data.ownerUserId);
@@ -283,7 +298,9 @@ export async function createRisk(ctx: RequestContext, data: {
             entityType: 'Risk',
             entityId: risk.id,
             details: `Created risk: ${risk.title} (score: ${inherentScore})`,
-            detailsJson: { category: 'custom', event: 'create' },
+            detailsJson: templateId
+                ? { category: 'custom', event: 'create', templateId }
+                : { category: 'custom', event: 'create' },
         });
 
         return risk;
