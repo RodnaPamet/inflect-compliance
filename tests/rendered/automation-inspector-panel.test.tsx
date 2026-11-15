@@ -12,6 +12,12 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => p,
 }));
+// The trigger-change confirmation is a Modal, which reads the router.
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), back: jest.fn(), prefetch: jest.fn() }),
+    usePathname: () => '/t/acme/processes',
+    useSearchParams: () => new URLSearchParams(),
+}));
 const toastError = jest.fn();
 jest.mock('@/components/ui/hooks', () => ({
     useToast: () => ({ error: toastError, success: jest.fn(), info: jest.fn(), warning: jest.fn() }),
@@ -31,7 +37,7 @@ const RULE = {
     name: 'My rule',
     description: null,
     triggerEvent: 'RISK_CREATED',
-    triggerFilterJson: null,
+    triggerFilterJson: null as unknown,
     actionType: 'NOTIFY_USER',
     actionConfigJson: {},
     status: 'ENABLED',
@@ -154,5 +160,71 @@ describe('a viewer who may not change rules (#5283, #5284)', () => {
         const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
         expect(init.method).toBe('PATCH');
         expect(JSON.parse(String(init.body))).toEqual({ status: 'ENABLED' });
+    });
+});
+
+// #5309 item 20 (owner decision 2026-11-15): a filter names the old event's
+// fields, so changing the trigger of a rule that has one asks first and clears
+// it in the same save. Cancel keeps both.
+describe('changing the trigger of a rule with a filter (#5309 item 20)', () => {
+    const FILTER = { logic: 'AND', conditions: [{ field: 'score', operator: 'gt', value: '15' }] };
+    const en = jest.requireActual('../../messages/en.json') as {
+        automation: { autoInspector: Record<string, string> };
+    };
+    const ai = en.automation.autoInspector;
+
+    async function chooseTrigger(label: string) {
+        fireEvent.click(screen.getByRole('combobox', { name: /Risk created/ }));
+        fireEvent.click(await screen.findByRole('option', { name: new RegExp(`^${label}`) }));
+    }
+    const puts = () => fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PUT');
+
+    it('asks before removing the filter, and the confirmed save clears it with the new event', async () => {
+        serve({ ...RULE, triggerFilterJson: FILTER });
+        render(<AutomationInspectorPanel kind="trigger" ruleIds={['r1']} tenantSlug="acme" canManageRules />);
+        await chooseTrigger('Risk updated');
+        expect((await screen.findAllByText(ai.triggerChangeFilterRemoved)).length).toBeGreaterThan(0);
+        expect(puts()).toHaveLength(0);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: ai.triggerChangeConfirm }));
+        });
+        expect(puts()).toHaveLength(1);
+        expect(JSON.parse(String((puts()[0][1] as RequestInit).body))).toEqual({
+            triggerEvent: 'RISK_UPDATED',
+            triggerFilter: null,
+        });
+    });
+
+    it('Cancel keeps the old trigger and the filter: nothing is saved', async () => {
+        serve({ ...RULE, triggerFilterJson: FILTER });
+        render(<AutomationInspectorPanel kind="trigger" ruleIds={['r1']} tenantSlug="acme" canManageRules />);
+        await chooseTrigger('Risk updated');
+        await screen.findAllByText(ai.triggerChangeFilterRemoved);
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /Cancel/ }));
+        });
+        expect(puts()).toHaveLength(0);
+        expect(screen.queryAllByText(ai.triggerChangeFilterRemoved)).toHaveLength(0);
+    });
+
+    it('a rule with no filter changes trigger at once, without asking', async () => {
+        render(<AutomationInspectorPanel kind="trigger" ruleIds={['r1']} tenantSlug="acme" canManageRules />);
+        await act(async () => { await chooseTrigger('Risk updated'); });
+        expect(screen.queryAllByText(ai.triggerChangeFilterRemoved)).toHaveLength(0);
+        expect(puts()).toHaveLength(1);
+        expect(JSON.parse(String((puts()[0][1] as RequestInit).body))).toEqual({ triggerEvent: 'RISK_UPDATED' });
+    });
+
+    it('asks when another rule the step sets has a filter, read from that rule', async () => {
+        fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+            if (!init?.method && String(url).endsWith('/r2')) {
+                return { ok: true, status: 200, json: async () => ({ ...RULE, id: 'r2', triggerFilterJson: FILTER }) };
+            }
+            return { ok: true, status: 200, json: async () => ({}) };
+        });
+        render(<AutomationInspectorPanel kind="trigger" ruleIds={['r1', 'r2']} tenantSlug="acme" canManageRules />);
+        await chooseTrigger('Risk updated');
+        expect((await screen.findAllByText(ai.triggerChangeFilterRemoved)).length).toBeGreaterThan(0);
+        expect(puts()).toHaveLength(0);
     });
 });

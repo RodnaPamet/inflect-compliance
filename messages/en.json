@@ -16122,6 +16122,9 @@
       "detailLoadFailed": "Couldn't load this rule. Close the builder and open it again before saving."
     },
     "autoInspector": {
+      "triggerChangeTitle": "Change the trigger event?",
+      "triggerChangeFilterRemoved": "The filter for the old trigger will be removed.",
+      "triggerChangeConfirm": "Change trigger",
       "actionNotify": "Notify user",
       "actionCreateTask": "Create task",
       "actionUpdateStatus": "Update status",
