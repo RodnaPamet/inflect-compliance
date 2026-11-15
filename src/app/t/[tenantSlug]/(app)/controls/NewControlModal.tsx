@@ -53,7 +53,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { useToast } from '@inflect/ui/components/ui/hooks/use-toast';
 import { CACHE_KEYS } from '@/lib/swr-keys';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { useFormTelemetry } from '@/lib/telemetry/form-telemetry';
 import { choiceOrNull, textOrNull } from './_lib/control-write-values';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -166,6 +166,13 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
     const close = useCallback(() => setOpen(false), [setOpen]);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    // "Not applicable" is a second write, to the applicability route, which
+    // takes the write tier AND `controls.edit` (`assertCanSetApplicability`).
+    // A role that may create controls without that key was offered it, the
+    // second step was refused, and the control was left created as
+    // applicable. Such a role is not offered the choice (#5313).
+    const { permissions: tier, appPermissions } = useTenantContext();
+    const canSetApplicability = !!tier?.canWrite && !!appPermissions?.controls?.edit;
     const router = useRouter();
     const toast = useToast();
     const { mutate: swrMutate } = useSWRConfig();
@@ -530,6 +537,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 )}
                             />
                         </FormField>
+                        {canSetApplicability && (
                         <div>
                             <div className="mb-1 flex items-center gap-1.5">
                                 <span
@@ -593,6 +601,7 @@ export function NewControlModal({ open, setOpen, tenantSlug }: NewControlModalPr
                                 </FormField>
                             )}
                         </div>
+                        )}
                     </div>
                 </Modal.Body>
                 <Modal.Actions>

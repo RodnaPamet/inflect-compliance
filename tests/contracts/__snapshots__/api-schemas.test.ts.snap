@@ -1605,6 +1605,12 @@ exports[`API contract — per-schema snapshots schema: ControlDetail 1`] = `
             }
           ]
         },
+        "applicabilityDecidedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "contributors": {
           "type": "array",
           "items": {

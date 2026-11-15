@@ -243,7 +243,14 @@ export function CreateFindingModal({
                 throw new Error(apiErrorMessage(data, tx('create.createFailedGeneric')));
             }
             const finding = await res.json();
-            void swrMutate(`/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`);
+            // Every cached variant of the register — the unfiltered key and
+            // each `?<filters>` one — so the new finding shows under whatever
+            // filter the register is on (#5313), as a save does
+            // (`revalidateFindingLists` in FindingsClient).
+            const listBase = `/api/t/${tenantSlug}${CACHE_KEYS.findings.list()}`;
+            void swrMutate(
+                (key: unknown) => typeof key === 'string' && (key === listBase || key.startsWith(`${listBase}?`)),
+            );
             telemetry.trackSuccess({ findingId: finding.id });
             close();
         } catch (err) {

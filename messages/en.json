@@ -2618,7 +2618,9 @@
       "latestStatus": "Latest status",
       "telemetryNote": "Automated monitoring checks — separate telemetry keyed to this control's automation. They update control health and open findings on failure, but they are not test runs and do not count toward the test-run effectiveness pass-rate.",
       "emptyTitle": "No automated checks yet",
-      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule."
+      "emptyDesc": "This control has no integration check runs. Set an automation key and evidence source of INTEGRATION to have the runner test it on a schedule.",
+      "loadError": "Couldn't load the automated checks.",
+      "retry": "Retry"
     },
     "bestValue": {
       "loadFailed": "Couldn't load the best-value controls.",
@@ -11013,7 +11015,13 @@
         "INCIDENT_STEP_UNKNOWN": "That step is not part of this incident type’s runbook.",
         "INCIDENT_EVIDENCE_NOT_FOUND": "That evidence record no longer exists in this workspace."
       },
-      "forensicChecklistAria": "Forensic evidence checklist"
+      "forensicChecklistAria": "Forensic evidence checklist",
+      "countdown": {
+        "daysHours": "{days}d {hours}h",
+        "hoursMinutes": "{hours}h {minutes}m",
+        "left": "{time} left",
+        "overdue": "{time} overdue"
+      }
     },
     "filters": {
       "severity": "Severity",
