@@ -235,7 +235,7 @@ test.describe('Issue Management', () => {
 
         await authedPage.click('#add-link-btn');
         await authedPage.waitForSelector('#link-entity-type', { timeout: 5000 });
-        await selectComboboxOption(authedPage, 'link-entity-type', 'CONTROL');
+        await selectComboboxOption(authedPage, 'link-entity-type', 'Control');
         // PR-D — pick the seeded control via the EntityPicker.
         // The picker renders controls as `${code}: ${name}`, so
         // a substring regex against the name suffix is the right

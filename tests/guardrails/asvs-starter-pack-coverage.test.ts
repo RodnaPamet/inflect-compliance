@@ -332,14 +332,20 @@ describe('ASVS 4.0.3 — cross-framework mapping validity', () => {
         expect(missing).toEqual([]);
     });
 
-    it('asvs-to-iso27001 maps the Level 1 requirements its description names, and only those', () => {
-        // #5316: it kept its V2.6.1 and V11.1.6 edges after both moved to L2.
-        const ms = parseMappingSetFile(path.join(MAP, 'asvs-to-iso27001.yaml'));
+    // #5316: both sets kept their V2.6.1 and V11.1.6 edges after both moved to
+    // L2, and asvs-to-ssdf also lacked V3.7.1, V7.1.1 and V7.1.2, which moved
+    // to L1.
+    it.each(['asvs-to-iso27001.yaml', 'asvs-to-ssdf.yaml'])('%s maps the Level 1 requirements its description names, and only those', (file) => {
+        const ms = parseMappingSetFile(path.join(MAP, file));
         expect(ms.description).toContain('Level 1 requirements');
         const level = new Map(requirements.map((r) => [r.refId, r.category]));
         const sources = [...new Set(ms.mapping_entries.map((e) => e.source_ref))];
         expect(sources.length).toBeGreaterThan(0);
+        // Exactly the L1 tier: no source outside it, and no L1 requirement left out.
         expect(sources.filter((s) => level.get(s) !== 'L1')).toEqual([]);
+        const sourceSet = new Set(sources);
+        const l1 = requirements.filter((r) => r.category === 'L1').map((r) => r.refId);
+        expect(l1.filter((r) => !sourceSet.has(r))).toEqual([]);
     });
 });
 

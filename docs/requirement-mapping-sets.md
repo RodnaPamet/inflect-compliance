@@ -277,8 +277,8 @@ directory rather than editing rows by hand.
 | `OWASP-ASI-TOP10` | `IMDA-MGF-2026` | `owasp-agentic-to-imda-mgf.yaml` | 27 |
 | `OWASP-ASI-TOP10` | `ISO27001-2022` | `owasp-agentic-to-iso27001.yaml` | 39 |
 | `OWASP-ASI-TOP10` | `ISO42001-2023` | `owasp-agentic-to-iso-42001.yaml` | 38 |
-| `OWASP-ASVS-4.0.3` | `ISO27001-2022` | `asvs-to-iso27001.yaml` | 128 |
-| `OWASP-ASVS-4.0.3` | `NIST-SSDF-800-218` | `asvs-to-ssdf.yaml` | 128 |
+| `OWASP-ASVS-4.0.3` | `ISO27001-2022` | `asvs-to-iso27001.yaml` | 129 |
+| `OWASP-ASVS-4.0.3` | `NIST-SSDF-800-218` | `asvs-to-ssdf.yaml` | 129 |
 | `SOC2-2017` | `AIUC-1` | `soc2-to-aiuc-1.yaml` | 23 |
 
 **Total: 1523 mapping entries across 44 framework pairs.**
