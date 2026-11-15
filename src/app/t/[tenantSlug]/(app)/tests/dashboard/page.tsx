@@ -164,9 +164,23 @@ export default function TestDashboardPage() {
                 ) : (
                     <>
                     <MetricCard label={t('dashboard.kpi.completionRate')} value={`${metrics.completionRate}%`} sub={t('dashboard.kpi.completionSub', { completed: metrics.completedRuns, total: metrics.totalRuns })} color={metrics.completionRate >= 80 ? 'green' : metrics.completionRate >= 50 ? 'amber' : 'red'} />
+                    {/* #5313 — pass, fail and evidence rates are shares of
+                        COMPLETED runs. With runs but none completed there is
+                        no rate: the 0% the server answers read red for pass
+                        and evidence and green for failure. */}
+                    {metrics.completedRuns === 0 ? (
+                        <>
+                            <MetricCard label={t('dashboard.kpi.passRate')} value="—" sub={t('dashboard.noCompleted')} color="brand" />
+                            <MetricCard label={t('dashboard.kpi.failRate')} value="—" sub={t('dashboard.noCompleted')} color="brand" />
+                            <MetricCard label={t('dashboard.kpi.evidenceRate')} value="—" sub={t('dashboard.noCompleted')} color="brand" />
+                        </>
+                    ) : (
+                        <>
                     <MetricCard label={t('dashboard.kpi.passRate')} value={`${metrics.passRate}%`} sub={t('dashboard.kpi.passSub', { count: metrics.passRuns })} color={metrics.passRate >= 80 ? 'green' : metrics.passRate >= 50 ? 'amber' : 'red'} />
                     <MetricCard label={t('dashboard.kpi.failRate')} value={`${metrics.failRate}%`} sub={t('dashboard.kpi.failSub', { count: metrics.failRuns })} color={metrics.failRate <= 10 ? 'green' : metrics.failRate <= 30 ? 'amber' : 'red'} />
                     <MetricCard label={t('dashboard.kpi.evidenceRate')} value={`${metrics.evidenceRate}%`} sub={t('dashboard.kpi.evidenceSub', { count: metrics.runsWithEvidence })} color={metrics.evidenceRate >= 80 ? 'green' : metrics.evidenceRate >= 50 ? 'amber' : 'red'} />
+                        </>
+                    )}
                     </>
                 )}
             </div>

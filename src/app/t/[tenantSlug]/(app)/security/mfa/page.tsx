@@ -68,6 +68,11 @@ export default function UserMfaPage() {
             const res = await fetch(apiUrl('/security/mfa/enroll'));
             if (res.ok) {
                 setStatus(await res.json());
+            } else {
+                // A refused status read used to render a blank page: no
+                // status card and no word why (#5313).
+                const data = await res.json().catch(() => null);
+                setError(apiErrorMessage(data, t('loadFailed')));
             }
         } catch {
             setError(t('loadFailed'));

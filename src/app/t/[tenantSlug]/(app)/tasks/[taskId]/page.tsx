@@ -94,9 +94,7 @@ const buildTypeLabels = (t: (k: string) => string): Record<string, string> => ({
 // dropdown. Re-add it once the picker grows a framework selector; requirements
 // remain linkable from the framework tree in the meantime.
 const ENTITY_TYPE_OPTIONS = ['CONTROL', 'RISK', 'ASSET', 'EVIDENCE', 'POLICY', 'VENDOR', 'AUDIT_PACK', 'INCIDENT'];
-const ENTITY_TYPE_CB_OPTIONS: ComboboxOption[] = ENTITY_TYPE_OPTIONS.map(t => ({ value: t, label: t }));
 const RELATION_OPTIONS = ['RELATES_TO', 'CAUSED_BY', 'MITIGATED_BY', 'EVIDENCE_FOR'];
-const RELATION_CB_OPTIONS: ComboboxOption[] = RELATION_OPTIONS.map(r => ({ value: r, label: r.replace(/_/g, ' ') }));
 // RESOLVED retired from the picker — it was redundant with CLOSED.
 // Kept in STATUS_LABELS so a legacy RESOLVED task still shows the right
 // badge; just not offered as a choice (a RESOLVED task is closed via
@@ -130,9 +128,13 @@ const buildTaskStatusCbOptions = (
         current && current in TASK_TRANSITIONS
             ? TASK_TRANSITIONS[current as TaskStatusValue]
             : null;
-    return SELECTABLE_STATUSES.filter(
+    const offered = SELECTABLE_STATUSES.filter(
         (val) => !reachable || val === current || reachable.has(val as TaskStatusValue),
-    ).map((val) => ({ value: val, label: statusLabels[val] || val }));
+    );
+    // A status no longer offered as a choice (a legacy RESOLVED) is still
+    // where the task IS; dropping it left the control blank (#5313).
+    if (current && !offered.includes(current)) offered.unshift(current);
+    return offered.map((val) => ({ value: val, label: statusLabels[val] || val }));
 };
 
 /**
@@ -268,11 +270,21 @@ export default function TaskDetailPage() {
     const FINDING_SOURCE_LABELS = buildFindingSourceLabels(t);
     const GAP_TYPE_LABELS = buildGapTypeLabels(t);
     const SEVERITY_LABELS = taskSeverityLabels(t);
+    // The link form's choices by name, not as stored codes (#5313): each has
+    // a label at `tasks.linkEntity.<TYPE>` / `tasks.linkRelation.<RELATION>`.
+    const ENTITY_TYPE_CB_OPTIONS: ComboboxOption[] = ENTITY_TYPE_OPTIONS.map((v) => ({
+        value: v,
+        label: t(`linkEntity.${v}` as Parameters<typeof t>[0]),
+    }));
+    const RELATION_CB_OPTIONS: ComboboxOption[] = RELATION_OPTIONS.map((v) => ({
+        value: v,
+        label: t(`linkRelation.${v}` as Parameters<typeof t>[0]),
+    }));
     const params = useParams();
     const router = useRouter();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, appPermissions, role, tenantSlug, userId } = useTenantContext();
+    const { permissions, appPermissions, tenantSlug, userId } = useTenantContext();
     const taskId = params?.taskId as string;
     // Ordered ids for the prev/next stepper beside the name — list order,
     // so stepping walks the sequence the user just saw.
@@ -1266,7 +1278,7 @@ export default function TaskDetailPage() {
             {/* TP-6 — Watchers. Surfaces the previously dead
                 TaskWatcher model: a watch/unwatch toggle for the current
                 user + the watcher list with per-row remove (own row, or
-                any row for OWNER/ADMIN). */}
+                any row for a member who may edit tasks). */}
             <div className={cardVariants({ density: 'compact' })} id="task-watchers">
                 <div className="flex items-center gap-compact flex-wrap">
                     <span className="text-sm text-content-muted">{t('detail.watchersLabel')}</span>
@@ -1280,10 +1292,9 @@ export default function TaskDetailPage() {
                                 // notification feed. Removing someone else
                                 // still does: `removeTaskWatcher` asserts
                                 // the write tier AND `tasks.edit` for that.
-                                const canRemove =
-                                    w.userId === userId ||
-                                    (canEditTask &&
-                                        (role === 'OWNER' || role === 'ADMIN'));
+                                // (#5313: it also asked OWNER/ADMIN, which the
+                                // server does not, so an Editor was not offered it.)
+                                const canRemove = w.userId === userId || canEditTask;
                                 return (
                                     <span key={w.id} className="inline-flex items-center gap-tight">
                                         <StatusBadge variant="neutral">
