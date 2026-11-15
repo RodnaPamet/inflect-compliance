@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- dynamic model cleanup loop. */
 /**
  * #5313 item 11 — an approval of the risk appetite is bound to the version the
  * approver was shown (owner decision 2026-11-15). DB-backed, because what is
@@ -21,7 +20,6 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { upsertAppetiteConfig, approveAppetiteConfig } from '@/app-layer/usecases/risk-appetite';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
-import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -67,16 +65,12 @@ describeFn('risk appetite approval is bound to the version shown (integration)',
     });
 
     afterAll(async () => {
-        const t = { tenantId: TENANT_ID };
-        for (const m of ['riskAppetiteConfig', 'tenantMembership'] as const) {
-            await (globalPrisma as any)[m].deleteMany({ where: t });
-        }
-        // The usecases wrote audit rows naming this tenant and these users;
-        // they block both deletes until cleared through the helpers.
-        await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID]);
-        await deleteAuditRowsForUsers(globalPrisma, [ownerId, adminId]);
-        await globalPrisma.user.deleteMany({ where: { id: { in: [ownerId, adminId] } } });
-        await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
+        // Only this suite's own row. The tenant, its users and memberships
+        // stay: the tenant id is unique to this run, `resetDatabase`
+        // truncates, and deleting them would fight the last-OWNER trigger and
+        // the audit rows the usecases wrote (see
+        // tests/guards/integration-suite-audit-teardown.test.ts).
+        await globalPrisma.riskAppetiteConfig.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.$disconnect();
     });
 
