@@ -170,7 +170,7 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
     codeql: 'SAST finds taint/injection patterns, not "PR A renamed what PR B calls". Its analyze ' +
         'step also uploads SARIF, which in a queue run would file a code-scanning analysis against ' +
         'the throwaway gh-readonly-queue ref. Runs on the PR and again on the push to main.',
-    // ADDED #4623. These three carry the `!= 'merge_group'` condition and no
+    // ADDED #4623. These carry the `!= 'merge_group'` condition and no
     // lean-set banner, so the derived check below — which used to key on the
     // BANNER — could not see them and they were governed by nothing. Each
     // reason is the job's own, read from its comments rather than invented.
@@ -182,10 +182,9 @@ const QUEUE_SKIPPED_JOBS: Readonly<Record<string, string>> = {
         'point compiling a test-mode bundle for a job that is skipped in the queue. It produces an ' +
         'artifact rather than a verdict, so skipping it removes no judgement about the diff — and it ' +
         'runs again on the push to main, so the bundle is still built and exercised post-merge.',
-    'scanner-image': 'Skipped with `docker` and `trivy` and, per the job\'s own comment, for the same ' +
-        'reason: it already ran on the pull request and runs again on the push to main. The image holds ' +
-        'the scanner plus the application modules it imports, and a merge collision cannot produce a ' +
-        'container-scan finding — that surface is a property of the base image and dependency tree.',
+    // REMOVED 2026-11-15: `scanner-image`, the third job #4623 added here. The
+    // in-repo harness scanner, its container and the job were deleted
+    // (scanent #26); the scanner is scanent's own image now.
     // REMOVED 2026-10-14: `laya-image`. The job was deleted with the Laya
     // estate, and a stale entry here is not inert — the sibling "no entry names
     // a job that no longer exists" check reads this map as the authority on

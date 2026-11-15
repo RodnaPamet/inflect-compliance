@@ -100,10 +100,13 @@ describe('CodeQL query-suite pinning', () => {
  * Every workspace package is in the scan (#5086).
  *
  * `paths:` listed `src`, `tests` and `scripts`, so nothing under `packages/`
- * was analysed: the agent-harness scanner (which runs in a client's estate
- * with a signing key) and the shared UI package carried no alerts because
- * they were never read, and the merge-queue SAST gate passed them. The
- * population is the package directories git tracks, not a list kept here.
+ * was analysed: the agent-harness scanner (which ran in a client's estate
+ * with a signing key, and was removed on 2026-11-15, scanent #26) and the
+ * shared UI package carried no alerts because they were never read, and the
+ * merge-queue SAST gate passed them. The population is the package directories
+ * on disk, not a list kept here. Two remain (`sap-mcp-stub`, `ui`), and the
+ * positive control's floor is that count: it proves the directory read finds
+ * packages, and a lower floor would let it pass on one that found half.
  */
 describe('CodeQL scans every workspace package (#5086)', () => {
     const scanned = (): string[] => {
@@ -124,7 +127,7 @@ describe('CodeQL scans every workspace package (#5086)', () => {
 
     it('reads the paths block and finds the packages (positive control)', () => {
         expect(scanned()).toEqual(expect.arrayContaining(['src', 'tests', 'scripts']));
-        expect(packages().length).toBeGreaterThanOrEqual(3);
+        expect(packages().length).toBeGreaterThanOrEqual(2);
     });
 
     it('every package directory sits under a scanned path', () => {

@@ -4,9 +4,10 @@
  * beside it, and the egress allowlist the overlay confines it to.
  *
  * Since scanent #26 the VM runs scanent's image (`ghcr.io/rodnapamet/scanent`,
- * pinned by digest in deploy/docker-compose.harness-scanner.yml), not this
- * repository's `packages/agent-harness-scanner`, so these templates are
- * scanent's configuration and are no longer parsed with that package's code.
+ * pinned by digest in deploy/docker-compose.harness-scanner.yml), not the
+ * in-repo `packages/agent-harness-scanner`, which was then removed (2026-11-15),
+ * so these templates are scanent's configuration and are no longer parsed with
+ * that package's code.
  * scanent's parser is not a dependency of this repository (only its contract
  * package is). Two checks therefore stand where the parse stood:
  *

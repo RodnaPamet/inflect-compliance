@@ -19,8 +19,9 @@
 # Since scanent #26 the image is scanent's, the standalone scanner product
 # (github.com/RodnaPamet/scanent), not the in-repo
 # `packages/agent-harness-scanner`: scanent carries every source and rule that
-# package does, and the report contract both speak is scanent's own package,
-# which the ingest takes too (`@rodnapamet/scanent-contract`). The image is
+# package did, and the package was then removed from this repository
+# (2026-11-15). The report contract is scanent's own package, which the ingest
+# takes too (`@rodnapamet/scanent-contract`). The image is
 # public, multi-arch and signed keylessly by scanent's release workflow;
 # deploy/harness-scanner/README.md has the verification.
 #

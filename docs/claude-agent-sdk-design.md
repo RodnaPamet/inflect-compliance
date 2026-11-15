@@ -332,9 +332,14 @@ profile run key is refused at admission.
 
 ### What the harness scanner recognises
 
-The reference scanner's `code` source
-(`packages/agent-harness-scanner/src/sources/code/recognize.ts`) reads static
-code for LangChain, LangGraph and Claude Agent SDK agents (Step 3b, #4156).
+The harness scanner's `code` source reads static code for LangChain, LangGraph
+and Claude Agent SDK agents (Step 3b, #4156). It was built in this repository
+(`packages/agent-harness-scanner/src/sources/code/recognize.ts`) and moved with
+the scanner to the standalone scanent product by scanent #26
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)); the in-repo
+package was removed. The option mapping below
+(`agentSdkOptionVerdicts`, `AGENT_SDK_OPTION_CRITERIA`) is the contract
+package's, re-exported by `src/lib/agentic/harness-findings.ts`.
 
 - **What counts as an SDK agent.** A call resolved through the file's imports:
   - `query` from `@anthropic-ai/claude-agent-sdk`;

@@ -10,9 +10,11 @@ a chat, a terminal or a session.
 ## The image: scanent
 
 Since scanent #26 the overlay runs **scanent**, the standalone scanner product
-(github.com/RodnaPamet/scanent), and not this repository's
-`packages/agent-harness-scanner`. Both services, the scanner and its egress
-proxy, run one image pinned by its multi-arch index digest:
+(github.com/RodnaPamet/scanent), and not the in-repo
+`packages/agent-harness-scanner`, which was removed from this repository on
+2026-11-15 together with its `Scanner image` workflow. Both services, the
+scanner and its egress proxy, run one image pinned by its multi-arch index
+digest:
 
 ```
 ghcr.io/rodnapamet/scanent@sha256:7f9005ae540ca51abec195c21903fc593d5a3cf0c63478f4dc5eed6fbdb08493   # 0.16.0

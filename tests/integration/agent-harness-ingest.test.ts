@@ -37,7 +37,7 @@ import {
     acceptHarnessShortfall,
     reopenExpiredHarnessAcceptances,
 } from '@/app-layer/usecases/agent-harness-acceptance';
-import type { HarnessReportBody } from '@/lib/agentic/harness-contract';
+import { harnessSignedMessage, type HarnessReportBody } from '@/lib/agentic/harness-contract';
 import type { RequestContext } from '@/app-layer/types';
 
 const prisma: PrismaClient = prismaTestClient();
@@ -246,6 +246,10 @@ describe('a verified report means what the planner says', () => {
             { discoveredId: 'entra:sp:shadow-1', registeredAgentId: null, lastLevel: 'H0', lastReach: 'WRITE_OR_EXTERNAL' },
         ]);
         expect(await prisma.agentHarnessScanItem.count({ where: { tenantId: T1, scanId: result.scanId } })).toBe(2);
+        // The stored digest is the digest of the very body the scanner signed
+        // (ported from the in-repo scanner's LangSmith suite, scanent #26).
+        const stored = await prisma.agentHarnessScan.findUniqueOrThrow({ where: { id: result.scanId }, select: { reportDigest: true } });
+        expect(stored.reportDigest).toBe(harnessSignedMessage(body).toString('hex'));
         expect(await openRefs(T1)).toEqual([
             'HARNESS_SHORTFALL:entra:sp:shadow-1',
             'SHADOW_AGENT:entra:sp:shadow-1',

@@ -437,8 +437,10 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   `clamav`, `app`, `worker`, `watchtower`, `caddy`), repo-canonical
   (`deploy/docker-compose.prod.yml`, `apply.sh`, `check-drift.sh`, #2849);
   plus the OpenShell gateway VM. Images pinned by digest (dependency
-  governance, fifth pillar). CI builds `app`, the worker/scheduler bundle and
-  a `scanner-image`.
+  governance, fifth pillar). CI builds `app` and the worker/scheduler bundle;
+  the harness scanner's image is scanent's (`ghcr.io/rodnapamet/scanent`), and
+  the `scanner-image` job that built Inflect's in-repo copy was removed with it
+  (scanent #26).
 - **The TypeScript API gateway is the Next.js route tree** (every
   `src/app/api/**/route.ts`, under two authorization layers), and the "microservices" are the Compose services.
 - **No GPU, no vLLM, no Triton, no NIM, no Modal.** `vLLM` appears in comments

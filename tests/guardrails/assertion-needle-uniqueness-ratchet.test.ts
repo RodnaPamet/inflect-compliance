@@ -1288,7 +1288,10 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 154;
 // follow are analysed. Without that second half the same migration measured
 // 1418: the old `.replace().replace()` chains had sat in the uncapped
 // `not-a-file-read` bucket. Measured.
-const UNANALYSABLE_READ_BASELINE = 1370;
+// 1370 -> 1367 on 2026-11-15 (scanent #26). The in-repo harness scanner and its
+// suites were deleted, and three unanalysable whole-file reads went with them.
+// Measured.
+const UNANALYSABLE_READ_BASELINE = 1367;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

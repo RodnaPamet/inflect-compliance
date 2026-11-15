@@ -1,12 +1,16 @@
 # Onboarding a client estate to the harness scanner
 
-How a tenant puts one client estate under the reference harness scanner,
-`packages/agent-harness-scanner` (#3678; its LangSmith source is #3738): what to
+How a tenant puts one client estate under the harness scanner: what to
 register in Inflect, what to prepare in the estate, how to label the estate's
 principals so the scanner can attribute them, and how the estate's schedule
-health is judged. The report the
-scanner sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md);
-the scanner's own reference is `packages/agent-harness-scanner/README.md`.
+health is judged. The scanner is scanent, the standalone scanner product
+([RodnaPamet/scanent](https://github.com/RodnaPamet/scanent)), shipped as the
+image `ghcr.io/rodnapamet/scanent`. Since scanent #26 it replaces Inflect's
+in-repo copy, `packages/agent-harness-scanner` (#3678; its LangSmith source was
+#3738), which carried the same sources and rules and was then removed. Sections
+2 and 3 describe the scanner's sources and labels as that move left them;
+scanent's repository is the scanner's own reference. The report the scanner
+sends is specified in [`docs/agent-harness-contract.md`](agent-harness-contract.md).
 
 An **estate** is one client environment that one scanner deployment covers: a
 name, the registered scanner agent whose signed reports describe it, the
@@ -287,28 +291,32 @@ in [the contract](agent-harness-contract.md#transport).
 
 ## 4. The scanner configuration and its schedule
 
-One JSON file per estate, strict and credential-free; the README has a complete
-example. Set `schedule.everyHours` to the cadence declared on the estate in
+One JSON file per estate, strict and credential-free; scanent's repository has
+the configuration's reference, and `deploy/harness-scanner/config.pilot.example.json`
+is the one Inflect's own estate fills in. Set `schedule.everyHours` to the cadence declared on the estate in
 Inflect. Check the report with `scan --dry-run` first, then run `schedule`,
 which scans at once and then every `everyHours`, anchored to each run's start,
 and carries on after a failed run.
 
-The scanner runs in the estate as a container that the estate builds from a
-checkout of this repository (`packages/agent-harness-scanner/Dockerfile`, owner
-decision 2026-10-19). Inflect's own estate is the exception. Its scanner runs on
-the production VM from scanent's public image (`ghcr.io/rodnapamet/scanent`,
-the standalone scanner product, scanent #26), pinned by its multi-arch index
-digest and signed by scanent's release workflow, as the opt-in Compose overlay
+The scanner runs in the estate as a container: scanent's public image
+(`ghcr.io/rodnapamet/scanent`), pinned by its multi-arch index digest and signed
+by scanent's release workflow; `deploy/harness-scanner/README.md` has the
+commands that verify a digest's signature and build attestation before it is
+pinned. Until scanent #26 an estate built the image from a checkout of this
+repository (`packages/agent-harness-scanner/Dockerfile`, owner decision
+2026-10-19); that package and its Dockerfile are gone. Inflect's own estate runs
+the same image on the production VM, as the opt-in Compose overlay
 `deploy/docker-compose.harness-scanner.yml`. The dispatch-only `Scanner VM`
 workflow configures, checks and starts it, from credentials kept as
 `production` environment secrets (`deploy/harness-scanner/README.md` has the
 one-time setup, the order of the actions and how the configuration and paths
-differ from this package's). Its default command is `schedule`.
+differ from the removed in-repo package's). Its default command is `schedule`.
 Run it read-only, with every capability dropped, as its own non-root user
 (uid 1000); mount the configuration and each `code` root read-only and readable
 by that user; and supply the environment variables the configuration names from
 the estate's secret store. The signing key is one of them, and the image holds
-none. The README's Container section has the commands.
+none. The overlay `deploy/docker-compose.harness-scanner.yml` is a worked
+example of the user, the read-only filesystem and the dropped capabilities.
 
 **Before the first estate scans a real LangSmith workspace** (owner decision,
 2026-10-19), run one `scan --dry-run` against it and read the `runtime` entry
@@ -322,8 +330,8 @@ the question:
   the assumption holds, and the estate may be scheduled.
 - **`INCOMPLETE` `PAGINATION_TORN`** while the API answered (no `AUTH_FAILED`,
   `UNREACHABLE` or `RATE_LIMITED`): the response did not read as assumed. Do not
-  schedule the estate. The shape is corrected in one place,
-  `packages/agent-harness-scanner/src/sources/langsmith.ts`.
+  schedule the estate. The shape is corrected in scanent's LangSmith source, in
+  [scanent's repository](https://github.com/RodnaPamet/scanent).
 
 ## 5. Schedule health
 
