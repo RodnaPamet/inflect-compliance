@@ -37,6 +37,8 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 
 import { repoRelativeFiles } from '../helpers/repo-files';
+import { EMBED_CANDIDATES } from '../../scripts/retriever-benchmark/candidates';
+import { MAX_EMBED_BATCH } from '@/lib/ai/embeddings/types';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
@@ -198,7 +200,7 @@ describe('deploy/docker-compose.prod.yml — the deployable set is complete', ()
 });
 
 describe('deploy compose — pipelock stays in the opt-in overlay', () => {
-    it('the canonical file defines exactly the eight services production runs', () => {
+    it('the canonical file defines exactly the nine services production runs', () => {
         // An EXACT list rather than a superset check, which is why adding a
         // service has to come through here: the regression this guard exists for
         // is a service that cannot start being left in the file, and `pipelock`
@@ -217,6 +219,11 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
         //
         // NOTE FOR WHOEVER RESTORES IT: the 6.68 GB pull is why it was named
         // here in the first place, and that cost returns with it.
+        //
+        // `tei-embed` was added 2026-11-15 (Retriever Phase 1.1): the
+        // embedding seam's backend, held by its own block below. It left the
+        // file again in #5687 until its patched image had a digest (D-L4-11),
+        // and returned pinned to that digest (Retriever 1.1b).
         expect(serviceNames(read(CANONICAL)).sort()).toEqual([
             'app',
             'caddy',
@@ -224,6 +231,7 @@ describe('deploy compose — pipelock stays in the opt-in overlay', () => {
             'pgbouncer',
             'postgres',
             'redis',
+            'tei-embed',
             'watchtower',
             'worker',
         ]);
@@ -455,7 +463,7 @@ describe('deploy compose — every container has a memory limit and a CPU cap, w
     /** The VM's vCPU count: a cap above it is no cap at all. */
     const HOST_CPUS = 2;
     /** Batch-shaped: capped at one core so the request path keeps the other. */
-    const BATCH_SERVICES = ['clamav', 'worker', 'harness-scanner'] as const;
+    const BATCH_SERVICES = ['clamav', 'worker', 'harness-scanner', 'tei-embed'] as const;
 
     type LimitedService = { mem_limit?: unknown; cpus?: unknown };
     const servicesOf = (rel: string): Record<string, LimitedService> =>
@@ -483,8 +491,8 @@ describe('deploy compose — every container has a memory limit and a CPU cap, w
         for (const rel of BUDGETED_FILES) {
             expect(Object.keys(servicesOf(rel)).length).toBeGreaterThan(0);
         }
-        // Eight canonical services, the scanner and its proxy, the proving server.
-        expect(all.length).toBe(11);
+        // Nine canonical services, the scanner and its proxy, the proving server.
+        expect(all.length).toBe(12);
     });
 
     it('the byte parser reads the units Compose accepts', () => {
@@ -555,6 +563,118 @@ describe('deploy compose — every container has a memory limit and a CPU cap, w
             Object.keys(servicesOf(f)).filter((n) => n.startsWith('orangehrm')),
         );
         expect(labServices).toEqual([]);
+    });
+});
+
+/**
+ * `tei-embed` (Retriever Phase 1.1, 2026-11-15): the embedding seam's backend.
+ *
+ * Each assertion is one a "make it start" edit would plausibly undo and none
+ * fails at `up`: dropping the revision because a Hub fetch failed (the model's
+ * `main` then decides what answers), handing it `.env.prod` like its
+ * neighbours (every secret of the stack in a third party's process), publishing
+ * a port to debug it, or making `app` wait for it (an embedder outage would
+ * then hold the request path). Parsed as YAML, so each is on a value.
+ */
+describe('deploy compose — tei-embed is pinned, private and holds nothing of ours', () => {
+    type TeiService = {
+        image?: string;
+        command?: unknown;
+        ports?: unknown;
+        env_file?: unknown;
+        environment?: unknown;
+        labels?: unknown;
+        volumes?: unknown;
+        healthcheck?: { test?: unknown };
+        depends_on?: unknown;
+    };
+    const doc = yaml.load(read(CANONICAL)) as {
+        services: Record<string, TeiService>;
+        volumes?: Record<string, unknown>;
+    };
+    const svc = doc.services['tei-embed'];
+    const command = (svc?.command ?? []) as unknown[];
+    const arg = (flag: string): string | undefined => {
+        const i = command.indexOf(flag);
+        return i === -1 ? undefined : String(command[i + 1]);
+    };
+
+    it('exists, with its command as a list (the scan is not vacuous)', () => {
+        expect(svc).toBeDefined();
+        expect(Array.isArray(svc.command)).toBe(true);
+    });
+
+    it('runs OUR patched image by digest, never the upstream TEI image (D-L4-11)', () => {
+        // deploy/tei-embed/Dockerfile is the benchmark's upstream digest plus
+        // `apt-get upgrade`; tests/guards/tei-embed-image.test.ts holds that
+        // FROM to the benchmark's pin and refuses the upstream repository in
+        // every deploy Compose file. Here: the repository is exactly ours,
+        // with no tag beside the digest (a tag would read as the pin and move).
+        const parts = String(svc.image).split('@');
+        expect(parts).toHaveLength(2);
+        expect(parts[0]).toBe('ghcr.io/rodnapamet/tei-embed');
+        expect(parts[1]).toMatch(/^sha256:[0-9a-f]{64}$/);
+    });
+
+    it('serves D-L4-3\'s embedder at the commit the benchmark pins', () => {
+        const chosen = EMBED_CANDIDATES.find((c) => c.id === 'multilingual-e5-small');
+        expect(chosen?.revision).toMatch(/^[0-9a-f]{40}$/);
+        expect(arg('--model-id')).toBe(chosen?.model);
+        expect(arg('--revision')).toBe(chosen?.revision);
+    });
+
+    it('listens on 8080 and admits the seam\'s largest batch', () => {
+        expect(arg('--port')).toBe('8080');
+        expect(Number(arg('--max-client-batch-size'))).toBeGreaterThanOrEqual(MAX_EMBED_BATCH);
+    });
+
+    it('publishes no port, and no Caddy site names it', () => {
+        expect(svc.ports).toBeUndefined();
+        const caddyMentions = read('deploy/caddy/Caddyfile').split('tei-embed').length - 1;
+        expect(caddyMentions).toBe(0);
+    });
+
+    it('receives no environment file, no environment and interpolates nothing', () => {
+        expect(svc.env_file).toBeUndefined();
+        expect(svc.environment).toBeUndefined();
+        const block = serviceBlock(read(CANONICAL), 'tei-embed');
+        expect(block.length).toBeGreaterThan(10);
+        expect(codeLines(block.join('\n')).filter((l) => l.includes('${'))).toEqual([]);
+    });
+
+    it('is not auto-updated: Watchtower watches only app and worker', () => {
+        expect(JSON.stringify(svc.labels ?? {})).not.toContain('watchtower');
+    });
+
+    it('keeps its weights in a named volume, so a recreate does not refetch them', () => {
+        expect(svc.volumes).toEqual(['tei-embed-data:/data']);
+        expect(Object.keys(doc.volumes ?? {})).toContain('tei-embed-data');
+    });
+
+    it('runs read-only, with every capability dropped and no privilege gain', () => {
+        const hardened = svc as TeiService & {
+            read_only?: unknown;
+            cap_drop?: unknown;
+            security_opt?: unknown;
+            pids_limit?: unknown;
+        };
+        expect(hardened.read_only).toBe(true);
+        expect(hardened.cap_drop).toEqual(['ALL']);
+        expect(hardened.security_opt).toEqual(['no-new-privileges:true']);
+        expect(Number(hardened.pids_limit)).toBeGreaterThan(0);
+    });
+
+    it('carries a healthcheck on its own /health', () => {
+        expect(svc.healthcheck?.test).toEqual(
+            expect.arrayContaining(['http://127.0.0.1:8080/health']),
+        );
+    });
+
+    it('no service waits for it: an embedder outage never holds another container', () => {
+        const waiting = Object.entries(doc.services)
+            .filter(([, s]) => JSON.stringify(s.depends_on ?? {}).includes('tei-embed'))
+            .map(([name]) => name);
+        expect(waiting).toEqual([]);
     });
 });
 
