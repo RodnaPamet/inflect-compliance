@@ -655,6 +655,53 @@ signed-in session, removes the weights as well.
 The measurements behind the limit and the record of the pins are in
 [`implementation-notes/2026-11-15-retriever-tei-embed.md`](implementation-notes/2026-11-15-retriever-tei-embed.md).
 
+### `postgres`: the image carries pgvector
+
+The `postgres` service runs `ghcr.io/rodnapamet/postgres-pgvector:16-alpine`:
+the official `postgres:16-alpine` plus the pgvector extension, compiled at a
+pinned tag and commit (`deploy/postgres/Dockerfile`; vector store Phase 1.1–1.2,
+owner decisions D-L4-1 and D-L4-8). Every Postgres in the repository runs the
+same image: the root Compose files and every workflow's service container too
+(`tests/guards/postgres-pgvector-image.test.ts`).
+
+**Same data directory.** The base is the same Alpine image, so the same musl C
+library and the same collation: the existing `pgdata` volume mounts unchanged,
+no `REINDEX` and no dump and restore. The Debian `pgvector/pgvector` image is
+the fallback only with a planned reindex window, because glibc orders text
+differently.
+
+**Patches.** The image is referenced by its moving line tag, as
+`postgres:16-alpine` was (the owner's 2026-10-10 rule, kept by D-L4-8).
+`.github/workflows/postgres-pgvector-image.yml` republishes it from `main`
+every Wednesday, on any day the upstream `16-alpine` digest moves, and on
+dispatch, after the same smoke test and Trivy gate as ci.yml's `Postgres
+image` job. Each build also gets an immutable tag,
+`16-alpine-pgvector<version>-<yyyymmdd>-<commit>`, which the run summary
+prints. Watchtower does not manage `postgres`, so a new build reaches the VM
+only on the next `VM apply` → `apply` (or `CONFIRM=1 deploy/apply.sh`).
+
+**Reaching the VM.** The first apply after the image change **recreates the
+`postgres` container**: a few seconds of database downtime while the new
+container starts on the same volume, with PgBouncer, `app` and `worker`
+reconnecting. Order:
+
+1. `VM apply` → `preflight`: the diff shows only the `postgres` image line
+   (and its comment), and `up -d --dry-run` recreates `postgres` alone.
+2. `VM apply` → `apply`: the backup, `up -d`, the health checks.
+3. `VM check` → `containers`: `postgres` running and healthy.
+
+The extension is created by the migration that first needs it, not by the
+image; until then the database is exactly what it was, plus the extension's
+files on disk.
+
+**Rolling back.** Point the line tag at the previous build
+(`docker buildx imagetools create -t ghcr.io/rodnapamet/postgres-pgvector:16-alpine
+ghcr.io/rodnapamet/postgres-pgvector:<previous build tag>`) and apply, or
+revert the reference to `postgres:16-alpine` and apply. Either keeps the
+volume. Once a migration has run `CREATE EXTENSION vector`, the official image
+can still start on the volume, but any query touching a `vector` column fails
+until an image with the extension returns.
+
 ### `deploy/.env.prod.example` describes a different deployment
 
 That template describes the Epic OI-1 AWS model — Secrets Manager, RDS,

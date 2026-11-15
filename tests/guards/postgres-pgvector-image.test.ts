@@ -16,6 +16,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { repoRelativeFiles } from '../helpers/repo-files';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string): string => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 
@@ -247,5 +249,99 @@ describe('the gate is the same in CI and in the publish', () => {
         const filter = ci.jobs.changes.steps.find((s) => s.uses?.startsWith('dorny/paths-filter'));
         const filters = yaml.load(String(filter?.with?.filters)) as Record<string, string[]>;
         expect(filters.postgres_image).toEqual(expect.arrayContaining(['deploy/postgres/**', PUBLISH]));
+    });
+});
+
+/**
+ * Vector store 1.2: every Postgres moves together. The extension migration
+ * (1.3) runs `CREATE EXTENSION vector` in `prisma migrate deploy`, so a single
+ * Postgres left on the official image — a CI shard, a DAST run, a root
+ * Compose file — fails that migration the day it lands. The rule is therefore
+ * on the WHOLE population: every Compose service and every workflow service
+ * container whose image is a Postgres runs our line tag, and the official
+ * image appears only as the Dockerfile's base.
+ */
+describe('every Postgres the repository runs is the postgres-pgvector line tag', () => {
+    const LINE = `${OURS}:16-alpine`;
+    const files = repoRelativeFiles();
+    /** A Postgres image, however it is spelled: the official one, ours, the Debian pgvector, Bitnami. */
+    const isPostgresImage = (image: string): boolean => {
+        const repository = image.split('@')[0].replace(/:[^/:]*$/, '');
+        const last = repository.split('/').pop() ?? '';
+        return /postgres|pgvector/.test(last);
+    };
+
+    type Svc = { image?: unknown };
+    const composeRefs = files
+        .filter((f) => /(^|\/)docker-compose[^/]*\.ya?ml$/.test(f))
+        .flatMap((rel) =>
+            Object.entries((yaml.load(read(rel)) as { services?: Record<string, Svc> }).services ?? {}).map(
+                ([name, svc]) => ({ where: `${rel}: ${name}`, image: String(svc.image ?? '') }),
+            ),
+        )
+        .filter((r) => isPostgresImage(r.image));
+    const workflowRefs = files
+        .filter((f) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(f))
+        .flatMap((rel) => {
+            const wf = yaml.load(read(rel)) as { jobs?: Record<string, { services?: Record<string, Svc>; container?: unknown }> };
+            return Object.entries(wf.jobs ?? {}).flatMap(([jobId, job]) => [
+                ...Object.entries(job.services ?? {}).map(([name, svc]) => ({
+                    where: `${rel}: ${jobId}.services.${name}`,
+                    image: String(svc.image ?? ''),
+                })),
+                ...(job.container === undefined
+                    ? []
+                    : [{
+                        where: `${rel}: ${jobId}.container`,
+                        image: String(typeof job.container === 'string' ? job.container : (job.container as Svc).image ?? ''),
+                    }]),
+            ]);
+        })
+        .filter((r) => isPostgresImage(r.image));
+
+    it('finds the Postgres services it governs (the scan is not vacuous)', () => {
+        expect(composeRefs.map((r) => r.where).sort()).toEqual([
+            'deploy/docker-compose.prod.yml: postgres',
+            'docker-compose.prod.yml: db',
+            'docker-compose.staging.yml: postgres',
+            'docker-compose.test.yml: postgres-test',
+            'docker-compose.yml: postgres',
+        ]);
+        // ci.yml three times, and agent-evals, dast, dast-full, garak,
+        // integration-stress and load-test once each.
+        expect(workflowRefs.length).toBe(9);
+        expect(new Set(workflowRefs.map((r) => r.where.split(':')[0])).size).toBe(7);
+    });
+
+    it('every one of them runs the line tag, by tag (D-L4-8), never latest, a digest or another image', () => {
+        const off = [...composeRefs, ...workflowRefs].filter((r) => r.image !== LINE);
+        expect(off.map((r) => `${r.where}: ${r.image}`)).toEqual([]);
+    });
+
+    it('the official image is only ever the Dockerfile\'s base', () => {
+        const froms = files
+            .filter((f) => /(^|\/)Dockerfile($|\.)/.test(f))
+            .flatMap((rel) =>
+                instructions(read(rel))
+                    .filter((o) => o.op === 'FROM' && isPostgresImage(o.args.split(/\s+/)[0]))
+                    .map((o) => `${rel}: ${o.args}`),
+            );
+        expect(froms).toEqual([`${DOCKERFILE}: postgres:16-alpine`]);
+    });
+
+    it('detector proof: the classifier sees every spelling of a Postgres image and nothing else', () => {
+        for (const image of [
+            'postgres:16-alpine',
+            'docker.io/library/postgres:17',
+            `${LINE}`,
+            `${OURS}@sha256:${'a'.repeat(64)}`,
+            'pgvector/pgvector:0.8.7-pg16-bookworm',
+            'bitnami/postgresql:16',
+        ]) {
+            expect(isPostgresImage(image)).toBe(true);
+        }
+        for (const image of ['redis:7-alpine', 'edoburu/pgbouncer:latest', 'node:24-alpine']) {
+            expect(isPostgresImage(image)).toBe(false);
+        }
     });
 });

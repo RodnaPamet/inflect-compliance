@@ -78,7 +78,7 @@ npm run e2e:local -- --headed
 
 | Setting | Value |
 |---------|-------|
-| Image | `postgres:16-alpine` |
+| Image | `ghcr.io/rodnapamet/postgres-pgvector:16-alpine` (`postgres:16-alpine` plus pgvector, `deploy/postgres/Dockerfile`) |
 | Port | `5434` — the test stack's own; the dev stack publishes 5433 (PgBouncer) and 5436 (direct Postgres), so the two run side by side |
 | User | `test` |
 | Password | `test` |

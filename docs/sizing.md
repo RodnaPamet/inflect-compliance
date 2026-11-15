@@ -26,7 +26,7 @@ The services in `deploy/docker-compose.prod.yml`:
 | `app` | `ghcr.io/rodnapamet/inflect-compliance:latest` | Next.js web server. Runs `prisma migrate deploy` when it starts. | 1 GB, 1.5 CPU (memory from measured peaks, C1b) |
 | `worker` | the same image | BullMQ worker and scheduler (`scripts/worker.ts`, `scripts/scheduler.ts`). | 1 GB, 1.0 CPU, half CPU weight (memory from measured peaks, C1b) |
 | `pgbouncer` | `edoburu/pgbouncer:latest` | Transaction-mode pool between `app`/`worker` and Postgres. | 128 MB, 1.0 CPU; `DEFAULT_POOL_SIZE` 25, `MAX_DB_CONNECTIONS` 50, `MAX_CLIENT_CONN` 200 |
-| `postgres` | `postgres:16-alpine` | The database. | 2 GB, 1.5 CPU; `max_connections` is not set |
+| `postgres` | `ghcr.io/rodnapamet/postgres-pgvector:16-alpine` (`postgres:16-alpine` plus pgvector) | The database. | 2 GB, 1.5 CPU; `max_connections` is not set |
 | `redis` | `redis:7-alpine` | BullMQ job queue, rate limits, cache. AOF persistence on. | 768 MB, 1.0 CPU; `--maxmemory 256mb`, `--maxmemory-policy noeviction` |
 | `clamav` | `clamav/clamav:1.4` | Virus scan of uploaded files. | 3 GB, 1.0 CPU, half CPU weight |
 | `watchtower` | `containrrr/watchtower:latest` | Rolls `app` and `worker` onto a new image. | 128 MB, 0.25 CPU |
