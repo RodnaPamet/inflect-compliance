@@ -120,6 +120,9 @@ interface Span {
 function scanSpans(src: string): Span[] {
     const spans: Span[] = [];
     let i = 0;
+    // The last offset consumed as CODE. A comment never advances it, which is
+    // what keeps a comment's last character from deciding the next token.
+    let lastCode = -1;
 
     while (i < src.length) {
         const ch = src[i];
@@ -164,9 +167,10 @@ function scanSpans(src: string): Span[] {
         // buys is not masking the regex — it is CONSUMING it, so the quote
         // inside it never reaches the string branch below.
         if (ch === '/') {
-            const end = regexCanStartAt(src, i) ? regexEnd(src, i) : -1;
+            const end = regexCanStartAt(src, i, lastCode) ? regexEnd(src, i) : -1;
             if (end > 0) {
                 spans.push({ start: i, end, kind: 'literal' });
+                lastCode = end - 1;
                 i = end;
                 continue;
             }
@@ -185,9 +189,11 @@ function scanSpans(src: string): Span[] {
                 j++;
             }
             spans.push({ start: i, end: j, kind: 'literal' });
+            lastCode = j - 1;
             i = j;
             continue;
         }
+        if (!/\s/.test(ch)) lastCode = i;
         i++;
     }
 
@@ -303,9 +309,20 @@ const REGEX_AFTER_KEYWORD: ReadonlySet<string> = new Set([
  * The `<` rule DOES stand alone: it is the only thing holding
  * `</div> {/* … *\/}`, and disabling it reddens that case by itself.
  */
-function regexCanStartAt(src: string, slash: number): boolean {
+function regexCanStartAt(src: string, slash: number, lastCode = -1): boolean {
     if (src[slash + 1] === '>') return false;
-    let j = slash - 1;
+    // `lastCode` is the offset of the last character the SCANNER consumed as
+    // code. Walking back through raw text instead reads whatever precedes the
+    // slash, COMMENTS INCLUDED — and a trailing line comment then decides
+    // whether the next line opens a regex. In
+    // `src/app-layer/integrations/aws-posture-provider.ts` the line above
+    // `/(aws_session_token|…)["'\s:=]+…/gi` ends `// secret access key
+    // (40-char)`, so this landed on that `)`, concluded "after `)` a slash is
+    // division", declined the regex — and the `"` inside the character class
+    // then opened a string literal that ran to the end of the file. Every
+    // extractor went blind to the back half of it (#5545).
+    let j = lastCode >= 0 ? lastCode : -1;
+    if (lastCode < 0) return true;
     while (j >= 0 && /\s/.test(src[j])) j--;
     if (j < 0) return true;
     const ch = src[j];
@@ -452,6 +469,9 @@ export function commentsOf(src: string): string {
     };
 
     let i = 0;
+    // Same bookkeeping as `scanSpans`, and for the same reason: a comment must
+    // not decide whether the next slash opens a regex (#5545).
+    let lastCode = -1;
     while (i < src.length) {
         const ch = src[i];
         const next = src[i + 1];
@@ -485,16 +505,19 @@ export function commentsOf(src: string): string {
                 }
                 j++;
             }
+            lastCode = j - 1;
             i = j;
             continue;
         }
-        if (ch === '/' && regexCanStartAt(src, i)) {
+        if (ch === '/' && regexCanStartAt(src, i, lastCode)) {
             const end = regexEnd(src, i);
             if (end > 0) {
+                lastCode = end - 1;
                 i = end;
                 continue;
             }
         }
+        if (!/\s/.test(ch)) lastCode = i;
         i++;
     }
 

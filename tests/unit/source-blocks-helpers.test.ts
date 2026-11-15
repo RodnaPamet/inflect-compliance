@@ -319,6 +319,40 @@ describe('source-blocks — codeOf', () => {
             expect(probe('.replace(/plain/g, "q")')).not.toContain('SENTINEL');
         });
 
+        it('a trailing line comment does not decide whether the NEXT line opens a regex', () => {
+            // #5545. `regexCanStartAt` walked backwards over WHITESPACE only,
+            // so it landed on the last character of the previous line's
+            // COMMENT. Where that is a `)` — `// secret access key (40-char)`
+            // in `src/app-layer/integrations/aws-posture-provider.ts` — it read
+            // the next line's `/` as division, declined the regex, and the `"`
+            // inside the regex's character class then opened a string literal
+            // that ran to the end of the file. 6,925 characters of that file,
+            // its whole provider class among them, were handed to guards as a
+            // string literal, and every extractor threw on anchors inside it.
+            //
+            // Asserted as the exact masked lines rather than a sentinel: it
+            // says in one expression that both comments are gone AND that both
+            // regexes survive, which a negated assertion cannot.
+            const src = [
+                'const PATTERNS = [',
+                '    /\\b[A-Za-z0-9/+=]{40}\\b/g,      // secret access key (40-char)',
+                '    /(TOKEN)["\'\\s:=]+[A-Za-z0-9]{20,}/gi,',
+                '];',
+                '// after the array',
+            ].join('\n');
+            expect(
+                codeOf(src)
+                    .split('\n')
+                    .map((l) => l.trimEnd()),
+            ).toEqual([
+                'const PATTERNS = [',
+                '    /\\b[A-Za-z0-9/+=]{40}\\b/g,',
+                '    /(TOKEN)["\'\\s:=]+[A-Za-z0-9]{20,}/gi,',
+                '];',
+                '',
+            ]);
+        });
+
         it('the regex BODY survives, because a regex is code and not a comment', () => {
             // The fix CONSUMES the regex span so the quote inside it never
             // reaches the string branch. It must not BLANK it: `codeOf` masks
