@@ -24,8 +24,20 @@
  * carried its source's `nodeKey`, and every save after it failed on the unique
  * index. The copy gets a fresh key at creation instead, and so does a copied
  * edge binding.
+ *
+ * ═══ AND A COPIED EDGE IS REWIRED TO ITS COPIES (#5309 item 24) ═══
+ *
+ * Re-minting the step keys left the copied binding between them naming the
+ * ORIGINALS in `sourceKey` / `targetKey`, and with no line of its own. The
+ * copies looked unconnected, so the user drew the edge again; the arrow
+ * converter read the copy as `A→B`, let a second `A'→B'` through, and every
+ * save after that refused `DUPLICATE_EDGE`. So a created binding takes its
+ * endpoint keys from the shapes it binds, and a binding created outside the
+ * load and arrow paths gets its derived line once the operation completes. A
+ * copied LINE is removed: a line is derived from its binding and is only ever
+ * at `shapeIdForEdgeKey(edgeKey)`, so a copy anywhere else is a stray drawing.
  */
-import type { Editor, TLShapeId } from 'tldraw';
+import type { Editor, TLBindingId, TLShapeId } from 'tldraw';
 
 import {
     PROCESS_NODE_DEFAULT_H,
@@ -33,7 +45,16 @@ import {
     PROCESS_NODE_SHAPE_TYPE,
     shapeIdForNodeKey,
 } from './process-node-shape';
-import { PROCESS_EDGE_BINDING_TYPE } from './process-edge-binding';
+import {
+    PROCESS_EDGE_BINDING_TYPE,
+    edgeEndpointKeys,
+    type ProcessEdgeBinding,
+} from './process-edge-binding';
+import {
+    PROCESS_EDGE_SHAPE_TYPE,
+    edgeLineGeometry,
+    shapeIdForEdgeKey,
+} from './process-edge-shape';
 import { mintEdgeKey } from './arrow-to-edge';
 
 /**
@@ -105,11 +126,31 @@ export function placementForClick(editor: Editor): { x: number; y: number } {
     return point;
 }
 
+export interface UniqueProcessKeysOptions {
+    /**
+     * The chip text for an edge's line, as the load path resolves it — label
+     * and controls win over the chip. Injected because the text is localised;
+     * omitted, a copied line has no chip until the next load.
+     */
+    resolveChipLabel?: (edgeKind: string, labelOverride: unknown, controls: unknown) => string;
+}
+
 /**
  * Re-mint a step's or an edge's key when a shape or binding is created
- * carrying a key another record already holds. Returns the disposer.
+ * carrying a key another record already holds, rewire a created edge binding to
+ * the steps it binds, and give it its line. Returns the disposer.
+ *
+ * Installed after the load's seeding, so the load path never reaches it.
  */
-export function installUniqueProcessKeys(editor: Editor): () => void {
+export function installUniqueProcessKeys(
+    editor: Editor,
+    opts: UniqueProcessKeysOptions = {},
+): () => void {
+    /** Edge bindings created since the last completed operation. */
+    const createdBindings = new Set<string>();
+    /** Lines created since the last completed operation, checked for copies. */
+    const createdLines = new Set<string>();
+
     const offShape = editor.sideEffects.registerBeforeCreateHandler('shape', (shape) => {
         if (shape.type !== PROCESS_NODE_SHAPE_TYPE) return shape;
         const props = shape.props as { nodeKey?: unknown };
@@ -128,22 +169,123 @@ export function installUniqueProcessKeys(editor: Editor): () => void {
     });
     const offBinding = editor.sideEffects.registerBeforeCreateHandler('binding', (binding) => {
         if (binding.type !== PROCESS_EDGE_BINDING_TYPE) return binding;
-        const key = (binding.props as { edgeKey?: unknown }).edgeKey;
-        if (typeof key !== 'string') return binding;
-        const clash = editor.store
-            .allRecords()
-            .some(
-                (r) =>
-                    r.typeName === 'binding' &&
-                    r.id !== binding.id &&
-                    (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE &&
-                    (r as { props?: { edgeKey?: unknown } }).props?.edgeKey === key,
-            );
-        if (!clash) return binding;
-        return { ...binding, props: { ...binding.props, edgeKey: mintEdgeKey() } } as typeof binding;
+        const props = binding.props as { edgeKey?: unknown; sourceKey: string; targetKey: string };
+        // The endpoint keys from the shapes bound, whose own keys were
+        // re-minted above when they were copied. Unchanged for a drawn edge,
+        // whose converter already read them from the same shapes.
+        const ends = edgeEndpointKeys(editor, binding as unknown as ProcessEdgeBinding);
+        const key = props.edgeKey;
+        const clash =
+            typeof key === 'string' &&
+            editor.store
+                .allRecords()
+                .some(
+                    (r) =>
+                        r.typeName === 'binding' &&
+                        r.id !== binding.id &&
+                        (r as { type?: string }).type === PROCESS_EDGE_BINDING_TYPE &&
+                        (r as { props?: { edgeKey?: unknown } }).props?.edgeKey === key,
+                );
+        if (!clash && ends.sourceKey === props.sourceKey && ends.targetKey === props.targetKey) {
+            return binding;
+        }
+        return {
+            ...binding,
+            props: {
+                ...binding.props,
+                ...ends,
+                ...(clash ? { edgeKey: mintEdgeKey() } : {}),
+            },
+        } as typeof binding;
     });
+    const offBindingCreated = editor.sideEffects.registerAfterCreateHandler('binding', (binding) => {
+        if (binding.type === PROCESS_EDGE_BINDING_TYPE) createdBindings.add(binding.id);
+    });
+    const offLineCreated = editor.sideEffects.registerAfterCreateHandler('shape', (shape) => {
+        if (shape.type === PROCESS_EDGE_SHAPE_TYPE) createdLines.add(shape.id);
+    });
+
+    /**
+     * Lines, once the operation that created the bindings is over.
+     *
+     * Not in the after-create handler: the arrow converter creates its binding
+     * and then its line inside one `run`, so a line created at binding time
+     * would collide with the converter's. By the time the operation completes
+     * the converter's line exists and this does nothing, which is what keeps
+     * the arrow path unchanged.
+     */
+    const offComplete = editor.sideEffects.registerOperationCompleteHandler(() => {
+        if (createdBindings.size === 0 && createdLines.size === 0) return;
+        const bindingIds = [...createdBindings];
+        const lineIds = [...createdLines];
+        createdBindings.clear();
+        createdLines.clear();
+
+        const strays = lineIds.flatMap((id) => {
+            const line = editor.getShape(id as TLShapeId) as
+                | { id: string; props?: { edgeKey?: unknown } }
+                | undefined;
+            if (!line) return [];
+            const edgeKey = line.props?.edgeKey;
+            return typeof edgeKey === 'string' && line.id === shapeIdForEdgeKey(edgeKey)
+                ? []
+                : [line.id as TLShapeId];
+        });
+
+        const lines = bindingIds.flatMap((id) => {
+            const b = editor.getBinding(id as TLBindingId) as unknown as ProcessEdgeBinding | undefined;
+            if (!b) return [];
+            const lineId = shapeIdForEdgeKey(b.props.edgeKey);
+            if (editor.getShape(lineId)) return [];
+            const from = editor.getShapePageBounds(b.fromId);
+            const to = editor.getShapePageBounds(b.toId);
+            // No bounds: an endpoint not on this page. Skipped, as the load
+            // path skips it, rather than drawn from the origin.
+            if (!from || !to) return [];
+            const g = edgeLineGeometry(from, to);
+            return [
+                {
+                    id: lineId,
+                    type: PROCESS_EDGE_SHAPE_TYPE,
+                    x: g.x,
+                    y: g.y,
+                    props: {
+                        edgeKey: b.props.edgeKey,
+                        edgeKind: b.props.edgeKind,
+                        label: b.props.labelOverride ?? '',
+                        chipLabel:
+                            opts.resolveChipLabel?.(
+                                b.props.edgeKind,
+                                b.props.labelOverride,
+                                b.props.controls,
+                            ) ?? '',
+                        dx: g.dx,
+                        dy: g.dy,
+                    },
+                },
+            ];
+        });
+        if (strays.length === 0 && lines.length === 0) return;
+
+        // In a `run`, so the writes join the undo entry of the duplicate or
+        // paste that caused them — see `arrow-to-edge.ts` on loose writes from
+        // a side-effect handler never reaching the undo stack.
+        editor.run(
+            () => {
+                if (strays.length > 0) editor.deleteShapes(strays);
+                if (lines.length > 0) editor.createShapes(lines as never);
+            },
+            { history: 'record' },
+        );
+    });
+
     return () => {
         offShape();
         offBinding();
+        offBindingCreated();
+        offLineCreated();
+        offComplete();
+        createdBindings.clear();
+        createdLines.clear();
     };
 }
