@@ -111,6 +111,9 @@ export default async function AgentReviewQualityPage({
         reviewerUserIds: [
             ...report.reviewers.map((r) => r.reviewerUserId),
             ...report.signals.filter((s) => s.scope === 'REVIEWER' && s.subjectId).map((s) => s.subjectId as string),
+            // Whoever the sampler asked (#5738), resolved in the same lookup
+            // rather than a second query.
+            ...sampleAudits.map((a) => a.assignedToUserId).filter((id): id is string => !!id),
         ],
         agentIds: [
             ...report.agents.map((a) => a.agentId).filter((id): id is string => !!id),
@@ -154,6 +157,24 @@ export default async function AgentReviewQualityPage({
         sampledAt: a.sampledAt.toISOString(),
         approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
         refusal: a.refusal,
+        /*
+            WHO WAS ASKED — #5738, and `null` claims nothing.
+
+            The sampler leaves the column NULL for three reasons this row cannot
+            tell apart: the proposal had no agent, the agent had no registered
+            owner, or that owner was one of the approvers (#5307). So the panel
+            says "not assigned" and never invents which of the three it was. A
+            non-null id that will not resolve is a different case, and gets the
+            page's existing former-member label.
+        */
+        assigneeLabel: a.assignedToUserId ? reviewerName(a.assignedToUserId) : null,
+        /*
+            The approval under review. The reviewer has to be able to read what
+            they are judging, and the proposals page renders each row's rationale
+            and diff — it just reads PENDING, so the link names the proposal and
+            that page fetches it by id.
+        */
+        proposalHref: tenantHref(`/agents/proposals?proposal=${encodeURIComponent(a.proposalId)}`),
     }));
 
     const pct = (rate: number) => Math.round(rate * 100);

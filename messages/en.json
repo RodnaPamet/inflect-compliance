@@ -12599,6 +12599,9 @@
       "noTemplatesNoOpenFieldsDesc": "{count, plural, one {# saved parameter set here leaves} other {# saved parameter sets here leave}} no fields to fill in, so there is nothing to compose. A request needs a set that leaves at least one field open."
     },
     "sampleAudit": {
+      "assignedTo": "Asked of {who}",
+      "notAssigned": "Not assigned",
+      "readTheProposal": "Read the approval under review",
       "rate": {
         "neverDrawn": "No approval has been drawn for re-review yet, so there is no rate to report.",
         "notReported": "Disagreement rate not reported: none of the {sampled} approvals drawn has been answered.",

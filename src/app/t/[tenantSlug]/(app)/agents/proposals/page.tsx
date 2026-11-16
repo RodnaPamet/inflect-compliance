@@ -26,10 +26,33 @@ import { AgentProposalsClient, type ProposalRow } from './AgentProposalsClient';
  */
 export default async function AgentProposalsPage({
     params,
+    searchParams,
 }: {
     params: Promise<{ tenantSlug: string }>;
+    /**
+     * OPTIONAL, though Next always supplies it: the page is also constructed
+     * directly by its own tests, and a required prop would make the queue's
+     * behaviour depend on a caller remembering to pass an empty object.
+     */
+    searchParams?: Promise<{ proposal?: string | string[] }>;
 }) {
     const { tenantSlug } = await params;
+    /*
+        `?proposal=<id>` — the retrospective reviewer's way in (#5738).
+
+        A sample audit names the approval it drew, and that approval is ACCEPTED
+        or EDITED while this page's own read asks for PENDING. So a reviewer sent
+        here to read what they are judging would find the one row they need
+        missing — and a plain link could not fix it, because the list is bounded
+        at a hundred with no cursor and an older approval sits past the cap.
+
+        Reading that proposal BY ID is what makes the link always resolve. Only
+        one, and only ever a reviewable status: `listAgentProposals` ANDs the id
+        with its own vocabulary, so this cannot reach a quarantined or expired
+        row.
+    */
+    const sp = (await searchParams) ?? {};
+    const focusedProposalId = (Array.isArray(sp.proposal) ? sp.proposal[0] : sp.proposal) || null;
     const ctx = await getTenantCtx({ tenantSlug });
     // Reached from the agents ViewsMenu. Server-side gate (before the data
     // load) so a refused reader never triggers the fetch.
@@ -55,11 +78,14 @@ export default async function AgentProposalsPage({
     // own default is the same 100, and reading exactly that many cannot tell "a
     // hundred proposals" from "the first hundred of more" — which is how the
     // queue used to stop silently while the views-menu badge counted them all.
-    const read = await listAgentProposals(ctx, {
-        status: 'PENDING',
-        take: PROPOSAL_QUEUE_PAGE_SIZE + 1,
-    });
-    const truncated = read.length > PROPOSAL_QUEUE_PAGE_SIZE;
+    const read = focusedProposalId
+        ? await listAgentProposals(ctx, { ids: [focusedProposalId] })
+        : await listAgentProposals(ctx, {
+              status: 'PENDING',
+              take: PROPOSAL_QUEUE_PAGE_SIZE + 1,
+          });
+    // A one-row read is never truncated, whatever the page size says.
+    const truncated = !focusedProposalId && read.length > PROPOSAL_QUEUE_PAGE_SIZE;
     const proposals = read.slice(0, PROPOSAL_QUEUE_PAGE_SIZE);
 
     // The diff is computed HERE, on the server, against the target's state right

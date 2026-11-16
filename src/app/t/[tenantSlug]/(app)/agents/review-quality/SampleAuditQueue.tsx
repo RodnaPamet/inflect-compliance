@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,14 @@ export type SampleAuditQueueRow = {
     sampledAt: string;
     approvedAt: string | null;
     refusal: SampleAuditAnswerRefusal | null;
+    /**
+     * Who the sampler asked, resolved server-side — `null` means NOT ASSIGNED
+     * and claims no reason, because the column is null for three causes the row
+     * cannot tell apart (#5738).
+     */
+    assigneeLabel: string | null;
+    /** The approval under review, on the page that renders its rationale and diff. */
+    proposalHref: string;
 };
 
 export function SampleAuditQueue({
@@ -170,7 +179,32 @@ export function SampleAuditQueue({
                         <span className="text-xs text-content-subtle">
                             {t('sampleAudit.sampledAt', { when: formatDateTime(row.sampledAt) })}
                         </span>
+                        {/*
+                            WHO WAS ASKED. Any holder of the register key may
+                            answer any row, so this is orientation rather than a
+                            gate — without it a shared queue is nobody's.
+                        */}
+                        <span className="text-xs text-content-subtle" data-testid={`sample-audit-assignee-${row.id}`}>
+                            {row.assigneeLabel === null
+                                ? t('sampleAudit.notAssigned')
+                                : t('sampleAudit.assignedTo', { who: row.assigneeLabel })}
+                        </span>
                     </div>
+
+                    {/*
+                        The approval itself. A reviewer asked whether an approval
+                        was right, with no route to what was approved, is being
+                        asked to guess — and the payload is encrypted business
+                        content this queue deliberately does not carry, so the
+                        answer is a link to the surface that already renders it.
+                    */}
+                    <Link
+                        href={row.proposalHref}
+                        className="text-sm text-content-info hover:underline"
+                        data-testid={`sample-audit-proposal-link-${row.id}`}
+                    >
+                        {t('sampleAudit.readTheProposal')}
+                    </Link>
 
                     {row.refusal !== null ? (
                         // The server would refuse this answer, so no control is

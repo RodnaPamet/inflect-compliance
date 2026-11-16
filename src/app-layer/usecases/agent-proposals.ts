@@ -1271,7 +1271,21 @@ const REVIEWABLE_STATUSES: SuggestionItemStatus[] = Object.values(SuggestionItem
  */
 export async function listAgentProposals(
     ctx: RequestContext,
-    opts: { status?: string; take?: number } = {},
+    opts: {
+        status?: string;
+        take?: number;
+        /**
+         * Narrow to specific proposals — #5738.
+         *
+         * For the retrospective reviewer: a sample audit names the proposal it
+         * drew, and that proposal is ACCEPTED or EDITED while this page's own
+         * read asks for PENDING, so without this the one row they have to read
+         * is the one row they cannot reach. ANDed with the status vocabulary
+         * below and never instead of it, so `QUARANTINED` and `EXPIRED` stay
+         * unreachable however a caller asks.
+         */
+        ids?: readonly string[];
+    } = {},
 ) {
     assertCanRead(ctx);
     // `opts.status` is a raw `?status=` query-string value — the `as never`
@@ -1291,7 +1305,11 @@ export async function listAgentProposals(
     const status = requested ?? { in: REVIEWABLE_STATUSES };
     return runInTenantContext(ctx, (db) =>
         db.agentProposal.findMany({
-            where: { tenantId: ctx.tenantId, status },
+            where: {
+                tenantId: ctx.tenantId,
+                status,
+                ...(opts.ids ? { id: { in: [...opts.ids] } } : {}),
+            },
             orderBy: { createdAt: 'desc' },
             take: opts.take ?? 100,
         }),

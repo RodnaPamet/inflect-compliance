@@ -657,12 +657,23 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             expect((await asSeenBy(reader)).refusal).toBe('NOT_A_WRITER');
         });
 
-        it('returns the VERDICT and never the approver identities', async () => {
-            // The ids are read to compute the refusal and dropped. A client
-            // holding them could render a self-review refusal as an accusation
-            // naming somebody, and who approved what is the review-quality
-            // report's business under its own gate — not this row's.
+        it('returns the VERDICT and never the APPROVER identities', async () => {
+            /*
+                The approver ids are read to compute the refusal and dropped. A
+                client holding them could render a self-review refusal as an
+                accusation naming somebody, and who approved what is the
+                review-quality report's business under its own gate.
+
+                `assignedToUserId` is the DELIBERATE exception, added with #5738:
+                it is the row's own "who was asked", which the queue exists to
+                show, and it is the sampler's assignment rather than anybody's
+                judgement. It still does not reach a browser — the page resolves
+                it to a NAME and hands the panel `assigneeLabel`, never the id.
+                This row's assignee is null here (the describe seeds the audit
+                directly), so the loop below is unambiguous about approvers.
+            */
             const row = await asSeenBy(reviewerCtx());
+            expect(row.assignedToUserId).toBeNull();
             const serialised = JSON.stringify(row);
             for (const who of [APPROVER, REVIEWER, FIRST_SIGNER, THIRD_HUMAN]) {
                 expect(serialised).not.toContain(who);
@@ -670,6 +681,7 @@ describeFn('approved agent proposals are sample-audited, and disagreement is rec
             expect(Object.keys(row).sort()).toEqual([
                 'agentId',
                 'approvedAt',
+                'assignedToUserId',
                 'dissentCodes',
                 'id',
                 'outcome',
