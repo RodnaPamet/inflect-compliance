@@ -1596,6 +1596,63 @@ export function recordAgentRunSettled(attrs: {
  * tenant whose agents are being blocked and one whose reviewers have a queue,
  * which are different operational problems.
  */
+/**
+ * Label cardinality bound for the invoke-depth counter.
+ *
+ * A real chain's depth is tiny — `MAX_AGENT_INVOKE_DEPTH` refuses above 5 —
+ * but the number reaches the dispatch off a BullMQ payload, so a corrupted or
+ * crafted one must not be able to mint one time series per value. Anything
+ * deeper reports as `>10`, which is still the answer to the only question this
+ * counter exists to settle.
+ *
+ * Deliberately not imported from `agent-invoke-dispatch`: `lib/observability`
+ * does not depend on `app-layer`, and this bound protects the metric backend
+ * rather than restating the cap.
+ */
+const MAX_DEPTH_LABEL = 10;
+
+let _agentInvokeDepths: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getAgentInvokeDepths() {
+    if (!_agentInvokeDepths) {
+        _agentInvokeDepths = getMeter().createCounter('agentic.agent_invoke.arrived', {
+            description:
+                'One INVOKE_AGENT dispatch arriving, labelled by the recursion depth it arrived at (#5716). Until #5724 nothing wrote that depth, so every invoke arrived at 1 and MAX_AGENT_INVOKE_DEPTH could not trip; this is how the real distribution becomes visible, and so whether 5 is the right ceiling.',
+        });
+    }
+    return _agentInvokeDepths;
+}
+
+/**
+ * One `INVOKE_AGENT` dispatch arriving, by the depth it arrived at (#5716).
+ *
+ * RECORDED AT ARRIVAL, before the cap is checked, and that ordering is the
+ * whole point: counting after the refusal would censor the distribution at the
+ * cap, so the data could never say the ceiling is too low — only ever that
+ * nothing exceeded it. A depth above the cap is exactly the sample worth
+ * having.
+ */
+export function recordAgentInvokeDepth(attrs: { depth: number }): void {
+    getAgentInvokeDepths().add(1, { depth: depthLabel(attrs.depth) });
+}
+
+/**
+ * The bucketed label for one arriving depth. Exported because the cardinality
+ * bound is the part worth asserting, and a pure function can be asserted
+ * without standing up a meter.
+ *
+ * A value that is not a usable depth — NaN, Infinity, zero, negative, from a
+ * corrupted payload — reports as `1` rather than inventing a bucket: the
+ * dispatch itself reads such a payload as depth 1 (`payload.depth ?? 1`, then
+ * `Number.isFinite(...) ? ... : 0` in `invokeAgent`), so the metric agrees with
+ * the decision the code actually makes.
+ */
+export function depthLabel(depth: number): string {
+    if (!Number.isFinite(depth)) return '1';
+    const d = Math.max(1, Math.trunc(depth));
+    return d > MAX_DEPTH_LABEL ? `>${MAX_DEPTH_LABEL}` : String(d);
+}
+
 export function recordAgentGuardBlock(attrs: { verdict: string }): void {
     getAgentGuardBlocks().add(1, { 'guard.verdict': attrs.verdict });
 }

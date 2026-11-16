@@ -46,6 +46,11 @@ const readBreakerLatch = jest.fn(async () => null as unknown);
 jest.mock('@/lib/agentic/kill-switch', () => ({ resolveKillState }));
 jest.mock('@/lib/agentic/circuit-breaker-store', () => ({ readBreakerLatch }));
 jest.mock('@/app-layer/usecases/workflow-runs', () => ({ startWorkflowRun }));
+// #5716. The depth counter is the only thing that can tell us whether 5 is the
+// right ceiling, and it is recorded BEFORE the cap check so a refusal is still
+// a sample. Mocked here to observe that ordering.
+const recordAgentInvokeDepth = jest.fn();
+jest.mock('@/lib/observability/metrics', () => ({ recordAgentInvokeDepth: (...a: unknown[]) => recordAgentInvokeDepth(...a) }));
 
 import { runAgentInvokeDispatch, MAX_AGENT_INVOKE_DEPTH } from '@/app-layer/jobs/agent-invoke-dispatch';
 import { prisma } from '@/lib/prisma';
@@ -189,6 +194,26 @@ describe('an automation rule invoking an agent', () => {
         );
         expect(refusal).toBe('depth_exceeded');
         expect(startWorkflowRun).not.toHaveBeenCalled();
+    });
+
+    // #5716. The counter is recorded at ARRIVAL, which is what makes the
+    // distribution usable. Counting after the refusal would censor it at the
+    // cap: the data could then only ever say nothing exceeded the ceiling,
+    // never that the ceiling is too low.
+    it('counts a REFUSED depth too, so the distribution is not censored at the cap', async () => {
+        const { refusal } = await runAgentInvokeDispatch(
+            payload({ depth: MAX_AGENT_INVOKE_DEPTH + 1 }) as never,
+        );
+        expect(refusal).toBe('depth_exceeded');
+        expect(recordAgentInvokeDepth).toHaveBeenCalledWith({ depth: MAX_AGENT_INVOKE_DEPTH + 1 });
+    });
+
+    it('counts an allowed depth at the value it arrived with', async () => {
+        mockPrisma.registeredAgent.findFirst.mockResolvedValue({
+            id: 'ag-1', status: 'ACTIVE', riskTier: 'LOW',
+        });
+        await runAgentInvokeDispatch(payload({ depth: 3 }) as never);
+        expect(recordAgentInvokeDepth).toHaveBeenCalledWith({ depth: 3 });
     });
 
     // #5716. THE HALF THAT WAS MISSING. The cases above drive the comparison
