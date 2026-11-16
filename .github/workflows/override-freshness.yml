@@ -20,6 +20,24 @@
 #  fails the build. `npm audit` is the gate that blocks merges, and it
 #  blocks on evidence of a real advisory rather than version arithmetic.
 #  Escalation is `--strict` on the script below.
+#
+#  DEFERRING A STALE FLOOR (#5652). This job detects a floor that no
+#  longer excludes anything and opens a tracking issue naming the
+#  one-line raise. That worked and nobody acted: #5652 sat open with
+#  seven floor findings while the fix was two characters per package.
+#  Nothing here changes — the report stays non-blocking for the reason
+#  above — but a DECISION to leave a floor stale is now written down
+#  with a deadline, in this header, one line each:
+#
+#      FLOOR-STALE-UNTIL: <YYYY-MM-DD> <package> — <why, and who is waiting on what>
+#
+#  `tests/guardrails/override-floor-deferrals.test.ts` parses those
+#  markers and fails the day after one lapses, offline and at PR time.
+#  An unparseable date counts as EXPIRED, and a deferral further out
+#  than 90 days is refused outright: raising a floor is a one-line edit
+#  that re-resolves nothing, so a longer deferral is a way of never
+#  deciding. The line above is a placeholder and deliberately does not
+#  parse as a marker.
 # ───────────────────────────────────────────────────────────────
 name: Override Freshness
 
