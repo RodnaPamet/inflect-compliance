@@ -69,7 +69,8 @@ function fakeTransport(over: Partial<SandboxTransport> = {}): {
             calls.deleted.push(sandboxId);
             return { outcome: 'DELETION_OUTCOME_COMPLETED' as const };
         },
-        attachProvider: async () => {},
+        attachProvider: async () => ({ attached: true, receiptId: 'r-1' }),
+        awaitProviderReady: async () => {},
         awaitDeleted: async ({ sandboxId }) => {
             calls.awaited.push(sandboxId);
         },

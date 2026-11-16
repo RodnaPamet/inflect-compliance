@@ -167,7 +167,7 @@ describe('the vendored contract still carries what the transport calls', () => {
         expect(Object.keys(svc.service)).toHaveLength(86);
     });
 
-    it('carries the five methods the transport calls, with their streaming shape', () => {
+    it('carries the six methods the transport calls, with their streaming shape', () => {
         const pkg = load() as Record<string, unknown>;
         const v1 = (pkg.openshell as Record<string, unknown>).v1 as Record<string, unknown>;
         const svc = v1.OpenShell as {
@@ -182,6 +182,10 @@ describe('the vendored contract still carries what the transport calls', () => {
             DeleteSandbox: false,
             GetSandbox: false,
             AttachSandboxProvider: false,
+            // #5739. The attach is a persisted intent, so the transport now reads
+            // the readiness observation back before the collector execs; this is
+            // the method that answers.
+            GetSandboxProviderStatus: false,
         };
         for (const [method, responseStream] of Object.entries(expected)) {
             expect(svc.service[method]).toBeDefined();

@@ -45,7 +45,8 @@ function transportWith(over: Partial<SandboxTransport> = {}): SandboxTransport {
             stderr: '',
         }),
         deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_COMPLETED' as const }),
-        attachProvider: async () => {},
+        attachProvider: async () => ({ attached: true, receiptId: 'r-1' }),
+        awaitProviderReady: async () => {},
         awaitDeleted: async () => {},
         ...over,
     };
