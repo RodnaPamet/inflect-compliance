@@ -269,6 +269,67 @@ describe('the Behaviour tab, state by state', () => {
         expect(document.querySelector('img')).toBeNull();
     });
 
+    /**
+     * #5714 — RETIRE, which the tab never offered. The verb shipped with Step 1a,
+     * is permissioned and tested at the usecase level, and a profile version
+     * could not be retired from the product at all.
+     *
+     * The affordance mirrors what the server refuses and nothing else:
+     * `ALREADY_RETIRED` for a retired version, `AGENT_RETIRED` from `findAgent`
+     * for a retired agent. The author case below is the one that encodes the
+     * design decision — retirement is NOT a four-eyes act, so gating it on
+     * `canDecide` (the obvious copy of Approve) would hide it from somebody the
+     * server lets act.
+     */
+    it('retires the open version, posting to its own verb', async () => {
+        const { mutate } = renderTab(view([version({ status: 'DRAFT', decidedBy: null, decidedAt: null, submittedAt: null })]));
+        fetchMock.mockResolvedValue(ok({ status: 'RETIRED' }));
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('behaviour-retire'));
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            '/api/t/acme/admin/agents/agent-1/profile/versions/1/retire',
+            expect.objectContaining({ method: 'POST' }),
+        );
+        await waitFor(() => expect(mutate).toHaveBeenCalled());
+    });
+
+    it('offers Retire to the AUTHOR of their own draft, because it is not a four-eyes act', () => {
+        renderTab(view([version({ status: 'DRAFT', canDecide: false, author: { label: 'Avery Author', isViewer: true } })]));
+        expect(screen.getByTestId('behaviour-retire')).toBeTruthy();
+        // ...while Approve stays the author's refusal.
+        expect(screen.queryByTestId('behaviour-approve')).toBeNull();
+    });
+
+    // The open card holds only a DRAFT or SUBMITTED version, so the version whose
+    // retirement actually changes what the agent does needs its own affordance
+    // beside the approval that put it in force.
+    it('offers Retire on the version IN FORCE, and says what retiring it costs', async () => {
+        renderTab(view([version({ status: 'APPROVED' })]));
+        expect(screen.getByTestId('behaviour-retire-in-force-note')).toBeTruthy();
+        fetchMock.mockResolvedValue(ok({ status: 'RETIRED' }));
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('behaviour-retire-in-force'));
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            '/api/t/acme/admin/agents/agent-1/profile/versions/1/retire',
+            expect.objectContaining({ method: 'POST' }),
+        );
+    });
+
+    it('offers no Retire at all when there is no profile to retire from', () => {
+        renderTab(view([]));
+        expect(screen.queryByTestId('behaviour-retire')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force')).toBeNull();
+    });
+
+    it('does not offer Retire when the AGENT is retired, which the server refuses', () => {
+        renderTab(view([SUBMITTED(), version({ status: 'APPROVED' })]), { retired: true });
+        expect(screen.queryByTestId('behaviour-retire')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force')).toBeNull();
+        expect(screen.queryByTestId('behaviour-retire-in-force-note')).toBeNull();
+    });
+
     it('a retired agent: no authoring, and Reject is still offered on a version waiting for review', () => {
         renderTab(view([SUBMITTED(), version()]), { retired: true });
         expect(screen.queryByTestId('behaviour-write')).toBeNull();

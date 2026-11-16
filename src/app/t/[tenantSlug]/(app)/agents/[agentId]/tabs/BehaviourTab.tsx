@@ -124,7 +124,7 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     };
 
     /** POST one act; the refusal, if any, is the server's sentence. */
-    const act = async (version: number, verb: 'submit' | 'approve' | 'reject', body: unknown): Promise<string | null> => {
+    const act = async (version: number, verb: 'submit' | 'approve' | 'reject' | 'retire', body: unknown): Promise<string | null> => {
         setBusy(true);
         setActError(null);
         try {
@@ -247,6 +247,36 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                         </p>
                         <VersionBody v={inForce} />
                         {testRun(inForce)}
+                        {/*
+                          * RETIRE THE VERSION IN FORCE (#5714). The open card above
+                          * reaches only a DRAFT or SUBMITTED version — `open` is
+                          * defined as one of those — so without this the one version
+                          * whose retirement actually changes what the agent does was
+                          * unreachable from the product.
+                          *
+                          * The consequence is said inline rather than behind a
+                          * confirm, the way this tab explains its others: Approve is
+                          * one click here too, and that is the act that puts a
+                          * version INTO force.
+                          */}
+                        {!retired ? (
+                            <div className="space-y-tight">
+                                <p className="text-xs text-content-muted" data-testid="behaviour-retire-in-force-note">
+                                    {t('open.retireInForceNote')}
+                                </p>
+                                <div className="flex justify-end">
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={busy}
+                                        data-testid="behaviour-retire-in-force"
+                                        onClick={async () => setActError(await act(inForce.version, 'retire', {}))}
+                                    >
+                                        {t('open.retire')}
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : null}
                     </>
                 ) : (
                     <div data-testid="behaviour-in-force-empty">
@@ -373,7 +403,31 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                 {t('review.approve')}
                             </Button>
                         ) : null}
+                        {/*
+                          * RETIRE (#5714). The verb shipped with Step 1a and the tab
+                          * never offered it, so a version could not be retired from
+                          * the product at all.
+                          *
+                          * The condition mirrors what the server refuses and nothing
+                          * else: `ALREADY_RETIRED` for a retired version, and
+                          * `AGENT_RETIRED` from `findAgent` for a retired agent.
+                          * Deliberately NOT `canDecide` — retirement is not a
+                          * four-eyes act, and gating on it would hide the button from
+                          * the author of a draft the server lets them retire.
+                          */}
+                        {open.status !== 'RETIRED' && !retired ? (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={busy}
+                                data-testid="behaviour-retire"
+                                onClick={async () => setActError(await act(open.version, 'retire', {}))}
+                            >
+                                {t('open.retire')}
+                            </Button>
+                        ) : null}
                     </div>
+
                     {open.status === 'SUBMITTED' ? testRun(open) : null}
                 </Card>
             ) : null}

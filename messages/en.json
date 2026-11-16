@@ -13711,7 +13711,9 @@
       "open": {
         "heading": "Version {version}",
         "writtenBy": "Written by {who} on {when}.",
-        "submit": "Submit for review"
+        "submit": "Submit for review",
+        "retire": "Retire version",
+        "retireInForceNote": "Retiring the version in force clears this profile’s pointer, so the agent runs nothing until another version is approved."
       },
       "review": {
         "diffIntro": "Changes from version {from}, in force now, to version {to}:",
