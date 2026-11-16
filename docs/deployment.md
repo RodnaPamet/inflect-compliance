@@ -964,7 +964,7 @@ runs in the `production` GitHub environment, whose reviewer approves every run.
 | --- | --- |
 | `Scanner VM` (`scanner-vm.yml`) | Configures, checks and starts the harness scanner (`deploy/harness-scanner/README.md`). |
 | `VM capacity` (`vm-capacity.yml`) | `mode: snapshot` prints memory, CPU and disk per container now; `mode: history` prints what the capacity recorder wrote over the last `hours` (`deploy/capacity/`). |
-| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `tei-embed-timing`. |
+| `VM check` (`vm-check.yml`) | Runs one check from a fixed read-only list (`deploy/vm-check/remote.sh`): `containers`, `library-sync`, `log-errors`, `access-review-dates`, `bcrypt`, `automation-rules`, `tei-embed-timing`, `migrate-role`. |
 
 `VM check` is how a Claude Code session looks at production without holding a
 credential: the session dispatches it, the reviewer approves, and the session
@@ -994,6 +994,27 @@ starts after 480 s, and a run normally takes a few minutes. The container is
 capped at one core at half CPU weight (`cpus: 1.0`, `cpu_shares: 512`), so while
 the batches run they compete with the app and worker for that core: run it at a
 quiet hour, and not twice in a row.
+
+`migrate-role` says which database role `prisma migrate deploy` runs as, and
+whether that role is a superuser, which a migration running `CREATE EXTENSION`
+needs. It reads the URL from the running `app` container exactly as
+`prisma.config.ts` resolves it (`DIRECT_DATABASE_URL` when set, `DATABASE_URL`
+otherwise) into a shell variable, and cuts it apart in the shell. The URL and its
+password are never printed and never passed to any command: the check prints
+which variable supplied it, the role and the database name (each only when it is
+a plain lower-case identifier, `unprintable` otherwise) and the host as a class
+(`the postgres service`, `pgbouncer` or `other`). It then asks Postgres, as the
+image's own `postgres` superuser inside the `postgres` container, in a read-only
+transaction, with the role passed as a psql variable rather than written into the
+SQL: whether the role is a superuser and can create roles, whether the `vector`
+extension is available, and whether it is installed in the app's database. The
+last line is the verdict, `migrations run as <role>, superuser: yes/no; vector
+available: yes/no; installed: yes/no`. When the role is not a superuser and the
+extension is not installed, a migration's `CREATE EXTENSION vector` fails under
+it, so the extension is created first, once, as `postgres` in that database
+(`CREATE EXTENSION IF NOT EXISTS vector;`), before the image carrying the
+migration is released; the migration's own `IF NOT EXISTS` then has nothing to do.
+That step is a write, so it is not part of this check.
 
 ### Named changes without a key
 
