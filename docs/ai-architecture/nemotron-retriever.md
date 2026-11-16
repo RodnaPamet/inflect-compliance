@@ -54,9 +54,10 @@ flowchart LR
 ## Current state (true today)
 
 - **The embedding and rerank seam exists, and since 2026-11-15 the embedding
-  service's image is built and published (1.1a) and the service is in the
-  canonical Compose file, pinned to that image's digest (1.1b); it runs on the
-  VM only once the owner applies it, and no vector exists.** The image is `deploy/tei-embed/Dockerfile`, upstream TEI
+  service's image is built and published (1.1a), the service is in the
+  canonical Compose file, pinned to that image's digest (1.1b), and it runs on
+  the VM (1.1c: applied by the owner's `VM apply`, healthy in `VM check`
+  `containers`); no vector exists.** The image is `deploy/tei-embed/Dockerfile`, upstream TEI
   `cpu-1.9.4` by tag and digest with its Debian packages upgraded, Trivy-gated
   and published to `ghcr.io/rodnapamet/tei-embed` (D-L4-11, owner,
   2026-11-15). The `tei-embed` service (`intfloat/multilingual-e5-small` at Hub
@@ -64,9 +65,16 @@ flowchart LR
   is in `deploy/docker-compose.prod.yml` as
   `ghcr.io/rodnapamet/tei-embed@sha256:90f7be79…3b55`, the digest the first
   publish printed (run 43715894440, 2026-11-15, smoke and Trivy gate passed;
-  1.1b); it reaches the VM only when the owner approves a `VM apply` run
-  (1.1c), and the app does not call it until the operator sets
-  `AI_EMBED_LOCAL_*` in `.env.prod`. The record is
+  1.1b); the owner's `VM apply` put it on the VM on 2026-11-15 (1.1c), and the
+  app does not call it until the operator sets `AI_EMBED_LOCAL_*` in
+  `.env.prod`. Timed on the VM the same day (0.5a, `VM check`
+  `tei-embed-timing`, run 43757070861): a 20-token query p95 37.5 ms, and about
+  0.7 s per 512-token passage whatever the batch size, so 8 passages take
+  5.2–6.0 s and 32 take 21–22 s against the seam's 15 s deadline. The owner
+  decided on 2026-11-15 that the indexing pipeline embeds 8 passages per call
+  and keeps the deadline ([`weaviate.md`](./weaviate.md) Phase 2,
+  `INDEX_EMBED_BATCH`), and that the 2,560 MiB limit stays until a full day of
+  the capacity recorder's figures is read on 2026-11-16 at 17:30 UTC. The record is
   [`2026-11-15-retriever-tei-embed.md`](../implementation-notes/2026-11-15-retriever-tei-embed.md). `src/lib/ai/embeddings/` holds the
   `EmbeddingProvider` / `RerankProvider` contracts, the residency routing
   (`select.ts`, `inflect-local/<model>` only), a TEI client for
@@ -264,6 +272,42 @@ the measurements are still to run.
       weight with the request path while they run, so the repetitions are kept
       small and a run takes minutes. The rerank figure waits for the
       reranker's service (Phase 2).
+      - [x] 0.5a The embedder, on the live service. Done 2026-11-15: `VM check`
+        `tei-embed-timing`, run 43757070861, 23:33–23:38 UTC. The host is an
+        Intel Xeon at 2.20 GHz with 2 vCPUs, AVX2 and no AVX-512F; `tei-embed`
+        is capped at 1.0 CPU and 2,560 MiB. The synthetic passage is 714
+        tokens, so the model reads 512.
+
+        | Load | Runs | min | p50 / median | p95 | max | Within 15 s |
+        | --- | --- | --- | --- | --- | --- | --- |
+        | Query, 20 tokens | 20 calls | 26.8 ms | 29.2 ms | 37.5 ms | 37.8 ms | yes |
+        | 8 × 512 tokens | 3 | 5.20 s | 5.71 s | | 6.03 s | yes |
+        | 16 × 512 tokens | 3 | 10.76 s | 11.40 s | | 11.79 s | yes |
+        | 32 × 512 tokens | 3 | 21.30 s | 22.48 s | | 58.08 s | no |
+        | 64 × 512 tokens | 3 | 41.81 s | 42.91 s | | 44.17 s | no |
+
+        A passage costs about 0.7 s whatever the batch size (0.67–0.71 s at the
+        medians), so the batch size buys no throughput and only moves the call
+        towards the deadline. The 58 s run at 32 overlapped a concurrent
+        `VM apply` preflight (run 43761627105, 23:33:57–23:37:07 UTC) on the
+        same VM; the other two runs at 32 are 21–22 s, already over. The query
+        p95 is inside the proposed (not agreed) 250 ms budget. The CI runners'
+        figures for 64 passages were 10.3–23.7 s, so this VM's CPU is about two
+        to four times slower for this load.
+        Memory: `memory.current` 880 → 1,269 MiB (anonymous 858 → 1,240, page
+        cache 7 → 13), `memory.peak` 1,601 MiB before and after, so the peak
+        was set earlier, not by this load; no OOM kill. CPU: 256.9 core-seconds
+        in 293 s of wall time, 473 of 2,928 periods throttled, 3.0 s
+        throttled.
+        Decided from these (owner, 2026-11-15): the indexing pipeline embeds
+        **8 passages per call and keeps the 15 s deadline**
+        (`INDEX_EMBED_BATCH` in `src/lib/ai/embeddings/types.ts`; the row in
+        [`weaviate.md`](./weaviate.md) Phase 2), and `tei-embed`'s
+        `mem_limit` **stays 2,560 MiB until a full day of the capacity
+        recorder's figures is read on 2026-11-16 at 17:30 UTC**, with 2,048 the
+        likely target.
+      - [ ] 0.5b The reranker (`bge-reranker-base`, a 1 × 50 rerank), when its
+        service exists (Phase 2).
 - [x] 0.6 Dependency governance: TEI is a runtime image (digest), the model
       weights are a volume (`deploy/` volume + a checksum of the snapshot
       recorded in the note); no Python enters the app image.
@@ -315,8 +359,9 @@ evaluation set rather than promising one).
 **Done when.** The measurements are on `main` with numbers and the D-L4-3 rule
 has picked the embedder and the reranker. D-L4-3 was initialled on 2026-11-11
 and amended on 2026-11-13; the margin was agreed under D-L4-10 on 2026-11-12.
-The pick is made (2026-11-13, 0.3); the VM measurements (0.5), the licence
-read (0.1b) and the dependency record (0.6) remain.
+The pick is made (2026-11-13, 0.3), the licence read (0.1b) and the
+dependency record (0.6) are done, and the embedder's VM figures are in
+(2026-11-15, 0.5a); the reranker's (0.5b) remain, with its service.
 
 ### Phase 1 — The embedding seam, CPU-local
 
@@ -324,7 +369,7 @@ read (0.1b) and the dependency record (0.6) remain.
 backend inside the perimeter and a stub for tests; no sub-processor touched.
 
 **Sub-phases.**
-- [ ] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
+- [x] 1.1 `deploy/docker-compose.prod.yml`: `tei-embed` service (TEI CPU image,
       digest-pinned, model volume, no published port, `app`/`worker` network
       only). Applied with `deploy/apply.sh`. Held by the capacity budget's C1
       (G5).
@@ -344,9 +389,14 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
         newer-upstream report, which read one 1,000-tag page of GHCR's list
         and called `cpu-1.2.1` newer than `cpu-1.9.4`
         (`deploy/tei-embed/newer-upstream.sh`).
-      - [ ] 1.1c The owner's `VM apply` run (preflight, then apply), `VM check`
+      - [x] 1.1c The owner's `VM apply` run (preflight, then apply), `VM check`
         `containers` showing `tei-embed` healthy, and the capacity recorder's
-        first day of its peak on the VM.
+        first day of its peak on the VM. Done 2026-11-15: applied by the
+        owner's `VM apply`, healthy in `VM check` `containers`, and timed on
+        the VM by `tei-embed-timing` (run 43757070861; 0.5a holds the
+        figures). The recorder's first full day is read on 2026-11-16 at
+        17:30 UTC, for the `mem_limit` decision (2,560 MiB until then, 2,048
+        the likely target; owner, 2026-11-15).
 
       The service as specified for 1.1b, measured 2026-11-15. One deviation
       from the line above: it sits on the project's default network, beside
@@ -362,9 +412,11 @@ backend inside the perimeter and a stub for tests; no sub-processor touched.
       through ONNX Runtime, about 2.5 times the weights in anonymous memory);
       healthy 9–12 s after start, the weight fetch included; a one-query
       embed 8–12 ms at p50. **A 64-passage batch of 512-token passages took
-      10.3–23.7 s, and the seam's deadline is 15 s (`TEI_DEADLINE_MS`)**: the
-      indexing caller ([`weaviate.md`](./weaviate.md) Phase 2) batches smaller
-      or the deadline moves, decided there against 0.5's VM figures. The
+      10.3–23.7 s, and the seam's deadline is 15 s (`TEI_DEADLINE_MS`)**. On
+      the VM it took 41.8–44.2 s (0.5a), and 8 passages took 5.2–6.0 s, so the
+      owner decided on 2026-11-15 that the indexing caller
+      ([`weaviate.md`](./weaviate.md) Phase 2) embeds 8 passages per call
+      (`INDEX_EMBED_BATCH`) and the deadline stays 15 s. The
       upstream image's Trivy result at the repository's gate settings
       (CRITICAL,HIGH, fixed only) is 4 CRITICAL and 13 HIGH, all Debian
       packages of the base layer (perl-base, apt, pcre2, openssl, brotli) and

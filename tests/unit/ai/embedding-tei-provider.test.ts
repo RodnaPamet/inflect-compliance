@@ -37,6 +37,7 @@ jest.mock('@/lib/observability', () => ({ logger: { warn: (...a: unknown[]) => m
 import { postJsonBounded } from '@/lib/ai/embeddings/http';
 import { rerankOrKeepHybridOrder } from '@/lib/ai/embeddings/rerank-fallback';
 import { TeiEmbeddingProvider, TeiRerankProvider } from '@/lib/ai/embeddings/tei-provider';
+import { INDEX_EMBED_BATCH, MAX_EMBED_BATCH } from '@/lib/ai/embeddings/types';
 
 const BASE = 'http://tei-embed:8080/';
 const INSIDE = [{ address: '172.18.0.7', family: 4 }];
@@ -178,6 +179,20 @@ describe('bounds are refused before anything is sent', () => {
         );
         const out = await embedder().embed(Array.from({ length: 64 }, () => 'x'), { inputType: 'passage' });
         expect(out.ok).toBe(true);
+    });
+
+    it('the indexing batch is a batch the seam takes, smaller than its bound', async () => {
+        // The owner's 2026-11-15 decision: 8 per call, because 32 and 64 were
+        // over TEI_DEADLINE_MS on the production VM. Raising it to the bound
+        // would bring back the timeouts the decision avoids.
+        expect(INDEX_EMBED_BATCH).toBe(8);
+        expect(INDEX_EMBED_BATCH).toBeLessThan(MAX_EMBED_BATCH);
+        mockFetch.mockResolvedValue(
+            json(embeddings(Array.from({ length: INDEX_EMBED_BATCH }, (_, index) => ({ index, embedding: [1, 0, 0] })))),
+        );
+        const out = await embedder().embed(Array.from({ length: INDEX_EMBED_BATCH }, () => 'x'), { inputType: 'passage' });
+        expect(out.ok).toBe(true);
+        expect(sentBody().input).toHaveLength(INDEX_EMBED_BATCH);
     });
 });
 

@@ -402,6 +402,12 @@ whole index can be rebuilt from `KnowledgeChunk` rows.
       versions only), evidence file text (post-ClamAV, via the parser seam),
       control descriptions, the questionnaire answer library.
 
+**Decisions.**
+
+| Decision | Owner, date | Basis |
+| --- | --- | --- |
+| The job embeds **8 passages per `embed` call** (`INDEX_EMBED_BATCH` in `src/lib/ai/embeddings/types.ts`, under the seam's `MAX_EMBED_BATCH` of 64) and **keeps the seam's 15 s deadline** (`TEI_DEADLINE_MS`). A source with more chunks than that is embedded in several calls | owner, 2026-11-15 | `tei-embed` timed on the production VM (`VM check` `tei-embed-timing`, run 43757070861; [`nemotron-retriever.md`](./nemotron-retriever.md) 0.5a): 512-token passages cost about 0.7 s each whatever the batch size, so a batch buys no throughput. 8 took 5.20 / 5.71 / 6.03 s (min / median / max), 16 took 10.76 / 11.40 / 11.79 s, and 32 and 64 were over 15 s in every run (21.30 s and 41.81 s at best). 8 leaves the deadline about 2.5 times the slowest run, headroom for the request path's query embeddings, which share the container's one CPU with the job |
+
 **Prompt.**
 ```text
 Context (main 3.365.0 + Phase 1): KnowledgeChunk (text encrypted) and KnowledgeChunkEmbedding
@@ -412,7 +418,8 @@ tenant purge removes tenant-scoped tables.
 
 Task: (1) Job `knowledge-index` keyed (tenantId, sourceModel, sourceId): read under
 runInTenantContext, chunk, embed via the EmbeddingProvider seam (nemotron-retriever Phase 1;
-use its stub if it has not landed), upsert chunks and embeddings by contentHash. (2) Enqueue
+use its stub if it has not landed) in calls of INDEX_EMBED_BATCH passages (8, owner,
+2026-11-15), upsert chunks and embeddings by contentHash. (2) Enqueue
 from the audit emitters of PolicyVersion (approved only) and evidence file text; delete a
 source's chunks in the data-lifecycle purge. (3) scripts/knowledge-reindex.ts rebuilding a
 tenant's embeddings from KnowledgeChunk, exercised by a test. (4) The embedding column's row
