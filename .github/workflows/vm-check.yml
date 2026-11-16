@@ -41,6 +41,7 @@ on:
                     - access-review-dates
                     - bcrypt
                     - automation-rules
+                    - posture-provider-names
                     - tei-embed-timing
                     - migrate-role
 

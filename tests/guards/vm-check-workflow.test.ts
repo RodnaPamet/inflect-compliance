@@ -145,10 +145,13 @@ describe('the scripts it runs', () => {
     it('docker exec runs only the read-only queries, the bcrypt probe, the tei-embed timing curl and two printenv reads', () => {
         const execs = remote.filter((l) => /\bdocker\s+exec\b/.test(l));
         const psql = execs.filter((l) => l.includes('need postgres'));
-        // access-review-dates, automation-rules and migrate-role.
-        expect(psql).toHaveLength(3);
+        // access-review-dates, automation-rules, migrate-role and
+        // posture-provider-names.
+        expect(psql).toHaveLength(4);
         expect(psql.filter((l) => !l.includes("PGOPTIONS='-c default_transaction_read_only=on'"))).toEqual([]);
-        expect(execs.filter((l) => l.includes('need app'))).toHaveLength(1);
+        // bcrypt's probe, and posture-provider-names' digest step — the second
+        // reads the query's rows on stdin and runs no query of its own.
+        expect(execs.filter((l) => l.includes('need app'))).toHaveLength(2);
         // tei-embed-timing: the timed request and the token count.
         const tei = execs.filter((l) => /docker exec -i "\$(1|id)" curl /.test(l));
         expect(tei).toHaveLength(2);
@@ -158,7 +161,11 @@ describe('the scripts it runs', () => {
             'url="$(docker exec "$app" printenv DIRECT_DATABASE_URL)" && rc=0 || rc=$?',
             'url="$(docker exec "$app" printenv DATABASE_URL)" && rc=0 || rc=$?',
         ]);
-        expect(execs).toHaveLength(psql.length + 1 + tei.length + printenv.length);
+        // DERIVED rather than a literal, because two checks landed together and
+        // each moved this total: the app execs are now two (bcrypt's probe and
+        // posture-provider-names' digest step) where the literal said one.
+        const app = execs.filter((l) => l.includes('need app'));
+        expect(execs).toHaveLength(psql.length + app.length + tei.length + printenv.length);
     });
 
     describe('tei-embed-timing', () => {
@@ -222,7 +229,12 @@ describe('the scripts it runs', () => {
     const queries = sqlHeredocs('deploy/vm-check/remote.sh');
 
     it('every query reads and never writes', () => {
-        expect(queries).toHaveLength(3);
+        // Four heredocs, one per check that queries: access-review-dates,
+        // automation-rules (one heredoc carrying three statements), migrate-role
+        // and posture-provider-names. #5741 and #5742 each added one and each
+        // moved this literal from 2 to 3, so merging them had to move it again —
+        // which is exactly the kind of count two green branches get wrong.
+        expect(queries).toHaveLength(4);
         expect(queries.filter((q) => !/^\s*SELECT\b/.test(q))).toEqual([]);
         expect(queries.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
     });

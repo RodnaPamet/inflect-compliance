@@ -15,7 +15,7 @@ set -euo pipefail
 
 CHECK="${1:?check}"
 case "$CHECK" in
-    containers | library-sync | log-errors | access-review-dates | bcrypt | automation-rules | tei-embed-timing | migrate-role) ;;
+    containers | library-sync | log-errors | access-review-dates | bcrypt | automation-rules | posture-provider-names | tei-embed-timing | migrate-role) ;;
     *) echo "unknown check: $CHECK" >&2; exit 2 ;;
 esac
 
