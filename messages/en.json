@@ -17516,6 +17516,7 @@
       "READ_ONLY_WORKFLOW": "Not offered: this profile answers only, so it gets no propose tools.",
       "PROFILE_TOOL_NOT_GRANTED": "Not offered: the agent is no longer granted this tool.",
       "CONNECTION_READ_ONLY": "Not offered: the tool writes and its connection takes no writes.",
+      "RETRIEVER_NOT_EVALUATED": "Not offered: knowledge search is offered only once an evaluation record for this deployment’s retriever passes its floors, and none does yet.",
       "AGENT_NOT_ACTIVE": "Not offered: the agent is not active, so none of its runs are admitted.",
       "BEYOND_CEILING": "Unreachable: the tool needs a higher autonomy rung than this agent’s ceiling.",
       "SKILL_NOT_MOUNTABLE": "Not mounted: no run can mount this skill as it stands.",

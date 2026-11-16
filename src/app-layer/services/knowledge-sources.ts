@@ -87,3 +87,49 @@ async function readPolicyVersion(db: PrismaTx, ctx: RequestContext, sourceId: st
 export const KNOWLEDGE_SOURCES: Readonly<Record<KnowledgeSourceModel, SourceReader>> = {
     PolicyVersion: readPolicyVersion,
 };
+
+/**
+ * What a search hit cites: the row a person would open to read the passage
+ * in place (vector store Phase 3). Titles and ids only — the passage itself is
+ * the chunk's text, hydrated separately from `KnowledgeChunk`.
+ */
+export interface KnowledgeCitation {
+    /** The citable parent, e.g. the policy a version belongs to. */
+    readonly kind: 'policy';
+    readonly id: string;
+    readonly title: string;
+    /** The version of the parent the passage was cut from, when the source is versioned. */
+    readonly version: number | null;
+}
+
+/**
+ * Resolve the citations of a page of source ids, in the reader's
+ * transaction. A source that is gone, or whose parent is soft-deleted, has no
+ * entry: the index job will remove its chunks, and until it has, a hit on them
+ * must not be cited as current.
+ */
+export type CitationReader = (
+    db: PrismaTx,
+    ctx: RequestContext,
+    sourceIds: readonly string[],
+) => Promise<Map<string, KnowledgeCitation>>;
+
+async function citePolicyVersions(
+    db: PrismaTx,
+    ctx: RequestContext,
+    sourceIds: readonly string[],
+): Promise<Map<string, KnowledgeCitation>> {
+    if (sourceIds.length === 0) return new Map();
+    const rows = await db.policyVersion.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: [...sourceIds] }, policy: { deletedAt: null } },
+        select: { id: true, versionNumber: true, policy: { select: { id: true, title: true } } },
+        take: sourceIds.length,
+    });
+    return new Map(
+        rows.map((r) => [r.id, { kind: 'policy' as const, id: r.policy.id, title: r.policy.title, version: r.versionNumber }]),
+    );
+}
+
+export const KNOWLEDGE_CITATIONS: Readonly<Record<KnowledgeSourceModel, CitationReader>> = {
+    PolicyVersion: citePolicyVersions,
+};

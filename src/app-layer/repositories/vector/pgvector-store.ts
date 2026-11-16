@@ -58,10 +58,25 @@
  * applies a WHERE clause AFTER the approximate scan: with the defaults it
  * returns `hnsw.ef_search` (40) candidates across ALL tenants and then
  * filters, so a tenant holding 2% of a model's rows would get about one hit.
- * So every search turns on iterative index scans for its own transaction
- * (`hnsw.iterative_scan = strict_order`, pgvector 0.8.0+), which keeps
- * scanning until `k` rows survive the tenant filter or
- * `hnsw.max_scan_tuples` is reached; the probe refuses an older extension.
+ * Three measures, in the order a search meets them (vector store Phase 3.2):
+ *
+ *   1. A tenant holding at most `EXACT_SCAN_MAX_ROWS` vectors of the revision
+ *      is searched EXACTLY — a sequential read of its own rows through the
+ *      `(tenantId, embeddingModel)` btree, ordered by an expression the HNSW
+ *      index does not match (`buildSearchQuery(…, 'exact')`). Recall is 1.
+ *   2. Above it, the index, with iterative scans on for the transaction
+ *      (`hnsw.iterative_scan = relaxed_order`, pgvector 0.8.0+), which keeps
+ *      reading until `k` rows survive the tenant filter or the bounded
+ *      `hnsw.max_scan_tuples` is reached; the probe refuses an older
+ *      extension. Relaxed order may hand rows back slightly out of distance
+ *      order; the outer query sorts the `k` it kept.
+ *   3. If the index still returned fewer than `k` rows of a tenant holding
+ *      more (it hit `max_scan_tuples` first), the search is repeated exactly,
+ *      for a tenant of at most `EXACT_FALLBACK_MAX_ROWS` rows; a larger tenant
+ *      keeps what the index found, and the shortfall is logged.
+ *
+ * A caller may pin the path (`strategy: 'index' | 'exact'`); the floor probe
+ * does, to measure the index against exact search on the same rows.
  *
  * ── A rebuild never erases a concurrent write ──────────────────────
  *
@@ -78,7 +93,10 @@ import { Prisma } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import type { PrismaTx } from '@/lib/db-context';
+import { logger } from '@/lib/observability';
 import {
+    EXACT_SCAN_MAX_ROWS,
+    HNSW_SEARCH,
     MAX_DIMENSIONS,
     VectorStoreError,
     keyOf,
@@ -146,9 +164,19 @@ export function buildSearchQuery(
     ctx: RequestContext,
     query: VectorSearchQuery,
     dimensions: number,
+    path: 'index' | 'exact' = 'index',
 ): Prisma.Sql {
     const d = dimensionSql(dimensions);
     const q = vectorLiteral(query.embedding);
+    // The index is built on `"embedding"::vector(<d>)`. The exact path orders by
+    // the UNCAST column instead, an expression no index matches, so the planner
+    // cannot choose the approximate scan whatever its cost estimates say. Every
+    // row it compares is of this revision, which holds one dimension count
+    // (`revisionDimensions`), so the uncast distance is well defined.
+    const distance =
+        path === 'exact'
+            ? Prisma.sql`(e."embedding" <=> (${q}::vector(${d})))`
+            : Prisma.sql`((e."embedding"::vector(${d})) <=> (${q}::vector(${d})))`;
     const models = query.sourceModels
         ? Prisma.sql`AND EXISTS (
               SELECT 1 FROM ${CHUNKS} m
@@ -158,22 +186,41 @@ export function buildSearchQuery(
     return Prisma.sql`
         SELECT c."sourceModel", c."sourceId", c."chunkIndex", h."contentHash", 1 - h.distance AS score
         FROM (
-            SELECT e."chunkId", e."contentHash",
-                   (e."embedding"::vector(${d})) <=> (${q}::vector(${d})) AS distance
+            SELECT e."chunkId", e."contentHash", ${distance} AS distance
             FROM ${TABLE} e
             WHERE e."tenantId" = ${ctx.tenantId}
               AND e."embeddingModel" = ${query.embeddingRevision}
               ${models}
-            ORDER BY (e."embedding"::vector(${d})) <=> (${q}::vector(${d}))
+            ORDER BY ${distance}
             LIMIT ${query.k}
         ) h
         JOIN ${CHUNKS} c ON c."tenantId" = ${ctx.tenantId} AND c."id" = h."chunkId"
         ORDER BY h.distance, c."sourceModel", c."sourceId", c."chunkIndex"`;
 }
 
+/**
+ * Past this many vectors of a revision, a tenant whose indexed search came back
+ * short is NOT searched exactly: the index's answer stands and the shortfall is
+ * logged. Bounds the fallback's cost by the tenant's own size, so one search
+ * can never become a full read of a very large tenant.
+ */
+export const EXACT_FALLBACK_MAX_ROWS = 50_000;
+
+type SearchRow = { sourceModel: string; sourceId: string; chunkIndex: number; contentHash: string; score: number };
+
 /** A chunk's key, without the model. */
 function chunkKeyOf(k: Pick<VectorRecord, 'sourceModel' | 'sourceId' | 'chunkIndex'>): string {
     return `${k.sourceModel}\u0000${k.sourceId}\u0000${k.chunkIndex}`;
+}
+
+function toMatches(rows: readonly SearchRow[]): VectorMatch[] {
+    return rows.map((r) => ({
+        sourceModel: r.sourceModel,
+        sourceId: r.sourceId,
+        chunkIndex: Number(r.chunkIndex),
+        contentHash: r.contentHash,
+        score: Number(r.score),
+    }));
 }
 
 export function createPgvectorStore(): VectorStoreBackend {
@@ -343,23 +390,46 @@ export function createPgvectorStore(): VectorStoreBackend {
                         `revision ${query.embeddingRevision} holds ${stored}-dimensional vectors`,
                     );
                 }
-                // Transaction-local: keep scanning the shared index until k of
-                // THIS tenant's rows survive the filter (see the header).
+                const strategy = query.strategy ?? 'auto';
+                const exact = () => tx.$queryRaw<SearchRow[]>(buildSearchQuery(ctx, query, stored, 'exact'));
+                if (strategy === 'exact') return toMatches(await exact());
+
+                // How many vectors of this revision the tenant holds, counted no
+                // further than the fallback's ceiling (the btree answers it).
+                const tenantRows =
+                    strategy === 'auto'
+                        ? Number(
+                              (
+                                  await tx.$queryRaw<Array<{ n: number | bigint }>>(Prisma.sql`
+                                      SELECT count(*)::int AS n FROM (
+                                          SELECT 1 FROM ${TABLE}
+                                          WHERE "tenantId" = ${ctx.tenantId} AND "embeddingModel" = ${query.embeddingRevision}
+                                          LIMIT ${EXACT_FALLBACK_MAX_ROWS + 1}) s`)
+                              )[0]?.n ?? 0,
+                          )
+                        : null;
+                if (tenantRows !== null && tenantRows <= EXACT_SCAN_MAX_ROWS) return toMatches(await exact());
+
+                // Transaction-local: keep reading the shared index until k of
+                // THIS tenant's rows survive the filter, within a bounded number
+                // of tuples (see the header).
                 await tx.$queryRaw(Prisma.sql`
-                    SELECT set_config('hnsw.iterative_scan', 'strict_order', true),
-                           set_config('hnsw.ef_search', ${String(Math.max(40, query.k))}, true)`);
-                const rows = await tx.$queryRaw<
-                    Array<{ sourceModel: string; sourceId: string; chunkIndex: number; contentHash: string; score: number }>
-                >(buildSearchQuery(ctx, query, stored));
-                return rows.map((r) => ({
-                    sourceModel: r.sourceModel,
-                    sourceId: r.sourceId,
-                    chunkIndex: Number(r.chunkIndex),
-                    contentHash: r.contentHash,
-                    score: Number(r.score),
-                }));
+                    SELECT set_config('hnsw.iterative_scan', ${HNSW_SEARCH.iterativeScan}, true),
+                           set_config('hnsw.max_scan_tuples', ${String(HNSW_SEARCH.maxScanTuples)}, true),
+                           set_config('hnsw.ef_search', ${String(Math.max(HNSW_SEARCH.efSearch, query.k))}, true)`);
+                const indexed = await tx.$queryRaw<SearchRow[]>(buildSearchQuery(ctx, query, stored, 'index'));
+                if (tenantRows === null || indexed.length >= query.k) return toMatches(indexed);
+                if (tenantRows <= EXACT_FALLBACK_MAX_ROWS) return toMatches(await exact());
+                logger.warn('vector_index.search_short', {
+                    component: 'vector-index',
+                    tenantId: ctx.tenantId,
+                    k: query.k,
+                    returned: indexed.length,
+                });
+                return toMatches(indexed);
             });
         },
+
 
         async listKeys(ctx, embeddingRevision, limit): Promise<StoredVectorKey[]> {
             return withTenant(ctx, async (tx) => {

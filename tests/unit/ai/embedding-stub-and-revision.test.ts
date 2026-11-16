@@ -66,7 +66,16 @@ describe('the retriever revision key', () => {
         rerankModel: null,
         chunker: 'markdown-heading@1',
         k: 10,
-        alpha: 0.5,
+        dimensions: 384,
+        indexParams: {
+            method: 'hnsw',
+            distance: 'cosine',
+            m: 16,
+            efConstruction: 64,
+            efSearch: 40,
+            iterativeScan: 'relaxed_order',
+            maxScanTuples: 20_000,
+        },
     };
 
     it('adding a reranker is a new revision', () => {
@@ -78,7 +87,9 @@ describe('the retriever revision key', () => {
         ['rerankModel', { rerankModel: 'rerank-n' }],
         ['chunker', { chunker: 'markdown-heading@2' }],
         ['k', { k: 11 }],
-        ['alpha', { alpha: 0.6 }],
+        ['dimensions', { dimensions: 768 }],
+        ['indexParams', { indexParams: { ...base.indexParams, efSearch: 80 } }],
+        ['indexParams', { indexParams: { method: 'exact' as const, distance: 'cosine' as const } }],
     ])('a change to %s is a new revision', (_field, change) => {
         const withRerank = { ...base, rerankModel: 'rerank-m' };
         expect(sameRetrieverRevision(withRerank, { ...withRerank, ...change })).toBe(false);
@@ -86,7 +97,16 @@ describe('the retriever revision key', () => {
 
     it('is independent of property order', () => {
         const reordered: RetrieverRevision = {
-            alpha: 0.5,
+            indexParams: {
+                maxScanTuples: 20_000,
+                iterativeScan: 'relaxed_order',
+                efSearch: 40,
+                efConstruction: 64,
+                m: 16,
+                distance: 'cosine',
+                method: 'hnsw',
+            },
+            dimensions: 384,
             k: 10,
             chunker: 'markdown-heading@1',
             rerankModel: null,
@@ -115,9 +135,10 @@ describe('the retriever revision key', () => {
         ['k', { k: 0 }],
         ['k', { k: 2.5 }],
         ['k', { k: 51 }],
-        ['alpha', { alpha: -0.1 }],
-        ['alpha', { alpha: 1.01 }],
-        ['alpha', { alpha: Number.NaN }],
+        ['dimensions', { dimensions: 0 }],
+        ['dimensions', { dimensions: 1.5 }],
+        ['indexParams', { indexParams: { method: 'ivfflat', distance: 'cosine' } as never }],
+        ['indexParams', { indexParams: { ...base.indexParams, alpha: 0.5 } as never }],
     ])('an ambiguous %s is refused', (field, change) => {
         let thrown: unknown;
         try {

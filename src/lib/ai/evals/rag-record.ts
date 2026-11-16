@@ -258,7 +258,7 @@ const Distance = z.enum(['cosine', 'l2', 'inner_product']);
  * store's small-tenant path), whose recall against exact search is 1 by
  * construction — which is why the probe still records it rather than assuming.
  */
-const IndexParams = z.discriminatedUnion('method', [
+export const RagIndexParamsSchema = z.discriminatedUnion('method', [
     z
         .object({
             method: z.literal('hnsw'),
@@ -329,7 +329,7 @@ export const RagEvaluationRecordSchema = z
                 k: z.number().int().min(1).max(MAX_K),
                 /** The embedding's dimension count, as the store holds it. */
                 dimensions: z.number().int().min(1).max(MAX_DIMENSIONS),
-                indexParams: IndexParams,
+                indexParams: RagIndexParamsSchema,
             })
             .strict(),
         judgeRevision: z
@@ -357,6 +357,8 @@ export const RagEvaluationRecordSchema = z
 
 export type RagEvaluationSet = z.infer<typeof RagEvaluationSetSchema>;
 export type RagEvaluationRecord = z.infer<typeof RagEvaluationRecordSchema>;
+/** The ANN index a retriever revision searched (`retrieverRevision.indexParams`). */
+export type RagIndexParams = z.infer<typeof RagIndexParamsSchema>;
 
 /** `sha256:` over the canonical JSON of a parsed set — formatting does not move it, content does. */
 export function ragSetHash(set: RagEvaluationSet): string {

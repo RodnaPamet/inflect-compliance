@@ -88,7 +88,7 @@ flowchart LR
     direction TB
     RF["Document parsing<br/>Docling-class seam built;<br/>RAGFlow measured only"]:::partial
     RT["Retriever<br/>embed + rerank seam built;<br/>D-L4-3 decided: multilingual-e5-small<br/>+ bge-reranker-base on CPU"]:::partial
-    WV["Vector store<br/>pgvector seam, off;<br/>Weaviate conditional"]:::partial
+    WV["Vector store<br/>tables, index job, search_knowledge;<br/>off, gate closed; Weaviate conditional"]:::partial
     LU["Langfuse<br/>not adopted, OTel-only, D-L4-5"]:::declined
     TR["Tool-shaped retrieval (ours)<br/>MCP read tools"]:::done
   end
@@ -378,8 +378,8 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   audited MCP read tools (`src/lib/mcp/tools/`), questionnaire grounding
   (titles only), vendor-doc and risk-assessment AI features — each a
   provider behind `AI_*_PROVIDER` defaulting to `stub`.
-- **Three knowledge seams exist, off by default, and nothing in the product
-  calls them yet** (2026-11-11). Business content is encrypted by the manifest;
+- **Three knowledge seams exist, off by default** (2026-11-11); the vector
+  store's own index job and query path now call the first two (2026-11-16). Business content is encrypted by the manifest;
   tenant isolation is RLS + repository filters — both in Postgres.
   - *Embedding and rerank* (`src/lib/ai/embeddings/`, Retriever Phase 1.1–1.5
     and 2.1): residency-routed providers, a stub default, a TEI client, a
@@ -402,17 +402,25 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
     2026-11-15; `weaviate.md` Phase 2). No `tei-rerank` exists (Phase 2).
   - *Vector store* (`src/app-layer/repositories/VectorRepository.ts`, the only
     entry, held by ESLint `local/vector-store-single-seam`): pgvector first
-    (D-L4-1), on only when `VECTOR_STORE_BACKEND` is exactly `pgvector`. **No
-    Postgres image in the repository carries the `vector` extension** — every
-    one is `postgres:16-alpine` (CI's `Test`, `E2E` and load jobs, the DAST and
-    stress workflows, every Compose file, `deploy/docker-compose.prod.yml`) —
-    so no table exists and the SQL is tested only against a recording mock. A
-    pgvector-carrying image is the vector store's Phase 1.1 prerequisite and a
-    SIGNIFICANT change: every image moves in the pull request whose migration
-    runs `CREATE EXTENSION vector`, and a repo-built image `FROM
-    postgres:16-alpine` keeps the production volume's musl collation, where
-    swapping in the Debian `pgvector/pgvector` image would need a reindex or a
-    dump and restore.
+    (D-L4-1), on only when `VECTOR_STORE_BACKEND` is exactly `pgvector`.
+    Every Postgres the repository runs is the self-built
+    `ghcr.io/rodnapamet/postgres-pgvector:16-alpine` (Phase 1.1–1.2, D-L4-8),
+    and migration `20261115190000_knowledge_vector_store` creates the
+    extension, `KnowledgeChunk` (text in the encryption manifest) and
+    `KnowledgeChunkEmbedding` (vectors only, D-L4-2) under RLS, with one partial
+    HNSW index for `multilingual-e5-small` at 384 dimensions (Phase 1). The
+    `knowledge-index` job chunks and embeds approved policy versions, the
+    purges follow the source, and `scripts/knowledge-reindex.ts` rebuilds a
+    tenant's vectors from the stored text (Phase 2; 2.5's later sources wait
+    on the parser). The query path is built (Phase 3.1–3.5, 2026-11-16): a
+    filtered search that keeps a small tenant's recall (exact below 2,000
+    vectors, `relaxed_order` iterative scans above), the read usecase
+    `searchKnowledge`, the MCP read tool `search_knowledge` that every engine
+    and the assistant reach through the funnel and the guards, and its mount
+    gate, which offers the tool only with a passing RAG evaluation record for
+    the deployment's retriever revision. No record exists, so the tool is in
+    no catalogue. See [`weaviate.md`](./ai-architecture/weaviate.md) § Current
+    state.
   - *Document parsing* (`src/lib/ai/parsing/`, parser Phase 1.1, 1.2, 1.4,
     1.7): a `DocumentParser` seam with a paragraph stub as the default and a
     docling-serve client (D-L4-4), read from `DOC_PARSER_BASE_URL` /
@@ -444,8 +452,8 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   sub-processor (D-L4-5, 2026-11-11), with trace content capture off by default
   for any sink (D-L4-6). Flue telemetry is content-free by guard; prompts are
   code and profiles are frozen rows.
-- Missing: a deployed embedding, rerank or parsing service; the pgvector image,
-  migration and table; `search_knowledge`; a RAG record. LlamaIndex is not
+- Missing: a deployed rerank or parsing service; a RAG harness and record (so
+  `search_knowledge`, built, is offered nowhere). LlamaIndex is not
   planned (see [`langfuse.md`](./ai-architecture/langfuse.md) § Fit).
 
 ### Layer 5 — Runtime & infrastructure
@@ -945,7 +953,7 @@ completion.
 | Role axis; Nemotron as the worker | 3 | [`nemotron-reasoning.md`](./ai-architecture/nemotron-reasoning.md) | 1 (role axis) / 2 (models chosen by records) / optional (Nemotron, Phases 0 and 2) | Phase 1 done: the role axis, worker by API key (`AGENT_FLUE_WORKER_MODEL`, unset by default, so the worker runs the supervisor's model). Phase 3 and the optional Phases 0 and 2 unchanged | 1 | 1 and 3, worker by API key | — |
 | Claude engines | 3 | `docs/claude-*-design.md` (#4135) | — | Tool Runner on (Step 2c, #4512); Agent SDK and Managed Agents designed | 2d | its own plan | — (its own plan) |
 | cuOpt | 3 | [`cuopt.md`](./ai-architecture/cuopt.md) | — | **declined** — no optimisation problem in the product, none at GPU scale (D-L3-3, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decline (met) | — |
-| Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1's seam built, off by default (`VectorRepository`, `VECTOR_STORE_BACKEND`), tested only against a mock: no image in the repository carries pgvector, no migration, no table. Phase 4 (Weaviate) only on a missed floor | 0 | 3 | — |
+| Vector store (pgvector; Weaviate conditional) | 4 | [`weaviate.md`](./ai-architecture/weaviate.md) | 1 | Phase 0 done (pgvector first, vectors-only). Phase 1 built: the self-built pgvector image on every Postgres, the extension, `KnowledgeChunk` + `KnowledgeChunkEmbedding` under RLS, the e5-small HNSW index, `VectorRepository` the single seam, the two-tenant test against the real tables. Phase 2 built for its first source (the `knowledge-index` job over approved policy versions, purges, `scripts/knowledge-reindex.ts`); 2.5's later sources wait on the parser. Phase 3.1–3.5 built (2026-11-16): the filtered search, `search_knowledge` through the funnel, and the mount gate, which stays closed until a RAG record passes (3.6, the record's floor figures, is Ragas's). Off by default (`VECTOR_STORE_BACKEND`, `AI_EMBED_LOCAL_*`). Phase 4 (Weaviate) only on a missed floor | 2 | 3 | — |
 | Nemotron Retriever | 4 | [`nemotron-retriever.md`](./ai-architecture/nemotron-retriever.md) | 1 (CPU) / optional (GPU, Phase 3) | Phase 0 desk research done (0.1, 0.2); the seed set done (0.4: 200 English cases and a 50-case Bulgarian slice, 2026-11-13); the D-L4-3 benchmark run 2026-11-13 (0.3, run 43413063708) and D-L4-3 decided the same day: `multilingual-e5-small` + `bge-reranker-base`, the Bulgarian translations accepted unreviewed. Phase 1 seam built (1.2–1.5); 1.1 in two steps: the patched TEI image is built, Trivy-gated and published from `deploy/tei-embed/` (2026-11-15, D-L4-11: weekly and on each upstream release), and the `tei-embed` service (model at commit `614241f6`, 2,560 MiB measured on CI runners) is in the canonical Compose file pinned to the published digest (1.1b), and on the VM since 2026-11-15 (1.1c), timed there the same day (0.5a: query p95 37.5 ms, about 0.7 s per 512-token passage; the indexing pipeline embeds 8 per call, owner, 2026-11-15); 0.1b and 0.6 done; Phase 2.1 (`RerankProvider`) built. Nothing calls the seam | — | 2, `multilingual-e5-small` + `bge-reranker-base` on CPU | D-L4-10's latency budgets |
 | Document parsing (Docling-class; RAGFlow measured) | 4 | [`ragflow.md`](./ai-architecture/ragflow.md) | 1 | Phase 0 decided (D-L4-4), its fidelity set and measurements (0.1–0.5) open. Phase 1 seam built (1.1, 1.2, 1.4, 1.7: `DocumentParser`, a docling-serve client, a paragraph stub default); 1.3 (the Compose service, held by C1), 1.5 and 1.6 open | 0 | 3 | — |
 | Langfuse | 4 | [`langfuse.md`](./ai-architecture/langfuse.md) | — | **complete** — OTel-only (D-L4-5, 2026-11-11); content capture off by default (D-L4-6) ([note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's OTel-only decision (met) | — |
@@ -984,7 +992,7 @@ timeline
            : Capacity C0-C1, measure the VM and limit every container
   section Knowledge
     Wave 1 : Retriever 0-2, models chosen (D-L4-3, 2026-11-13), seam built
-           : Vector store 0-3, pgvector, then search_knowledge, 0 done, seam built
+           : Vector store 0-3, pgvector, then search_knowledge, 0-1 done, 2 for policies, 3.1-3.5 built, gate closed
            : Document parsing 0-3, Docling seam and fidelity eval, 0 decided, seam built
            : Ragas 0-3, the record opens the gate, 0 done
            : Role axis, nemotron-reasoning 1, worker by API key, done
@@ -1029,7 +1037,7 @@ flowchart LR
   WV2["W1 · Vector store 0-2<br/>pgvector + index"]:::partial
   RF2["W1 · Document parsing 0-3<br/>Docling-class"]:::partial
   RA2["W1 · Ragas 0-2"]:::partial
-  WV3["W1 · Vector store 3<br/>search_knowledge"]:::todo
+  WV3["W1 · Vector store 3<br/>search_knowledge, gate closed"]:::partial
   AR2["W2 · ARES 0-3"]:::todo
   GA1["W1 · Garak 0-1"]:::partial
   RX1["W1 · role axis<br/>worker by API key, done"]:::done

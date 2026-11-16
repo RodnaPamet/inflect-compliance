@@ -49,11 +49,15 @@ import { logger } from '@/lib/observability';
 import { createPgvectorStore } from './vector/pgvector-store';
 import { vectorStoreEnabled } from './vector-store-switch';
 import {
+    EXACT_SCAN_MAX_ROWS,
+    HNSW_BUILD,
+    HNSW_SEARCH,
     MAX_CHUNK_INDEX,
     MAX_DIMENSIONS,
     MAX_LIST_KEYS,
     MAX_SEARCH_K,
     MAX_UPSERT_BATCH,
+    VECTOR_SEARCH_STRATEGIES,
     VectorStoreError,
     keyOf,
     type RebuildOutcome,
@@ -62,10 +66,14 @@ import {
     type VectorMatch,
     type VectorRecord,
     type VectorSearchQuery,
+    type VectorSearchStrategy,
     type VectorStoreBackend,
 } from './vector/types';
 
 export {
+    EXACT_SCAN_MAX_ROWS,
+    HNSW_BUILD,
+    HNSW_SEARCH,
     MAX_LIST_KEYS,
     MAX_SEARCH_K,
     MAX_UPSERT_BATCH,
@@ -76,6 +84,7 @@ export {
     type VectorMatch,
     type VectorRecord,
     type VectorSearchQuery,
+    type VectorSearchStrategy,
 };
 export type { VectorStoreRefusal } from './vector/types';
 
@@ -109,6 +118,7 @@ const QUERY = z
         embedding: EMBEDDING,
         k: z.number().int().min(1).max(MAX_SEARCH_K),
         sourceModels: z.array(SOURCE_MODEL).min(1).max(32).optional(),
+        strategy: z.enum(VECTOR_SEARCH_STRATEGIES).optional(),
     })
     .strict();
 

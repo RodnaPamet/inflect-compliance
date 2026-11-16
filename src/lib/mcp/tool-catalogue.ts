@@ -31,6 +31,7 @@ export const MCP_READ_TOOL_NAMES = [
     'get_harness_register',
     'get_agent_recertification_evidence',
     'list_audit_workpapers',
+    'search_knowledge',
 ] as const;
 
 /** Propose tools — `propose-tools.ts`'s `PROPOSE_TOOLS`, by name. */
@@ -103,6 +104,7 @@ export const MCP_TOOL_KEY_SCOPE: Readonly<
     get_harness_register: 'admin:harness_ingest',
     get_agent_recertification_evidence: 'access_reviews:read',
     list_audit_workpapers: 'audits:workpaper_view',
+    search_knowledge: 'policies:read',
     propose_risks: 'risks:read',
     propose_controls: 'controls:read',
     draft_policy: 'policies:read',
