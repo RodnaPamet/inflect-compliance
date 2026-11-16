@@ -23,6 +23,7 @@ import type {
 } from '../types';
 import { runPowerpipeBenchmark, type RunBenchmarkInput } from '../cloud-posture/powerpipe-core';
 import { collectorExecForDeploy } from '../cloud-posture/sandboxed-collector-exec';
+import { postureProviderNameFor } from '../cloud-posture/provider-name';
 import { sandboxDecisionRecorderForScan } from '../openshell-audit-bridge';
 import { baseCollectorEnv } from '../collector-child-env';
 
@@ -148,13 +149,28 @@ export class GcpPostureProvider implements ScheduledCheckProvider {
      */
     private execForScan(input: CheckInput, benchmarkId: string): RunBenchmarkInput['exec'] {
         if (!this.execFromDeploy) return this.exec;
+        // #5476: the gateway provider holding THIS connection's credential.
+        // `undefined` when the check carries no connection id, which makes
+        // `collectorExecForDeploy` refuse rather than attach a shared
+        // credential — see `postureProviderNameFor`. Never defaulted.
+        const providerName = postureProviderNameFor({
+            tenantId: input.tenantId,
+            connectionId: input.connectionId,
+        });
         return (
             collectorExecForDeploy({
                 benchmarkId,
+                providerName,
                 onDecision: sandboxDecisionRecorderForScan({
                     tenantId: input.tenantId,
                     job: 'gcp-posture-collect',
                     discriminator: input.jobRunId,
+                    // The lease row names the provider ACTUALLY attached. Left
+                    // to default it would record `inflect-collector` — the
+                    // shared one #5251 refused — while the sandbox held this
+                    // connection's own, making an operational table disagree
+                    // with the gateway.
+                    providerName,
                 }),
             }) ?? undefined
         );

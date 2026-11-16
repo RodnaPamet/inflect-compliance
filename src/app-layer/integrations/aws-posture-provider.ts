@@ -19,6 +19,7 @@
  */
 import { execFile } from 'node:child_process';
 import { collectorExecForDeploy } from './cloud-posture/sandboxed-collector-exec';
+import { postureProviderNameFor } from './cloud-posture/provider-name';
 import type { CollectorExec } from './cloud-posture/sandboxed-collector-exec';
 import { sandboxDecisionRecorderForScan } from './openshell-audit-bridge';
 import { logger } from '@/lib/observability/logger';
@@ -460,12 +461,27 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
      */
     private execForScan(input: CheckInput, benchmarkId: string): AwsCollectorExec | undefined {
         if (!this.execFromDeploy) return this.exec;
+        // #5476: the gateway provider holding THIS connection's credential.
+        // `undefined` when the check carries no connection id, which makes
+        // `collectorExecForDeploy` refuse rather than attach a shared
+        // credential — see `postureProviderNameFor`. Never defaulted.
+        const providerName = postureProviderNameFor({
+            tenantId: input.tenantId,
+            connectionId: input.connectionId,
+        });
         const sandboxed = collectorExecForDeploy({
             benchmarkId,
+            providerName,
             onDecision: sandboxDecisionRecorderForScan({
                 tenantId: input.tenantId,
                 job: 'aws-posture-collect',
                 discriminator: input.jobRunId,
+                // The lease row names the provider ACTUALLY attached. Left
+                // to default it would record `inflect-collector` — the
+                // shared one #5251 refused — while the sandbox held this
+                // connection's own, making an operational table disagree
+                // with the gateway.
+                providerName,
             }),
         });
         return sandboxed ? this.adapt(sandboxed) : undefined;

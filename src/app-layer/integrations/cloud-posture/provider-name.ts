@@ -98,3 +98,32 @@ export const POSTURE_CONNECTION_PROVIDERS = [
     'azure-posture',
     'gcp-posture',
 ] as const;
+
+/**
+ * The name for a scan, or `undefined` when there is no connection to name one
+ * for — and `undefined` is the load-bearing half.
+ *
+ * `CheckInput.connectionId` is OPTIONAL: it is read by three providers and a
+ * `CheckInput` is built by every integration check, so requiring it would make
+ * checks with no connection behind them carry a field for somebody else. That is
+ * only safe because of where the absence lands. `collectorExecForDeploy` refuses
+ * when it is given no `providerName` (`SANDBOX_PROVIDER_NOT_TENANT_SCOPED`,
+ * #5251/#5475), so a scan with no connection id runs nothing rather than
+ * attaching something.
+ *
+ * SO DO NOT GIVE THIS A FALLBACK. Returning `COLLECTOR_PROVIDER_NAME`, or any
+ * name derived from the tenant alone, would turn a missing id back into the
+ * shared-credential defect #5251 is about — a scan benchmarking whatever account
+ * that one provider reaches, stored as this tenant's Evidence. The companion test
+ * asserts the undefined rather than trusting this paragraph.
+ */
+export function postureProviderNameFor(input: {
+    readonly tenantId: string;
+    readonly connectionId?: string;
+}): string | undefined {
+    if (!input.connectionId) return undefined;
+    return postureProviderName({
+        tenantId: input.tenantId,
+        connectionId: input.connectionId,
+    });
+}

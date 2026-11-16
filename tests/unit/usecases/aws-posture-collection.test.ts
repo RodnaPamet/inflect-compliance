@@ -616,6 +616,12 @@ describe.each(ARMS)(
                 automationKey: 'aws-posture.soc2',
                 parsed: { provider: 'aws-posture', checkType: 'soc2', raw: 'aws-posture.soc2' },
                 tenantId: TENANT,
+                // #5476: threaded so the posture provider can derive the
+                // gateway credential provider for THIS connection. Kept in
+                // the exact expectation rather than loosened to
+                // `objectContaining` — this assertion's exactness is what
+                // caught the field being added.
+                connectionId: CONN,
                 connectionConfig: {},
                 triggeredBy: 'scheduled',
             });
