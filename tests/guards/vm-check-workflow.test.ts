@@ -144,14 +144,17 @@ describe('the scripts it runs', () => {
     it('docker exec runs only the read-only queries, the bcrypt probe and the tei-embed timing curl', () => {
         const execs = remote.filter((l) => /\bdocker\s+exec\b/.test(l));
         const psql = execs.filter((l) => l.includes('need postgres'));
-        // access-review-dates and automation-rules.
-        expect(psql).toHaveLength(2);
+        // access-review-dates, automation-rules and posture-provider-names.
+        expect(psql).toHaveLength(3);
         expect(psql.filter((l) => !l.includes("PGOPTIONS='-c default_transaction_read_only=on'"))).toEqual([]);
-        expect(execs.filter((l) => l.includes('need app'))).toHaveLength(1);
+        // bcrypt's probe, and posture-provider-names' digest step — the second
+        // reads the query's rows on stdin and runs no query of its own.
+        expect(execs.filter((l) => l.includes('need app'))).toHaveLength(2);
         // tei-embed-timing: the timed request and the token count.
         const tei = execs.filter((l) => /docker exec -i "\$(1|id)" curl /.test(l));
         expect(tei).toHaveLength(2);
-        expect(execs).toHaveLength(psql.length + 1 + tei.length);
+        const app = execs.filter((l) => l.includes('need app'));
+        expect(execs).toHaveLength(psql.length + app.length + tei.length);
     });
 
     describe('tei-embed-timing', () => {
@@ -215,7 +218,7 @@ describe('the scripts it runs', () => {
     const queries = sqlHeredocs('deploy/vm-check/remote.sh');
 
     it('every query reads and never writes', () => {
-        expect(queries).toHaveLength(2);
+        expect(queries).toHaveLength(3);
         expect(queries.filter((q) => !/^\s*SELECT\b/.test(q))).toEqual([]);
         expect(queries.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
     });

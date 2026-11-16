@@ -253,6 +253,59 @@ tei_timing() {
     echo "| Throttled time (s) | $(cg_delta "$b_thu" "$a_thu" 1000000 %.1f) |"
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# The posture provider-name recipe — #5476.
+#
+# ONE derivation, two readers. `postureProviderName` in
+# `src/app-layer/integrations/cloud-posture/provider-name.ts` is the source of
+# truth, and the product attaches by the name it returns. This is that same
+# recipe, spelled for `node -e` because the app container runs plain node and
+# cannot import a TypeScript module by path.
+#
+# A second spelling of one name is the shape that goes wrong silently, so it is
+# not left to care: `tests/guardrails/posture-provider-name-recipe.test.ts`
+# EXTRACTS this variable from this file, EXECUTES it, and compares its output
+# against the TypeScript function's for the same inputs. A drifted recipe fails
+# CI, and the failure names this line.
+#
+# Length-prefixed rather than separator-joined, for the reason the TypeScript
+# records: ('a','b:c') and ('a:b','c') both build `a:b:c`, and a collision here
+# merges two tenants' credentials.
+#
+# PUBLIC LOG DISCIPLINE: the tenant id arrives on stdin and is NEVER printed. A
+# connection id is an opaque cuid naming no customer, and a provider name is a
+# digest. Nothing here can print a slug, an account or a credential.
+# NO ARROW FUNCTIONS in here, deliberately. The "remote.sh writes no file"
+# guard scans every line for a redirect, and `=> v` reads as `>` followed by a
+# target. Dropping the arrows keeps that guard strict rather than widening a
+# write-detector to accommodate a style choice.
+POSTURE_NAME_RECIPE='
+const { createHash } = require("crypto");
+function lp(v) { return v.length + ":" + v; }
+const rows = [];
+const lines = require("readline").createInterface({ input: process.stdin });
+lines.on("line", function (line) {
+    const parts = line.split("|");
+    if (parts.length < 3) return;
+    const tenantId = parts[0];
+    const connectionId = parts[1];
+    const enabled = parts[2];
+    if (!tenantId || !connectionId) return;
+    const digest = createHash("sha256")
+        .update(lp(tenantId) + lp(connectionId), "utf8")
+        .digest("hex")
+        .slice(0, 32);
+    rows.push("| " + connectionId + " | " + enabled + " | inflect-posture-" + digest + " |");
+});
+lines.on("close", function () {
+    console.log("| connection | enabled | expected provider |");
+    console.log("| --- | --- | --- |");
+    for (const r of rows) console.log(r);
+    console.log("");
+    console.log("posture connections: " + rows.length);
+});
+'
+
 case "$CHECK" in
 containers)
     echo "## Containers"
@@ -362,6 +415,46 @@ FROM "AutomationRule" WHERE status = 'ENABLED' AND "deletedAt" IS NULL GROUP BY 
 SELECT "actionType" AS action_type, count(*) AS enabled_rules
 FROM "AutomationRule" WHERE status = 'ENABLED' AND "deletedAt" IS NULL GROUP BY 1 ORDER BY 1;
 SQL
+    ;;
+
+posture-provider-names)
+    # #5476: the gateway provider name the product WILL attach for each posture
+    # connection, so the operator can `provider create` each one holding that
+    # connection's own cloud credential.
+    #
+    # The product never creates a provider. Writing a provider's credential needs
+    # gateway-wide mTLS with OU=operator, and that certificate is deliberately
+    # absent from both VMs; the app's identity is OU=openshell-user, which reaches
+    # attach, exec and the readiness read and none of the operator surface. So the
+    # operator provisions and the product attaches (owner decision) — and this
+    # check is how the operator learns which names to provision.
+    #
+    # Until a connection's provider exists, its sandboxed collection refuses by
+    # name rather than attaching somebody else's credential (#5251, #5475).
+    echo "## Expected posture provider names (#5476)"
+    echo
+    echo "Provision each with the operator certificate, holding that connection's own"
+    echo "cloud credential. The product attaches by name and never writes one."
+    echo
+    # TWO STEPS rather than one pipeline, so the heredoc marker is the last token
+    # on its line: the read-only-query guard extracts every heredoc and requires
+    # each to begin with SELECT, and a trailing pipe sharing that line would land
+    # inside the extracted text. Keeping that guard's reading simple is worth one
+    # variable. (This comment names no marker either, for the same reason — the
+    # guard finds heredocs by splitting on the literal.)
+    #
+    # `$rows` holds `tenantId|id|isEnabled` per connection and is never echoed —
+    # it goes straight into the digest step, which prints the connection and the
+    # name and drops the tenant id.
+    rows="$(docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$(need postgres)" \
+        sh -c 'psql -X -q -At -F "|" -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT "tenantId", id, "isEnabled"
+FROM "IntegrationConnection"
+WHERE provider IN ('aws-posture', 'azure-posture', 'gcp-posture')
+ORDER BY id;
+SQL
+)"
+    printf '%s\n' "$rows" | docker exec -i "$(need app)" node -e "$POSTURE_NAME_RECIPE"
     ;;
 
 tei-embed-timing)

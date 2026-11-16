@@ -502,6 +502,71 @@ because a version this product already knows is not an observation.
 design — the cap is a runtime budget — so the page will usually say "did not
 answer", and that is the honest reading rather than an alarm.
 
+## Provisioning a posture collector's credential provider — #5476
+
+Sandboxed cloud-posture collection runs powerpipe in a sandbox and reads its
+credential from an **attached gateway provider and from nothing else** (the exec
+passes no environment, deliberately: an env var is readable by the third-party
+binary being confined, and it lands in a core dump and in `/proc/<pid>/environ`).
+
+**One provider per `(tenant, connection)`, and the operator creates each one.**
+Writing a provider's credential needs gateway-wide mTLS with `OU=operator`, and
+that certificate is absent from both VMs on purpose — see "Inbound
+authentication" above. The app's identity is `CN=openshell-client,
+OU=openshell-user`, which reaches `AttachSandboxProvider`, `ExecSandbox` and
+`GetSandboxProviderStatus` and none of the operator surface. So the division is
+fixed by the certificates rather than by convention: **the operator provisions,
+the product attaches.**
+
+Until a connection's provider exists, its collection refuses by name
+(`SANDBOX_PROVIDER_NOT_TENANT_SCOPED`, #5251/#5475) rather than attaching
+somebody else's credential. That refusal is the designed state, not a fault.
+
+### The steps
+
+1. **Read the expected names.** Dispatch the `VM check` workflow with
+   `posture-provider-names`. It prints one row per posture connection:
+
+   ```
+   | connection | enabled | expected provider |
+   | --- | --- | --- |
+   | clz1… | t | inflect-posture-<32 hex> |
+   ```
+
+   The names are derived from `(tenantId, connectionId)` and never move, so this
+   list is stable: a connection provisioned once stays provisioned. No tenant
+   identifier is printed — the run log is public.
+
+2. **Create each provider**, from the machine that holds the operator
+   certificate, with that connection's own cloud credential and a refresh
+   strategy. The credential never crosses the product's interface; it is
+   configured here exactly as the signing key is.
+
+3. **Turn the platform switch on** (`SANDBOX_EXECUTION_ENABLED=1`). With the
+   switch off, `collectorExecForDeploy()` returns `null` and collection stays on
+   the on-host path unchanged.
+
+### Reading a refusal
+
+| reported failure | what it means | what to do |
+| --- | --- | --- |
+| `SANDBOX_PROVIDER_NOT_TENANT_SCOPED` | no provider name for this connection | step 1, then step 2 |
+| `SANDBOX_PROVIDER_NOT_READY` | the provider exists; the gateway says its credential is not installed | read the state in the message — a withheld or failed credential is step 2 again, `PENDING` is propagation |
+| `SANDBOX_UNREACHABLE` | the gateway did not answer | the VM is stopped most of the time by design; check it is up |
+
+The middle row is the one worth knowing about: an attach is a **persisted
+intent**, not an installed credential, so the collector waits for the gateway's
+own readiness observation before it runs anything (#5739). A credential problem
+therefore reports as a credential problem rather than as an outage.
+
+### Adding a posture provider kind
+
+A fourth cloud posture provider widens `POSTURE_CONNECTION_PROVIDERS` in
+`src/app-layer/integrations/cloud-posture/provider-name.ts`, which is what the
+`posture-provider-names` check reads. A kind added without it gets a name nobody
+was told to provision, and every one of its scans refuses — so the test over that
+list is an exact equality rather than a floor.
+
 ## The VM, and the 5 USD/month cap it runs under
 
 Provisioned 2026-10-29 on the owner's instruction, with a hard **5 USD/month**
