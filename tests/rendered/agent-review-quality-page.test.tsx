@@ -30,6 +30,50 @@ jest.mock('@/app-layer/context', () => ({
     }),
 }));
 
+/*
+    THE ANSWERING QUEUE'S SEAM.
+
+    Two mocks, and each buys something different. The usecase mock keeps the real
+    module — and so Prisma, and so bullmq, which is ESM — out of a jsdom graph;
+    without it this suite fails to RUN rather than fails an assertion. The panel
+    stub is the seam itself: the panel has its own suite, and what is worth
+    asserting HERE is that the page hands it the server's verdict and labels
+    resolved on the server, which nothing else tests.
+*/
+const sampleAudits = [
+    {
+        id: 'sa-1',
+        proposalId: 'p-1',
+        proposalKind: 'RISK',
+        agentId: 'ag-1',
+        sampledAt: new Date('2026-11-10T09:00:00.000Z'),
+        approvedAt: new Date('2026-11-08T09:00:00.000Z'),
+        outcome: 'PENDING',
+        dissentCodes: [],
+        refusal: null,
+    },
+    {
+        id: 'sa-2',
+        proposalId: 'p-2',
+        proposalKind: 'POLICY',
+        agentId: null,
+        sampledAt: new Date('2026-11-11T09:00:00.000Z'),
+        approvedAt: null,
+        outcome: 'PENDING',
+        dissentCodes: [],
+        refusal: 'SELF_REVIEW',
+    },
+];
+jest.mock('@/app-layer/usecases/agent-proposal-sample-audit', () => ({
+    ANSWERABLE_OUTCOMES: ['CONCURRED', 'DISSENTED', 'INDETERMINATE'],
+    listSampleAuditsForReview: async () => sampleAudits,
+}));
+jest.mock('@/app/t/[tenantSlug]/(app)/agents/review-quality/SampleAuditQueue', () => ({
+    SampleAuditQueue: (props: unknown) => (
+        <div data-testid="sample-audit-queue-stub" data-props={JSON.stringify(props)} />
+    ),
+}));
+
 const report = {
     windowDays: 30,
     decided: 12,
@@ -87,6 +131,31 @@ async function renderPage() {
 }
 
 describe('review quality page', () => {
+    it('hands the answering panel the SERVER\'s verdict and server-resolved labels', async () => {
+        await renderPage();
+        const raw = screen.getByTestId('sample-audit-queue-stub').getAttribute('data-props');
+        if (!raw) throw new Error('the panel received no props');
+        const props = JSON.parse(raw) as {
+            rows: Array<Record<string, unknown>>;
+            outcomes: string[];
+            dissentCodes: string[];
+        };
+        // THE VERDICT, verbatim. A page that recomputed it — or dropped it —
+        // would offer an Answer control to the approver of the proposal.
+        expect(props.rows.map((r) => r.refusal)).toEqual([null, 'SELF_REVIEW']);
+        // Labels resolved here, so the panel holds no catalogue of its own.
+        expect(props.rows[0].agentLabel).toBe('Control reconciler');
+        expect(props.rows[1].agentLabel).toBe(EN.admin.reviewQuality.unattributed);
+        expect(props.rows[0].kindLabel).toBe('Risk');
+        // The codes are the module's seven, not a list the page spells.
+        expect(props.dissentCodes).toHaveLength(7);
+        expect(props.outcomes).not.toContain('PENDING');
+        // And no approver identity travelled with them.
+        expect(raw).not.toContain('reviewedByUserId');
+        expect(raw).not.toContain('approverUserId');
+    });
+
+
     it('names reviewers and agents instead of printing their ids', async () => {
         await renderPage();
         const reviewers = screen.getAllByTestId('review-quality-reviewer').map((el) => el.textContent);

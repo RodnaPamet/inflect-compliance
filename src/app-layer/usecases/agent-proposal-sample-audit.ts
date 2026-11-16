@@ -56,6 +56,11 @@ import {
     narrowDissentCodes,
     type SampleAuditDissentCode,
 } from '@/lib/agentic/proposal-sampling';
+import {
+    sampleAuditAnswerRefusal,
+    sampleAuditSelfReviewBasis,
+    type SampleAuditAnswerRefusal,
+} from '@/lib/agentic/sample-audit-answerability';
 import type { RequestContext } from '@/app-layer/types';
 
 /**
@@ -120,6 +125,115 @@ export async function listAgentProposalSampleAudits(
             take,
         }),
     );
+}
+
+/** One row of the answering queue, as `/agents/review-quality` renders it. */
+export type SampleAuditReviewRow = {
+    id: string;
+    proposalId: string;
+    /** What kind of record the approval created — the reviewer's first cue. */
+    proposalKind: string;
+    /** The agent that proposed it, for the page to resolve to a name. */
+    agentId: string | null;
+    sampledAt: Date;
+    /** When the approval under review was decided. */
+    approvedAt: Date | null;
+    outcome: AgentSampleAuditOutcome;
+    dissentCodes: string[];
+    /**
+     * Null when THIS caller may answer THIS row; otherwise the first refusal
+     * `recordSampleAuditOutcome` would reach, in the write's own order.
+     */
+    refusal: SampleAuditAnswerRefusal | null;
+};
+
+/**
+ * The answering queue with a per-row verdict on whether the caller may answer.
+ *
+ * `listAgentProposalSampleAudits` is the plain read, and the API route serves
+ * it. This one exists because a PAGE needs a second thing the plain read cannot
+ * give it: whether to offer an Answer control at all. An admin page offers a
+ * write only where the server takes it (#4467), and the hardest of the three
+ * conditions — the caller approved the proposal under review — is a fact about
+ * rows the queue does not contain.
+ *
+ * SO THE APPROVERS ARE READ AND THE VERDICT IS RETURNED, never the ids. The
+ * `reviewedByUserId` and signature rows go into `sampleAuditSelfReviewBasis`
+ * and are dropped on the floor; what crosses to the client is a
+ * `SampleAuditAnswerRefusal` or null. Who approved a proposal is not this
+ * surface's business to show — it is the review-quality report's, which names
+ * reviewers deliberately and under its own gate — and a client that held the
+ * ids could render a self-review refusal as an accusation naming somebody.
+ *
+ * It is a separate function rather than an option on the plain read because the
+ * extra `select` is a join per row: the API route serves callers who want the
+ * queue, and the page is the only caller that needs the verdict.
+ */
+export async function listSampleAuditsForReview(
+    ctx: RequestContext,
+    opts: { open?: boolean; take?: number } = {},
+): Promise<SampleAuditReviewRow[]> {
+    assertCanRead(ctx);
+    const take = Math.min(opts.take ?? 50, 200);
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.agentProposalSampleAudit.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                ...(opts.open === false ? {} : { outcome: 'PENDING' }),
+            },
+            // Oldest first, as the plain read is, and for its reason: an audit
+            // nobody ever answers is the failure mode this surface exists to
+            // make visible.
+            orderBy: { sampledAt: 'asc' },
+            take,
+            select: {
+                id: true,
+                proposalId: true,
+                sampledAt: true,
+                outcome: true,
+                dissentCodes: true,
+                proposal: {
+                    select: {
+                        kind: true,
+                        agentId: true,
+                        reviewedAt: true,
+                        reviewedByUserId: true,
+                        approvals: {
+                            // The same filter the write uses, for the same
+                            // reason: a REJECTED signature is not an approval
+                            // and a PENDING row records no judgement.
+                            where: { outcome: { in: ['ACCEPTED', 'EDITED'] } },
+                            select: { approverUserId: true },
+                        },
+                    },
+                },
+            },
+        }),
+    );
+
+    return rows.map((row) => ({
+        id: row.id,
+        proposalId: row.proposalId,
+        proposalKind: row.proposal.kind,
+        agentId: row.proposal.agentId,
+        sampledAt: row.sampledAt,
+        approvedAt: row.proposal.reviewedAt,
+        outcome: row.outcome,
+        dissentCodes: row.dissentCodes,
+        refusal: sampleAuditAnswerRefusal({
+            canWrite: ctx.permissions.canWrite,
+            selfReviewBasis: sampleAuditSelfReviewBasis(
+                {
+                    reviewedByUserId: row.proposal.reviewedByUserId,
+                    countedApproverUserIds: row.proposal.approvals.map(
+                        (a) => a.approverUserId,
+                    ),
+                },
+                ctx.userId,
+            ),
+            alreadyAnswered: row.outcome !== 'PENDING',
+        }),
+    }));
 }
 
 /**
@@ -255,13 +369,27 @@ export async function recordSampleAuditOutcome(
     // counted signature on the proposal. Both are "the approver" for the purpose
     // of the control; the two are distinguished only in the audit row below, so a
     // reader can tell a single-approver self-review from a first-signer one.
-    const isFinalReviewer =
-        audit.proposal.reviewedByUserId !== null
-        && audit.proposal.reviewedByUserId === ctx.userId;
-    const heldASignature = audit.proposal.approvals.some(
-        (a) => a.approverUserId === ctx.userId,
+    //
+    // The comparison itself lives in `sampleAuditSelfReviewBasis` because the
+    // review-quality page has to reach the same verdict to decide whether to
+    // offer an Answer control at all (#4467). A second copy of it in the page
+    // would be a copy that could forget the FIRST signer, which is the half
+    // #5112 added.
+    const selfReviewBasis = sampleAuditSelfReviewBasis(
+        {
+            reviewedByUserId: audit.proposal.reviewedByUserId,
+            countedApproverUserIds: audit.proposal.approvals.map((a) => a.approverUserId),
+        },
+        ctx.userId,
     );
-    if (isFinalReviewer || heldASignature) {
+    // Re-derived as a boolean purely so the audit row below keeps naming its
+    // two possible values as LITERALS. `tests/guards/no-raw-prompt-logging.ts`
+    // counts a field bound to an identifier as a position it cannot analyse, and
+    // this refactor was meant to move where the VERDICT is computed, not to make
+    // what reaches a hash-chained row any less legible to the scanner that reads
+    // that path. The emitted row is byte-identical to the one before it.
+    const isFinalReviewer = selfReviewBasis === 'reviewed_by';
+    if (selfReviewBasis !== null) {
         await appendAuditEntry({
             tenantId: ctx.tenantId,
             userId: ctx.userId,

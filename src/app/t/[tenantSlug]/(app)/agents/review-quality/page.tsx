@@ -7,6 +7,12 @@ import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { mayReadAgentActivity } from '@/lib/permissions';
 import { getTenantCtx } from '@/app-layer/context';
 import { computeAgentReviewQuality, readReviewQualityNames } from '@/app-layer/usecases/agent-review-quality';
+import {
+    ANSWERABLE_OUTCOMES,
+    listSampleAuditsForReview,
+} from '@/app-layer/usecases/agent-proposal-sample-audit';
+import { SAMPLE_AUDIT_DISSENT_CODES } from '@/lib/agentic/proposal-sampling';
+import { SampleAuditQueue } from './SampleAuditQueue';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
@@ -79,6 +85,16 @@ export default async function AgentReviewQualityPage({
     // outstanding pattern is found, so a refused caller must not reach it.
     const report = await computeAgentReviewQuality(ctx);
 
+    /*
+        The answering queue, read here rather than fetched by the panel.
+
+        The per-row verdict on whether THIS viewer may answer is a server fact —
+        it reads the proposal's approvers — so the page that offers the control
+        is the page that has to ask for it (#4467). Read before the name lookup
+        below so the queue's agents are resolved in the same query.
+    */
+    const sampleAudits = await listSampleAuditsForReview(ctx);
+
     // Names, not ids: the page judges how PEOPLE review (#4932).
     const names = await readReviewQualityNames(ctx, {
         reviewerUserIds: [
@@ -88,6 +104,7 @@ export default async function AgentReviewQualityPage({
         agentIds: [
             ...report.agents.map((a) => a.agentId).filter((id): id is string => !!id),
             ...report.signals.filter((s) => s.scope === 'AGENT' && s.subjectId).map((s) => s.subjectId as string),
+            ...sampleAudits.map((a) => a.agentId).filter((id): id is string => !!id),
         ],
     });
     const reviewerName = (id: string) => names.reviewers[id] ?? t('reviewQuality.formerMember');
@@ -112,6 +129,21 @@ export default async function AgentReviewQualityPage({
         }
         return reviewerName(id);
     };
+
+    /*
+        Both labels are resolved HERE, not in the panel: the kind catalogue is
+        `agents.proposals.kind.*`, which the proposal queue already owns, and the
+        agent names come from the lookup above. The panel renders strings, so it
+        needs neither catalogue and holds no label logic of its own.
+    */
+    const sampleAuditRows = sampleAudits.map((a) => ({
+        id: a.id,
+        agentLabel: agentLabel(a.agentId),
+        kindLabel: tAgents(`proposals.kind.${a.proposalKind}`),
+        sampledAt: a.sampledAt.toISOString(),
+        approvedAt: a.approvedAt ? a.approvedAt.toISOString() : null,
+        refusal: a.refusal,
+    }));
 
     const pct = (rate: number) => Math.round(rate * 100);
     const secs = (n: number) => Math.round(n * 10) / 10;
@@ -169,6 +201,25 @@ export default async function AgentReviewQualityPage({
                         </li>
                     ))}
                 </ul>
+            </section>
+
+            {/*
+                OUTSIDE the `decided === 0` branch below, deliberately. That
+                branch is about the DECISION window; a sample audit drawn weeks
+                ago is still open and still somebody's to answer, so hiding the
+                queue on a quiet window would hide exactly the backlog this
+                surface exists to show.
+            */}
+            <section className="space-y-default" data-testid="sample-audit-section">
+                <Heading level={3} as="h2">
+                    {tAgents('sampleAudit.title')}
+                </Heading>
+                <p className="text-sm text-content-muted">{tAgents('sampleAudit.intro')}</p>
+                <SampleAuditQueue
+                    rows={sampleAuditRows}
+                    outcomes={ANSWERABLE_OUTCOMES}
+                    dissentCodes={[...SAMPLE_AUDIT_DISSENT_CODES]}
+                />
             </section>
 
             {report.decided === 0 ? (
