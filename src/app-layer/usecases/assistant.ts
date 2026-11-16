@@ -32,7 +32,19 @@ import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewReq
 import { getDashboardData } from './dashboard';
 import { runInTenantContext } from '@/lib/db-context';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
-import { RESIDENCY_SELECT, residencyTermsFrom, resolveFlueModel } from '@/lib/agentic/flue/model-selection';
+import {
+    RESIDENCY_SELECT,
+    providerIdOf,
+    residencyTermsFrom,
+    resolveFlueModel,
+    type FlueModelSelection,
+} from '@/lib/agentic/flue/model-selection';
+import {
+    EXTERNAL_AI_ACK_SELECT,
+    acknowledgementFrom,
+    externalResidencyRefusal,
+    type ExternalAiAcknowledgement,
+} from '@/lib/agentic/external-residency-gate';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { assistantTools, offeredProposeKinds, type ProposalOutcome } from '@/app-layer/ai/assistant/tools';
 import { assistantProviderFor } from '@/app-layer/ai/assistant/turn-provider';
@@ -637,6 +649,43 @@ interface ToolLoopObservers {
     readonly onHalt?: (outcome: LoopOutcome, notice: string) => void;
 }
 
+/**
+ * The named reason on the refusal a turn gets when it would send a
+ * business-system connection's rows to an external model with no
+ * acknowledgement on record (#3872; owner decision 2026-11-16). The stream
+ * reads it to say what happened; the `/ask` route returns it in the 403.
+ */
+export const ASSISTANT_EXTERNAL_AI_TRANSFER_REFUSED = 'EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED';
+
+/** The two per-tenant postures a turn needs, read together. */
+interface AssistantPostures {
+    readonly residency: FlueModelSelection;
+    readonly acknowledgement: ExternalAiAcknowledgement;
+}
+
+/**
+ * The tenant's residency terms and its business-data transfer acknowledgement,
+ * in ONE read, as both run drivers' `posturesFor` read them (#5364). One read
+ * so the two cannot disagree: a residency read from one moment and an
+ * acknowledgement from another could clear a turn that neither moment would
+ * have cleared. `EXTERNAL_AI_ACK_SELECT` stays separate from `RESIDENCY_SELECT`
+ * for the reason its docblock gives, and is spread beside it here.
+ *
+ * THROUGH `runInTenantContext`, not the global client.
+ * `tests/unit/no-direct-prisma.test.ts` forbids a usecase importing
+ * `@/lib/prisma`, and the read is tenant-scoped, so it belongs inside the RLS
+ * context like every other read on this path.
+ */
+async function assistantPosturesFor(ctx: RequestContext): Promise<AssistantPostures> {
+    const settings = await runInTenantContext(ctx, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { ...RESIDENCY_SELECT, ...EXTERNAL_AI_ACK_SELECT },
+        }),
+    );
+    return { residency: residencyTermsFrom(settings), acknowledgement: acknowledgementFrom(settings) };
+}
+
 async function answerFromToolLoop(
     ctx: RequestContext,
     question: string,
@@ -644,23 +693,13 @@ async function answerFromToolLoop(
     contextBlock: string | null = null,
     history: readonly AssistantHistoryTurn[] = [],
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy } | null> {
-    // THROUGH `runInTenantContext`, not the global client. `tests/unit/no-direct-prisma.test.ts`
-    // forbids a usecase importing `@/lib/prisma` — and the reason is the one that
-    // matters here rather than tidiness: this read is tenant-scoped, so it belongs
-    // inside the RLS context like every other read on this path. The same
-    // correction `risk-suggestions.ts` already carries: "the read stays here, on
-    // the `db` this block already holds".
-    const secSettings = await runInTenantContext(ctx, (db) =>
-        db.tenantSecuritySettings.findUnique({
-            where: { tenantId: ctx.tenantId },
-            select: RESIDENCY_SELECT,
-        }),
-    );
+    const postures = await assistantPosturesFor(ctx);
     // AI sovereignty: the residency posture decides the model, and LOCAL_ONLY
-    // short-circuits before any external consideration. Never `setProvider` —
-    // see the header on `tool-loop.ts` for why a race here is a cross-tenant
-    // egress rather than a flake.
-    const choice = resolveFlueModel(residencyTermsFrom(secSettings));
+    // short-circuits before any external consideration — including the
+    // transfer gate below, which a turn that calls no model never reaches.
+    // Never `setProvider` — see the header on `tool-loop.ts` for why a race
+    // here is a cross-tenant egress rather than a flake.
+    const choice = resolveFlueModel(postures.residency);
     const configured = choice.ok ? assistantProviderFor(choice, env) : null;
     if (!choice.ok || configured === null) {
         // Said, not silent: an operator reading the logs of a deployment whose
@@ -708,6 +747,54 @@ async function answerFromToolLoop(
     // here attributed that property to the deleted branches, which would have
     // sent a reader to restore the wrong mechanism.
     const set = assistantTools(inv, { readOnly: false });
+
+    // ── ROUTING AN ERP'S ROWS OUTSIDE THE DEPLOYMENT IS A TRANSFER (#3872) ──
+    //
+    // Asked here for the reasons both run engines ask it where they do (#5364;
+    // owner decision 2026-11-16 for the assistant): AFTER the offer, because a
+    // tool withheld from it transfers nothing, and BEFORE the loop's first
+    // model call, because after one the transfer this gate exists to refuse has
+    // happened. A session user is offered no external tool (no grants), so this
+    // passes for them; an API key bound to a registered agent is offered that
+    // agent's granted external tools, and that is the case it refuses.
+    //
+    // ONCE PER TURN, over the offered set, as the engines judge it once per
+    // run. The set cannot change inside a turn: `runAssistantLoop` is handed
+    // `set.tools` once and offers the same array on every round trip, and the
+    // provider replays the same `tools` (a changed tools array would also break
+    // the replayed thinking blocks' prefix). The acknowledgement travels with
+    // the turn, read once above, for the reason the drivers give: the question
+    // is what permitted this turn.
+    //
+    // The whole turn refuses, never by dropping the business-system tools and
+    // answering anyway, and never by falling back to the keyword router: an
+    // answer about an ERP the assistant was silently stopped from reading is
+    // worse than a refusal that says why.
+    const transferRefusal = externalResidencyRefusal({
+        providerId: providerIdOf(choice.specifier),
+        offered: set.externalConnections.map((c) => ({
+            name: c.connectionName,
+            connectionId: c.connectionId,
+            connectionName: c.connectionName,
+            reachesBusinessSystem: c.reachesBusinessSystem,
+        })),
+        acknowledgement: postures.acknowledgement,
+        enginePrefix: 'assistant',
+    });
+    if (transferRefusal) {
+        // A count, never the names or the question: the names reach the caller
+        // in the refusal itself, and the log is the operator's signal that the
+        // gate is firing.
+        logger.warn('assistant.external_ai_transfer_refused', {
+            component: 'assistant',
+            tenantId: ctx.tenantId,
+            connections: transferRefusal.connectionNames.length,
+        });
+        throw new ForbiddenError(transferRefusal.message, {
+            reason: ASSISTANT_EXTERNAL_AI_TRANSFER_REFUSED,
+            connectionNames: transferRefusal.connectionNames,
+        });
+    }
 
     const result = await runAssistantLoop({
         provider,
@@ -925,8 +1012,14 @@ export async function streamAssistant(
         // is provable (#5054): it fires before `produce`, so no tool ran and
         // no proposal exists. Checked first, by its named reason, so it gets
         // the sentence that says so and tells the person how to continue.
+        // A TRANSFER refusal is the other provable case: the gate fires after
+        // the offer and before the loop's first model call, so no model was
+        // called, no tool ran and no proposal exists. It names the connections
+        // because the remedy is an administrator's, and they must know which.
         const refusal = isHistoryRefusal(err)
             ? HISTORY_REFUSAL_SENTENCE
+            : isTransferRefusal(err)
+            ? transferRefusalSentence(err)
             : isGuardRefusal(err)
             ? 'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. If you asked me to raise something, check the agent-proposals review queue before asking again.'
             : 'The assistant could not complete this. If you asked me to raise something, check the agent-proposals review queue before asking again — it may already be there.';
@@ -961,6 +1054,26 @@ function isHistoryRefusal(err: unknown): boolean {
     return (
         err instanceof ForbiddenError &&
         (err.details as { reason?: unknown } | undefined)?.reason === ASSISTANT_HISTORY_REFUSED
+    );
+}
+
+function isTransferRefusal(err: unknown): err is ForbiddenError {
+    return (
+        err instanceof ForbiddenError &&
+        (err.details as { reason?: unknown } | undefined)?.reason === ASSISTANT_EXTERNAL_AI_TRANSFER_REFUSED
+    );
+}
+
+/** The stream's sentence for a turn the external-AI transfer gate refused. */
+export function transferRefusalSentence(err: ForbiddenError): string {
+    const names = (err.details as { connectionNames?: unknown } | undefined)?.connectionNames;
+    const list = Array.isArray(names) ? names.filter((n): n is string => typeof n === 'string') : [];
+    return (
+        'This question was not sent to the assistant: answering it would send data from ' +
+        (list.length === 0 ? 'a connection' : list.join(', ')) +
+        ', marked as carrying third-party business or personal data, to an external model provider, ' +
+        'and nobody has acknowledged that transfer for this workspace. No model was called, no tool ran ' +
+        'and nothing was created. An administrator can record the acknowledgement on Admin → Security settings.'
     );
 }
 

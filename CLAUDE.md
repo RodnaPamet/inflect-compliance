@@ -3238,8 +3238,12 @@ call** (#5364). `externalResidencyRefusal` (`src/lib/agentic/external-residency-
 judges the OFFERED set against the tenant's business-data acknowledgement
 (#3872). A refusal fails the whole run with
 `<engine>_external_ai_business_data_unacknowledged`. The Tool Runner did not ask
-until #5364, so it sent an ERP's rows to Anthropic unacknowledged. Two rules
-that are easy to undo:
+until #5364, so it sent an ERP's rows to Anthropic unacknowledged. The
+in-product assistant asks it too (owner decision 2026-11-16): an API key bound
+to an agent is offered that agent's external tools at `/assistant/*`, so the
+turn is judged between the offer and the loop, and a refusal is a 403 (`/ask`)
+or a `refusal` event (stream) with reason
+`EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED`. Two rules that are easy to undo:
 
   - **Inside is NAMED; every other route is outside.** The gate lets only
     `FLUE_PROVIDER_IDS.local` through without an acknowledgement. It used to

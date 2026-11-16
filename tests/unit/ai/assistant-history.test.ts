@@ -54,6 +54,9 @@ jest.mock('@/lib/mcp/auth', () => ({
     resolveMcpInvocation: jest.fn(async () => ({ ctx: { tenantId: 't1' } })),
 }));
 jest.mock('@/lib/agentic/flue/model-selection', () => ({
+    // The real module underneath (`providerIdOf`, `FLUE_PROVIDER_IDS`): the
+    // external-AI transfer gate reads both since the owner's 2026-11-16 decision.
+    ...jest.requireActual('@/lib/agentic/flue/model-selection'),
     RESIDENCY_SELECT: { aiResidency: true },
     residencyTermsFrom: () => ({}),
     resolveFlueModel: () => ({ ok: true, specifier: 'inflect-external/claude-haiku-4-5' }),
@@ -126,6 +129,7 @@ function readToolSet() {
         ],
         reviewRequired: () => false,
         omitted: [],
+        externalConnections: [],
         proposals: () => [],
     });
 }
@@ -492,6 +496,7 @@ function quarantiningToolSet() {
         ],
         reviewRequired: () => false,
         omitted: [],
+        externalConnections: [],
         proposals: () => outcomes,
     });
 }
