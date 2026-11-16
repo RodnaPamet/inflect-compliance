@@ -26,7 +26,7 @@ inflect · ai architecture · vector store · roadmap v2 · 2026-11-11
 | Wave | 1 (the first Layer 4 wave, zero-GPU) — see master § Sequencing. Phase 4 (Weaviate) is conditional and has no wave until a floor is missed |
 | Depends on | a Postgres image that carries the pgvector extension (Phase 1.1 — the image on the VM today does not); **an embedding provider to be useful** → [`nemotron-retriever.md`](./nemotron-retriever.md) |
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
-| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. **D-L4-8** decided 2026-11-12 (owner): the self-built Postgres image keeps the 2026-10-10 tag rule, rebuilt weekly and whenever the upstream `16-alpine` digest changes, as a moving line tag plus an immutable per-build tag. **D-L4-7** (lexical arm: a keyed blind-token index) and **D-L4-9** (the floors that trigger Phase 4: recall@10 at least 0.95 of exact, p95 at most 300 ms at `k = 10`) are recorded as decided on 2026-11-12 in the master's decision table. Open, raised here: whether D-L4-9's two values also decide whether `search_knowledge` is offered at all (Phase 3.5 holds them as **proposed** constants until the owner says so) |
+| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. **D-L4-8** decided 2026-11-12 (owner): the self-built Postgres image keeps the 2026-10-10 tag rule, rebuilt weekly and whenever the upstream `16-alpine` digest changes, as a moving line tag plus an immutable per-build tag. **D-L4-7** (lexical arm: a keyed blind-token index) and **D-L4-9** (the floors that trigger Phase 4: recall@10 at least 0.95 of exact, p95 at most 300 ms at `k = 10`) are recorded as decided on 2026-11-12 in the master's decision table. **D-L4-9 amended 2026-11-16** (owner): the same two values also decide whether `search_knowledge` is offered (Phase 3.5's gate), until Ragas Phase 2's answer-quality floors join them; the figures are measured on a probe tenant of 5,000 chunks in an index of 4 times that, re-sized once production's largest tenant is indexed |
 | Complete at | Phase 3. Phase 4 runs only if Phase 3's record misses a floor; until then it is not part of completion |
 
 ## At a glance
@@ -185,9 +185,15 @@ flowchart LR
   and `guardEgress` like any read result. It is offered only while the mount
   gate (`services/knowledge-search-mount.ts`) finds a passing RAG evaluation
   record for the deployment's retriever revision
-  (`services/knowledge-search-revision.ts`), and **none exists**, so the tool
-  is in no catalogue today; with the store and route on, a run granted it
-  records `RETRIEVER_NOT_EVALUATED`.
+  (`services/knowledge-search-revision.ts`) — one whose recomputed figures
+  meet D-L4-9's two floors, which the owner decided on 2026-11-16 gate the tool
+  as well as Phase 4 — and **none exists**, so the tool is in no catalogue
+  today; with the store and route on, a run granted it records
+  `RETRIEVER_NOT_EVALUATED`. The Ragas nightly measures both figures and keys
+  its output by that same revision (`scripts/rag-eval/search-seam.ts`), so the
+  record it writes is the one the gate looks up; it writes none until Ragas
+  1.2's answer half (the harness's answer route) exists
+  ([note](../implementation-notes/2026-11-16-rag-eval-gate-wiring.md)).
   The questionnaire feature still grounds answers from the answer library and
   ships evidence *titles* only, and agents otherwise read through the audited
   MCP read tools (`src/lib/mcp/tools/`)
@@ -646,12 +652,15 @@ all. The same record measures the floors that decide whether Phase 4 ever runs.
       whose `retrieverRevision` keys equal to `knowledgeRetrieverRevision(route)`
       decides, checked by Ragas Phase 0's own `checkRagEvaluationRecord`
       against the AUTHORED set it hashes to and the cost meter's price table
-      and share, refused when a budget stopped it, and held to
-      `PROPOSED_RECALL_AT_10_FLOOR` (0.95) and `PROPOSED_P95_LATENCY_CEILING_MS`
-      (300). The two values are D-L4-9's, which the master records as the
-      Weaviate trigger; using them as the mount condition too is **proposed**
-      and waits on the owner, and Ragas Phase 2.1's per-metric floors are not
-      read yet. Closed, the tool is in no catalogue (`src/lib/mcp/mount-gated-tools.ts`)
+      and share, refused when a budget stopped it, and held to D-L4-9's two
+      floors (recall@10 at least 0.95 of exact, p95 at most 300 ms). The owner
+      decided on 2026-11-16 that the Weaviate trigger's values also gate the
+      tool; they are written once, in `src/lib/ai/evals/rag-retrieval-floors.ts`,
+      and the gate reads a record's figures through `readRetrievalFloors`, as
+      the Ragas nightly does (`tests/unit/rag-eval-gate-agreement.test.ts`
+      holds the two verdicts equal). Ragas Phase 2.1's answer-quality floors
+      join the gate when Phase 2 defines them; until then the retrieval floors
+      are the only ones it checks. Closed, the tool is in no catalogue (`src/lib/mcp/mount-gated-tools.ts`)
       and a call to it is an unknown tool; while the store and route are on, a
       run that would have been offered it records `RETRIEVER_NOT_EVALUATED`,
       and its empty-catalogue message says so
@@ -664,11 +673,26 @@ all. The same record measures the floors that decide whether Phase 4 ever runs.
       two retrieval figures, computed by the harness on the seed corpus scaled
       to a stated multiple of the largest tenant's chunk count: recall@10 of the
       indexed, RLS-filtered query against an exact scan of the same tenant, and
-      p95 latency of `search` at `k = 10`. Proposed floors, for the owner to
-      confirm or change before they bind: recall@10 at least 0.95 of exact, p95
-      at most 300 ms on the VM. A miss on two consecutive nightly records,
-      after the tuning in 3.2, is the trigger for Phase 4; one miss is a
-      tuning task.
+      p95 latency of `search` at `k = 10`. Floors (D-L4-9, decided 2026-11-12):
+      recall@10 at least 0.95 of exact, p95 at most 300 ms on the VM. A miss on
+      two consecutive nightly records, after the tuning in 3.2, is the trigger
+      for Phase 4; one miss is a tuning task. *Partly done 2026-11-16, and
+      what is true today:* **the figures are produced** — the Ragas nightly
+      (`rag-eval.yml`) measures both every night it runs, on a probe tenant of
+      5,000 chunks in an index of 4 times that (the scale the owner decided
+      on 2026-11-16, re-sized once production's largest tenant is indexed),
+      on the product's own call — the 20-deep, source-filtered query
+      `searchKnowledge` issues (`knowledgeVectorQuery`), through
+      `VectorRepository.search` pinned to the index path (`strategy: 'index'`,
+      `HNSW_SEARCH`); recall over its first 10 against the exact top 10 the
+      stage computes under the same filter, latency the p95 of the whole
+      20-deep call (D-L4-9 as amended 2026-11-16); **the record/gate path is wired** — its output is keyed by
+      `knowledgeRetrieverRevision`, the revision this gate compares, and read
+      against the same floors. **No record can pass yet**: a record needs
+      answers, and the answer half of Ragas 1.2 (the harness's answer route)
+      is not built, so the nightly writes the figures and no record, and the
+      gate stays closed. The latency a CI runner measures is not the VM's,
+      which D-L4-9 states its ceiling for.
 
 **Prompt.**
 ```text

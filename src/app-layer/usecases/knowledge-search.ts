@@ -42,6 +42,7 @@ import {
     VectorStoreError,
     type VectorMatch,
     type VectorRepository,
+    type VectorSearchQuery,
 } from '@/app-layer/repositories/VectorRepository';
 import { KnowledgeChunkRepository } from '@/app-layer/repositories/KnowledgeChunkRepository';
 import { assertCanReadPolicies } from '@/app-layer/policies/policy.policies';
@@ -120,7 +121,7 @@ export interface KnowledgeSearchDeps {
 }
 
 /** The source models this caller may read, in index order; throws the first refusal when none. */
-function readableSourceModels(ctx: RequestContext): KnowledgeSourceModel[] {
+export function readableSourceModels(ctx: RequestContext): KnowledgeSourceModel[] {
     const admitted: KnowledgeSourceModel[] = [];
     let firstRefusal: unknown = null;
     for (const model of KNOWLEDGE_SOURCE_MODELS) {
@@ -133,6 +134,23 @@ function readableSourceModels(ctx: RequestContext): KnowledgeSourceModel[] {
     }
     if (admitted.length === 0) throw firstRefusal;
     return admitted;
+}
+
+/**
+ * THE store query `searchKnowledge` issues for a caller: the revision's depth
+ * (`KNOWLEDGE_RETRIEVAL_K`, whatever `k` the caller asked for) over the
+ * source models the caller may read, on the store's default strategy. The
+ * Ragas probe builds its ANN arm from this function
+ * (`scripts/rag-eval/search-seam.ts`), so the figures a record carries are
+ * measured on the product's own call; `tests/unit/rag-eval-gate-agreement.test.ts`
+ * fails if the two ever differ in depth or filter.
+ */
+export function knowledgeVectorQuery(
+    ctx: RequestContext,
+    embeddingRevision: string,
+    embedding: readonly number[],
+): VectorSearchQuery & { readonly sourceModels: readonly KnowledgeSourceModel[] } {
+    return { embeddingRevision, embedding, k: KNOWLEDGE_RETRIEVAL_K, sourceModels: readableSourceModels(ctx) };
 }
 
 export async function searchKnowledge(
@@ -169,12 +187,7 @@ export async function searchKnowledge(
 
     let matches: VectorMatch[];
     try {
-        matches = await vectors.search(ctx, {
-            embeddingRevision: provider.model,
-            embedding: embedded.vectors[0],
-            k: KNOWLEDGE_RETRIEVAL_K,
-            sourceModels,
-        });
+        matches = await vectors.search(ctx, knowledgeVectorQuery(ctx, provider.model, embedded.vectors[0]));
     } catch (err) {
         if (!(err instanceof VectorStoreError)) throw err;
         return { available: false, reason: 'STORE_REFUSED', detail: err.reason };

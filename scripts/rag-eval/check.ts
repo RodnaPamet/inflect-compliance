@@ -74,8 +74,8 @@ export function retrievalMarkdown(
         ``,
         `| Figure | Value | Floor (D-L4-9) | Reading |`,
         `| --- | --- | --- | --- |`,
-        `| recall@10 vs exact (${figures.recallScored} questions) | ${fmt(figures.recallAt10VsExact)} | at least ${reading.recallAt10VsExact.floor} | ${verdict(reading.recallAt10VsExact.meets)} |`,
-        `| p95 search latency, ms (${figures.latencySamples} samples) | ${fmt(figures.p95LatencyMs, 1)} | at most ${reading.p95LatencyMs.floor} | ${verdict(reading.p95LatencyMs.meets)} |`,
+        `| recall@10 (first 10 of the 20-deep call) vs exact (${figures.recallScored} questions) | ${fmt(figures.recallAt10VsExact)} | at least ${reading.recallAt10VsExact.floor} | ${verdict(reading.recallAt10VsExact.meets)} |`,
+        `| p95 latency of the product's 20-deep call, ms (${figures.latencySamples} samples) | ${fmt(figures.p95LatencyMs, 1)} | at most ${reading.p95LatencyMs.floor} | ${verdict(reading.p95LatencyMs.meets)} |`,
         ``,
         `A CI runner's latency is not the VM's; D-L4-9's latency floor is stated for the VM.`,
     ].join('\n');

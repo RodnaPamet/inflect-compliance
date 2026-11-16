@@ -161,6 +161,7 @@ describe('the retrieval stage', () => {
         expect(indexParamsFromPlans([none, hnsw], settings)).toMatchObject({ method: 'hnsw', efSearch: settings.efSearch, iterativeScan: settings.iterativeScan, maxScanTuples: 20000 });
         expect(() => indexParamsFromPlans([hnsw, { ...hnsw, hnswIndex: { indexname: 'other', indexdef: IDX } }], settings)).toThrow(/2 different HNSW indexes/);
         expect(() => indexParamsFromPlans([{ ...hnsw, maxScanTuples: null }], settings)).toThrow(/max_scan_tuples/);
+        expect(() => indexParamsFromPlans([{ ...hnsw, maxScanTuples: '1000' }], settings)).toThrow(/reports hnsw.max_scan_tuples 1000/);
     });
 
     it('maps hits to the set’s keys, and refuses a source the tenant does not hold', () => {
@@ -182,12 +183,21 @@ describe('the retrieval stage', () => {
         expect(() => assertPlansMatchRevision(hnsw, hnsw, [onIndex, onIndex])).not.toThrow();
     });
 
-    it('the seam is the one place the probe meets the search (main today: the index statement, strict order)', () => {
+    it('refuses a run searched with other settings than the revision states', () => {
+        const hnsw = hnswParamsFrom(IDX, { iterativeScan: 'relaxed_order', efSearch: 40, maxScanTuples: 20000 });
+        const onIndex = { hnswIndex: { indexname: 'e5_idx', indexdef: IDX } };
+        expect(() => assertPlansMatchRevision(hnsw, { ...hnsw, iterativeScan: 'strict_order' }, [onIndex])).toThrow(/searched with ef_search/);
+        expect(() => assertPlansMatchRevision(hnsw, { ...hnsw, efSearch: 64 }, [onIndex])).toThrow(/searched with ef_search/);
+        expect(() => assertPlansMatchRevision(hnsw, { ...hnsw, maxScanTuples: 1000 }, [onIndex])).toThrow(/searched with ef_search/);
+    });
+
+    it('the seam pins the index path, the store’s settings and the gate’s revision', () => {
         const q = { embeddingRevision: 'm', embedding: [1, 0], k: 10 };
-        expect(annQuery(q)).toEqual(q);
-        expect(searchSettings(10)).toEqual({ iterativeScan: 'strict_order', efSearch: 40, maxScanTuples: null });
-        expect(retrieverRevision({ model: 'm', dimensions: 2 }, { method: 'exact', distance: 'cosine' }, 10)).toEqual({
-            embeddingModel: 'm', rerankModel: null, chunker: 'paragraph@1', k: 10, dimensions: 2, indexParams: { method: 'exact', distance: 'cosine' },
+        expect(annQuery(q)).toEqual({ ...q, strategy: 'index' });
+        expect(searchSettings(10)).toEqual({ iterativeScan: 'relaxed_order', efSearch: 40, maxScanTuples: 20000 });
+        expect(searchSettings(64).efSearch).toBe(64);
+        expect(retrieverRevision({ model: 'm', dimensions: 2 })).toMatchObject({
+            embeddingModel: 'm', rerankModel: null, chunker: 'paragraph@1', k: 20, dimensions: 2, indexParams: { method: 'hnsw' },
         });
     });
 });

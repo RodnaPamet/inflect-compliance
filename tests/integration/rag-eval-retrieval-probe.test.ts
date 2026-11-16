@@ -9,11 +9,20 @@
  *   2. Every ANN and exact hit maps to one of the PROBE tenant's own sources:
  *      no other tenant's chunk ever reaches the probe (a hit on any other is
  *      refused, FOREIGN_SOURCE, and fails this test).
- *   3. The record's revision says what the store ran: the stub model has no
- *      HNSW index, so every question is planned exactly and recall@10 against
- *      the stage's own exact scan is 1 — measured, not assumed.
- *   4. The output is a valid retrieval half of a record: its probes and
- *      revision pass `RagEvaluationRecordSchema`.
+ *   3. The plans are read, not assumed: the stub model has no HNSW index, so
+ *      every question — the product's 20-deep call, asked on the index path,
+ *      `strategy: 'index'` — is planned exactly, and recall@10 of its first
+ *      10 against the stage's own exact top 10 is measured.
+ *   4. A record is keyed by the revision the `search_knowledge` mount gate
+ *      compares (`knowledgeRetrieverRevision`), which states the HNSW index,
+ *      so measurements whose questions were planned exactly cannot become
+ *      one: the probe refuses them (PLANS_DISAGREE_WITH_REVISION) rather than
+ *      let an exact scan's 1 stand for the index's recall. (Which plan the
+ *      planner picks for a corpus this small depends on the table's
+ *      statistics, so the suite does not try to force the indexed path; the
+ *      nightly's 5,000-chunk probe tenant is planned on the index.)
+ *   5. The measurements are a valid retrieval half of a record under that
+ *      revision: probes and revision pass `RagEvaluationRecordSchema`.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -23,12 +32,13 @@ import * as path from 'path';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { purgeSoftDeletedTenants } from '@/app-layer/usecases/tenant-purge';
-import { checkRagEvaluationSet, RagEvaluationRecordSchema, retrievalFloorFigures } from '@/lib/ai/evals/rag-record';
+import { checkRagEvaluationSet, ragSetHash, RagEvaluationRecordSchema, retrievalFloorFigures } from '@/lib/ai/evals/rag-record';
+import { knowledgeRetrieverRevision } from '@/app-layer/services/knowledge-search-revision';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { hashForLookup } from '@/lib/security/encryption';
 import { TENANT_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import { prepareRagEvalCorpus, type CorpusManifest } from '../../scripts/rag-eval/corpus';
-import { runRetrievalProbe, type ProbeOutput } from '../../scripts/rag-eval/probe';
+import { measureRetrieval, ProbeRefusal, runRetrievalProbe } from '../../scripts/rag-eval/probe';
 import { embedderDeps } from '../../scripts/rag-eval/shared';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }), transactionOptions: TENANT_TX_OPTIONS });
@@ -47,7 +57,8 @@ const templateIds: string[] = [];
 
 describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
     let manifest: CorpusManifest;
-    let output: ProbeOutput;
+    let measured: Awaited<ReturnType<typeof measureRetrieval>>;
+    let probed: unknown;
 
     beforeAll(async () => {
         const passages = SET.cases.flatMap((c) => c.groundTruth.refs.map((r) => r.passage));
@@ -63,7 +74,8 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
         }
         const deps = embedderDeps('stub', 384);
         manifest = await prepareRagEvalCorpus({ set: SET, probeTenantChunks: 120, scaleMultiple: 2, deps, slugPrefix: SUITE });
-        output = await runRetrievalProbe({ set: SET, manifest, k: 10, host: 'integration-test', deps });
+        measured = await measureRetrieval({ set: SET, manifest, host: 'integration-test', deps });
+        probed = await runRetrievalProbe({ set: SET, manifest, host: 'integration-test', deps }).catch((e: unknown) => e);
     });
 
     afterAll(async () => {
@@ -88,39 +100,55 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
         expect(manifest.answerTenant.sources.map((s) => s.kind).sort()).toEqual(['injected', 'seed-policy']);
         expect(manifest.probeTenant.sources.some((s) => s.kind === 'distractor')).toBe(true);
         expect(manifest.fillerTenants).toHaveLength(1);
-        expect(output.probeCorpus.tenantChunks).toBe(probeChunks);
-        expect(output.probeCorpus.tableChunks).toBeGreaterThanOrEqual(2 * probeChunks);
-        expect(output.probeCorpus.tenants).toBeGreaterThanOrEqual(3);
+        expect(measured.probeCorpus.tenantChunks).toBe(probeChunks);
+        expect(measured.probeCorpus.tableChunks).toBeGreaterThanOrEqual(2 * probeChunks);
+        expect(measured.probeCorpus.tenants).toBeGreaterThanOrEqual(3);
     });
 
     it('every hit is the probe tenant’s own, at depth 10', () => {
         const keys = new Set(manifest.probeTenant.sources.map((s) => s.sourceKey));
-        for (const c of output.cases) {
+        for (const c of measured.cases) {
             expect(c.retrievalProbe.exact).toHaveLength(10);
+            // The product's 20-deep call, its first 10 kept.
+            expect(c.retrievalProbe.ann).toHaveLength(10);
             for (const hit of [...c.retrievalProbe.ann, ...c.retrievalProbe.exact]) expect(keys.has(hit.sourceKey)).toBe(true);
         }
     });
 
-    it('states the plan the store ran: exact for a model with no HNSW index, and recall is measured as 1', () => {
-        expect(output.retrieverRevision).toMatchObject({ embeddingModel: 'stub-feature-hash@1', dimensions: 384, k: 10, rerankModel: null, chunker: 'paragraph@1' });
-        expect(output.retrieverRevision.indexParams).toEqual({ method: 'exact', distance: 'cosine' });
-        expect(output.annPlans).toEqual({ hnsw: 0, other: SET.cases.length });
-        expect(retrievalFloorFigures(output.cases)).toMatchObject({ recallAt10VsExact: 1, recallScored: SET.cases.length, latencySamples: SET.cases.length });
+    it('reads the plan the store ran: exact for a model with no HNSW index, and measures recall over every question', () => {
+        expect(measured.model).toBe('stub-feature-hash@1');
+        expect(measured.plans.filter((p) => p.hnswIndex)).toHaveLength(0);
+        expect(measured.plans).toHaveLength(SET.cases.length);
+        // Both arms are exact here, but recall is not 1 by construction: the
+        // ANN arm keeps the first 10 of the product's 20-deep call, and the
+        // stub's feature-hash vectors tie (same words, same vector), so a tie
+        // across the 10th place can be filled by different chunks at depth 20
+        // and at depth 10. Measured, never assumed.
+        const figures = retrievalFloorFigures(measured.cases);
+        expect(figures).toMatchObject({ recallScored: SET.cases.length, latencySamples: SET.cases.length });
+        expect(figures.recallAt10VsExact).not.toBeNull();
+        expect(figures.recallAt10VsExact).toBeGreaterThan(0.5);
+    });
+
+    it('refuses to key exact plans by the gate’s revision, which states the index', () => {
+        expect(knowledgeRetrieverRevision({ model: measured.model, dimensions: measured.dims }).indexParams.method).toBe('hnsw');
+        expect(probed).toBeInstanceOf(ProbeRefusal);
+        expect((probed as ProbeRefusal).reason).toBe('PLANS_DISAGREE_WITH_REVISION');
     });
 
     it('is the retrieval half of a valid record', () => {
         const record = {
-            setHash: output.setHash,
+            setHash: ragSetHash(SET),
             corpus: 'seed',
-            retrieverRevision: output.retrieverRevision,
+            retrieverRevision: knowledgeRetrieverRevision({ model: measured.model, dimensions: measured.dims }),
             judgeRevision: { provider: 'anthropic', model: 'claude-haiku-4-5', embeddingModel: 'm', ragasVersion: '0.4.3', priceTableHash: `sha256:${'0'.repeat(64)}` },
-            ranAt: output.ranAt,
+            ranAt: new Date().toISOString(),
             status: 'BUDGET_EXHAUSTED',
             spendUsd: 0,
-            probeCorpus: output.probeCorpus,
+            probeCorpus: measured.probeCorpus,
             cases: [],
         };
         expect(RagEvaluationRecordSchema.safeParse(record).success).toBe(true);
-        for (const c of output.cases) expect(RagEvaluationRecordSchema.shape.cases.element.shape.retrievalProbe.safeParse(c.retrievalProbe).success).toBe(true);
+        for (const c of measured.cases) expect(RagEvaluationRecordSchema.shape.cases.element.shape.retrievalProbe.safeParse(c.retrievalProbe).success).toBe(true);
     });
 });

@@ -5,16 +5,20 @@
  * For every question in the set, over the PROBE tenant `corpus.ts` built (the
  * seed policies plus distractors at the stated size):
  *
- *   ANN    the PRODUCT's search: `VectorRepository.search` at k = 10 under the
- *          evaluated tenant's context — the one seam every caller, the coming
- *          `search_knowledge` tool included, goes through. Its wall time is
- *          the latency sample (one untimed search first, so the first sample
- *          is not a cold connection).
- *   EXACT  computed HERE, not by the store: the store's own statement
- *          (`buildSearchQuery`, so the distance, the tenant filter and the
- *          tie-break are the ones the ANN ran) in a transaction of this
- *          stage's own, under the same tenant context and RLS, with index and
- *          bitmap scans switched off. Its plan is read once and refused if it
+ *   ANN    the PRODUCT's call: the store query `searchKnowledge` issues
+ *          (`knowledgeVectorQuery`: the revision's depth, 20, over the source
+ *          models the caller may read) through `VectorRepository.search`
+ *          under the evaluated tenant's context, pinned to the index path
+ *          (`strategy: 'index'`, the path the product takes above the
+ *          exact-scan threshold). Its first 10 are the recall@10 list; the
+ *          wall time of the whole 20-deep call is the latency sample (one
+ *          untimed search first, so the first sample is not a cold
+ *          connection). Owner decision 2026-11-16 (D-L4-9, amended).
+ *   EXACT  computed HERE, not by the store: the store's own statement at
+ *          depth 10 (`buildSearchQuery`, so the distance, the tenant filter,
+ *          the source filter and the tie-break are the ones the ANN ran) in
+ *          a transaction of this stage's own, under the same tenant context
+ *          and RLS, with index and bitmap scans switched off. Its plan is read once and refused if it
  *          touches an index: an "exact" list that came from the HNSW index
  *          would make recall 1 by construction.
  *
@@ -24,15 +28,17 @@
  *
  * The output carries what a record's retrieval half needs and nothing a record
  * must not hold: the set's hash, the retriever revision (`search-seam.ts`: the
- * one place this stage meets the search it measures), the corpus counts, and
+ * one place this stage meets the search it measures; the revision is the one
+ * the `search_knowledge` mount gate keys its records by), the corpus counts, and
  * each case's raw probe. Every question's ANN plan is read under the store's
  * settings, and a run whose plans disagree with the revision — `hnsw` stated,
- * a question planned on the tenant's B-tree and a sort — is refused. The figures are recomputed from the
- * probes by `rag-record.ts`, never written here.
+ * a question planned on the tenant's B-tree and a sort, or an index built or
+ * searched otherwise than the revision states — is refused. The figures are
+ * recomputed from the probes by `rag-record.ts`, never written here.
  *
  * Usage:
  *   npx tsx scripts/rag-eval/probe.ts --set evals/rag/sets/seed-policies.json \
- *       --manifest rag-out/corpus.json --k 10 --host github-actions-ubuntu-latest \
+ *       --manifest rag-out/corpus.json --host github-actions-ubuntu-latest \
  *       --out rag-out/retrieval.json [--embedder stub]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -45,7 +51,8 @@ import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext, runWithoutRls } from '@/lib/db/rls-middleware';
 import type { PrismaTx } from '@/lib/db-context';
 import { buildSearchQuery } from '@/app-layer/repositories/vector/pgvector-store';
-import type { VectorMatch } from '@/app-layer/repositories/VectorRepository';
+import type { VectorMatch, VectorSearchQuery } from '@/app-layer/repositories/VectorRepository';
+import { KNOWLEDGE_RETRIEVAL_K } from '@/app-layer/services/knowledge-search-revision';
 import { indexContext, readResidency, type KnowledgeIndexDeps } from '@/app-layer/services/knowledge-index';
 import { getEmbeddingProvider, type EmbeddingProvider } from '@/lib/ai/embeddings';
 import {
@@ -58,7 +65,7 @@ import {
 } from '@/lib/ai/evals/rag-record';
 
 import type { CorpusManifest, CorpusTenant } from './corpus';
-import { annQuery, retrieverRevision, searchSettings, type SearchSettings } from './search-seam';
+import { annQuery, productQuery, retrieverRevision, searchSettings, type SearchSettings } from './search-seam';
 import { assertLoopbackDatabase, embedderDeps, parseArgs, vectorsOf, type EmbedderMode } from './shared';
 
 type RetrieverRevision = RagEvaluationRecord['retrieverRevision'];
@@ -162,13 +169,12 @@ async function hnswIndexes(): Promise<Array<{ indexname: string; indexdef: strin
  */
 async function annPlanOf(
     ctx: RequestContext,
-    model: string,
-    embedding: readonly number[],
+    ann: VectorSearchQuery,
     dims: number,
     hnsw: ReadonlyArray<{ indexname: string; indexdef: string }>,
 ): Promise<{ hnswIndex: { indexname: string; indexdef: string } | null; maxScanTuples: string | null }> {
-    const settings = searchSettings(RECALL_AT);
-    const query = buildSearchQuery(ctx, { embeddingRevision: model, embedding, k: RECALL_AT }, dims);
+    const settings = searchSettings(ann.k);
+    const query = buildSearchQuery(ctx, ann, dims, 'index');
     const { names, maxScanTuples } = await runInTenantContext(ctx, async (tx) => {
         await tx.$queryRaw(Prisma.sql`
             SELECT set_config('hnsw.iterative_scan', ${settings.iterativeScan}, true),
@@ -194,20 +200,27 @@ export function indexParamsFromPlans(
     if (used.length > 1) {
         throw new ProbeRefusal('INDEX_UNREADABLE', `the questions were planned on ${used.length} different HNSW indexes`);
     }
-    const reported = used[0].maxScanTuples === null ? null : Number(used[0].maxScanTuples);
-    const tuples = settings.maxScanTuples ?? reported;
+    // What the server says it searched with, read after the settings were
+    // applied: a server that does not know the setting (pgvector before 0.8)
+    // or did not take the value is refused, never assumed.
+    const tuples = used[0].maxScanTuples === null ? null : Number(used[0].maxScanTuples);
     if (tuples === null || !Number.isInteger(tuples) || tuples < 1) {
         throw new ProbeRefusal('INDEX_UNREADABLE', 'the server did not report hnsw.max_scan_tuples');
+    }
+    if (settings.maxScanTuples !== null && tuples !== settings.maxScanTuples) {
+        throw new ProbeRefusal('INDEX_UNREADABLE', `the server reports hnsw.max_scan_tuples ${tuples}; the store sets ${settings.maxScanTuples}`);
     }
     return hnswParamsFrom(used[0].hnswIndex!.indexdef, { iterativeScan: settings.iterativeScan, efSearch: settings.efSearch, maxScanTuples: tuples });
 }
 
 /**
  * Refuse figures the plans do not support. A revision stating `hnsw` must have
- * had EVERY question planned on that HNSW index (with its build parameters),
- * or recall@10 would partly be the exact scan's 1, and the D-L4-9 floor gates
- * whether `search_knowledge` is offered; a revision stating `exact` must have
- * had none planned on an index.
+ * had EVERY question planned on that HNSW index, built and searched exactly as
+ * the revision states (distance, build parameters, `ef_search`, iterative scan
+ * mode, `max_scan_tuples`), or recall@10 would partly be the exact scan's 1 or
+ * another configuration's figure, and the D-L4-9 floor gates whether
+ * `search_knowledge` is offered; a revision stating `exact` must have had none
+ * planned on an index.
  */
 export function assertPlansMatchRevision(revision: IndexParams, observed: IndexParams, plans: ReadonlyArray<{ hnswIndex: unknown }>): void {
     const onIndex = plans.filter((p) => p.hnswIndex).length;
@@ -224,17 +237,27 @@ export function assertPlansMatchRevision(revision: IndexParams, observed: IndexP
     if (observed.method !== 'hnsw' || observed.m !== revision.m || observed.efConstruction !== revision.efConstruction || observed.distance !== revision.distance) {
         throw new ProbeRefusal('PLANS_DISAGREE_WITH_REVISION', 'the index the questions were planned on is not built as the revision states');
     }
+    if (observed.efSearch !== revision.efSearch || observed.iterativeScan !== revision.iterativeScan || observed.maxScanTuples !== revision.maxScanTuples) {
+        throw new ProbeRefusal(
+            'PLANS_DISAGREE_WITH_REVISION',
+            `the questions were searched with ef_search ${observed.efSearch}, ${observed.iterativeScan}, max_scan_tuples ${observed.maxScanTuples}; ` +
+                `the revision states ${revision.efSearch}, ${revision.iterativeScan}, ${revision.maxScanTuples}`,
+        );
+    }
 }
 
-/** The exact top-k over the tenant's rows: the store's statement, sequentially scanned, in a transaction of our own. */
+/**
+ * The exact top 10 over the tenant's rows under the ANN query's own filter:
+ * the store's statement at depth `RECALL_AT`, sequentially scanned, in a
+ * transaction of our own.
+ */
 async function exactTopK(
     ctx: RequestContext,
-    model: string,
-    embedding: readonly number[],
+    ann: VectorSearchQuery,
     dims: number,
     hnswNames: ReadonlySet<string>,
 ): Promise<VectorMatch[]> {
-    const query = buildSearchQuery(ctx, { embeddingRevision: model, embedding, k: RECALL_AT }, dims);
+    const query = buildSearchQuery(ctx, { ...ann, k: RECALL_AT }, dims, 'index');
     return runInTenantContext(ctx, async (tx) => {
         // The embedding table is read sequentially; the join to the chunk
         // table may still use its primary key, which decides no ranking.
@@ -288,14 +311,27 @@ async function corpusCounts(tenantId: string, model: string, host: string): Prom
 export interface ProbeOptions {
     readonly set: RagEvaluationSet;
     readonly manifest: CorpusManifest;
-    /** The answer path's k, stated in the revision; the probe itself always runs at 10. */
-    readonly k: number;
     readonly host: string;
     readonly deps?: KnowledgeIndexDeps;
     readonly now?: () => Date;
 }
 
-export async function runRetrievalProbe(opts: ProbeOptions): Promise<ProbeOutput> {
+/** One plan per question: the HNSW index it used, if any, and the server's `hnsw.max_scan_tuples`. */
+export type QuestionPlan = Awaited<ReturnType<typeof annPlanOf>>;
+
+/**
+ * The measurements alone — each question's ANN and exact lists, its latency
+ * and its plan — BEFORE they are held to the revision. Nothing here is a
+ * record or becomes one: `runRetrievalProbe` is the only way to an output,
+ * and it refuses measurements whose plans disagree with the revision.
+ */
+export async function measureRetrieval(opts: ProbeOptions): Promise<{
+    readonly model: string;
+    readonly dims: number;
+    readonly probeCorpus: RagProbeCorpus;
+    readonly plans: readonly QuestionPlan[];
+    readonly cases: ReadonlyArray<{ readonly caseId: string; readonly retrievalProbe: RetrievalProbe }>;
+}> {
     const deps = opts.deps ?? {};
     const vectors = vectorsOf(deps);
     if (!vectors || vectors.backend !== 'pgvector') {
@@ -315,26 +351,39 @@ export async function runRetrievalProbe(opts: ProbeOptions): Promise<ProbeOutput
 
     const hnsw = await hnswIndexes();
     const hnswNames = new Set(hnsw.map((i) => i.indexname));
+    // The product's own call, per question: the depth and source filter
+    // `searchKnowledge` sends, pinned to the index path.
+    const annQueries = queryVectors.map((v) => annQuery(productQuery(ctx, model, v)));
     // Untimed: the first search on a fresh pool pays for the connection.
-    await vectors.search(ctx, { embeddingRevision: model, embedding: queryVectors[0], k: RECALL_AT });
+    await vectors.search(ctx, annQueries[0]);
 
     const out: Array<{ caseId: string; retrievalProbe: RetrievalProbe }> = [];
-    const plans: Array<Awaited<ReturnType<typeof annPlanOf>>> = [];
+    const plans: QuestionPlan[] = [];
     for (let i = 0; i < cases.length; i++) {
-        plans.push(await annPlanOf(ctx, model, queryVectors[i], dims, hnsw));
+        plans.push(await annPlanOf(ctx, annQueries[i], dims, hnsw));
+        // The latency sample is the whole 20-deep call; recall reads its first 10.
         const started = performance.now();
-        const ann = await vectors.search(ctx, annQuery({ embeddingRevision: model, embedding: queryVectors[i], k: RECALL_AT }));
+        const ann = await vectors.search(ctx, annQueries[i]);
         const latencyMs = performance.now() - started;
         // Every exact plan is read too: one question's sequential scan proves
         // nothing about the next one's.
-        const exact = await exactTopK(ctx, model, queryVectors[i], dims, hnswNames);
+        const exact = await exactTopK(ctx, annQueries[i], dims, hnswNames);
         out.push({
             caseId: cases[i].id,
-            retrievalProbe: { ann: toChunkRefs(ann, tenant), exact: toChunkRefs(exact, tenant), latencyMs: Math.round(latencyMs * 1000) / 1000 },
+            retrievalProbe: {
+                ann: toChunkRefs(ann.slice(0, RECALL_AT), tenant),
+                exact: toChunkRefs(exact, tenant),
+                latencyMs: Math.round(latencyMs * 1000) / 1000,
+            },
         });
     }
-    const observed = indexParamsFromPlans(plans, searchSettings(RECALL_AT));
-    const revision = retrieverRevision({ model, dimensions: dims }, observed, opts.k);
+    return { model, dims, probeCorpus, plans, cases: out };
+}
+
+export async function runRetrievalProbe(opts: ProbeOptions): Promise<ProbeOutput> {
+    const { model, dims, probeCorpus, plans, cases: out } = await measureRetrieval(opts);
+    const observed = indexParamsFromPlans(plans, searchSettings(KNOWLEDGE_RETRIEVAL_K));
+    const revision = retrieverRevision({ model, dimensions: dims });
     assertPlansMatchRevision(revision.indexParams, observed, plans);
     return {
         kind: PROBE_OUTPUT_KIND,
@@ -348,7 +397,7 @@ export async function runRetrievalProbe(opts: ProbeOptions): Promise<ProbeOutput
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
-    const args = parseArgs(argv, ['set', 'manifest', 'k', 'host', 'out', 'embedder', 'stub-dimensions']);
+    const args = parseArgs(argv, ['set', 'manifest', 'host', 'out', 'embedder', 'stub-dimensions']);
     assertLoopbackDatabase(process.env);
     const setCheck = checkRagEvaluationSet(JSON.parse(readFileSync(args.set ?? 'evals/rag/sets/seed-policies.json', 'utf-8')));
     if (!setCheck.ok) throw new Error(`rag-eval probe: the set is refused: ${setCheck.reason} ${setCheck.detail}`);
@@ -356,7 +405,6 @@ export async function main(argv: readonly string[]): Promise<number> {
     const output = await runRetrievalProbe({
         set: setCheck.set,
         manifest: JSON.parse(readFileSync(args.manifest, 'utf-8')) as CorpusManifest,
-        k: Number(args.k ?? RECALL_AT),
         host: args.host,
         deps: embedderDeps((args.embedder ?? 'deployment') as EmbedderMode, Number(args['stub-dimensions'] ?? 384)),
     });
