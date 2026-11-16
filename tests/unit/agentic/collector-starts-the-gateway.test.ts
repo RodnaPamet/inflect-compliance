@@ -59,7 +59,8 @@ function countingTransport(): { transport: SandboxTransport; creates: () => numb
         },
         deleteSandbox: async () => ({ outcome: 'DELETION_OUTCOME_COMPLETED' }),
         awaitDeleted: async () => undefined,
-        attachProvider: async () => undefined,
+        attachProvider: async () => ({ attached: true, receiptId: 'r-1' }),
+        awaitProviderReady: async () => undefined,
     };
     return { transport, creates: () => creates };
 }

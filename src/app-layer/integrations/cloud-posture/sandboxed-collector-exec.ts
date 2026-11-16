@@ -59,6 +59,7 @@ import {
 import { env } from '@/env';
 import { openShellToolExecutor } from '@/lib/agentic/openshell/executor';
 import {
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
     unconfiguredTransport,
@@ -292,9 +293,31 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
             // one sandbox per execution and never hands the id out.
             const exec = openShellToolExecutor(transport, {
                 onSandboxReady: async ({ sandboxId, signal }) => {
-                    await transport.attachProvider({
+                    /*
+                        ATTACH, THEN WAIT FOR THE OBSERVATION — #5739.
+
+                        The attach reply is a PERSISTED INTENT, not an installed
+                        credential: the proto's own comment on its `receipt` field
+                        says "readiness requires current supervisor observations".
+                        This hook used to await the attach and return, and the
+                        executor then ran powerpipe — against a credential that
+                        may not have been there yet. A benchmark that found
+                        nothing and a benchmark of a clean account are the same
+                        bytes, and both were stored as this tenant's Evidence.
+
+                        So the wait is here, inside the hook the executor runs
+                        after the sandbox exists and BEFORE the tool, which is
+                        the only place that can still decline to run it.
+                    */
+                    const attachment = await transport.attachProvider({
                         sandboxId,
                         providerName: deps.providerName,
+                        signal,
+                    });
+                    await transport.awaitProviderReady({
+                        sandboxId,
+                        providerName: deps.providerName,
+                        receiptId: attachment.receiptId,
                         signal,
                     });
                 },
@@ -336,6 +359,16 @@ export function sandboxedCollectorExec(deps: SandboxedCollectorDeps): CollectorE
             if (err instanceof SandboxExecIncompleteError) {
                 // The issue's own words: never a partial success.
                 return didNotComplete('SANDBOX_EXEC_INCOMPLETE', scrub(err.message));
+            }
+            if (err instanceof ProviderNotReadyError) {
+                /*
+                    A DISTINCT refusal from `SANDBOX_UNREACHABLE`, because the
+                    gateway answered: it is up, it took the attachment, and it
+                    says the credential is not installed. Reporting that as an
+                    outage would send an operator to check the wrong thing —
+                    the provider record and its credential, not the gateway.
+                */
+                return didNotComplete(PROVIDER_NOT_READY_REFUSAL, scrub(err.message));
             }
             if (err instanceof ToolExecutionBoundError) {
                 return didNotComplete(`SANDBOX_BOUND_${err.name}`, scrub(err.message));
@@ -394,6 +427,18 @@ export const COLLECTOR_PROVIDER_NAME = 'inflect-collector';
  * reporting another account's posture as yours.
  */
 export const SHARED_PROVIDER_REFUSAL = 'SANDBOX_PROVIDER_NOT_TENANT_SCOPED';
+
+/**
+ * The refusal when the attached provider never became ready — #5739.
+ *
+ * A SIBLING of the one above and not a replacement: that one fires when no
+ * tenant-scoped provider was named at all, this one when a named provider was
+ * attached and the gateway's own observation says its credential is not
+ * installed. Both end with no benchmark run, which is the point — the collector
+ * reads its credential from the attachment and from nothing else, so a run
+ * without it produces output nobody can attribute to an account.
+ */
+export const PROVIDER_NOT_READY_REFUSAL = 'SANDBOX_PROVIDER_NOT_READY';
 
 export function collectorExecForDeploy(
     deps: Omit<SandboxedCollectorDeps, 'providerName'> & { providerName?: string } = {},

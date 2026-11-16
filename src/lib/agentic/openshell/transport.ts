@@ -100,6 +100,34 @@ export interface DeleteResult {
  * object: each is a thing the executor needs, and nothing here can list, read
  * providers, or touch credentials.
  */
+/**
+ * What `AttachSandboxProvider` returns — an INTENT, not an installed credential.
+ *
+ * `attached` is false when the provider was already attached, which is not a
+ * failure and is why it is reported rather than asserted. `receiptId` is the
+ * handle `GetSandboxProviderStatus` is asked about; it is nullable because a
+ * reply for an already-attached provider need not mint a new receipt, and a
+ * caller with no receipt asks about the provider by name instead.
+ */
+export interface ProviderAttachment {
+    readonly attached: boolean;
+    readonly receiptId: string | null;
+}
+
+/**
+ * One reading of `GetSandboxProviderStatus`.
+ *
+ * `state` is deliberately a plain string rather than the narrowed union: it is
+ * whatever the gateway said, including a value this build has never heard of, and
+ * `readinessVerdict` is what decides. Narrowing it here would make an unknown
+ * state a parse error in the transport rather than a classified refusal.
+ */
+export interface ProviderReadinessReport {
+    readonly state: string | null;
+    readonly reason: string | null;
+    readonly credentialsInstalled: boolean | null;
+}
+
 export interface SandboxTransport {
     createSandbox(input: { readonly labels?: Readonly<Record<string, string>> }): Promise<CreatedSandbox>;
     execSandbox(input: {
@@ -132,11 +160,42 @@ export interface SandboxTransport {
      *
      * The gateway applies an attachment asynchronously and exposes a status verb
      * for it, so a caller that needs the credential present before it execs must
-     * wait rather than assume. The collector bridge does exactly that.
+     * wait rather than assume — through `awaitProviderReady` below.
+     *
+     * THIS SENTENCE USED TO SAY "the collector bridge does exactly that", and it
+     * was false (#5739). The bridge awaited this one unary and ran powerpipe
+     * immediately; nothing in `src/` called the status verb, and the response's
+     * own `receipt` field is documented "Persisted intent; readiness requires
+     * current supervisor observations". A docstring asserting a wait that does not
+     * happen is worse than no docstring: it is the sentence a reviewer relies on
+     * to conclude the race is already handled.
+     *
+     * Returns the attachment rather than `void` so a caller has the receipt to
+     * ask about.
      */
     attachProvider(input: {
         readonly sandboxId: string;
         readonly providerName: string;
+        readonly signal: AbortSignal;
+    }): Promise<ProviderAttachment>;
+
+    /**
+     * Wait until the gateway OBSERVES the credential installed, or refuse.
+     *
+     * Polls `GetSandboxProviderStatus` and classifies each reading with
+     * `readinessVerdict` (`./provider-readiness`). Resolves only on `READY`;
+     * throws `ProviderNotReadyError` on a refusing state, on an unrecognised one,
+     * and when the bound is reached without a verdict. The abort signal ends the
+     * wait, because this runs inside the collector's setup budget.
+     *
+     * A sibling of `awaitDeleted`, and polled for the same reason: the gateway
+     * admits a mutation and applies it later, so the authoritative answer is the
+     * observation and not the call that asked for it.
+     */
+    awaitProviderReady(input: {
+        readonly sandboxId: string;
+        readonly providerName: string;
+        readonly receiptId: string | null;
         readonly signal: AbortSignal;
     }): Promise<void>;
 }
@@ -167,6 +226,28 @@ export class SandboxExecIncompleteError extends Error {
                 `after ${bytesSeen} byte(s); the run's outcome is unknown and is treated as a failure`,
         );
         this.name = 'SandboxExecIncompleteError';
+    }
+}
+
+/**
+ * Raised when an attached provider is not, and will not be, ready — #5739.
+ *
+ * Separate from `SandboxUnreachableError` because the gateway ANSWERED: it is
+ * reachable, it took the attachment, and it is telling us the credential is not
+ * installed. Conflating the two would report a withheld credential as an outage,
+ * and an operator would go and check the wrong thing.
+ */
+export class ProviderNotReadyError extends Error {
+    constructor(
+        readonly providerName: string,
+        readonly detail: string,
+    ) {
+        super(
+            `the credential provider ${providerName} is not ready on this sandbox: ${detail}; `
+                + 'the tool was not run, because it reads its credential from the attachment '
+                + 'and from nothing else',
+        );
+        this.name = 'ProviderNotReadyError';
     }
 }
 
@@ -203,4 +284,5 @@ export const unconfiguredTransport: SandboxTransport = {
     deleteSandbox: async () => refuse(),
     awaitDeleted: async () => refuse(),
     attachProvider: async () => refuse(),
+    awaitProviderReady: async () => refuse(),
 };

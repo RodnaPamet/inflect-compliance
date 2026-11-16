@@ -66,15 +66,19 @@ import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 
 import {
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
     type CreatedSandbox,
     type DeleteResult,
     type DeletionOutcome,
+    type ProviderAttachment,
+    type ProviderReadinessReport,
     type SandboxExecResult,
     type SandboxPhase,
     type SandboxTransport,
 } from './transport';
+import { describeReadiness, readinessVerdict } from './provider-readiness';
 
 /** Where the vendored contract lives. Loaded lazily — see `serviceDefinition`. */
 export const PROTO_DIR = 'vendor/openshell-proto/v0.1.6';
@@ -116,12 +120,14 @@ export interface GrpcTransportConfig {
     readonly clientForTests?: GrpcClientLike;
 }
 
-/** The five calls, in the shape `@grpc/grpc-js` generates for them. */
+/** The six calls, in the shape `@grpc/grpc-js` generates for them. */
 export interface GrpcClientLike {
     CreateSandbox(req: unknown, opts: unknown, cb: Callback<unknown>): void;
     GetSandbox(req: unknown, opts: unknown, cb: Callback<unknown>): void;
     DeleteSandbox(req: unknown, opts: unknown, cb: Callback<unknown>): void;
     AttachSandboxProvider(req: unknown, opts: unknown, cb: Callback<unknown>): void;
+    /** The readiness observation. Attaching does not install — #5739. */
+    GetSandboxProviderStatus(req: unknown, opts: unknown, cb: Callback<unknown>): void;
     ExecSandbox(req: unknown, opts: unknown): ExecStreamLike;
     close?(): void;
 }
@@ -140,6 +146,18 @@ export interface ExecStreamLike {
 export const DEFAULT_DEADLINE_MS = 30_000;
 /** How often `awaitDeleted` asks. The gateway applies deletion asynchronously. */
 export const DELETION_POLL_MS = 500;
+/** How often `awaitProviderReady` asks. Same reason — #5739. */
+export const PROVIDER_READY_POLL_MS = 500;
+/**
+ * How long `awaitProviderReady` waits before refusing.
+ *
+ * Bounded independently of the abort signal because the signal may be generous
+ * (it covers the whole collection) and a credential that is not installed within
+ * a few seconds of a persisted attachment is not propagating, it is stuck. The
+ * refusal is reported and the next scheduled scan tries again, which is strictly
+ * better than spending the run's budget and then reporting a timeout.
+ */
+export const PROVIDER_READY_TIMEOUT_MS = 20_000;
 
 /** `UNAVAILABLE` and a timeout both mean "the gateway did not answer". */
 function asUnreachable(err: GrpcError, what: string): never {
@@ -401,14 +419,91 @@ export function grpcSandboxTransport(cfg: GrpcTransportConfig): SandboxTransport
             }
         },
 
-        async attachProvider(input): Promise<void> {
+        async attachProvider(input): Promise<ProviderAttachment> {
             // A NAME and nothing else. The credential is configured on the
             // gateway out of band and never crosses this interface.
-            await unary(
+            const res = (await unary(
                 client.AttachSandboxProvider.bind(client),
                 { workspace_scope: scope, sandbox: input.sandboxId, provider: input.providerName },
                 'attaching a credential provider',
-            );
+            )) as { attached?: boolean; receipt?: { receipt_id?: string } } | undefined;
+            /*
+                The RESPONSE IS READ NOW, and was discarded before #5739.
+
+                `attached: false` is not a failure — it means the provider was
+                already attached — so it is reported rather than asserted. The
+                receipt id is the handle the readiness verb takes; absent, the
+                status call asks about the provider by name instead, which the
+                proto allows and which is the right fallback for an attachment
+                that minted no new receipt.
+            */
+            return {
+                attached: res?.attached === true,
+                receiptId: res?.receipt?.receipt_id || null,
+            };
+        },
+
+        async awaitProviderReady(input): Promise<void> {
+            /*
+                Polls `GetSandboxProviderStatus` — #5739.
+
+                A persisted attachment is an intent. `ProviderReadinessStatus
+                .observed_time` is "absent until the current supervisor session
+                supplies accepted evidence", so readiness is evidence the gateway
+                may not hold yet and the only safe reading of silence is "not yet".
+
+                Bounded TWICE on purpose: by the caller's signal, which ends the
+                whole collection, and by `PROVIDER_READY_TIMEOUT_MS`, which is
+                this wait's own patience. A single unbounded poll inside a
+                generous signal is how a stuck attachment becomes a hung job.
+            */
+            const deadline = Date.now() + PROVIDER_READY_TIMEOUT_MS;
+            let last = 'no reading';
+            for (;;) {
+                if (input.signal.aborted) {
+                    throw new ProviderNotReadyError(
+                        input.providerName,
+                        `the collection was aborted while waiting (${last})`,
+                    );
+                }
+                const res = (await unary(
+                    client.GetSandboxProviderStatus.bind(client),
+                    {
+                        workspace_scope: scope,
+                        sandbox: input.sandboxId,
+                        provider: input.providerName,
+                        ...(input.receiptId ? { receipt_id: input.receiptId } : {}),
+                    },
+                    'reading a credential provider\'s readiness',
+                )) as
+                    | {
+                        status?: {
+                            state?: string;
+                            reason?: string;
+                            observed?: { credentials_installed?: boolean };
+                        };
+                    }
+                    | undefined;
+                const report: ProviderReadinessReport = {
+                    state: res?.status?.state || null,
+                    reason: res?.status?.reason || null,
+                    credentialsInstalled:
+                        res?.status?.observed?.credentials_installed ?? null,
+                };
+                last = describeReadiness(report);
+                const verdict = readinessVerdict(report.state);
+                if (verdict === 'READY') return;
+                if (verdict === 'REFUSED') {
+                    throw new ProviderNotReadyError(input.providerName, last);
+                }
+                if (Date.now() >= deadline) {
+                    throw new ProviderNotReadyError(
+                        input.providerName,
+                        `still not ready after ${PROVIDER_READY_TIMEOUT_MS}ms (${last})`,
+                    );
+                }
+                await new Promise((r) => setTimeout(r, PROVIDER_READY_POLL_MS));
+            }
         },
     };
 }
