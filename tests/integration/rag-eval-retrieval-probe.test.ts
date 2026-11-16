@@ -115,19 +115,23 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
         }
     });
 
-    it('reads the plan the store ran: exact for a model with no HNSW index, and measures recall over every question', () => {
+    it('reads the plan the store ran: exact for a model with no HNSW index, and recall is measured as 1', () => {
         expect(measured.model).toBe('stub-feature-hash@1');
         expect(measured.plans.filter((p) => p.hnswIndex)).toHaveLength(0);
         expect(measured.plans).toHaveLength(SET.cases.length);
-        // Both arms are exact here, but recall is not 1 by construction: the
-        // ANN arm keeps the first 10 of the product's 20-deep call, and the
-        // stub's feature-hash vectors tie (same words, same vector), so a tie
-        // across the 10th place can be filled by different chunks at depth 20
-        // and at depth 10. Measured, never assumed.
-        const figures = retrievalFloorFigures(measured.cases);
-        expect(figures).toMatchObject({ recallScored: SET.cases.length, latencySamples: SET.cases.length });
-        expect(figures.recallAt10VsExact).not.toBeNull();
-        expect(figures.recallAt10VsExact).toBeGreaterThan(0.5);
+        // Every chunk carries its distance, so recall is tie-aware (D-L4-9
+        // amended (f)). Both arms are exact; the stub's feature-hash vectors
+        // tie often (same words, same vector), and a tie across the 10th place
+        // can be filled by different chunks at depth 20 and at depth 10 —
+        // which tie-aware recall counts as hits, so exact against exact is 1.
+        for (const c of measured.cases) {
+            for (const hit of [...c.retrievalProbe.ann, ...c.retrievalProbe.exact]) expect(typeof hit.distance).toBe('number');
+        }
+        expect(retrievalFloorFigures(measured.cases)).toMatchObject({
+            recallAt10VsExact: 1,
+            recallScored: SET.cases.length,
+            latencySamples: SET.cases.length,
+        });
     });
 
     it('refuses to key exact plans by the gate’s revision, which states the index', () => {

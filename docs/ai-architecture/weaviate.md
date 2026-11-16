@@ -686,7 +686,10 @@ all. The same record measures the floors that decide whether Phase 4 ever runs.
       `VectorRepository.search` pinned to the index path (`strategy: 'index'`,
       `HNSW_SEARCH`); recall over its first 10 against the exact top 10 the
       stage computes under the same filter, latency the p95 of the whole
-      20-deep call (D-L4-9 as amended 2026-11-16); **the record/gate path is wired** — its output is keyed by
+      20-deep call (D-L4-9 as amended 2026-11-16). Recall is tie-aware
+      (amendment (f)): an indexed hit counts when its distance is at most
+      the exact 10th-best distance plus 1e-6, recall = hits / min(10, exact
+      count), and a question whose exact search is empty is unscored, never 1; **the record/gate path is wired** — its output is keyed by
       `knowledgeRetrieverRevision`, the revision this gate compares, and read
       against the same floors. **No record can pass yet**: a record needs
       answers, and the answer half of Ragas 1.2 (the harness's answer route)
