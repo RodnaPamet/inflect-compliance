@@ -87,6 +87,23 @@ export interface CheckInput {
     controlId?: string;
     /** Provider-specific connection config (decrypted) */
     connectionConfig: Record<string, unknown>;
+    /**
+     * The `IntegrationConnection` row this check runs for — #5476.
+     *
+     * OPTIONAL, and read by the three cloud-posture providers only. They derive
+     * their sandbox's per-connection gateway provider name from
+     * `(tenantId, connectionId)`, because one shared provider meant every
+     * tenant's scan attached the same credential (#5251).
+     *
+     * Optional rather than required because every integration check builds a
+     * `CheckInput`, including checks with no connection behind them, and this is
+     * a field three of them read. Its ABSENCE is safe only because of where it
+     * lands: with no connection id a posture provider passes no `providerName`
+     * and `collectorExecForDeploy` refuses rather than attaching anything. A
+     * builder that has a connection should pass it; one that does not gets the
+     * refusal, which is the designed state.
+     */
+    connectionId?: string;
     /** How the check was triggered */
     triggeredBy: 'scheduled' | 'manual' | 'webhook';
     /** Optional correlation ID for batch runs */

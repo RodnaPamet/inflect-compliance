@@ -103,6 +103,11 @@ export async function runAwsPostureCollection(input: {
             automationKey,
             parsed: { provider: AWS_POSTURE_PROVIDER, checkType: check, raw: automationKey },
             tenantId: ctx.tenantId,
+            // #5476: the row this scan runs for, so the provider can derive the
+            // gateway credential provider that holds THIS connection's
+            // credential. Already in hand — it is the id this function loaded the
+            // connection by and stamped on the `IntegrationExecution`.
+            connectionId: connId,
             connectionConfig: { ...config, ...secrets },
             triggeredBy: 'scheduled',
         });
