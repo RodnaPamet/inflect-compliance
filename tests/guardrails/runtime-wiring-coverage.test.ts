@@ -136,8 +136,9 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // path after it commits. A clock would re-read every source to find the
     // few that moved; a rebuild of a whole tenant is scripts/knowledge-reindex.
     'knowledge-index': 'dispatched by enqueueKnowledgeIndex (app-layer/jobs/knowledge-index-enqueue.ts), the '
-        + 'job\'s only enqueue site, for a source\'s write path to call after its transaction '
-        + 'commits; it enqueues nothing while the vector store or the embedding route is off.',
+        + 'job\'s only enqueue site, which a source\'s write path calls after its transaction '
+        + 'commits (an approved PolicyVersion: decidePolicyApproval, and a policy\'s soft delete '
+        + 'and restore); it enqueues nothing while the vector store or the embedding route is off.',
 };
 
 function registeredExecutorJobs(): string[] {

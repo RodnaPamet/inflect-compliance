@@ -15,6 +15,7 @@ import {
     type RestorableModel,
 } from '../domain/restore-validators';
 import { purgeEvidenceBlobs } from '../services/evidence-blob-purge';
+import { deleteKnowledgeOfPurgedRow } from '../services/knowledge-purge';
 
 /** Minimal delegate interface for dynamic model access by string key */
 interface ModelDelegate {
@@ -114,6 +115,11 @@ export async function purgeEntity(
             model === 'Evidence'
                 ? await purgeEvidenceBlobs(db, [id])
                 : null;
+
+        // The row's knowledge chunks, which name it polymorphically and so
+        // leave with no FK (services/knowledge-purge.ts). Before the DELETE: a
+        // policy's versions cascade away with it and could not be named after.
+        await deleteKnowledgeOfPurgedRow(db, model, ctx.tenantId, id);
 
         // Hard delete: use $executeRawUnsafe to bypass the soft-delete middleware
         await db.$executeRawUnsafe(
