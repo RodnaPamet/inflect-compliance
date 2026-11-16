@@ -41,6 +41,7 @@ import { flueToolsFor } from '@/lib/agentic/flue/tools-adapter';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
 import { PROPOSE_TOOLS, loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
 import type { McpInvocation } from '@/lib/mcp/authorize';
+import type { ExternalConnectionFacts } from '@/lib/mcp/tools/types';
 import type { LoopTool } from './tool-loop';
 
 /**
@@ -107,6 +108,18 @@ export interface AssistantToolSet {
      */
     reviewRequired(): boolean;
     readonly omitted: ReadonlyArray<{ name: string; reason: string }>;
+    /**
+     * The connection facts of every EXTERNAL tool in the offer, as
+     * `offerToolSet` recorded them — the population the external-AI transfer
+     * gate judges (#3872; for the assistant, owner decision 2026-11-16).
+     *
+     * The offer's own record rather than one rebuilt here, so the assistant
+     * and both run engines judge the same population. It can be WIDER than
+     * `tools` only by a tool dropped below for having no registry schema, which
+     * cannot happen while both lists come from the same registry functions,
+     * and wider is the refusing direction: never narrower.
+     */
+    readonly externalConnections: readonly ExternalConnectionFacts[];
     /**
      * Propose outcomes recorded this turn, in call order.
      *
@@ -231,6 +244,7 @@ export function assistantTools(
         tools: out,
         reviewRequired: () => set.review.required,
         omitted: set.omitted,
+        externalConnections: set.externalConnections,
         proposals: () => outcomes,
     };
 }

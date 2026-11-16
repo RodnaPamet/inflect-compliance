@@ -309,6 +309,7 @@ describe('3. no thinking text reaches a log line, the decision log or the answer
             tools: [listRisks],
             reviewRequired: () => false,
             omitted: [],
+            externalConnections: [],
             proposals: () => [],
         });
         const t = scriptedAnthropic(REPLIES);
@@ -339,6 +340,7 @@ describe('3. no thinking text reaches a log line, the decision log or the answer
             tools: [listRisks],
             reviewRequired: () => false,
             omitted: [],
+            externalConnections: [],
             proposals: () => [],
         });
         global.fetch = scriptedAnthropic(REPLIES).impl;

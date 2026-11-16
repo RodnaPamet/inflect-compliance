@@ -110,9 +110,11 @@ export interface ResidencyGateInput {
     /**
      * The engine's name at the head of the refusal, so a run's error names the
      * engine that walked it (#5364). Flue's when absent, so its message is
-     * unchanged.
+     * unchanged. `assistant` is the in-product assistant's tool-use loop, which
+     * is not a run engine but makes the same transfer (owner decision
+     * 2026-11-16).
      */
-    readonly enginePrefix?: 'flue' | 'tool_runner';
+    readonly enginePrefix?: 'flue' | 'tool_runner' | 'assistant';
 }
 
 export interface ResidencyRefusal {
@@ -179,16 +181,23 @@ export function externalResidencyRefusal(input: ResidencyGateInput): ResidencyRe
     // tenant's own gateway; the Tool Runner speaks only Anthropic's API, so a
     // LOCAL_ONLY workspace refuses it outright, and saying "set LOCAL_ONLY"
     // would send the admin to a setting that stops the run rather than serves it.
+    // The assistant has no local tool-use provider: under LOCAL_ONLY it calls no
+    // model and answers from live posture figures alone, so saying that is the
+    // honest version of the same remedy.
     const localRemedy =
         enginePrefix === 'tool_runner'
             ? 'or run this workflow on the Flue engine with AI residency set to LOCAL_ONLY; '
               + 'the Tool Runner engine only calls Anthropic\'s API.'
-            : 'or set AI residency to LOCAL_ONLY so inference stays on your own gateway.';
+            : enginePrefix === 'assistant'
+              ? 'or set AI residency to LOCAL_ONLY, under which the assistant calls no model '
+                + 'and answers only from your posture figures.'
+              : 'or set AI residency to LOCAL_ONLY so inference stays on your own gateway.';
+    const subject = enginePrefix === 'assistant' ? 'this assistant turn' : 'this run';
     return {
         reason: 'EXTERNAL_AI_BUSINESS_DATA_UNACKNOWLEDGED',
         connectionNames,
         message:
-            `${enginePrefix}_external_ai_business_data_unacknowledged: this run would read `
+            `${enginePrefix}_external_ai_business_data_unacknowledged: ${subject} would read `
             + `${connectionNames.length === 1 ? 'a connection' : 'connections'} marked as `
             + `carrying third-party business or personal data (${connectionNames.join(', ')}) `
             + 'and send what it reads to an external model provider. Nobody has '
