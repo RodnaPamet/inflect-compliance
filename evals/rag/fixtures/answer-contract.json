@@ -1,0 +1,30 @@
+{
+    "contract": "rag-answer@1",
+    "about": "What the Ragas harness sends the product's answer route and what it accepts back (docs/ai-architecture/ragas.md 1.2; evals/rag/inflect_rag/answers.py). The route is built with vector store Phase 3.3-3.5: it answers one question on the answer tenant through search_knowledge, the way the assistant would, and reports what the tool returned. Read by evals/rag/tests/test_answers.py and tests/unit/rag-eval-answer-contract.test.ts.",
+    "request": {
+        "method": "POST",
+        "body": { "question": "Do you require multi-factor authentication for critical systems?" }
+    },
+    "accepted": [
+        {
+            "answer": "Yes. Multi-factor authentication is required for access to critical information systems.",
+            "retrieved": [
+                { "sourceModel": "PolicyVersion", "sourceId": "version-am", "chunkIndex": 2, "text": "Implement multi-factor authentication for accessing critical information systems." }
+            ],
+            "retriever": { "embeddingModel": "intfloat/multilingual-e5-small", "k": 10 },
+            "usage": { "inputTokens": 1800, "outputTokens": 120 }
+        },
+        {
+            "answer": "The documents do not contain this information.",
+            "retrieved": [],
+            "retriever": { "embeddingModel": "intfloat/multilingual-e5-small", "k": 10 },
+            "usage": null
+        }
+    ],
+    "refused": [
+        { "why": "an unknown member", "body": { "answer": "x", "retrieved": [], "retriever": { "embeddingModel": "m", "k": 10 }, "usage": null, "passRate": 1 } },
+        { "why": "no retriever", "body": { "answer": "x", "retrieved": [], "usage": null } },
+        { "why": "a chunk without its text", "body": { "answer": "x", "retrieved": [{ "sourceModel": "PolicyVersion", "sourceId": "v", "chunkIndex": 0 }], "retriever": { "embeddingModel": "m", "k": 10 }, "usage": null } },
+        { "why": "a negative chunk index", "body": { "answer": "x", "retrieved": [{ "sourceModel": "PolicyVersion", "sourceId": "v", "chunkIndex": -1, "text": "t" }], "retriever": { "embeddingModel": "m", "k": 10 }, "usage": null } }
+    ]
+}

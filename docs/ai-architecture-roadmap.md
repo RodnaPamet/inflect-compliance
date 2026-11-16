@@ -65,7 +65,7 @@ flowchart LR
   subgraph EV["EVALUATION AND VALIDATION · measures every layer"]
     direction TB
     GA["Garak<br/>nightly built, off by default;<br/>first run dispatched 2026-11-13"]:::partial
-    RA["Ragas<br/>set and record format;<br/>no harness yet"]:::partial
+    RA["Ragas<br/>harness and nightly built;<br/>no record: answers wait on search_knowledge"]:::partial
     AR["ARES<br/>calibrated judges"]:::todo
     IS["Inspect<br/>harness and nightly built;<br/>seed in review"]:::partial
     SB["SWE-bench<br/>no capability to measure"]:::declined
@@ -421,7 +421,9 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
     container on the Compose network is reachable and an outside address is
     refused. No parsing service is deployed (Phase 1.3, held by C1).
 - **The RAG and retriever evaluation sets exist; the retriever benchmark has
-  run, and no RAG harness or record does.** Ragas Phase 0 put a 52-case set at
+  run; the RAG harness is built and no RAG record exists** (Ragas Phase 1,
+  2026-11-16: the nightly measures D-L4-9's retrieval figures and judges once
+  the product answers through `search_knowledge`). Ragas Phase 0 put a 52-case set at
   `evals/rag/sets/seed-policies.json` and a record schema
   (`src/lib/ai/evals/rag-record.ts`), grounded on the three seeded policies
   (the seed has no questionnaire answer-library rows). The D-L4-3 benchmark
@@ -523,9 +525,10 @@ Of the residuals from the 2026-10-09 audit of Flue Phase 1 (made against
   `ANTHROPIC_API_KEY` secret when that is unset. The baseline (0.4), the
   agent-run adapter route (1.1b) and the re-enabled-probe proof (1.5) are
   open.
-- **Ragas has its set and record format** (Phase 0, Layer 4 above), and the
-  shared cost meter it splits the nightly cap through (0.6); the harness and
-  the judge are Phase 1. Web Bot Auth's conformance vectors are at
+- **Ragas has its set and record format** (Phase 0, Layer 4 above), the
+  shared cost meter it splits the nightly cap through (0.6), and its harness
+  and `rag-eval.yml` nightly (Phase 1, off unless `RAG_EVAL_ENABLED` is
+  `true`), whose judge reaches the model only through the metering proxy. Web Bot Auth's conformance vectors are at
   `evals/web-bot-auth/vectors.json`; the PII record at `evals/pii/records/`.
 - Missing: an ARES labelled set, an Inspect record, a RAG record, a completed
   keyed garak run. SWE-bench is declined (D-EV-5, 2026-11-11): there is no
@@ -954,7 +957,7 @@ completion.
 | NIM | 5 | [`modal-inference.md`](./ai-architecture/modal-inference.md) | optional (proof of concept) | **declined** in production (G13); a proof of concept only, if Layer 5 is taken up | — | not part of completeness | — |
 | Capacity budget (added 2026-10-31) | 5 | § Capacity budget, this file | 0 | C0 and C1 done 2026-11-12: every container measured and limited; C1b done 2026-11-14: `app`, `worker` and the scanner re-sized from measured nightly peaks (9,216 MiB of the 14.5 GB line); `tei-embed` measured at 2.5 times its estimate on 2026-11-15 (2,560 MiB; 11,776 with it in the canonical file, pinned since 1.1b), which puts the planned standing additions about 205 MiB over the line; D-CAP-1 decided (measure, smaller pieces, then resize) and satisfied without a resize | C0, C1, C1b | C2, the resize, only if a phase measures an addition above its estimate and it crosses the line | — |
 | Garak | evals | [`garak.md`](./ai-architecture/garak.md) | 3 (Phase 1 any time) | Phase 0 partly (0.1–0.3, D-EV-1; 0.4 baseline open). Phase 1 partly: the nightly, the pinning guard and the budget built (USD 2.50 of the shared USD 5, D-EV-11), non-blocking until 2027-02-28, off unless `GARAK_ENABLED` is `true`, keyed by the shared `ANTHROPIC_API_KEY` when its own key is unset; first run dispatched 2026-11-13. 1.1b (agent-run adapter) and 1.5 (a re-enabled probe shown) open | — | 3 | — |
-| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's USD 2.50 each); 0.5 (one seed set with the retriever's) open | 0 | 3 | — |
+| Ragas | evals | [`ragas.md`](./ai-architecture/ragas.md) | 1 | Phase 0 done: a 52-case set over the seeded policies and the record format, D-EV-2 decided; 0.6 built (the shared cost meter, `evals/cost-meter/`, at D-EV-11's USD 2.50 each); 0.5 (one seed set with the retriever's) open. Phase 1 partly (2026-11-16): the harness, the metering proxy, the judge image and the `rag-eval.yml` nightly built (1.1, 1.3-1.5), off unless `RAG_EVAL_ENABLED` is `true`; D-L4-9's retrieval figures measured nightly; 1.2's answer half waits on `search_knowledge` and its answer route (#5751), so no record exists | 0 | 3 | — |
 | ARES | evals | [`ares.md`](./ai-architecture/ares.md) | 2 | Phase 0: D-EV-3 decided; labelling not yet done | — | 3, or 2's recorded failure to calibrate | — |
 | Inspect | evals | [`inspect.md`](./ai-architecture/inspect.md) | 2 | Phase 0 done: the ten governed-run tasks defined ([note](./implementation-notes/2026-11-11-inspect-first-tasks.md)), D-EV-4 decided. Phase 1 partly (1.1–1.5, 2026-11-12): the harness for Flue and the Tool Runner, the record module and the `agent-evals.yml` nightly (D-EV-6's USD 10), off unless `AGENT_EVALS_ENABLED` is `true`; 1.6, the seed script, in review (#5447); 1.7, the done-when, open | 0 | 3 | — |
 | SWE-bench | evals | [`swe-bench.md`](./ai-architecture/swe-bench.md) | — | **declined** — no capability to measure (D-EV-5, 2026-11-11, [note](./implementation-notes/2026-11-11-ai-roadmap-decision-completions.md)) | 0 | 0's recorded decision (met) | — |

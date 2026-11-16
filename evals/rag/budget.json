@@ -1,0 +1,14 @@
+{
+    "about": "The Ragas nightly's plan against its share of the shared USD 5 cap (D-EV-2, D-EV-11: USD 2.50, evals/cost-meter/shares.json). The share and the model are read from the cost meter, never restated here. The metering proxy (evals/cost-meter/anthropic-proxy.mjs) enforces the share per call; this file is the PLAN a guard checks fits it, and the first keyed night replaces the estimate with a measurement.",
+    "judge": {
+        "maxTokensPerCall": 1024,
+        "answerRelevancyStrictness": 3
+    },
+    "plannedCase": {
+        "basis": "Measured 2026-11-16 from the prompts Ragas 0.4.3 builds for one case at k = 10 contexts of about 1,000 characters (17 judge calls: faithfulness 2, answer_relevancy 3, context_precision 10, context_recall 1, abstention 1; 100,701 characters of prompt and tool schema), at 4 characters a token, and 120 output tokens a call. The product's answer turns are NOT in this plan: they are metered through the same share once the answer target exists, and their worst case is declared there.",
+        "judgeCalls": 17,
+        "inputTokens": 25200,
+        "outputTokens": 2040
+    },
+    "sentinelCases": 2
+}
