@@ -273,6 +273,25 @@ export const RagIndexParamsSchema = z.discriminatedUnion('method', [
     z.object({ method: z.literal('exact'), distance: Distance }).strict(),
 ]);
 
+/**
+ * Where, and over what, the retrieval probes ran. The evaluated tenant's chunk
+ * count and the shared index's (every tenant's chunks of the revision's
+ * model): a filtered search over a shared index is only measured when other
+ * tenants' rows are in it, which a lone seed tenant is not. `host` names the
+ * machine class the latency was measured on, because a CI runner's p95 is not
+ * the VM's, and the floor (D-L4-9) is stated for the VM.
+ */
+const ProbeCorpus = z
+    .object({
+        host: z.string().min(1).max(64),
+        tenantChunks: z.number().int().min(0),
+        tableChunks: z.number().int().min(0),
+        tenants: z.number().int().min(1),
+    })
+    .strict()
+    .refine((c) => c.tableChunks >= c.tenantChunks, { message: 'the shared index holds at least the tenant’s chunks', path: ['tableChunks'] });
+export type RagProbeCorpus = z.infer<typeof ProbeCorpus>;
+
 const RecordCaseSchema = z
     .object({
         caseId: z.string().regex(CASE_ID),
@@ -351,6 +370,14 @@ export const RagEvaluationRecordSchema = z
         status: z.enum(RAG_RECORD_STATUSES),
         /** What the run cost: the cost meter's settled sum, in USD. */
         spendUsd: z.number().finite().min(0).max(MAX_SPEND_USD),
+        /**
+         * Added in Ragas Phase 1, OPTIONAL so a record written before it still
+         * parses: the corpus the retrieval probes ran against (weaviate.md
+         * 3.6 — "on the seed corpus scaled to a stated multiple"). Counts
+         * only; the multiple is recomputed (`probeCorpusFigures`), never
+         * stored. Absent, the floor figures say nothing about scale.
+         */
+        probeCorpus: ProbeCorpus.optional(),
         cases: z.array(RecordCaseSchema).max(MAX_RAG_CASES),
     })
     .strict();
@@ -495,7 +522,14 @@ export function recallAgainstExact(ann: readonly ChunkRef[], exact: readonly Chu
     return truth.filter((c) => found.has(chunkKey(c))).length / truth.length;
 }
 
-function retrievalFloorFigures(cases: RagEvaluationRecord['cases']): RetrievalFloorFigures {
+/**
+ * The two retrieval floor figures over any set of probes — a record's cases,
+ * or the probe stage's output before there is a record (Ragas Phase 1 runs the
+ * probe stage on its own when no answer target is wired).
+ */
+export function retrievalFloorFigures(
+    cases: ReadonlyArray<Pick<RagEvaluationRecord['cases'][number], 'retrievalProbe'>>,
+): RetrievalFloorFigures {
     const recalls = cases
         .map((c) => recallAgainstExact(c.retrievalProbe.ann, c.retrievalProbe.exact))
         .filter((r): r is number => r !== null);
@@ -506,6 +540,28 @@ function retrievalFloorFigures(cases: RagEvaluationRecord['cases']): RetrievalFl
         p95LatencyMs: nearestRank(latencies, 95),
         latencySamples: latencies.length,
     };
+}
+
+/** A probe corpus's facts, and the multiple RECOMPUTED from them (`null` over an empty tenant). */
+export interface ProbeCorpusFigures extends RagProbeCorpus {
+    tableToTenantMultiple: number | null;
+}
+
+export function probeCorpusFigures(corpus: RagProbeCorpus): ProbeCorpusFigures {
+    return { ...corpus, tableToTenantMultiple: corpus.tenantChunks === 0 ? null : corpus.tableChunks / corpus.tenantChunks };
+}
+
+/**
+ * A retriever revision's stable id: the first 16 hex characters of the
+ * SHA-256 of its canonical JSON. A record is committed as
+ * `evals/rag/records/<id>.json` (ragas.md 1.3), so a new record for the same
+ * revision replaces the old one in a reviewed diff, and any change to the
+ * revision — model, dimensions, reranker, chunker, k or an index parameter —
+ * is a new file. The gate matches on the record's `retrieverRevision` itself,
+ * never on the file name.
+ */
+export function ragRetrieverRevisionId(revision: RagEvaluationRecord['retrieverRevision']): string {
+    return createHash('sha256').update(canonicalJson(revision), 'utf8').digest('hex').slice(0, 16);
 }
 
 /** May a record be held against a floor at all? A budget-stopped run never may. */
@@ -543,6 +599,7 @@ export function checkRagEvaluationRecord(
     set: RagEvaluationSet;
     aggregates: RagAggregates;
     retrievalFloors: RetrievalFloorFigures;
+    probeCorpus: ProbeCorpusFigures | null;
     unanswered: string[];
     floor: FloorEligibility;
 }> {
@@ -639,6 +696,7 @@ export function checkRagEvaluationRecord(
         set,
         aggregates,
         retrievalFloors: retrievalFloorFigures(record.cases),
+        probeCorpus: record.probeCorpus ? probeCorpusFigures(record.probeCorpus) : null,
         unanswered,
         floor: floorEligibility(record),
     };

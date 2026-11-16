@@ -19,7 +19,7 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 | Wave | 1, alongside the first RAG wave — the mount gate in [`weaviate.md`](./weaviate.md) Phase 3 consumes its record |
 | Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2 (the index to evaluate — **D-L4-1**, owner 2026-11-11: pgvector first, Weaviate only on a measured floor), [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | `search_knowledge` being offered at all; [`ares.md`](./ares.md) (needs Ragas's cases to calibrate against) |
-| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only |
+| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only. **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -29,7 +29,7 @@ Green: Phase 0, on `main` with D-EV-2 decided. Blue: a phase not yet on `main`; 
 ```mermaid
 flowchart LR
   P0["Phase 0 · sets and judge<br/>seed-policies set, four case kinds<br/>rag-record schema<br/>D-EV-2 decided"]:::done
-  P1["Phase 1 · harness and nightly<br/>drives the product's own retrieval<br/>record proposed by PR"]:::todo
+  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures, judge<br/>answers wait on search_knowledge"]:::todo
   P2["Phase 2 · floors and the gate<br/>search_knowledge only<br/>with a passing record"]:::todo
   P3["Phase 3 · drift and distractors<br/>re-run on every revision"]:::todo
   WV["weaviate P2<br/>an index to evaluate"]:::ext
@@ -52,8 +52,21 @@ flowchart LR
 
 ## Current state (true today)
 
-- **There is nothing to evaluate yet** — no retrieval, no index
-  ([`weaviate.md`](./weaviate.md) § Current state).
+- **The harness and the nightly are built; no record exists yet** (Phase
+  1, 2026-11-16). `.github/workflows/rag-eval.yml` (off unless the repository
+  variable `RAG_EVAL_ENABLED` is `true`, non-blocking until 2027-02-28) builds
+  a corpus through the product's own usecases and index job against the
+  deployment's TEI (`scripts/rag-eval/corpus.ts`), measures D-L4-9's two
+  retrieval figures over `VectorRepository.search` against an exact scan of
+  its own (`scripts/rag-eval/probe.ts`), and runs the Ragas judge
+  (`evals/rag/`, Ragas 0.4.3, every dependency locked) through a metering
+  proxy that holds the key and the ragas share
+  (`evals/cost-meter/anthropic-proxy.mjs`). The judge has nothing to judge
+  until the product answers through `search_knowledge` (vector store
+  3.3-3.5, #5751) on the harness's answer route
+  (`evals/rag/fixtures/answer-contract.json`); until then a night produces
+  the retrieval figures and no record. See
+  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md`.
 - **The house already has the eval discipline Ragas must fit into.**
   `flue/skills/evaluation-record.ts` and
   `identity-match/evaluation-record.ts`: an *evaluation set* authored beside the
@@ -231,20 +244,47 @@ a vendor is still text to a vendor), G1.
 ### Phase 1 — The harness and the nightly job
 
 **Sub-phases.**
-- [ ] 1.1 `evals/rag/` Python project with a pinned Ragas version, run from a
-      digest-pinned image in CI only (never in the app image, G5).
-- [ ] 1.2 The harness drives the *product's* retrieval, not a reimplementation:
-      it calls the harness route from [`garak.md`](./garak.md) Phase 1 (or a
-      sibling) to retrieve + answer through `search_knowledge` on the seed
-      tenant, so what is measured is the composed pipeline with its guards.
-- [ ] 1.3 Output → the TS record shape; `rag-record.ts` validates it in the
-      job before it is uploaded; the record is committed by PR under
-      `evals/rag/records/<retriever-revision>.json`.
-- [ ] 1.4 `.github/workflows/rag-eval.yml`: nightly, service containers
-      (Postgres with pgvector, Redis, TEI — Weaviate only if D-L4-1's
-      measured floor brings it in), seed + index the seed corpus, run,
-      validate, upload, auto-issue on regression, `RAG-EVAL-NON-BLOCKING-UNTIL:`
-      marker parsed by a guard.
+- [x] 1.1 `evals/rag/` Python project, run from a digest-pinned image in CI
+      only (never the app image, G5): Ragas 0.4.3 (the newest release older
+      than two weeks) and its WHOLE dependency set in `requirements.lock`,
+      installed `--no-deps` and `pip check`ed — a floating resolution of
+      0.4.3 breaks on import (langchain-community 0.4.2 removed a module it
+      uses). The image's first stage runs the harness's tests. The judge is
+      the cost meter's share model through `anthropic-proxy.mjs`, which holds
+      the key and reserves every call against the ragas share before it is
+      sent; `answer_relevancy` embeds with the deployment's own TEI.
+- [ ] 1.2 The harness drives the *product's* retrieval, not a reimplementation.
+      **Retrieval half built**: `scripts/rag-eval/probe.ts` asks every question
+      through `VectorRepository.search` on a probe tenant and against an exact
+      scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`)
+      that #5751 wires to `strategy: 'index'` and
+      `knowledgeRetrieverRevision`. **Answer half open**: the harness asks
+      through a written contract (`evals/rag/fixtures/answer-contract.json`,
+      held by `src/lib/ai/evals/rag-answer-contract.ts` and the Python reader)
+      that the product's answer route must serve — `search_knowledge` through
+      the assistant on the answer tenant, the mount gate bypassed for that
+      tenant only by a test-mode flag. No route serves it yet, so no record is
+      written; every answer is reserved through the same meter.
+- [x] 1.3 Output → the TS record shape; `scripts/rag-eval/check.ts` validates
+      it with `checkRagEvaluationRecord` (price table and share included)
+      before it is uploaded; the artifact names it
+      `evals/rag/records/<ragRetrieverRevisionId>.json` and a person commits
+      it by PR, as Inspect's records are.
+- [x] 1.4 `.github/workflows/rag-eval.yml`: nightly at 00:40 UTC, off unless
+      `RAG_EVAL_ENABLED` is `true`; Postgres with pgvector, Redis and the
+      deployment's TEI image by digest; corpus, retrieval figures, judge,
+      validate, upload, auto-issue on a D-L4-9 miss or a failed judge;
+      `RAG-EVAL-NON-BLOCKING-UNTIL: 2027-02-28` parsed by
+      `tests/guardrails/rag-eval-workflow-pinning.test.ts`.
+- [x] 1.5 The two retrieval figures (weaviate.md 3.6) in the record, on a
+      stated corpus: a probe tenant of `RAG_EVAL_PROBE_TENANT_CHUNKS` (5,000:
+      the seed policies plus distractor paragraphs drawn from the template
+      library) in an index of `RAG_EVAL_SCALE_MULTIPLE` (4) times that. A
+      seed-sized tenant is planned as a B-tree read and a sort, an exact
+      search, so its recall is 1 by construction; every question's plan is
+      read and a run whose plans disagree with the revision is refused. The
+      record carries the counts (`probeCorpus`, optional, added compatibly);
+      the multiple is recomputed.
 
 **Prompt.**
 ```text

@@ -1,0 +1,300 @@
+name: RAG eval (Ragas, nightly)
+
+# The RAG evaluation of Layer 4's retrieval (docs/ai-architecture/ragas.md,
+# Phase 1) and the two retrieval figures that decide whether the vector store
+# ever needs Weaviate (docs/ai-architecture/weaviate.md 3.6). Modelled on
+# garak.yml and agent-evals.yml (off unless switched on, skip cleanly, a dated
+# deferral a guard parses, budget from the shared cost meter).
+#
+#   - THREE STAGES. (1) CORPUS: scripts/rag-eval/corpus.ts builds, through the
+#     product's own usecases and index job, an answer tenant (the three seeded
+#     policies and the set's injected chunks), a probe tenant (the same policies
+#     plus distractor paragraphs to RAG_EVAL_PROBE_TENANT_CHUNKS) and filler
+#     tenants until the shared index holds RAG_EVAL_SCALE_MULTIPLE times the
+#     probe tenant. Embedded by the deployment's own TEI image and model
+#     (pinned below to the canonical Compose file's digest and revision).
+#     (2) RETRIEVAL: scripts/rag-eval/probe.ts asks every question through
+#     VectorRepository.search on the probe tenant and against an exact scan the
+#     stage runs itself: recall@10 vs exact and p95 latency at k = 10. No model
+#     call, no spend. (3) ANSWER + JUDGE: the evals/rag image asks the product
+#     each question through the answer contract (evals/rag/fixtures/answer-contract.json),
+#     scores it with Ragas's four metrics and the abstention verdict, and writes
+#     a record in src/lib/ai/evals/rag-record.ts's shape.
+#   - NO ANSWER TARGET YET. Stage 3 needs search_knowledge and the harness's
+#     answer route (vector store Phase 3.3-3.5). Until RAG_EVAL_ANSWER_URL is
+#     set, stage 3 says so and writes no record: a record over answers the
+#     product did not give would be a record about nothing, and a record is
+#     what the search_knowledge mount gate opens on. Stages 1 and 2 still run
+#     and their figures are the night's output.
+#   - MODEL (D-EV-2): the cost meter's share model (Haiku-class,
+#     evals/cost-meter/shares.json) through the repository's ANTHROPIC_API_KEY,
+#     with the ANTHROPIC_WORKSPACE_ID header that organisation-level key needs.
+#     The key goes to ONE process, the metering proxy on loopback
+#     (evals/cost-meter/anthropic-proxy.mjs), which reserves every judge call
+#     against the ragas share (USD 2.50 of the shared USD 5, D-EV-11) before it
+#     is sent; the judge container never holds it. Seed data only.
+#   - NON-BLOCKING until the date below, under a dated marker that
+#     tests/guardrails/rag-eval-workflow-pinning.test.ts PARSES and compares to
+#     today. Phase 2 sets floors (evals/rag/floors.json) and turns a regression
+#     below them into a failure.
+#     RAG-EVAL-NON-BLOCKING-UNTIL: 2027-02-28
+#   - RECORDS are validated by scripts/rag-eval/check.ts (every figure
+#     recomputed from raw values, a stated figure refused, the price table and
+#     the share checked) and uploaded; committing one under evals/rag/records/
+#     is a reviewed pull request a person opens from the artifact, because a
+#     committed record opens a gate and evidence is not written by the job that
+#     produced it.
+#   - Runs no Jest, so it is NOT in the coverage partition
+#     (tests/guardrails/coverage-gate-population.test.ts) and uploads no
+#     coverage artifact.
+#   - Unreachable from a pull request by design (schedule + dispatch only);
+#     registered in tests/guardrails/ci-checks-unreachable-before-merge.json.
+on:
+  workflow_dispatch:
+  schedule:
+    # 00:40 UTC daily: before garak (01:15) and Inspect (02:20), clear of the
+    # 03:30 load test and the 04:00 DAST baseline.
+    - cron: '40 0 * * *'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  rag-eval:
+    name: RAG eval (retrieval figures, Ragas record)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    services:
+      postgres:
+        image: ghcr.io/rodnapamet/postgres-pgvector:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: ci_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # The policy approval enqueues the index job; nothing consumes it here
+      # (the corpus stage runs the job itself), but the enqueue needs a broker.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public&pgbouncer=true
+      DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
+      REDIS_URL: redis://localhost:6379
+      SKIP_ENV_VALIDATION: '1'
+      DATA_ENCRYPTION_KEY: ci-rag-eval-data-encryption-key-32b
+      LOG_LEVEL: warn
+      # The vector store and the embedding route, as docs/deployment.md
+      # configures them on the VM, pointed at the TEI container this job runs.
+      VECTOR_STORE_BACKEND: pgvector
+      AI_EMBED_LOCAL_BASE_URL: http://127.0.0.1:8080
+      AI_EMBED_LOCAL_MODEL: intfloat/multilingual-e5-small
+      AI_EMBED_LOCAL_DIMENSIONS: '384'
+      AI_EMBED_LOCAL_QUERY_PREFIX: 'query: '
+      AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage: '
+      # The stated corpus (weaviate.md 3.6: "the seed corpus scaled to a stated
+      # multiple"). The record carries the counts that resulted.
+      RAG_EVAL_PROBE_TENANT_CHUNKS: '5000'
+      RAG_EVAL_SCALE_MULTIPLE: '4'
+      # Empty until the product's answer route exists (ragas.md 1.2).
+      RAG_EVAL_ANSWER_URL: ''
+
+    steps:
+      # ── Off unless switched on ──
+      # Owner decision 2026-11-12 (as for garak and Inspect): a scheduled run
+      # does nothing unless the repository variable RAG_EVAL_ENABLED is 'true';
+      # a manual dispatch always runs. The key decides only whether the judge
+      # may run: the corpus and retrieval stages make no model call.
+      - name: Check whether the nightly runs
+        id: key
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ENABLED: ${{ vars.RAG_EVAL_ENABLED }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "schedule" ] && [ "$ENABLED" != "true" ]; then
+            echo "::notice::The RAG eval nightly is switched off (repository variable RAG_EVAL_ENABLED is not 'true'); dispatch the workflow to run it once."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$KEY" ]; then echo "judge=true" >> "$GITHUB_OUTPUT"; else echo "judge=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+
+      - name: Setup Node + Prisma client
+        if: steps.key.outputs.present == 'true'
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: '24'
+
+      - name: Create PostgreSQL roles for RLS
+        if: steps.key.outputs.present == 'true'
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
+          END $$;
+          GRANT app_user TO ci;
+          GRANT app_user TO postgres;
+          SQL
+
+      - name: Apply migrations + seed
+        if: steps.key.outputs.present == 'true'
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      # The deployment's own embedder: the image the canonical Compose file
+      # runs, by the same digest, serving the same model at the same Hub commit
+      # (tests/guardrails/rag-eval-workflow-pinning.test.ts holds all three to
+      # deploy/docker-compose.prod.yml). Bound to loopback.
+      - name: Start TEI (the deployment's embedder)
+        if: steps.key.outputs.present == 'true'
+        run: |
+          docker run -d --name tei-embed -p 127.0.0.1:8080:8080 \
+            ghcr.io/rodnapamet/tei-embed@sha256:90f7be794f9451e84381b385ad1d4c16883035686dfa658b1d1ccb3c7ed53b55 \
+            --model-id intfloat/multilingual-e5-small --revision 614241f622f53c4eeff9890bdc4f31cfecc418b3 \
+            --port 8080 --max-client-batch-size 64 --auto-truncate
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then echo "TEI is up after $((i * 5))s"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::TEI did not become healthy in 10 minutes"; docker logs tei-embed 2>&1 | tail -n 40 | cut -c1-300; exit 1
+
+      - name: Build the corpus (answer, probe and filler tenants)
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p rag-out
+          npx tsx scripts/rag-eval/corpus.ts --set evals/rag/sets/seed-policies.json \
+            --probe-tenant-chunks "$RAG_EVAL_PROBE_TENANT_CHUNKS" --scale-multiple "$RAG_EVAL_SCALE_MULTIPLE" \
+            --manifest rag-out/corpus.json
+
+      - name: Retrieval figures (recall@10 vs exact, p95 latency)
+        id: retrieval
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          npx tsx scripts/rag-eval/probe.ts --set evals/rag/sets/seed-policies.json --manifest rag-out/corpus.json \
+            --k 10 --host github-actions-ubuntu-latest --out rag-out/retrieval.json
+          npx tsx scripts/rag-eval/check.ts --probe rag-out/retrieval.json --md rag-out/retrieval.md > rag-out/retrieval-verdict.json
+          # Every line written to the job summary is also written to the job
+          # log (owner decision 2026-11-13).
+          tee -a "$GITHUB_STEP_SUMMARY" < rag-out/retrieval.md
+
+      # The harness's own tests are the image's first stage; a harness that
+      # fails them never scores anything.
+      - name: Build the Ragas image (its tests are the gate)
+        if: steps.key.outputs.present == 'true'
+        run: |
+          docker build --target test evals/rag
+          docker build -t inflect-ragas:ci evals/rag
+
+      # NON-BLOCKING: continue-on-error is allowed here ONLY beside the dated
+      # RAG-EVAL-NON-BLOCKING-UNTIL marker in this file's header, which the
+      # pinning guard parses. The step still exits non-zero when the judge ran
+      # and produced no valid record, so a night that measured nothing shows.
+      - name: Answer and judge (Ragas record)
+        id: judge
+        if: steps.key.outputs.present == 'true'
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The repository's key is organisation-level and needs a workspace
+          # (docs/implementation-notes/2026-10-17-anthropic-workspace-header.md).
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          JUDGE: ${{ steps.key.outputs.judge }}
+        run: |
+          set -uo pipefail
+          if [ -z "$RAG_EVAL_ANSWER_URL" ]; then
+            echo "::notice::No answer target yet (search_knowledge and the harness's answer route are vector store Phase 3.3-3.5): no question asked, no judge call, no record. The retrieval figures above are tonight's output." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$JUDGE" != "true" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is not set; the judge cannot run and no record is written." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Names and set/unset only; never a value.
+          echo "rag-eval: judge key from ANTHROPIC_API_KEY; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo 'not sent')"
+          COST_METER_JOB=ragas COST_METER_PORT=8787 node evals/cost-meter/anthropic-proxy.mjs & proxy=$!
+          unset ANTHROPIC_API_KEY
+          sleep 1
+          chmod 777 rag-out
+          status=0
+          docker run --rm --network host -v "$PWD/rag-out:/out" -v "$PWD/evals/rag/sets:/sets:ro" inflect-ragas:ci \
+            --set /sets/seed-policies.json --manifest /out/corpus.json --retrieval /out/retrieval.json \
+            --proxy http://127.0.0.1:8787 --tei http://127.0.0.1:8080 \
+            --answer-url "$RAG_EVAL_ANSWER_URL" \
+            --out /out/record.json --sentinels-out /out/sentinels.json || status=$?
+          echo "Metered spend: $(curl -fsS http://127.0.0.1:8787/meter/state | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const s=JSON.parse(d);process.stdout.write(`USD ${s.spentUsd} of ${s.shareUsd} (${s.status}, ${s.calls} calls, ${s.refused} refused)`)})')" | tee -a "$GITHUB_STEP_SUMMARY"
+          kill "$proxy" 2>/dev/null || true
+          if [ "$status" != "0" ]; then echo "::error::the judge stage exited ${status} (3: no answer target, 4: sentinels missed)"; exit 1; fi
+          if ! npx tsx scripts/rag-eval/check.ts --record rag-out/record.json --set evals/rag/sets/seed-policies.json --md rag-out/record.md > rag-out/record-verdict.json; then
+            echo "::error::the record was refused by its own schema"; cat rag-out/record.md; exit 1
+          fi
+          # Named as it would be committed (ragas.md 1.3): evals/rag/records/<revision id>.json.
+          id="$(node -p 'require("./rag-out/record-verdict.json").revisionId')"
+          mkdir -p rag-out/commit/evals/rag/records && cp rag-out/record.json "rag-out/commit/evals/rag/records/${id}.json"
+          tee -a "$GITHUB_STEP_SUMMARY" < rag-out/record.md
+          echo "To commit: evals/rag/records/${id}.json (in the artifact under commit/), by a reviewed pull request." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the night's outputs
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rag-eval-nightly
+          # Ids, counts, keys and seed text only: the corpus manifest holds no
+          # chunk text, the retrieval output no text at all.
+          path: |
+            rag-out/corpus.json
+            rag-out/retrieval.json
+            rag-out/retrieval.md
+            rag-out/retrieval-verdict.json
+            rag-out/record.json
+            rag-out/record.md
+            rag-out/record-verdict.json
+            rag-out/sentinels.json
+            rag-out/commit/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ── Auto-issue on a regression (dast.yml's issue_title pattern, by hand) ──
+      # One open issue, updated nightly while a retrieval figure misses its
+      # D-L4-9 floor (two consecutive misses after tuning is the Weaviate
+      # trigger, one miss a tuning task; the same floors gate search_knowledge)
+      # or the judge stage failed.
+      - name: Open or update the RAG eval issue
+        if: always() && steps.key.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TITLE: 'RAG eval nightly findings (Ragas, retrieval figures)'
+          JUDGE_OUTCOME: ${{ steps.judge.outcome }}
+        run: |
+          set -euo pipefail
+          missed="$(node -e 'try{const v=require("./rag-out/retrieval-verdict.json");process.stdout.write(v.retrieval&&v.retrieval.anyMissed?"true":"false")}catch{process.stdout.write("unread")}')"
+          if [ "$missed" = "false" ] && [ "$JUDGE_OUTCOME" = "success" ]; then echo "Nothing to report tonight."; exit 0; fi
+          body="$(cat rag-out/retrieval.md 2>/dev/null || echo 'The retrieval stage wrote no figures.')"$'\n\n'"Judge stage: ${JUDGE_OUTCOME}"$'\n\n'"Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          existing="$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number,title --jq ".[] | select(.title == \"${TITLE}\") | .number" | head -n 1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi

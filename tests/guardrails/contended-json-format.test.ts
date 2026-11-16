@@ -182,7 +182,7 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // `postgres-pgvector-image.yml:build-scan-push` and `:decide`, its
         // scheduled publish, before `queue-candidate-sweep.yml` ('p' < 'q').
         // Three mid-file inserts, +15/-0.
-        keyOrderSha: '4d38a9daf3f1ffd2250159ccaee078ba74eb6f77e043d99d770aed107a94ccbd',
+        keyOrderSha: '59563706557582b8b1dc4f78fb181e6728c5fb29a3a69e04ad0c7274deb4eea2',
     },
     'docs/_status/doc-classification.json': {
         indent: 4,
