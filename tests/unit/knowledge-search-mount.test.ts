@@ -2,7 +2,7 @@
  * The `search_knowledge` mount gate (vector store Phase 3.5): offered only when
  * the newest committed RAG evaluation record for THIS deployment's retriever
  * revision checks, answers an authored set, ran within budget, and its
- * recomputed retrieval figures clear the (proposed) floors.
+ * recomputed retrieval figures clear D-L4-9's floors.
  *
  * Each case writes a tiny `evals/` tree under a temporary root, with the set
  * and cost meter copied from the repository's own, so the gate reads the
@@ -13,13 +13,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
-import {
-    PROPOSED_P95_LATENCY_CEILING_MS,
-    PROPOSED_RECALL_AT_10_FLOOR,
-    resolveKnowledgeSearchMount,
-} from '@/app-layer/services/knowledge-search-mount';
+import { resolveKnowledgeSearchMount } from '@/app-layer/services/knowledge-search-mount';
 import { knowledgeRetrieverRevision } from '@/app-layer/services/knowledge-search-revision';
 import { ragSetHash, RagEvaluationSetSchema, type RagEvaluationSet } from '@/lib/ai/evals/rag-record';
+import { P95_SEARCH_LATENCY_MS_CEILING, RECALL_AT_10_VS_EXACT_FLOOR } from '@/lib/ai/evals/rag-retrieval-floors';
 
 const REPO = path.resolve(__dirname, '../..');
 const ROUTE = { model: 'intfloat/multilingual-e5-small', dimensions: 384 };
@@ -118,9 +115,9 @@ describe('search_knowledge is offered only with a passing record for the current
         expect(m.state === 'MOUNTED' && m.figures).toMatchObject({ recallAt10VsExact: 1, p95LatencyMs: 40 });
     });
 
-    it('holds the proposed floors: recall@10 below 0.95 of exact, or p95 above 300 ms, refuses', () => {
-        expect(PROPOSED_RECALL_AT_10_FLOOR).toBe(0.95);
-        expect(PROPOSED_P95_LATENCY_CEILING_MS).toBe(300);
+    it('holds D-L4-9’s floors: recall@10 below 0.95 of exact, or p95 above 300 ms, refuses', () => {
+        expect(RECALL_AT_10_VS_EXACT_FLOOR).toBe(0.95);
+        expect(P95_SEARCH_LATENCY_MS_CEILING).toBe(300);
         expect(refusal(resolve({ 'r.json': record({ recallMiss: 1 }) }))).toBe('RECALL_BELOW_FLOOR');
         expect(refusal(resolve({ 'r.json': record({ latencyMs: 301 }) }))).toBe('LATENCY_ABOVE_CEILING');
         expect(resolve({ 'r.json': record({ latencyMs: 300 }) }).state).toBe('MOUNTED');

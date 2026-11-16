@@ -2,11 +2,12 @@
 #
 # Never the app image (G5). The base is pinned BY DIGEST (python:3.12-slim, the
 # same multi-arch index digest as .garak/Dockerfile and evals/inspect/Dockerfile)
-# and EVERY Python dependency by exact version: requirements.lock is the whole
-# resolved set, installed with --no-deps and checked with `pip check`, so the
-# image cannot pick up a newer transitive release between two nights. (A
-# floating resolution of ragas 0.4.3 broke on import in 2026: see the lock's
-# header.)
+# and EVERY Python dependency by exact version AND hash: requirements.lock is
+# the whole resolved set, installed with --no-deps --require-hashes and checked
+# with `pip check`, so the image cannot pick up a newer transitive release
+# between two nights, nor a file re-served under a pinned version. (A floating
+# resolution of ragas 0.4.3 broke on import in 2026: see the lock's header.)
+# The test stage's pytest is pinned the same way (requirements-test.lock).
 #
 # The judge holds no key: it reaches Anthropic only through the metering proxy
 # on the runner's loopback (evals/cost-meter/anthropic-proxy.mjs), and TEI on
@@ -30,8 +31,8 @@ ENV PIP_NO_CACHE_DIR=1 \
 
 WORKDIR /harness
 COPY requirements.lock ./requirements.lock
-RUN grep -qx "ragas==${RAGAS_VERSION}" requirements.lock \
-    && pip install --no-deps -r requirements.lock \
+RUN grep -q "^ragas==${RAGAS_VERSION} " requirements.lock \
+    && pip install --no-deps --require-hashes -r requirements.lock \
     && pip check
 
 COPY inflect_rag ./inflect_rag
@@ -42,7 +43,9 @@ ENTRYPOINT ["python", "-m", "inflect_rag.run"]
 
 FROM runtime AS test
 USER root
-RUN pip install "pytest==9.0.2"
+COPY requirements-test.lock ./requirements-test.lock
+RUN pip install --no-deps --require-hashes -r requirements-test.lock \
+    && pip check
 COPY tests ./tests
 COPY fixtures ./fixtures
 USER ragas

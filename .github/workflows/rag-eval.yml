@@ -20,15 +20,26 @@ name: RAG eval (Ragas, nightly)
 #     each question through the answer contract (evals/rag/fixtures/answer-contract.json),
 #     scores it with Ragas's four metrics and the abstention verdict, and writes
 #     a record in src/lib/ai/evals/rag-record.ts's shape.
-#   - NO ANSWER TARGET YET. Stage 3 needs search_knowledge and the harness's
-#     answer route (vector store Phase 3.3-3.5). Until RAG_EVAL_ANSWER_URL is
-#     set, stage 3 says so and writes no record: a record over answers the
-#     product did not give would be a record about nothing, and a record is
-#     what the search_knowledge mount gate opens on. Stages 1 and 2 still run
-#     and their figures are the night's output.
+#   - THE RECORD IS THE GATE'S. The retrieval stage keys its output by
+#     knowledgeRetrieverRevision (scripts/rag-eval/search-seam.ts), the revision
+#     the search_knowledge mount gate looks records up by, and asks the index
+#     path only (strategy 'index'); its figures are read against D-L4-9's
+#     floors, which are also the gate's (src/lib/ai/evals/rag-retrieval-floors.ts).
+#   - NO ANSWER TARGET YET. Stage 3 needs the harness's answer route (Ragas
+#     1.2's answer half: search_knowledge through the assistant on the answer
+#     tenant), which no route serves yet. Until RAG_EVAL_ANSWER_URL is set,
+#     stage 3 says so and writes no record: a record over answers the product
+#     did not give would be a record about nothing, and a record is what the
+#     search_knowledge mount gate opens on. Stages 1 and 2 still run and their
+#     figures are the night's output.
 #   - MODEL (D-EV-2): the cost meter's share model (Haiku-class,
-#     evals/cost-meter/shares.json) through the repository's ANTHROPIC_API_KEY,
-#     with the ANTHROPIC_WORKSPACE_ID header that organisation-level key needs.
+#     evals/cost-meter/shares.json) through a dedicated key when the
+#     RAGAS_ANTHROPIC_API_KEY secret is set (owner decision 2026-11-16: the
+#     judge prefers a dedicated key; created in its own workspace, it needs no
+#     header), otherwise the repository's ANTHROPIC_API_KEY with the
+#     ANTHROPIC_WORKSPACE_ID header that organisation-level key needs, as
+#     garak.yml and agent-evals.yml choose theirs. The log names which secret
+#     was used, never its value.
 #     The key goes to ONE process, the metering proxy on loopback
 #     (evals/cost-meter/anthropic-proxy.mjs), which reserves every judge call
 #     against the ragas share (USD 2.50 of the shared USD 5, D-EV-11) before it
@@ -108,7 +119,10 @@ jobs:
       AI_EMBED_LOCAL_QUERY_PREFIX: 'query: '
       AI_EMBED_LOCAL_PASSAGE_PREFIX: 'passage: '
       # The stated corpus (weaviate.md 3.6: "the seed corpus scaled to a stated
-      # multiple"). The record carries the counts that resulted.
+      # multiple"). Owner decision 2026-11-16 (D-L4-9, amended): 5,000 chunks
+      # in the probe tenant and 4 times that in the shared index, re-sized once
+      # production's largest tenant is indexed. The record carries the counts
+      # that resulted.
       RAG_EVAL_PROBE_TENANT_CHUNKS: '5000'
       RAG_EVAL_SCALE_MULTIPLE: '4'
       # Empty until the product's answer route exists (ragas.md 1.2).
@@ -123,7 +137,7 @@ jobs:
       - name: Check whether the nightly runs
         id: key
         env:
-          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEY: ${{ secrets.RAGAS_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
           ENABLED: ${{ vars.RAG_EVAL_ENABLED }}
           EVENT: ${{ github.event_name }}
         run: |
@@ -194,7 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           npx tsx scripts/rag-eval/probe.ts --set evals/rag/sets/seed-policies.json --manifest rag-out/corpus.json \
-            --k 10 --host github-actions-ubuntu-latest --out rag-out/retrieval.json
+            --host github-actions-ubuntu-latest --out rag-out/retrieval.json
           npx tsx scripts/rag-eval/check.ts --probe rag-out/retrieval.json --md rag-out/retrieval.md > rag-out/retrieval-verdict.json
           # Every line written to the job summary is also written to the job
           # log (owner decision 2026-11-13).
@@ -217,23 +231,27 @@ jobs:
         if: steps.key.outputs.present == 'true'
         continue-on-error: true
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.RAGAS_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}
           # The repository's key is organisation-level and needs a workspace
           # (docs/implementation-notes/2026-10-17-anthropic-workspace-header.md).
-          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          # Sent only with that fallback key: the dedicated
+          # RAGAS_ANTHROPIC_API_KEY is created inside its own workspace and
+          # needs no header.
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.RAGAS_ANTHROPIC_API_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
+          KEY_SOURCE: ${{ secrets.RAGAS_ANTHROPIC_API_KEY != '' && 'RAGAS_ANTHROPIC_API_KEY' || 'ANTHROPIC_API_KEY' }}
           JUDGE: ${{ steps.key.outputs.judge }}
         run: |
           set -uo pipefail
           if [ -z "$RAG_EVAL_ANSWER_URL" ]; then
-            echo "::notice::No answer target yet (search_knowledge and the harness's answer route are vector store Phase 3.3-3.5): no question asked, no judge call, no record. The retrieval figures above are tonight's output." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::notice::No answer target yet (the harness's answer route, Ragas 1.2's answer half, is not built): no question asked, no judge call, no record. The retrieval figures above are tonight's output." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ "$JUDGE" != "true" ]; then
-            echo "::notice::ANTHROPIC_API_KEY is not set; the judge cannot run and no record is written." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::notice::neither RAGAS_ANTHROPIC_API_KEY nor ANTHROPIC_API_KEY is set; the judge cannot run and no record is written." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # Names and set/unset only; never a value.
-          echo "rag-eval: judge key from ANTHROPIC_API_KEY; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo 'not sent')"
+          echo "rag-eval: judge key from ${KEY_SOURCE}; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo 'not sent')"
           COST_METER_JOB=ragas COST_METER_PORT=8787 node evals/cost-meter/anthropic-proxy.mjs & proxy=$!
           unset ANTHROPIC_API_KEY
           sleep 1

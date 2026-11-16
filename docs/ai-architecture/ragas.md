@@ -19,7 +19,7 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 | Wave | 1, alongside the first RAG wave — the mount gate in [`weaviate.md`](./weaviate.md) Phase 3 consumes its record |
 | Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2 (the index to evaluate — **D-L4-1**, owner 2026-11-11: pgvector first, Weaviate only on a measured floor), [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | `search_knowledge` being offered at all; [`ares.md`](./ares.md) (needs Ragas's cases to calibrate against) |
-| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only. **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them |
+| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only; **amended 2026-11-16**: the judge prefers a dedicated key, `RAGAS_ANTHROPIC_API_KEY`, over the repository's `ANTHROPIC_API_KEY` (an owner action to create). **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them. **The probe corpus** — decided 2026-11-16: 5,000 chunks in the probe tenant and 4 times that in the shared index, re-sized once production's largest tenant is indexed |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -29,7 +29,7 @@ Green: Phase 0, on `main` with D-EV-2 decided. Blue: a phase not yet on `main`; 
 ```mermaid
 flowchart LR
   P0["Phase 0 · sets and judge<br/>seed-policies set, four case kinds<br/>rag-record schema<br/>D-EV-2 decided"]:::done
-  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures, judge<br/>answers wait on search_knowledge"]:::todo
+  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures, judge<br/>keyed by the gate's revision<br/>answer route not built"]:::todo
   P2["Phase 2 · floors and the gate<br/>search_knowledge only<br/>with a passing record"]:::todo
   P3["Phase 3 · drift and distractors<br/>re-run on every revision"]:::todo
   WV["weaviate P2<br/>an index to evaluate"]:::ext
@@ -59,14 +59,21 @@ flowchart LR
   deployment's TEI (`scripts/rag-eval/corpus.ts`), measures D-L4-9's two
   retrieval figures over `VectorRepository.search` against an exact scan of
   its own (`scripts/rag-eval/probe.ts`), and runs the Ragas judge
-  (`evals/rag/`, Ragas 0.4.3, every dependency locked) through a metering
-  proxy that holds the key and the ragas share
-  (`evals/cost-meter/anthropic-proxy.mjs`). The judge has nothing to judge
-  until the product answers through `search_knowledge` (vector store
-  3.3-3.5, #5751) on the harness's answer route
-  (`evals/rag/fixtures/answer-contract.json`); until then a night produces
-  the retrieval figures and no record. See
-  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md`.
+  (`evals/rag/`, Ragas 0.4.3, every dependency locked by version and hash)
+  through a metering proxy that holds the key — `RAGAS_ANTHROPIC_API_KEY`
+  when set, the repository's `ANTHROPIC_API_KEY` otherwise — and the ragas
+  share (`evals/cost-meter/anthropic-proxy.mjs`). The retrieval stage asks
+  the product's search on the index path (`strategy: 'index'`, under
+  `HNSW_SEARCH`) and keys its output by `knowledgeRetrieverRevision`, the
+  revision the `search_knowledge` mount gate looks records up by, and its
+  figures are read against D-L4-9's floors, the gate's own
+  (`src/lib/ai/evals/rag-retrieval-floors.ts`). The judge has nothing to
+  judge until the product answers on the harness's answer route
+  (`evals/rag/fixtures/answer-contract.json`), which is not built; until then
+  a night produces the retrieval figures and no record, and no record can
+  pass the gate. See
+  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md` and
+  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md`.
 - **The house already has the eval discipline Ragas must fit into.**
   `flue/skills/evaluation-record.ts` and
   `identity-match/evaluation-record.ts`: an *evaluation set* authored beside the
@@ -252,13 +259,21 @@ a vendor is still text to a vendor), G1.
       uses). The image's first stage runs the harness's tests. The judge is
       the cost meter's share model through `anthropic-proxy.mjs`, which holds
       the key and reserves every call against the ragas share before it is
-      sent; `answer_relevancy` embeds with the deployment's own TEI.
+      sent; `answer_relevancy` embeds with the deployment's own TEI. *Since
+      2026-11-16:* both locks (`requirements.lock`, and `requirements-test.lock`
+      for the test stage's pytest) carry every PyPI file's sha256 and are
+      installed `--require-hashes`; the key is the dedicated
+      `RAGAS_ANTHROPIC_API_KEY` when set (D-EV-2, amended).
 - [ ] 1.2 The harness drives the *product's* retrieval, not a reimplementation.
       **Retrieval half built**: `scripts/rag-eval/probe.ts` asks every question
       through `VectorRepository.search` on a probe tenant and against an exact
-      scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`)
-      that #5751 wires to `strategy: 'index'` and
-      `knowledgeRetrieverRevision`. **Answer half open**: the harness asks
+      scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`),
+      **wired 2026-11-16** to the product's search: `strategy: 'index'`,
+      `HNSW_SEARCH`, and `knowledgeRetrieverRevision`, so a record the nightly
+      writes carries exactly the revision the mount gate compares
+      (`tests/unit/rag-eval-gate-agreement.test.ts`), and the probe refuses a
+      run searched with other settings than that revision states.
+      **Answer half open**: the harness asks
       through a written contract (`evals/rag/fixtures/answer-contract.json`,
       held by `src/lib/ai/evals/rag-answer-contract.ts` and the Python reader)
       that the product's answer route must serve — `search_knowledge` through
@@ -329,7 +344,10 @@ human between a nightly run and a gate opening.
 - [ ] 2.2 The `search_knowledge` mount gate ([`weaviate.md`](./weaviate.md)
       Phase 3.4) reads the committed record for the current retriever revision
       and compares to the floors; no record or under floor → tool not offered,
-      run message says so.
+      run message says so. *Partly true 2026-11-16:* the gate exists (vector
+      store 3.5) and holds a record to D-L4-9's two retrieval floors, the
+      owner's decision of that day; the answer-quality floors of 2.1 join it
+      once 2.1 sets them.
 - [ ] 2.3 Flip the nightly to blocking on regression below floor.
 
 **Hardening.** G11 (floors are ratchets: down only with a cited reason),

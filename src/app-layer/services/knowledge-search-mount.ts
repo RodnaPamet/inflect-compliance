@@ -15,9 +15,9 @@
  *              revision this deployment would run — none for this revision,
  *              one that does not answer the committed authored set, one the
  *              recompute refuses, one a budget stopped, or one whose recomputed
- *              retrieval figures miss a floor. The tool is absent from every
- *              catalogue, and a run that would have been offered it records
- *              the omission (`RETRIEVER_NOT_EVALUATED`).
+ *              retrieval figures miss a D-L4-9 floor. The tool is absent from
+ *              every catalogue, and a run that would have been offered it
+ *              records the omission (`RETRIEVER_NOT_EVALUATED`).
  *   MOUNTED    the newest record for this revision passes.
  *
  * ── WHICH RECORD DECIDES ────────────────────────────────────────────────────
@@ -34,14 +34,18 @@
  * failure — and every record is schema-checked before any is ordered, because
  * a malformed one cannot be placed in time and so cannot be ruled out.
  *
- * ── THE FLOORS ARE PROPOSED, NOT DECIDED ────────────────────────────────────
+ * ── THE FLOORS ARE D-L4-9'S, DECIDED ────────────────────────────────────────
  *
- * `PROPOSED_RECALL_AT_10_FLOOR` (0.95 of exact search) and
- * `PROPOSED_P95_LATENCY_CEILING_MS` (300 ms) are weaviate.md 3.6's proposal,
- * raised for the owner to confirm or change before they bind. They are what
- * the gate holds today because a gate needs some value; a record that clears
- * them opens it. Ragas Phase 2.1's per-metric quality floors
- * (`evals/rag/floors.json`) do not exist yet and are not read here.
+ * recall@10 at least 0.95 of an exact scan, and p95 latency at most 300 ms at
+ * k = 10. D-L4-9 (owner, 2026-11-12) adopted them as the trigger for the
+ * vector store's Phase 4 (Weaviate); the owner decided on 2026-11-16 that the
+ * SAME values also decide whether `search_knowledge` is offered. They live in
+ * ONE place, `src/lib/ai/evals/rag-retrieval-floors.ts`, which the Ragas
+ * nightly reads its figures against too, and this gate asks
+ * `readRetrievalFloors` rather than comparing on its own, so the nightly's
+ * verdict and the gate's cannot disagree. Until Ragas Phase 2 defines
+ * answer-quality floors (`evals/rag/floors.json`), the retrieval floors are
+ * the only ones the gate checks; Phase 2's join it then.
  *
  * Both figures are RECOMPUTED by `checkRagEvaluationRecord` from each case's
  * raw probe; a `null` figure (nothing to compute it over) never passes.
@@ -61,17 +65,9 @@ import {
     type RagEvaluationRefusal,
     type RetrievalFloorFigures,
 } from '@/lib/ai/evals/rag-record';
+import { readRetrievalFloors } from '@/lib/ai/evals/rag-retrieval-floors';
 
 import { knowledgeRetrieverRevision } from './knowledge-search-revision';
-
-/**
- * PROPOSED (weaviate.md 3.6), not confirmed by the owner: recall@10 of the
- * indexed, tenant-filtered search against an exact scan of the same rows.
- */
-export const PROPOSED_RECALL_AT_10_FLOOR = 0.95;
-
-/** PROPOSED (weaviate.md 3.6), not confirmed by the owner: p95 latency of a search at k = 10, in ms. */
-export const PROPOSED_P95_LATENCY_CEILING_MS = 300;
 
 export const RAG_RECORDS_DIR = path.join('evals', 'rag', 'records');
 export const RAG_SETS_DIR = path.join('evals', 'rag', 'sets');
@@ -241,21 +237,24 @@ export function resolveKnowledgeSearchMount(opts: ResolveKnowledgeSearchMountOpt
     if (!check.ok) return unmounted(check.reason, `${newest.file}: ${check.detail}`);
     if (!check.floor.eligible) return unmounted('BUDGET_EXHAUSTED', `${newest.file}: a run the budget stopped never passes a floor`);
 
+    // D-L4-9's floors, read through the one function the nightly reads them
+    // through: a null figure is "not assessed", never a pass.
     const figures = check.retrievalFloors;
-    if (figures.recallAt10VsExact === null) {
+    const floors = readRetrievalFloors(figures);
+    if (floors.recallAt10VsExact.meets === null) {
         return unmounted('RECALL_NOT_MEASURED', `${newest.file}: no probe carried an exact top-10`);
     }
-    if (figures.recallAt10VsExact < PROPOSED_RECALL_AT_10_FLOOR) {
+    if (!floors.recallAt10VsExact.meets) {
         return unmounted(
             'RECALL_BELOW_FLOOR',
-            `${newest.file}: recall@10 against exact search is ${figures.recallAt10VsExact.toFixed(4)}, the proposed floor is ${PROPOSED_RECALL_AT_10_FLOOR}`,
+            `${newest.file}: recall@10 against exact search is ${figures.recallAt10VsExact?.toFixed(4)}, the floor (D-L4-9) is ${floors.recallAt10VsExact.floor}`,
         );
     }
-    if (figures.p95LatencyMs === null) return unmounted('LATENCY_NOT_MEASURED', `${newest.file}: no probe carried a latency`);
-    if (figures.p95LatencyMs > PROPOSED_P95_LATENCY_CEILING_MS) {
+    if (floors.p95LatencyMs.meets === null) return unmounted('LATENCY_NOT_MEASURED', `${newest.file}: no probe carried a latency`);
+    if (!floors.p95LatencyMs.meets) {
         return unmounted(
             'LATENCY_ABOVE_CEILING',
-            `${newest.file}: p95 latency is ${figures.p95LatencyMs} ms, the proposed ceiling is ${PROPOSED_P95_LATENCY_CEILING_MS} ms`,
+            `${newest.file}: p95 latency is ${figures.p95LatencyMs} ms, the ceiling (D-L4-9) is ${floors.p95LatencyMs.floor} ms`,
         );
     }
     return { state: 'MOUNTED', revision, record: { file: newest.file, ranAt: newest.ranAt }, figures };

@@ -11,13 +11,18 @@
  *   3. The model key reaches ONE process, the metering proxy: it is read in the
  *      first step (presence only) and the judge step (which hands it to the
  *      proxy and unsets it), never job env, and the judge container is given
- *      no environment at all.
+ *      no environment at all. The dedicated RAGAS_ANTHROPIC_API_KEY is
+ *      preferred over the shared key (owner decision 2026-11-16), the
+ *      workspace header goes only with the shared one, and the log names
+ *      which secret was used, never its value — as garak's and Inspect's do.
  *   4. The embedder is the deployment's: the TEI image digest, model and Hub
  *      revision equal the canonical Compose file's, and the embedding variables
  *      are the ones docs/deployment.md gives the VM (the E5 prefixes, 384).
  *   5. The judge image: the base by digest, ragas and anthropic by exact
- *      version in the Dockerfile, pyproject and the full lock alike, the lock
- *      installed with --no-deps and checked, analytics off; never the app image.
+ *      version in the Dockerfile, pyproject and the full lock alike, every
+ *      requirement of both locks (runtime and test stage) by sha256 hash,
+ *      each installed with --no-deps --require-hashes and checked, analytics
+ *      off; never the app image.
  *   6. The plan fits the share: the planned night (set cases plus sentinels)
  *      at the cost meter's price for its model, inside the ragas share, and the
  *      judge's per-call output bound inside the proxy's cap.
@@ -83,12 +88,22 @@ describe('off unless switched on', () => {
 });
 
 describe('the model key reaches the metering proxy and nothing else', () => {
-    it('is never job env, and only two steps read it', () => {
+    it('is never job env, and only two steps read either key', () => {
         expect(JSON.stringify(JOB.env)).not.toContain('secrets.');
-        const holders = JOB.steps.filter((s) => JSON.stringify(s.env ?? {}).includes('secrets.ANTHROPIC_API_KEY')).map((s) => s.id);
-        expect(holders).toEqual(['key', 'judge']);
-        expect(step('key')?.env?.KEY).toBe('${{ secrets.ANTHROPIC_API_KEY }}');
-        expect(step('judge')?.env?.ANTHROPIC_API_KEY).toBe('${{ secrets.ANTHROPIC_API_KEY }}');
+        for (const secret of ['secrets.RAGAS_ANTHROPIC_API_KEY', 'secrets.ANTHROPIC_API_KEY']) {
+            const holders = JOB.steps.filter((s) => JSON.stringify(s.env ?? {}).includes(secret)).map((s) => s.id);
+            expect(holders).toEqual(['key', 'judge']);
+        }
+        expect(step('key')?.env?.KEY).toBe('${{ secrets.RAGAS_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}');
+        expect(step('judge')?.env?.ANTHROPIC_API_KEY).toBe('${{ secrets.RAGAS_ANTHROPIC_API_KEY || secrets.ANTHROPIC_API_KEY }}');
+    });
+
+    it('prefers the dedicated key as garak and Inspect do: the header only with the shared key, the source logged by name', () => {
+        const judge = step('judge');
+        expect(judge?.env?.ANTHROPIC_WORKSPACE_ID).toBe("${{ secrets.RAGAS_ANTHROPIC_API_KEY == '' && vars.ANTHROPIC_WORKSPACE_ID || '' }}");
+        expect(judge?.env?.KEY_SOURCE).toBe("${{ secrets.RAGAS_ANTHROPIC_API_KEY != '' && 'RAGAS_ANTHROPIC_API_KEY' || 'ANTHROPIC_API_KEY' }}");
+        expect(judge?.run).toContain('rag-eval: judge key from ${KEY_SOURCE}; anthropic-workspace-id header: $([ -n "${ANTHROPIC_WORKSPACE_ID}" ] && echo sent || echo \'not sent\')');
+        expect(judge?.run).not.toMatch(/echo[^\n]*\$\{?ANTHROPIC_WORKSPACE_ID\}?"?\s*$/m);
     });
 
     it('starts the proxy for the ragas share, unsets the key, and runs the judge container with no environment', () => {
@@ -141,19 +156,61 @@ describe('the embedder is the deployment’s', () => {
     });
 });
 
+/**
+ * A hash-pinned lock (`pip-compile --generate-hashes`'s format): every
+ * requirement is `name==version` followed by at least one `--hash=sha256:`,
+ * continued with a backslash. Anything else is refused, so an unhashed or
+ * unpinned line cannot slip in beside the hashed ones.
+ */
+export function parseHashedLock(src: string, file: string): Map<string, { version: string; hashes: string[] }> {
+    const out = new Map<string, { version: string; hashes: string[] }>();
+    const requirements = src
+        .split('\n')
+        .filter((l) => !l.startsWith('#'))
+        .join('\n')
+        .replace(/ \\\n\s+/g, ' ')
+        .split('\n')
+        .filter((l) => l.trim() !== '');
+    for (const r of requirements) {
+        const m = /^([A-Za-z0-9_.-]+)==([^\s]+)((?: --hash=sha256:[0-9a-f]{64})+)$/.exec(r);
+        if (!m) throw new Error(`${file}: not name==version with sha256 hashes: ${r.slice(0, 120)}`);
+        const name = m[1].toLowerCase();
+        if (out.has(name)) throw new Error(`${file}: ${name} is pinned twice`);
+        out.set(name, { version: m[2], hashes: m[3].trim().split(' ').map((h) => h.slice('--hash=sha256:'.length)) });
+    }
+    return out;
+}
+
 describe('the judge image', () => {
     const docker = read('evals/rag/Dockerfile');
-    const lock = new Map(
-        read('evals/rag/requirements.lock')
-            .split('\n')
-            .filter((l) => l && !l.startsWith('#'))
-            .map((l) => {
-                const m = /^([A-Za-z0-9_.-]+)==([^\s]+)$/.exec(l);
-                if (!m) throw new Error(`requirements.lock line is not name==version: ${l}`);
-                return [m[1].toLowerCase(), m[2]] as const;
-            }),
-    );
+    const hashed = parseHashedLock(read('evals/rag/requirements.lock'), 'requirements.lock');
+    const lock = new Map([...hashed].map(([name, r]) => [name, r.version] as const));
+    const testLock = parseHashedLock(read('evals/rag/requirements-test.lock'), 'requirements-test.lock');
     const pyproject = read('evals/rag/pyproject.toml');
+
+    it('the hashed-lock reader refuses an unhashed, unpinned or repeated line', () => {
+        const h = `--hash=sha256:${'a'.repeat(64)}`;
+        expect(parseHashedLock(`# c\nx==1 \\\n    ${h} \\\n    ${h}\n`, 't').get('x')).toEqual({ version: '1', hashes: ['a'.repeat(64), 'a'.repeat(64)] });
+        expect(() => parseHashedLock('x==1\n', 't')).toThrow(/sha256 hashes/);
+        expect(() => parseHashedLock(`x>=1 \\\n    ${h}\n`, 't')).toThrow(/sha256 hashes/);
+        expect(() => parseHashedLock(`x==1 \\\n    ${h}\nX==2 \\\n    ${h}\n`, 't')).toThrow(/pinned twice/);
+    });
+
+    it('pins every requirement of both locks by hash, and installs each by hash alone', () => {
+        expect(hashed.size).toBeGreaterThan(50);
+        expect([...testLock.keys()].sort()).toEqual(['iniconfig', 'pluggy', 'pytest']);
+        // The test stage's pins do not shadow the runtime set's.
+        for (const name of testLock.keys()) expect(hashed.has(name)).toBe(false);
+        expect(docker).toMatch(/^\s+&& pip install --no-deps --require-hashes -r requirements\.lock \\\n\s+&& pip check$/m);
+        expect(docker).toMatch(/^RUN pip install --no-deps --require-hashes -r requirements-test\.lock \\\n\s+&& pip check$/m);
+        // Every pip install in the image is one of those two.
+        expect([...docker.matchAll(/pip install[^\n]*/g)].map((m) => m[0])).toEqual([
+            'pip install --no-deps --require-hashes -r requirements.lock \\',
+            'pip install --no-deps --require-hashes -r requirements-test.lock \\',
+        ]);
+        const testExtra = /^test = (\[.*\])$/m.exec(pyproject)?.[1];
+        expect(JSON.parse(testExtra ?? '[]')).toEqual([`pytest==${testLock.get('pytest')?.version}`]);
+    });
 
     it('pins the base by digest and every dependency by exact version', () => {
         expect(docker).toMatch(/^FROM python:3\.12-slim@sha256:[0-9a-f]{64} AS runtime$/m);
@@ -162,8 +219,7 @@ describe('the judge image', () => {
         expect(lock.get('ragas')).toBe(ragas);
         const deps = /^dependencies = (\[.*\])$/m.exec(pyproject)?.[1];
         expect(JSON.parse(deps ?? '[]')).toEqual([`ragas==${ragas}`, `anthropic==${lock.get('anthropic')}`]);
-        expect(docker).toMatch(/^\s+&& pip install --no-deps -r requirements\.lock \\$/m);
-        expect(docker).toMatch(/^\s+&& pip check$/m);
+        expect(docker).toMatch(/^RUN grep -q "\^ragas==\$\{RAGAS_VERSION\} " requirements\.lock \\$/m);
         expect(docker).toMatch(/RAGAS_DO_NOT_TRACK=true/);
     });
 

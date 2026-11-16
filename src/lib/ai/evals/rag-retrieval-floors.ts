@@ -13,6 +13,16 @@
  * `search_knowledge` is offered (the mount gate); Ragas Phase 2's
  * answer-quality floors join the gate when Phase 2 defines them.
  *
+ * ‾‾‾ ONE SET OF FLOORS ‾‾‾
+ *
+ * This module is the only place the two values are written. The nightly's
+ * checker (`scripts/rag-eval/check.ts`) and the mount gate
+ * (`src/app-layer/services/knowledge-search-mount.ts`) both read a record's
+ * figures through `readRetrievalFloors`, so the night's verdict and the
+ * gate's are the same verdict. `tests/unit/rag-eval-gate-agreement.test.ts`
+ * fails if the gate ever reads them otherwise. Pure and import-free (a type
+ * only), so the gate can import it without loading anything.
+ *
  * ‾‾‾ A NULL FIGURE IS NEVER A PASS ‾‾‾
  *
  * A figure the probes could not compute (no exact list to compare against, no
