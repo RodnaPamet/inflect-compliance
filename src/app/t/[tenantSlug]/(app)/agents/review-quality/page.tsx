@@ -9,6 +9,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { computeAgentReviewQuality, readReviewQualityNames } from '@/app-layer/usecases/agent-review-quality';
 import {
     ANSWERABLE_OUTCOMES,
+    getSampleAuditDisagreementRate,
     listSampleAuditsForReview,
 } from '@/app-layer/usecases/agent-proposal-sample-audit';
 import { SAMPLE_AUDIT_DISSENT_CODES } from '@/lib/agentic/proposal-sampling';
@@ -94,6 +95,16 @@ export default async function AgentReviewQualityPage({
         below so the queue's agents are resolved in the same query.
     */
     const sampleAudits = await listSampleAuditsForReview(ctx);
+
+    /*
+        THE NUMBER (#5738), read with no window.
+
+        Lifetime rather than `report.windowDays`: that window is about DECISIONS
+        made in it, and a sample audit's population is every approval ever drawn.
+        One block mixing the two would make a rate over all time look like a rate
+        over thirty days, which is the kind of number nobody can check.
+    */
+    const sampleAuditRate = await getSampleAuditDisagreementRate(ctx);
 
     // Names, not ids: the page judges how PEOPLE review (#4932).
     const names = await readReviewQualityNames(ctx, {
@@ -215,6 +226,82 @@ export default async function AgentReviewQualityPage({
                     {tAgents('sampleAudit.title')}
                 </Heading>
                 <p className="text-sm text-content-muted">{tAgents('sampleAudit.intro')}</p>
+
+                {/*
+                    THE NUMBER, and the four renderings are the whole point of it.
+
+                    `disagreementRate` is `null`, never 0, when nothing has been
+                    answered — a tenant with a perfect record and a tenant nobody
+                    ever reviewed must not read alike. So a null is PRINTED as not
+                    reported, with its reason, rather than omitted or shown as 0%.
+
+                    And `null` has TWO causes that are different facts: nothing
+                    drawn, and nothing answered of what was drawn. A sampler that
+                    has never run and a backlog of forty unanswered audits both
+                    give a null, and only the second is somebody's to act on, so
+                    they get their own sentences.
+
+                    The percentage never appears without `answered` beside it. The
+                    usecase's own docstring is explicit: 0% over 2 answers and 0%
+                    over 200 are the same number and completely different
+                    evidence, and "a caller that renders the percentage without it
+                    is rendering a number that cannot be wrong".
+
+                    `pending` is printed too and never folded into the
+                    denominator — it is the one figure here that is about the
+                    queue's correctness rather than the reviewers'.
+                */}
+                <div className="space-y-tight" data-testid="sample-audit-rate">
+                    {sampleAuditRate.sampled === 0 ? (
+                        <p className="text-sm text-content-muted">
+                            {tAgents('sampleAudit.rate.neverDrawn')}
+                        </p>
+                    ) : sampleAuditRate.disagreementRate === null ? (
+                        <p className="text-sm text-content-muted">
+                            {tAgents('sampleAudit.rate.notReported', {
+                                sampled: sampleAuditRate.sampled,
+                            })}
+                        </p>
+                    ) : (
+                        <p className="text-sm">
+                            <span className="font-medium">
+                                {tAgents('sampleAudit.rate.headline', {
+                                    pct: pct(sampleAuditRate.disagreementRate),
+                                })}
+                            </span>{' '}
+                            <span className="text-content-muted">
+                                {tAgents('sampleAudit.rate.over', {
+                                    answered: sampleAuditRate.answered,
+                                    sampled: sampleAuditRate.sampled,
+                                })}
+                            </span>
+                        </p>
+                    )}
+                    {sampleAuditRate.sampled > 0 && (
+                        <p className="text-xs text-content-subtle" data-testid="sample-audit-rate-breakdown">
+                            {tAgents('sampleAudit.rate.breakdown', {
+                                concurred: sampleAuditRate.concurred,
+                                dissented: sampleAuditRate.dissented,
+                                indeterminate: sampleAuditRate.indeterminate,
+                                pending: sampleAuditRate.pending,
+                            })}
+                        </p>
+                    )}
+                    {/*
+                        The denominator is stated on the page, not only in a
+                        docstring. An INDETERMINATE answer is IN it, so it pulls
+                        the percentage down — and a reader comparing this with the
+                        workpaper-review rate, which excludes its own
+                        indeterminates, would otherwise read two differently
+                        constructed figures as one kind of thing.
+                    */}
+                    {sampleAuditRate.answered > 0 && (
+                        <p className="text-xs text-content-subtle">
+                            {tAgents('sampleAudit.rate.denominatorNote')}
+                        </p>
+                    )}
+                </div>
+
                 <SampleAuditQueue
                     rows={sampleAuditRows}
                     outcomes={ANSWERABLE_OUTCOMES}
