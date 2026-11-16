@@ -533,22 +533,18 @@ describe('a withheld error line is printed as its class', () => {
             return lines.slice(start, end + 1).join('\n');
         };
         const dryRun = (stream: string) => {
-            const fixture = path.join(os.tmpdir(), `dry-run-${process.pid}-${Math.random().toString(36).slice(2)}`);
-            fs.writeFileSync(fixture, stream);
-            try {
-                const script = [
-                    applyFilter,
-                    'PUBLIC_LOG=1 REMOTE_DIR=/x ENV_ARGS= STAGED=/x/s.yml',
-                    'log() { printf "[apply] %s\\n" "$*"; }; warn() { printf "WARN %s\\n" "$*"; }',
-                    // The remote command's own `| sed` runs on the VM; here the
-                    // fixture stands for what came back.
-                    `ssh_vm() { sed 's/^/    /' '${fixture}'; }`,
-                    block(),
-                ].join('\n');
-                return run(script, '').split('\n').map((l) => l.trim());
-            } finally {
-                fs.rmSync(fixture, { force: true });
-            }
+            // The captured stream arrives on stdin, so no temporary file and
+            // no path is spliced into the shell text.
+            const script = [
+                applyFilter,
+                'PUBLIC_LOG=1 REMOTE_DIR=/x ENV_ARGS= STAGED=/x/s.yml',
+                'log() { printf "[apply] %s\\n" "$*"; }; warn() { printf "WARN %s\\n" "$*"; }',
+                // The remote command's own `| sed` runs on the VM; here stdin
+                // stands for what came back.
+                "ssh_vm() { sed 's/^/    /'; }",
+                block(),
+            ].join('\n');
+            return run(script, stream).split('\n').map((l) => l.trim());
         };
         const NOTE = /^\[apply\]\s+note: 'no such image' under --dry-run is the simulation/;
 
