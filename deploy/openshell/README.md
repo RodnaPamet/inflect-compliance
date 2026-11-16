@@ -559,6 +559,32 @@ intent**, not an installed credential, so the collector waits for the gateway's
 own readiness observation before it runs anything (#5739). A credential problem
 therefore reports as a credential problem rather than as an outage.
 
+### When a provider is out of date, or orphaned — #5476
+
+The product cannot write a provider, so it cannot keep one current either. The
+two ways that matters are reported differently, and deliberately:
+
+**A rotated credential raises a finding.** Changing a posture connection's
+credential in the product leaves the gateway holding the previous one, under the
+same name, so every later scan benchmarks an account the tenant no longer has on
+record. That raises one MEDIUM finding against the connection, assigned to its
+accountable owner, naming the provider to re-provision.
+
+**Nothing closes that finding automatically, and that is a decision** (owner,
+2026-11-16). The readiness observation says `credentials_installed`, never WHICH
+credential, so there is no evidence the product could close on — a close on the
+next successful scan would close on the old credential working perfectly well.
+Re-provision, then close it by hand. One open finding per connection: a second
+rotation while it is open adds nothing, because the fact is the same fact.
+
+**An orphaned provider is found by DIFFING, not by a finding.** When a connection
+is deleted, or its tenant purged, a finding would go with it — there is nobody
+left to read it. Instead, dispatch `posture-provider-names`: it lists the expected
+provider for every posture connection that exists. **A provider on the gateway
+that is not in that output belongs to no connection and can be removed.** That is
+the only direction that works, because the list is derived from live rows and an
+orphan is by definition absent from it.
+
 ### Adding a posture provider kind
 
 A fourth cloud posture provider widens `POSTURE_CONNECTION_PROVIDERS` in
