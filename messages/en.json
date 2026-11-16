@@ -12598,6 +12598,40 @@
       "noTemplatesManagerDesc": "A request is composed from a saved parameter set that leaves fields open. Save one on the Saved parameters page.",
       "noTemplatesNoOpenFieldsDesc": "{count, plural, one {# saved parameter set here leaves} other {# saved parameter sets here leave}} no fields to fill in, so there is nothing to compose. A request needs a set that leaves at least one field open."
     },
+    "sampleAudit": {
+      "title": "Retrospective sample audit",
+      "intro": "A keyed random sample of approvals this queue already accepted, drawn so a second person can re-examine them. You cannot answer an approval you signed yourself — that is the whole point of the check.",
+      "empty": "Nothing drawn is waiting for an answer.",
+      "answer": "Answer",
+      "submit": "Record answer",
+      "cancel": "Cancel",
+      "answered": "Answer recorded.",
+      "answerFailed": "The answer could not be recorded.",
+      "outcomeLabel": "Was the approval right?",
+      "codesLabel": "Why not? Choose every reason that applies.",
+      "approvedAt": "Approved {when}",
+      "approvedAtUnknown": "Approval date not recorded",
+      "sampledAt": "Drawn {when}",
+      "outcome": {
+        "CONCURRED": "I agree with the approval",
+        "DISSENTED": "I disagree with the approval",
+        "INDETERMINATE": "I cannot tell"
+      },
+      "code": {
+        "RATIONALE_DOES_NOT_SUPPORT_PAYLOAD": "The rationale does not support what was proposed",
+        "MATERIALLY_INACCURATE": "Materially inaccurate about our actual posture",
+        "DUPLICATE_OF_EXISTING_RECORD": "Duplicates a record that already existed",
+        "WRONG_ENTITY_KIND": "Right content, wrong kind of record",
+        "SHOULD_HAVE_BEEN_EDITED": "Should have been edited before approval",
+        "SHOULD_HAVE_BEEN_REJECTED": "Should not have been approved at all",
+        "OUTSIDE_AGENT_REMIT": "Outside what this agent should ever do"
+      },
+      "refusal": {
+        "NOT_A_WRITER": "You can read this queue but not answer it.",
+        "SELF_REVIEW": "You approved this proposal, so somebody else answers its audit.",
+        "ALREADY_ANSWERED": "Already answered."
+      }
+    },
     "skills": {
       "loadFailed": "Could not load the skill corpus.",
       "empty": {
