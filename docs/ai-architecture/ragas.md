@@ -197,7 +197,8 @@ shape so the mount gate can consume it.
       See `docs/implementation-notes/2026-11-12-ragas-cost-meter.md`, which
       also lists what the meter does not yet cover (the per-request reservation
       at garak's proxy, and the retriever revision key in
-      `src/lib/ai/embeddings/revision.ts`, which still carries `alpha`).
+      `src/lib/ai/embeddings/revision.ts`, which then still carried `alpha`; since
+      2026-11-16 it is the record's own revision, `alpha` gone — [`weaviate.md`](./weaviate.md) 3.5).
 
 **Prompt.**
 ```text

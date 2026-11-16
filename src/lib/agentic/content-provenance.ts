@@ -383,6 +383,14 @@ export const MCP_TOOL_CORPUS: Readonly<Record<string, ToolCorpusEntry>> = {
             'person confirmed, which a harness report first carried. No names and no free text; the ' +
             'confirmed ids take the least-trusted part.',
     },
+    search_knowledge: {
+        provenance: 'THIRD_PARTY_INGESTED',
+        sources: ['ui.authenticated-form', 'upload.policy-document', 'agent.proposal'],
+        basis:
+            'Passages of approved policy text, decrypted from the knowledge store: typed by a ' +
+            'policy author, imported from a document, or drafted by an agent and approved. ' +
+            'Free text, so the payload takes its least-trusted part.',
+    },
     get_discovered_agent: {
         provenance: 'THIRD_PARTY_INGESTED',
         sources: ['scanner.harness-report'],

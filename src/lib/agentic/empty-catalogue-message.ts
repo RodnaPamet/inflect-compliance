@@ -17,7 +17,8 @@
  *     (`canSee`), also applied inside the candidate list;
  *   • scope, autonomy, a read-only connection, an unconvertible schema and a
  *     read-only workflow, each named in `offered.omitted`;
- *   • a profile's narrowing, named as `PROFILE_TOOL_NOT_GRANTED`.
+ *   • a profile's narrowing, named as `PROFILE_TOOL_NOT_GRANTED`;
+ *   • a closed mount gate, named as `RETRIEVER_NOT_EVALUATED`.
  *
  * The first two leave no `omitted` entry, so this RE-DERIVES them from the
  * invocation's own pinned lists (`grantedTools`, the card's `permittedTools`
@@ -38,6 +39,7 @@
  */
 import type { ToolOmissionReason } from '@/lib/agentic/engine-tools/offer-tools';
 import { EMPTY_TOOLSET_MESSAGE } from '@/lib/agentic/flue/empty-toolset-message';
+import { KNOWLEDGE_SEARCH_NOT_EVALUATED } from '@/lib/agentic/knowledge-search-not-evaluated';
 
 /** The engine whose run settled, which names the message's code. */
 export type EmptyCatalogueEngine = 'flue' | 'tool_runner';
@@ -72,6 +74,7 @@ const ORDER: readonly EmptyCatalogueReason[] = [
     'AUTONOMY',
     'CONNECTION_READ_ONLY',
     'READ_ONLY_WORKFLOW',
+    'RETRIEVER_NOT_EVALUATED',
     'UNCONVERTIBLE_SCHEMA',
 ];
 
@@ -165,6 +168,8 @@ function clause(
             return opts.only
                 ? `the profile names only propose tools, and this run is read-only, as a Test run or an answer-only profile is (${list})`
                 : `propose tools, which this read-only run is not offered (${list})`;
+        case 'RETRIEVER_NOT_EVALUATED':
+            return `${KNOWLEDGE_SEARCH_NOT_EVALUATED} (${list})`;
         case 'UNCONVERTIBLE_SCHEMA':
             return `an input schema this engine cannot express (${list})`;
     }

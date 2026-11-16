@@ -188,6 +188,15 @@ jest.unstable_mockModule('@/lib/mcp/tools/registry', () => ({
     }),
 }));
 
+// The registry's sibling: read tools behind a mount gate (`search_knowledge`).
+// None is in this suite's catalogue, so none is mounted or withheld; faked for
+// the reason the registry is, since the real module reads the gate's files.
+jest.unstable_mockModule('@/lib/mcp/mount-gated-tools', () => ({
+    readToolMounted: () => true,
+    unmountedReadTools: () => [],
+    withheldReadToolNames: () => [],
+}));
+
 jest.unstable_mockModule('@/lib/mcp/tools/propose-tools', () => ({
     loadableProposeTools: jest.fn(() => []),
     runProposeTool: jest.fn(async () => ({ content: [] })),

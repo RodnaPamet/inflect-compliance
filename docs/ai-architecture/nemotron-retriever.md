@@ -516,10 +516,12 @@ the mount gate can see.
       to 50 and returns the hybrid order, with the reason, on any failure.
 - [ ] 2.2 `VectorRepository.search` gains `rerank: true` → hybrid top-50 then
       rerank to k; the revision key for the mount gate includes the rerank
-      model id. The key exists (`revision.ts`:
-      `{ embeddingModel, rerankModel, chunker, k, alpha }`, models never
-      provider ids, so the CPU and GPU arms share one revision); the search
-      waits on [`weaviate.md`](./weaviate.md) Phase 3.
+      model id. The key exists (`revision.ts`: the RAG record's own
+      `{ embeddingModel, dimensions, rerankModel, chunker, k, indexParams }`
+      since 2026-11-16, with no `alpha` because the store is dense-only;
+      models never provider ids, so the CPU and GPU arms share one revision);
+      the search and its mount gate are built ([`weaviate.md`](./weaviate.md)
+      Phase 3.1–3.5) and carry `rerankModel: null` until this step.
 - [ ] 2.3 Text hydration happens **before** rerank (the cross-encoder needs the
       passage) and **under RLS** — never from the vector store.
 - [ ] 2.4 Seed-set eval re-run; the record is refreshed or the gate refuses.

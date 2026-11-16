@@ -45,8 +45,8 @@ jest.mock('@/lib/db/rls-middleware', () => ({
 }));
 
 import { createHash } from 'node:crypto';
-import { createPgvectorStore } from '@/app-layer/repositories/vector/pgvector-store';
-import { VectorStoreError, type VectorRecord } from '@/app-layer/repositories/vector/types';
+import { createPgvectorStore, EXACT_FALLBACK_MAX_ROWS } from '@/app-layer/repositories/vector/pgvector-store';
+import { EXACT_SCAN_MAX_ROWS, HNSW_SEARCH, VectorStoreError, type VectorRecord } from '@/app-layer/repositories/vector/types';
 import { makeRequestContext } from '../helpers/make-context';
 
 const CTX = makeRequestContext('ADMIN', { tenantId: 'tenant-under-test' });
@@ -145,9 +145,8 @@ describe('every pgvector statement is the caller’s tenant’s', () => {
 });
 
 describe('a filtered search over the shared per-revision index still finds the tenant’s rows', () => {
-    it('turns on strict-order iterative index scans in the search’s own transaction, before the ORDER BY', async () => {
-        // A search returns nothing until a revision has rows; give it one.
-        const store = createPgvectorStore();
+    /** One search transaction whose revision holds 3-dimensional rows and `tenantRows` of them. */
+    function searchTx(tenantRows: number, indexRows: unknown[] = []): void {
         const original = jest.requireMock('@/lib/db/rls-middleware').runInTenantContext;
         original.mockImplementationOnce(async (ctx: { tenantId: string }, fn: (tx: unknown) => Promise<unknown>) => {
             tenantsBound.push(ctx.tenantId);
@@ -157,18 +156,50 @@ describe('a filtered search over the shared per-revision index still finds the t
                     statements.push({ sql: q.sql, values: q.values, txn });
                     if (q.sql.includes('pg_extension')) return [probe];
                     if (q.sql.includes('DISTINCT "dimensions"')) return [{ dimensions: 3 }];
+                    if (q.sql.includes('count(*)')) return [{ n: tenantRows }];
+                    if (q.sql.includes('::vector(3))) AS distance')) return indexRows;
                     return [];
                 }),
                 $executeRaw: jest.fn(async () => 0),
             };
             return fn(tx);
         });
-        await store.search(CTX, { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 50 });
-        const setIdx = statements.findIndex((s) => s.sql.includes("set_config('hnsw.iterative_scan', 'strict_order', true)"));
-        const searchIdx = statements.findIndex((s) => s.sql.includes('ORDER BY'));
+    }
+    const QUERY = { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 50 };
+    const indexScan = (s: { sql: string }) => s.sql.includes('ORDER BY ((e."embedding"::vector(3))');
+    const exactScan = (s: { sql: string }) => s.sql.includes('ORDER BY (e."embedding" <=>');
+
+    it('turns on relaxed-order iterative index scans, bounded, in the search’s own transaction, before the ORDER BY', async () => {
+        searchTx(EXACT_SCAN_MAX_ROWS + 1);
+        await createPgvectorStore().search(CTX, { ...QUERY, strategy: 'index' });
+        const setIdx = statements.findIndex((s) => s.sql.includes("set_config('hnsw.iterative_scan',"));
+        const searchIdx = statements.findIndex(indexScan);
         expect([setIdx >= 0, searchIdx > setIdx]).toEqual([true, true]);
         expect(statements[setIdx].txn).toBe(statements[searchIdx].txn);
-        expect(statements[setIdx].values).toContain('50');
+        expect(statements[setIdx].sql).toContain("set_config('hnsw.max_scan_tuples',");
+        expect(statements[setIdx].values).toEqual(['relaxed_order', String(HNSW_SEARCH.maxScanTuples), '50']);
+        // `index` is the index alone: no exact fallback, however short.
+        expect(statements.some(exactScan)).toBe(false);
+    });
+
+    it('searches a tenant at or below the threshold exactly, and never touches the index settings', async () => {
+        searchTx(EXACT_SCAN_MAX_ROWS);
+        await createPgvectorStore().search(CTX, QUERY);
+        expect([statements.some(exactScan), statements.some(indexScan)]).toEqual([true, false]);
+        expect(statements.some((s) => s.sql.includes('set_config'))).toBe(false);
+    });
+
+    it('searches a larger tenant through the index, and exactly when the index came back short of k', async () => {
+        searchTx(EXACT_SCAN_MAX_ROWS + 1, [{ sourceModel: 'M', sourceId: 's', chunkIndex: 0, contentHash: 'h', score: 1 }]);
+        await createPgvectorStore().search(CTX, QUERY);
+        const order = statements.filter((s) => indexScan(s) || exactScan(s)).map((s) => (indexScan(s) ? 'index' : 'exact'));
+        expect(order).toEqual(['index', 'exact']);
+    });
+
+    it('keeps the index’s answer, short or not, for a tenant past the fallback ceiling', async () => {
+        searchTx(EXACT_FALLBACK_MAX_ROWS + 1);
+        await createPgvectorStore().search(CTX, QUERY);
+        expect([statements.some(indexScan), statements.some(exactScan)]).toEqual([true, false]);
     });
 });
 

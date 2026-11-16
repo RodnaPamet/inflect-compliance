@@ -223,6 +223,19 @@ COPY --from=builder /app/evals/pii/records ./evals/pii/records
 # without it the gate refuses NO_CORPUS. `.dockerignore` excludes tests/ and
 # re-includes this one directory for that reason. It is seeded, synthetic data.
 COPY --from=builder /app/tests/fixtures/pii ./tests/fixtures/pii
+# The `search_knowledge` mount gate's inputs, read from disk by
+# `resolveKnowledgeSearchMount` in src/app-layer/services/knowledge-search-mount.ts
+# at `process.cwd()` when VECTOR_STORE_BACKEND=pgvector and an embedding route
+# is configured (vector store Phase 3.5): the RAG evaluation records, the
+# authored set they answer, and the cost meter's price table and shares the
+# record check is given. Without them the gate finds no record and the tool is
+# never offered, which fails closed and so would read as "not evaluated" rather
+# than as a missing file. Data only: no Python and no harness code is copied.
+# tests/guardrails/catalogue-reaches-production.test.ts derives each directory
+# from that read and fails until its line exists.
+COPY --from=builder /app/evals/rag/records ./evals/rag/records
+COPY --from=builder /app/evals/rag/sets ./evals/rag/sets
+COPY --from=builder /app/evals/cost-meter ./evals/cost-meter
 # Prisma 7 — connection URL config moved out of `datasource db {}`
 # in `prisma/schema/base.prisma` into `prisma.config.ts`. The CLI
 # (`prisma migrate deploy` from the entrypoint) reads URLs from

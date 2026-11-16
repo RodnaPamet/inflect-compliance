@@ -56,6 +56,21 @@ export interface StoredVectorKey extends VectorKey {
     dimensions: number;
 }
 
+/**
+ * How a search reaches its rows (vector store Phase 3.2).
+ *
+ *   auto   the store decides: an EXACT scan while the tenant holds at most
+ *          `EXACT_SCAN_MAX_ROWS` vectors of the revision, the shared ANN index
+ *          above that, and an exact scan again when the index returned fewer
+ *          than `k` rows of a tenant that holds more. What every caller uses.
+ *   index  the ANN index only, never the fallback — the floor probe's ANN arm
+ *          (Phase 3.6 measures it against `exact`), and the tests that prove
+ *          the iterative scan keeps a small tenant's recall.
+ *   exact  a sequential scan of the tenant's rows: the probe's ground truth.
+ */
+export const VECTOR_SEARCH_STRATEGIES = ['auto', 'index', 'exact'] as const;
+export type VectorSearchStrategy = (typeof VECTOR_SEARCH_STRATEGIES)[number];
+
 export interface VectorSearchQuery {
     embeddingRevision: string;
     embedding: readonly number[];
@@ -63,6 +78,8 @@ export interface VectorSearchQuery {
     k: number;
     /** Restrict the search to these source models; absent = every model. */
     sourceModels?: readonly string[];
+    /** Absent = `auto`. */
+    strategy?: VectorSearchStrategy;
 }
 
 /** A search hit: a reference to hydrate under RLS, and a cosine similarity. */
@@ -162,6 +179,12 @@ export class VectorStoreError extends Error {
 
 /** Bounds, in one place. */
 export const MAX_SEARCH_K = 50;
+
+// The search and build parameters live in a leaf module outside this
+// directory, so the retriever revision (and the mount gate that keys on it) can
+// read them without loading a backend.
+export { EXACT_SCAN_MAX_ROWS, HNSW_BUILD, HNSW_SEARCH } from '../vector-search-params';
+
 export const MAX_UPSERT_BATCH = 500;
 export const MAX_LIST_KEYS = 5000;
 export const MAX_DIMENSIONS = 4096;

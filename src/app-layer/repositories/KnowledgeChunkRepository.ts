@@ -44,6 +44,9 @@ export interface ChunkReconcileOutcome {
     deleted: number;
 }
 
+/** The most chunks one hydration reads: the vector store's own `k` bound. */
+export const MAX_HYDRATE_KEYS = 50;
+
 export class KnowledgeChunkRepository {
     /**
      * Serialise every chunk write for ONE source, for the rest of the caller's
@@ -148,6 +151,29 @@ export class KnowledgeChunkRepository {
             },
             orderBy: { id: 'asc' },
             take: page.take,
+        });
+    }
+
+    /**
+     * The chunks a search named, text decrypted — the query path's hydration
+     * (vector store Phase 3.1). Exactly the given keys, in this tenant, at most
+     * `MAX_HYDRATE_KEYS`; a key with no row (the chunk was re-cut or deleted
+     * after the search read its vector) is simply absent from the answer.
+     */
+    static async findByKeys(
+        db: PrismaTx,
+        ctx: RequestContext,
+        keys: ReadonlyArray<{ sourceModel: string; sourceId: string; chunkIndex: number }>,
+    ): Promise<Array<{ sourceModel: string; sourceId: string; chunkIndex: number; text: string; contentHash: string }>> {
+        if (keys.length === 0) return [];
+        if (keys.length > MAX_HYDRATE_KEYS) throw new RangeError(`at most ${MAX_HYDRATE_KEYS} chunks per hydration`);
+        return db.knowledgeChunk.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                OR: keys.map((k) => ({ sourceModel: k.sourceModel, sourceId: k.sourceId, chunkIndex: k.chunkIndex })),
+            },
+            select: { sourceModel: true, sourceId: true, chunkIndex: true, text: true, contentHash: true },
+            take: keys.length,
         });
     }
 

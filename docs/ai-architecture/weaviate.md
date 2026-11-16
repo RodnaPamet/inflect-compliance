@@ -9,8 +9,8 @@ inflect · ai architecture · vector store · roadmap v2 · 2026-11-11
 > already protects every tenant row, and to bring Weaviate in only if a
 > measured recall or latency floor is not met. The owner also adopted the
 > **vectors-only rule** the same day (D-L4-2): no chunk text outside Postgres.
-> The **Current state** section is true today (main 3.365.0, `8733323f5`). The
-> **Roadmap** section is the plan. This is a child of
+> The **Current state** section is true today (main 3.399.0, `674c9df33`, plus
+> Phase 3.1–3.5's query path). The **Roadmap** section is the plan. This is a child of
 > [`docs/ai-architecture-roadmap.md`](../ai-architecture-roadmap.md): read that
 > first for the target map, the global rules **G1–G13** every phase here
 > inherits, and the sequencing. The filename keeps the box's name so links into
@@ -26,7 +26,7 @@ inflect · ai architecture · vector store · roadmap v2 · 2026-11-11
 | Wave | 1 (the first Layer 4 wave, zero-GPU) — see master § Sequencing. Phase 4 (Weaviate) is conditional and has no wave until a floor is missed |
 | Depends on | a Postgres image that carries the pgvector extension (Phase 1.1 — the image on the VM today does not); **an embedding provider to be useful** → [`nemotron-retriever.md`](./nemotron-retriever.md) |
 | Unblocks | [`ragflow.md`](./ragflow.md) (somewhere for parsed chunks to go), [`ragas.md`](./ragas.md) / [`ares.md`](./ares.md) (something to evaluate), the assistant's `search_knowledge` tool |
-| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. **D-L4-8** decided 2026-11-12 (owner): the self-built Postgres image keeps the 2026-10-10 tag rule, rebuilt weekly and whenever the upstream `16-alpine` digest changes, as a moving line tag plus an immutable per-build tag. Open, raised here: the floor values (Phase 3.6) and the lexical arm (§ Fit) |
+| Owner decisions | **D-L4-1** decided 2026-11-11 (owner): pgvector first, in the existing Postgres under RLS; Weaviate only later, if a measured recall/latency floor is not met. **D-L4-2** decided 2026-11-11 (owner): vectors-only — no chunk text outside Postgres. **D-L4-8** decided 2026-11-12 (owner): the self-built Postgres image keeps the 2026-10-10 tag rule, rebuilt weekly and whenever the upstream `16-alpine` digest changes, as a moving line tag plus an immutable per-build tag. **D-L4-7** (lexical arm: a keyed blind-token index) and **D-L4-9** (the floors that trigger Phase 4: recall@10 at least 0.95 of exact, p95 at most 300 ms at `k = 10`) are recorded as decided on 2026-11-12 in the master's decision table. Open, raised here: whether D-L4-9's two values also decide whether `search_knowledge` is offered at all (Phase 3.5 holds them as **proposed** constants until the owner says so) |
 | Complete at | Phase 3. Phase 4 runs only if Phase 3's record misses a floor; until then it is not part of completion |
 
 ## At a glance
@@ -160,11 +160,38 @@ flowchart LR
   is suspect until it is rebuilt. Docker Hub lists `pgvector/pgvector:0.8.7-pg16-bookworm`
   at about 156 MB compressed against about 116 MB for `postgres:16-alpine`
   (read 2026-11-11).
-- **Retrieval today is tool-shaped, not vector-shaped.** The assistant
-  (`src/app-layer/ai/assistant/`) runs a tool loop over the product's own data
-  through `runGuardedTool`; the questionnaire feature grounds answers from the
-  answer library and ships evidence *titles* only. Agents read through the
-  audited MCP read tools (`src/lib/mcp/tools/`). None of this needs a vector.
+- **The query path exists, and its mount gate keeps it closed.**
+  `VectorRepository.search` takes a `strategy` (`auto`, the default; `index`;
+  `exact`): a tenant holding at most `EXACT_SCAN_MAX_ROWS` (2,000) vectors of
+  the revision is searched EXACTLY, by an expression the HNSW index does not
+  match; above that the shared index serves, with `hnsw.iterative_scan =
+  relaxed_order`, `hnsw.max_scan_tuples` bounded at 20,000 and `ef_search` at
+  least 40, all set per transaction (`HNSW_SEARCH`); and an indexed search that
+  came back short of `k` is repeated exactly for a tenant of at most
+  `EXACT_FALLBACK_MAX_ROWS` (50,000). `tests/integration/vector-filtered-search-recall.test.ts`
+  shows a 24-vector tenant beside a 2,400-vector one starving without the
+  iterative scan and getting `k` with it. The read usecase `searchKnowledge`
+  (`usecases/knowledge-search.ts`) embeds the question as a `query`, searches
+  only the source models the caller's own read policy admits
+  (`assertCanReadPolicies` for `PolicyVersion`), retrieves the revision's
+  `k` (20) and returns the caller's first `k`, and hydrates each hit's text
+  from `KnowledgeChunk` and its citation (the policy, title, version) under
+  RLS, dropping a hit whose chunk no longer hashes to the vector's
+  `contentHash` or whose policy is gone. The MCP read tool `search_knowledge`
+  (`src/lib/mcp/tools/knowledge-tools.ts`, `policies:read`, `policies.view`,
+  a `limit` of at most 20, the name every bounded read tool gives its count)
+  wraps it; every engine and the assistant reach it through
+  `runGuardedTool → runReadTool`, so its text is scanned by `guardUntrustedInput`
+  and `guardEgress` like any read result. It is offered only while the mount
+  gate (`services/knowledge-search-mount.ts`) finds a passing RAG evaluation
+  record for the deployment's retriever revision
+  (`services/knowledge-search-revision.ts`), and **none exists**, so the tool
+  is in no catalogue today; with the store and route on, a run granted it
+  records `RETRIEVER_NOT_EVALUATED`.
+  The questionnaire feature still grounds answers from the answer library and
+  ships evidence *titles* only, and agents otherwise read through the audited
+  MCP read tools (`src/lib/mcp/tools/`)
+  ([implementation note](../implementation-notes/2026-11-16-knowledge-search.md)).
 - **Two isolation layers protect every tenant row, and both are in Postgres.**
   RLS with `FORCE ROW LEVEL SECURITY` on every tenant table plus the
   application-layer `tenantId` filter in every repository
@@ -557,33 +584,82 @@ scanned on the way into model context, and evaluated before it is offered at
 all. The same record measures the floors that decide whether Phase 4 ever runs.
 
 **Sub-phases.**
-- [ ] 3.1 `VectorRepository.search(ctx, query, { k })` — cosine over the
+- [x] 3.1 `VectorRepository.search(ctx, query, { k })` — cosine over the
       current model's partial index, tenant rows only, returns chunk
       references and scores; text is hydrated through the normal repositories
-      under RLS (decrypting via the manifest).
-- [ ] 3.2 **Filtered search must not lose recall.** HNSW returns its
+      under RLS (decrypting via the manifest). *Landed 2026-11-16:* the
+      search existed since Phase 1; the hydration is the read usecase
+      `searchKnowledge` (`KnowledgeChunkRepository.findByKeys` for the text,
+      `KNOWLEDGE_CITATIONS` for the policy it cites), which drops a hit whose
+      chunk text no longer hashes to the vector's `contentHash`.
+- [x] 3.2 **Filtered search must not lose recall.** HNSW returns its
       `ef_search` nearest candidates across the whole table and RLS then
       removes other tenants' rows, so a small tenant in a large table can get
       fewer than `k` results or none. The search sets `hnsw.iterative_scan =
       relaxed_order` (pgvector 0.8) with a bounded `hnsw.max_scan_tuples`, and
       below a per-tenant row count it takes an exact scan instead of the
       index. The recall measurement in 3.6 is what proves this works.
-- [ ] 3.3 An MCP read tool `search_knowledge` in `src/lib/mcp/tools/`, so Flue,
+      *Landed 2026-11-16:* exact at or below `EXACT_SCAN_MAX_ROWS` (2,000);
+      `relaxed_order` with `max_scan_tuples` 20,000 above it; an exact
+      fallback when the index returns fewer than `k` for a tenant of at most
+      50,000 vectors. The threshold is a tuning value, not a decision, and 3.6's
+      figures are what will move it. `tests/integration/vector-filtered-search-recall.test.ts`
+      is the small-tenant case: it first shows the index starving a 24-vector
+      tenant beside a 2,400-vector one with iterative scans off, then `k`
+      results on the default path, through the index with them on, and for
+      the large tenant.
+- [x] 3.3 An MCP read tool `search_knowledge` in `src/lib/mcp/tools/`, so Flue,
       the Tool Runner and external MCP clients all reach it through
       `runGuardedTool → runReadTool` (G3), subject to the agent's allowlist and
       ceiling, with `resourceScope` set and `k` bounded (at most 20).
-- [ ] 3.4 The assistant offers the same tool from `assistant/tools.ts`; result
+      *Landed 2026-11-16* as `knowledge-tools.ts` over the read usecase
+      `searchKnowledge` (the house rule for read tools, which
+      `tests/guardrails/mcp-read-suite-coverage.test.ts` holds: the tool calls
+      one usecase, imports no repository and holds no permission check; the
+      usecase applies the source's own read policy). `policies:read` and
+      `policies.view`, because approved policy text is the only source; a
+      row rule drops a hit from any source the tool cannot authorise.
+      `tests/integration/knowledge-search-tool.test.ts` runs it through the
+      real `/api/mcp` route: two tenants whose policies say the same thing in
+      different numbers, and each sees only its own passages.
+- [x] 3.4 The assistant offers the same tool from `assistant/tools.ts`; result
       text passes `guardUntrustedInput` before entering context and
       `guardEgress` before leaving to an external provider (G4) — the existing
       three-slice sandwich in `tools-adapter.ts` applies unchanged because the
-      tool is a read tool.
-- [ ] 3.5 The mount gate: `search_knowledge` is offered only when a RAG
+      tool is a read tool. *Landed 2026-11-16* with no change to
+      `assistant/tools.ts`: it offers what `loadableReadTools` offers, which
+      now includes the tool while the gate is open.
+      `tests/unit/knowledge-search-tool.test.ts` shows it offered to a reader
+      and not to a role without `policies.view`, and a poisoned passage
+      tripping the review latch so the next call on either surface is
+      refused before the funnel.
+- [x] 3.5 The mount gate: `search_knowledge` is offered only when a RAG
       evaluation record ([`ragas.md`](./ragas.md), G11) exists for the current
       retriever revision `{embeddingModel, dimensions, rerankModel, chunker, k,
       indexParams}` and passes its floors — the same shape as the skills mount
       gate in `flue/skills/mount-gate.ts`. Reranking
       ([`nemotron-retriever.md`](./nemotron-retriever.md) Phase 2) changes the
-      revision key and so forces a new record.
+      revision key and so forces a new record. *Landed 2026-11-16* as
+      `services/knowledge-search-mount.ts`, the PII gate's shape
+      (`src/lib/ai/pii/mount.ts`): ABSENT while the store or the embedding
+      route is off; otherwise the NEWEST record under `evals/rag/records/`
+      whose `retrieverRevision` keys equal to `knowledgeRetrieverRevision(route)`
+      decides, checked by Ragas Phase 0's own `checkRagEvaluationRecord`
+      against the AUTHORED set it hashes to and the cost meter's price table
+      and share, refused when a budget stopped it, and held to
+      `PROPOSED_RECALL_AT_10_FLOOR` (0.95) and `PROPOSED_P95_LATENCY_CEILING_MS`
+      (300). The two values are D-L4-9's, which the master records as the
+      Weaviate trigger; using them as the mount condition too is **proposed**
+      and waits on the owner, and Ragas Phase 2.1's per-metric floors are not
+      read yet. Closed, the tool is in no catalogue (`src/lib/mcp/mount-gated-tools.ts`)
+      and a call to it is an unknown tool; while the store and route are on, a
+      run that would have been offered it records `RETRIEVER_NOT_EVALUATED`,
+      and its empty-catalogue message says so
+      (`src/lib/agentic/knowledge-search-not-evaluated.ts`). The runtime image
+      copies the three directories the gate reads. The retriever revision key
+      (`src/lib/ai/embeddings/revision.ts`) is now the record's own
+      `{embeddingModel, dimensions, rerankModel, chunker, k, indexParams}`,
+      with no `alpha`.
 - [ ] 3.6 **The Weaviate trigger, measured.** The nightly record also carries
       two retrieval figures, computed by the harness on the seed corpus scaled
       to a stated multiple of the largest tenant's chunk count: recall@10 of the

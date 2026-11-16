@@ -129,6 +129,7 @@ import {
     McpProposeToolNotFoundError,
 } from '@/lib/mcp/tools/propose-tools';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
+import { readToolMounted } from '@/lib/mcp/mount-gated-tools';
 import { getFrameworkStatusTool } from '@/lib/mcp/tools/framework-tools';
 import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -316,7 +317,10 @@ describe('the catalogue offers only what the policy card permits', () => {
             ...names(listProposeToolDescriptors(inv)),
         ].sort();
 
-        expect(advertised).toEqual([...CATALOGUE].sort());
+        // Less any tool whose mount gate is closed: `search_knowledge` is in
+        // the catalogue and offered only with a passing evaluation record
+        // (`mount-gated-tools.ts`), which no unit test has.
+        expect(advertised).toEqual([...CATALOGUE].filter(readToolMounted).sort());
     });
 });
 

@@ -23,6 +23,7 @@ import {
 } from '@/lib/agentic/autonomy-ceiling';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { loadableReadTools } from '@/lib/mcp/tools/registry';
+import { unmountedReadTools, withheldReadToolNames } from '@/lib/mcp/mount-gated-tools';
 import { loadableProposeTools } from '@/lib/mcp/tools/propose-tools';
 import type { ExternalConnectionFacts, McpReadTool } from '@/lib/mcp/tools/types';
 
@@ -64,7 +65,9 @@ export function asToolArgs(data: unknown): Record<string, unknown> {
  * grant revoked after the profile version was approved (#4143).
  * `CONNECTION_READ_ONLY` is an EXTERNAL write-classified tool whose connection
  * sits at the ladder's `DISABLED` rung, where the dispatch would refuse it with
- * nothing sent (#3872).
+ * nothing sent (#3872). `RETRIEVER_NOT_EVALUATED` is a read tool behind a
+ * mount gate that is closed: `search_knowledge` with no passing RAG evaluation
+ * record for the deployment's retriever revision (vector store Phase 3.5).
  */
 export type ToolOmissionReason =
     | 'SCOPE'
@@ -72,7 +75,8 @@ export type ToolOmissionReason =
     | 'UNCONVERTIBLE_SCHEMA'
     | 'READ_ONLY_WORKFLOW'
     | 'PROFILE_TOOL_NOT_GRANTED'
-    | 'CONNECTION_READ_ONLY';
+    | 'CONNECTION_READ_ONLY'
+    | 'RETRIEVER_NOT_EVALUATED';
 
 /**
  * One tool that survived the narrowing, handed to the engine to put in its own
@@ -323,6 +327,15 @@ export function offerToolSet<T>(
     const inProfile = (t: OfferableTool): boolean => profileTools === null || profileTools.has(t.name);
     const readCandidates = loadableReadTools(inv);
     const proposeCandidates = loadableProposeTools(inv);
+    // Read tools the invocation would load but for a closed mount gate. Not
+    // candidates — nothing that has not shown it works is offered — but named,
+    // so the run records why a granted tool is missing.
+    const unmounted = unmountedReadTools(inv).filter((t) => profileTools === null || profileTools.has(t.name));
+    const withheld = profileTools === null ? [] : withheldReadToolNames();
+    const unmountedOmitted: OfferedToolSet<T>['omitted'] = unmounted.map((t) => ({
+        name: t.name,
+        reason: 'RETRIEVER_NOT_EVALUATED' as const,
+    }));
 
     // ── A READ-ONLY RUN IS OFFERED NO EXTERNAL WRITE EITHER (#5365) ─────────
     //
@@ -386,13 +399,21 @@ export function offerToolSet<T>(
         profileTools === null
             ? []
             : [...profileTools]
-                  .filter((name) => !readCandidates.some((t) => t.name === name) && !proposeCandidates.some((t) => t.name === name))
+                  .filter(
+                      (name) =>
+                          !readCandidates.some((t) => t.name === name) &&
+                          !proposeCandidates.some((t) => t.name === name) &&
+                          // A gated tool that is not offered is not an
+                          // ungranted one: UNMOUNTED is named above, and an
+                          // ABSENT feature names nothing.
+                          !withheld.includes(name),
+                  )
                   .sort()
                   .map((name) => ({ name, reason: 'PROFILE_TOOL_NOT_GRANTED' as const }));
 
     return {
         tools: [...read.tools, ...propose.tools],
-        omitted: [...read.omitted, ...readWithheld, ...propose.omitted, ...lost],
+        omitted: [...read.omitted, ...readWithheld, ...unmountedOmitted, ...propose.omitted, ...lost],
         // External tools ride the READ surface (`allReadTools` appends
         // `inv.externalTools` to the internal set), so in practice this comes
         // from `read`. Both are concatenated anyway rather than assuming that:
