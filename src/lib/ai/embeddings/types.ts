@@ -39,6 +39,17 @@ export type EmbeddingInputType = 'query' | 'passage';
 /** At most this many texts per `embed` call (the doc's batch bound). */
 export const MAX_EMBED_BATCH = 64;
 
+/**
+ * How many passages the indexing pipeline sends per `embed` call
+ * (`docs/ai-architecture/weaviate.md` Phase 2; owner decision, 2026-11-15).
+ * Not the seam's bound, which is `MAX_EMBED_BATCH`: on the production VM a
+ * 512-token passage costs about 0.7 s whatever the batch size, so 8 passages
+ * took 5.2–6.0 s against `TEI_DEADLINE_MS` (15 s), and 32 took more than 21 s
+ * (`VM check` `tei-embed-timing`, run 43757070861). The deadline stays; the
+ * batch is what fits under it.
+ */
+export const INDEX_EMBED_BATCH = 8;
+
 /** At most this many passages per `rerank` call (the hybrid top-50). */
 export const MAX_RERANK_PASSAGES = 50;
 
