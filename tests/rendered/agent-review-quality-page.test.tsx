@@ -5,6 +5,11 @@
  * approval rung, and reads its summary as one sentence (#4932).
  */
 import * as React from 'react';
+
+// TYPE-ONLY, so the `jest.mock` below still replaces the runtime module. Taking
+// the shape from the real contract means a field added to `SampleAuditRate`
+// fails this file rather than being quietly absent from what the page is handed.
+import type { SampleAuditRate } from '@/app-layer/usecases/agent-proposal-sample-audit';
 import { render, screen, within } from '@testing-library/react';
 
 jest.mock('next-intl/server', () => {
@@ -64,9 +69,24 @@ const sampleAudits = [
         refusal: 'SELF_REVIEW',
     },
 ];
+/*
+    MUTABLE, so each THE NUMBER case can set its own figures. The factory closes
+    over the binding rather than the value, and it runs on the page's require,
+    which the transpiled module performs after these initializers.
+*/
+let rate: SampleAuditRate = {
+    sampled: 40,
+    answered: 25,
+    pending: 15,
+    concurred: 20,
+    dissented: 3,
+    indeterminate: 2,
+    disagreementRate: 3 / 25,
+};
 jest.mock('@/app-layer/usecases/agent-proposal-sample-audit', () => ({
     ANSWERABLE_OUTCOMES: ['CONCURRED', 'DISSENTED', 'INDETERMINATE'],
     listSampleAuditsForReview: async () => sampleAudits,
+    getSampleAuditDisagreementRate: async () => rate,
 }));
 jest.mock('@/app/t/[tenantSlug]/(app)/agents/review-quality/SampleAuditQueue', () => ({
     SampleAuditQueue: (props: unknown) => (
@@ -129,6 +149,92 @@ const RQ = EN.admin.reviewQuality;
 async function renderPage() {
     render(await ReviewQualityPage({ params: Promise.resolve({ tenantSlug: 'acme' }) }));
 }
+
+/**
+ * THE NUMBER (#5738) — the ASI09 disagreement rate, on the page named for it.
+ *
+ * The usecase computes it and the API route has always returned it beside the
+ * queue; this page rendered neither, so it reported how FAST and how OFTEN humans
+ * decide and never whether their decisions survive re-examination — the only one
+ * of the three an assessor asks about.
+ *
+ * Four renderings, and each is a way the number could lie:
+ *
+ *   1. A null rate is PRINTED as not reported, never as 0%. A tenant with a
+ *      perfect record and a tenant nobody ever reviewed must not read alike.
+ *   2. A null has TWO causes — nothing drawn, and nothing answered of what was
+ *      drawn — and only the second is somebody's to act on.
+ *   3. The percentage never appears without the count it is over. 0% of 2 and 0%
+ *      of 200 are the same number and different evidence.
+ *   4. `pending` is shown and is in neither side of the rate.
+ */
+describe('the retrospective sample audit rate', () => {
+    afterEach(() => {
+        rate = {
+            sampled: 40, answered: 25, pending: 15,
+            concurred: 20, dissented: 3, indeterminate: 2,
+            disagreementRate: 3 / 25,
+        };
+    });
+
+    it('prints the rate WITH the number of answers it is over', async () => {
+        await renderPage();
+        const block = screen.getByTestId('sample-audit-rate');
+        expect(block).toHaveTextContent('Disagreement rate 12%');
+        // The second number, beside the first. Without it the percentage is a
+        // figure that cannot be wrong.
+        expect(block).toHaveTextContent('over 25 answered of 40 drawn');
+    });
+
+    it('says NOT REPORTED, never 0%, when nothing has been answered', async () => {
+        rate = { sampled: 40, answered: 0, pending: 40, concurred: 0, dissented: 0, indeterminate: 0, disagreementRate: null };
+        await renderPage();
+        const block = screen.getByTestId('sample-audit-rate');
+        expect(block).toHaveTextContent('not reported');
+        // The denominator survives into the refusal, so a reader learns there is
+        // a backlog of 40 rather than that there is nothing to see.
+        expect(block).toHaveTextContent('40');
+        expect(block.textContent ?? '').not.toContain('0%');
+    });
+
+    it('tells "nothing drawn" apart from "nothing answered"', async () => {
+        rate = { sampled: 0, answered: 0, pending: 0, concurred: 0, dissented: 0, indeterminate: 0, disagreementRate: null };
+        await renderPage();
+        const block = screen.getByTestId('sample-audit-rate');
+        // Both give a null rate and they are different facts: a sampler that has
+        // never run is nobody's backlog.
+        expect(block).toHaveTextContent('No approval has been drawn');
+        expect(block.textContent ?? '').not.toContain('not reported');
+        expect(screen.queryByTestId('sample-audit-rate-breakdown')).toBeNull();
+    });
+
+    it('prints the breakdown, so an indeterminate and a concurrence are not one figure', async () => {
+        await renderPage();
+        const breakdown = screen.getByTestId('sample-audit-rate-breakdown');
+        expect(breakdown).toHaveTextContent('Agreed 20');
+        expect(breakdown).toHaveTextContent('Disagreed 3');
+        expect(breakdown).toHaveTextContent('Could not tell 2');
+        expect(breakdown).toHaveTextContent('Waiting for an answer 15');
+    });
+
+    it('keeps pending out of the rate it reports', async () => {
+        // 3 dissents over 25 ANSWERS is 12%; over 40 drawn it would be 7.5%. The
+        // assertion is that the page reports the first.
+        await renderPage();
+        const block = screen.getByTestId('sample-audit-rate');
+        expect(block).toHaveTextContent('12%');
+        expect(block.textContent ?? '').not.toContain('8%');
+        expect(block.textContent ?? '').not.toContain('7%');
+    });
+
+    it('states the denominator on the page, not only in a docstring', async () => {
+        await renderPage();
+        // An INDETERMINATE answer is IN the denominator here and is excluded from
+        // the workpaper-review rate's. A reader comparing the two needs the page
+        // to say which construction it is showing.
+        expect(screen.getByTestId('sample-audit-rate')).toHaveTextContent('could not tell');
+    });
+});
 
 describe('review quality page', () => {
     it('hands the answering panel the SERVER\'s verdict and server-resolved labels', async () => {

@@ -12599,6 +12599,14 @@
       "noTemplatesNoOpenFieldsDesc": "{count, plural, one {# saved parameter set here leaves} other {# saved parameter sets here leave}} no fields to fill in, so there is nothing to compose. A request needs a set that leaves at least one field open."
     },
     "sampleAudit": {
+      "rate": {
+        "neverDrawn": "No approval has been drawn for re-review yet, so there is no rate to report.",
+        "notReported": "Disagreement rate not reported: none of the {sampled} approvals drawn has been answered.",
+        "headline": "Disagreement rate {pct}%",
+        "over": "over {answered} answered of {sampled} drawn",
+        "breakdown": "Agreed {concurred} · Disagreed {dissented} · Could not tell {indeterminate} · Waiting for an answer {pending}",
+        "denominatorNote": "The rate is disagreements divided by every answer given, so a “could not tell” lowers it. Approvals still waiting for an answer are counted in neither."
+      },
       "title": "Retrospective sample audit",
       "intro": "A keyed random sample of approvals this queue already accepted, drawn so a second person can re-examine them. You cannot answer an approval you signed yourself — that is the whole point of the check.",
       "empty": "Nothing drawn is waiting for an answer.",
