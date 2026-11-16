@@ -17,6 +17,9 @@
 # transactions. One check, `tei-embed-timing`, also sends a small, serial,
 # synthetic load to the tei-embed service from inside its own container, to
 # time it (Retriever Phase 0.5); it changes no state and starts nothing.
+# `migrate-role` reads the app container's database URL into a shell variable
+# and prints only the role name, the database name and the host's class from
+# it, never the URL or its password.
 #
 # THE LOGS ARE PUBLIC, because the repository is. The checks print names,
 # states, versions and counts: never a log line, a row, an environment file, a
@@ -39,6 +42,7 @@ on:
                     - bcrypt
                     - automation-rules
                     - tei-embed-timing
+                    - migrate-role
 
 # One at a time: two runs staging the script on the VM at once would race.
 concurrency:

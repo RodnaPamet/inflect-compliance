@@ -24,6 +24,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -141,17 +142,23 @@ describe('the scripts it runs', () => {
         expect(reads.filter((l) => !/^\s*[a-z]+="\$\(docker logs /.test(l))).toEqual([]);
     });
 
-    it('docker exec runs only the read-only queries, the bcrypt probe and the tei-embed timing curl', () => {
+    it('docker exec runs only the read-only queries, the bcrypt probe, the tei-embed timing curl and two printenv reads', () => {
         const execs = remote.filter((l) => /\bdocker\s+exec\b/.test(l));
         const psql = execs.filter((l) => l.includes('need postgres'));
-        // access-review-dates and automation-rules.
-        expect(psql).toHaveLength(2);
+        // access-review-dates, automation-rules and migrate-role.
+        expect(psql).toHaveLength(3);
         expect(psql.filter((l) => !l.includes("PGOPTIONS='-c default_transaction_read_only=on'"))).toEqual([]);
         expect(execs.filter((l) => l.includes('need app'))).toHaveLength(1);
         // tei-embed-timing: the timed request and the token count.
         const tei = execs.filter((l) => /docker exec -i "\$(1|id)" curl /.test(l));
         expect(tei).toHaveLength(2);
-        expect(execs).toHaveLength(psql.length + 1 + tei.length);
+        // migrate-role: one named variable each, into a variable, never stdout.
+        const printenv = execs.filter((l) => l.includes(' printenv '));
+        expect(printenv.map((l) => l.trim())).toEqual([
+            'url="$(docker exec "$app" printenv DIRECT_DATABASE_URL)" && rc=0 || rc=$?',
+            'url="$(docker exec "$app" printenv DATABASE_URL)" && rc=0 || rc=$?',
+        ]);
+        expect(execs).toHaveLength(psql.length + 1 + tei.length + printenv.length);
     });
 
     describe('tei-embed-timing', () => {
@@ -215,7 +222,7 @@ describe('the scripts it runs', () => {
     const queries = sqlHeredocs('deploy/vm-check/remote.sh');
 
     it('every query reads and never writes', () => {
-        expect(queries).toHaveLength(2);
+        expect(queries).toHaveLength(3);
         expect(queries.filter((q) => !/^\s*SELECT\b/.test(q))).toEqual([]);
         expect(queries.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
     });
@@ -386,5 +393,200 @@ esac
         expect(r.status).toBe(1);
         expect(r.bodies).toBe('');
         expect(r.stderr).toContain('not healthy: no load sent');
+    });
+});
+
+/**
+ * migrate-role: which database role `prisma migrate deploy` runs as, and
+ * whether it is a superuser (#5720's `CREATE EXTENSION vector` needs one). The
+ * app container's URL carries a REAL password and the run's log is public, so
+ * the URL must never leave its shell variable: only the role, the database name
+ * (each only when it is a plain identifier) and the host's class are printed.
+ */
+describe('migrate-role', () => {
+    const fnBody = (() => {
+        const lines = read('deploy/vm-check/remote.sh').split('\n');
+        const start = lines.findIndex((l) => l.startsWith('migrate_role() {'));
+        const end = lines.findIndex((l, i) => i > start && l === '}');
+        return lines.slice(start, end + 1);
+    })();
+    const fnCode = fnBody.filter((l) => l.trim() !== '' && !/^\s*#/.test(l));
+    const sql = (() => {
+        const all = fnBody.join('\n');
+        return all.split("<<'SQL'")[1].split(/^SQL$/m)[0];
+    })();
+
+    it('resolves the URL as prisma.config.ts does: DIRECT_DATABASE_URL when set, DATABASE_URL otherwise', () => {
+        expect(codeOf(read('prisma.config.ts'))).toContain("url: process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL ?? ''");
+    });
+
+    it('the URL is read into a variable and touched once more, by a parameter expansion, never passed anywhere', () => {
+        const uses = fnCode.filter((l) => /\$\{?url\b/.test(l));
+        expect(uses.map((l) => l.trim())).toEqual(['rest="${url#*://}"']);
+        // No pipe, echo, printf or here-string carries it or the pieces holding the password.
+        expect(fnCode.filter((l) => /\$\{?(rest|userinfo|hostpart)\b/.test(l) && /\||<<<|\becho\b|\bprintf\b/.test(l))).toEqual([]);
+    });
+
+    it('asks psql with the role as a -v variable read as :\'r\', never interpolated into the SQL', () => {
+        const call = fnCode.filter((l) => /\bpsql\b/.test(l));
+        expect(call).toHaveLength(1);
+        expect(call[0]).toContain('-v r="$role"');
+        expect(call[0]).toContain('-U postgres');
+        expect(call[0]).toContain("PGOPTIONS='-c default_transaction_read_only=on'");
+        expect(call[0]).toMatch(/<<'SQL'$/);
+        expect(call[0]).not.toMatch(/\s-c\s/);
+        expect(sql).toContain("WHERE rolname = :'r'");
+        expect(sql).not.toMatch(/\$/);
+    });
+
+    it('runs SELECTs only', () => {
+        const statements = sql.split(';').map((q) => q.trim()).filter(Boolean);
+        expect(statements).toHaveLength(3);
+        expect(statements.filter((q) => !/^SELECT\b/.test(q))).toEqual([]);
+        expect(statements.filter((q) => /\b(INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|TRUNCATE|GRANT|COPY|SET)\b/i.test(q))).toEqual([]);
+    });
+
+    const PW_DIRECT = 'Pw-DIRECTsecret-9f8e7d6c5b4a3f2e1d0c';
+    const PW_POOLED = 'Pw-POOLEDsecret-0a1b2c3d4e5f6a7b8c9d';
+    const DIRECT = `postgresql://inflect_app:${PW_DIRECT}@postgres:5432/inflect_compliance?schema=public`;
+    const POOLED = `postgresql://inflect_app:${PW_POOLED}@pgbouncer:6432/inflect_compliance?pgbouncer=true`;
+
+    const FAKE_DOCKER = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$FAKE_ROOT/calls"
+case "$1" in
+ps) svc="\${3##*=}"; echo "id-$svc" ;;
+exec)
+    if [ "$2" = id-app ] && [ "$3" = printenv ]; then
+        v="FAKE_$4"; [ -n "\${!v+set}" ] || exit 1; printf '%s\\n' "\${!v}"; exit 0
+    fi
+    if [ "$4" = id-postgres ] || [[ " $* " == *" psql "* ]]; then
+        cat >> "$FAKE_ROOT/sql"
+        [ -z "\${FAKE_PSQL_FAIL:-}" ] || exit 2
+        case " $* " in
+        *" r=postgres "*) echo "role yes yes" ;;
+        *" r=missing "*) ;;
+        *) echo "role no no" ;;
+        esac
+        echo "available 1 0.8.1"
+        echo "installed \${FAKE_INSTALLED:-0} \${FAKE_INSTALLED_V:--}"
+        exit 0
+    fi
+    echo "fake docker: unexpected exec $*" >&2; exit 2 ;;
+*) echo "fake docker: $1" >&2; exit 2 ;;
+esac
+`;
+
+    function run(env: Record<string, string>) {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-check-role-'));
+        const bin = path.join(root, 'bin');
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, 'docker'), FAKE_DOCKER, { mode: 0o755 });
+        const p = spawnSync('bash', [path.join(REPO_ROOT, 'deploy/vm-check/remote.sh'), 'migrate-role'], {
+            env: { NODE_ENV: 'test', PATH: `${bin}:/usr/bin:/bin`, FAKE_ROOT: root, ...env },
+            encoding: 'utf8',
+        });
+        const readOr = (f: string) => (fs.existsSync(path.join(root, f)) ? fs.readFileSync(path.join(root, f), 'utf8') : '');
+        const result = { status: p.status, stdout: p.stdout, stderr: p.stderr, calls: readOr('calls'), sql: readOr('sql') };
+        fs.rmSync(root, { recursive: true, force: true });
+        return result;
+    }
+    const verdict = (out: string) => out.split('\n').filter((l) => l.startsWith('migrations run as '));
+
+    const both = run({ FAKE_DIRECT_DATABASE_URL: DIRECT, FAKE_DATABASE_URL: POOLED });
+
+    it('never prints a password, and never passes one to any command', () => {
+        expect(both.status).toBe(0);
+        for (const pw of [PW_DIRECT, PW_POOLED, 'secret']) {
+            expect(both.stdout).not.toContain(pw);
+            expect(both.stderr).not.toContain(pw);
+            expect(both.calls).not.toContain(pw);
+            expect(both.sql).not.toContain(pw);
+        }
+        expect(both.stdout).not.toContain('postgresql://');
+    });
+
+    it('reads DIRECT_DATABASE_URL first, and names the role, the host class and the database', () => {
+        const rows = both.stdout.split('\n');
+        expect(rows).toContain('| Supplied by | DIRECT_DATABASE_URL |');
+        expect(rows).toContain('| Role | inflect_app |');
+        expect(rows).toContain('| Host | the postgres service |');
+        expect(rows).toContain('| Database | inflect_compliance |');
+        expect(both.calls.split('\n').filter((l) => l.includes('printenv'))).toEqual(['exec id-app printenv DIRECT_DATABASE_URL']);
+    });
+
+    it('asks Postgres as postgres, in the app database, with the role as a psql variable', () => {
+        const psql = both.calls.split('\n').filter((l) => l.includes(' psql '));
+        expect(psql).toEqual([
+            "exec -i -e PGOPTIONS=-c default_transaction_read_only=on id-postgres psql -X -q -tA -F   -v ON_ERROR_STOP=1 -U postgres -d inflect_compliance -v r=inflect_app",
+        ]);
+        expect(both.sql).toContain(":'r'");
+        expect(both.sql).not.toContain('inflect_app');
+        expect(both.sql.split(';').map((q) => q.trim()).filter(Boolean).filter((q) => !/^SELECT\b/.test(q))).toEqual([]);
+    });
+
+    it('prints the verdict, and says the extension must be created first as postgres when the role is not a superuser', () => {
+        expect(verdict(both.stdout)).toEqual(['migrations run as inflect_app, superuser: no; vector available: yes; installed: no']);
+        expect(both.stdout).toContain('create the extension first, once, as `postgres`');
+        expect(both.stdout.split('\n')).toContain('| vector available (default version) | yes (0.8.1) |');
+    });
+
+    it('a superuser role needs no note', () => {
+        const r = run({ FAKE_DIRECT_DATABASE_URL: `postgresql://postgres:${PW_DIRECT}@postgres:5432/inflect_compliance` });
+        expect(verdict(r.stdout)).toEqual(['migrations run as postgres, superuser: yes; vector available: yes; installed: no']);
+        expect(r.stdout).not.toContain('create the extension first');
+        expect(r.stdout).not.toContain(PW_DIRECT);
+    });
+
+    it('a non-superuser with the extension already installed is told it has nothing to do', () => {
+        const r = run({ FAKE_DIRECT_DATABASE_URL: DIRECT, FAKE_INSTALLED: '1', FAKE_INSTALLED_V: '0.8.1' });
+        expect(verdict(r.stdout)).toEqual(['migrations run as inflect_app, superuser: no; vector available: yes; installed: yes']);
+        expect(r.stdout).not.toContain('create the extension first');
+    });
+
+    it('falls back to DATABASE_URL only when DIRECT_DATABASE_URL is unset, and classes pgbouncer', () => {
+        const r = run({ FAKE_DATABASE_URL: POOLED });
+        expect(r.status).toBe(0);
+        expect(r.stdout.split('\n')).toContain('| Supplied by | DATABASE_URL (the fallback: DIRECT_DATABASE_URL is unset) |');
+        expect(r.stdout.split('\n')).toContain('| Host | pgbouncer |');
+        expect(r.stdout).not.toContain(PW_POOLED);
+        expect(r.calls).not.toContain(PW_POOLED);
+    });
+
+    it('a SET but empty DIRECT_DATABASE_URL is the one used, as `??` uses it', () => {
+        const r = run({ FAKE_DIRECT_DATABASE_URL: '', FAKE_DATABASE_URL: POOLED });
+        expect(r.stdout.split('\n')).toContain('| Supplied by | DIRECT_DATABASE_URL |');
+        expect(r.calls.split('\n').filter((l) => l.includes('printenv'))).toEqual(['exec id-app printenv DIRECT_DATABASE_URL']);
+        expect(r.calls).not.toContain(' psql ');
+    });
+
+    it('an unsafe user name is printed as unprintable, and nothing is asked of Postgres', () => {
+        const r = run({ FAKE_DIRECT_DATABASE_URL: `postgresql://Robert');DROP-${PW_DIRECT}:${PW_DIRECT}@postgres:5432/inflect_compliance` });
+        expect(r.status).toBe(0);
+        expect(r.stdout.split('\n')).toContain('| Role | unprintable |');
+        expect(r.stdout).not.toContain('Robert');
+        expect(r.stdout).not.toContain(PW_DIRECT);
+        expect(r.calls).not.toContain(' psql ');
+        expect(r.sql).toBe('');
+        expect(verdict(r.stdout)).toEqual(['migrations run as unprintable, superuser: not asked; vector available: not asked; installed: not asked']);
+    });
+
+    it('a URL with no user at all is unprintable too, and a role Postgres does not hold is said so', () => {
+        expect(run({ FAKE_DIRECT_DATABASE_URL: 'postgresql://postgres:5432/inflect_compliance' }).stdout.split('\n')).toContain('| Role | unprintable |');
+        const r = run({ FAKE_DIRECT_DATABASE_URL: `postgresql://missing:${PW_DIRECT}@postgres/inflect_compliance` });
+        expect(verdict(r.stdout)).toEqual(['migrations run as missing, superuser: no such role; vector available: yes; installed: no']);
+    });
+
+    it('a Postgres that does not answer reads unknown, never no', () => {
+        const r = run({ FAKE_DIRECT_DATABASE_URL: DIRECT, FAKE_PSQL_FAIL: '1' });
+        expect(r.status).toBe(0);
+        expect(verdict(r.stdout)).toEqual(['migrations run as inflect_app, superuser: unknown; vector available: unknown; installed: unknown']);
+        expect(r.stdout).not.toContain('create the extension first');
+    });
+
+    it('neither variable set says so and asks nothing', () => {
+        const r = run({});
+        expect(r.status).toBe(0);
+        expect(r.stdout.split('\n')).toContain('| Supplied by | neither (DIRECT_DATABASE_URL and DATABASE_URL are both unset) |');
+        expect(r.calls).not.toContain(' psql ');
     });
 });
