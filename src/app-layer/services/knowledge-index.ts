@@ -120,7 +120,7 @@ function empty(outcome: KnowledgeIndexOutcome, extra: Partial<KnowledgeIndexResu
  * No admin or audit authority: the job calls no usecase and writes no row a
  * permission gates — chunks are a derivative of rows the tenant already holds.
  */
-function indexContext(tenantId: string): RequestContext {
+export function indexContext(tenantId: string): RequestContext {
     return buildSystemContext({
         tenantId,
         job: 'knowledge-index',
@@ -171,7 +171,8 @@ async function cutAndStoreChunks(
     });
 }
 
-async function readResidency(ctx: RequestContext): Promise<EmbeddingSelection> {
+/** The tenant's AI residency, which decides the embedding route (`getEmbeddingProvider`). */
+export async function readResidency(ctx: RequestContext): Promise<EmbeddingSelection> {
     const settings = await runInTenantContext(ctx, (db) =>
         db.tenantSecuritySettings.findUnique({ where: { tenantId: ctx.tenantId }, select: { aiResidency: true } }),
     );

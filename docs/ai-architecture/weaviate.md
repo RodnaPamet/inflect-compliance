@@ -108,6 +108,11 @@ flowchart LR
   (`services/knowledge-purge.ts`), and the tenant purge removes both tables
   ([implementation notes](../implementation-notes/2026-11-16-knowledge-index-job.md),
   [policy source](../implementation-notes/2026-11-16-knowledge-index-policy-source.md)).
+  `scripts/knowledge-reindex.ts --tenant=<slug-or-id>` rebuilds a tenant's
+  vectors of the configured model from the stored chunk text alone
+  (`services/knowledge-reindex.ts`), which is what makes the index
+  rebuildable from Postgres and is the path to a new embedding model
+  ([implementation note](../implementation-notes/2026-11-16-knowledge-reindex.md)).
   The backend also refuses a vector whose `contentHash` is not its chunk's
   (`CONTENT_HASH_MISMATCH`), so two overlapping runs of one source cannot file
   the older text's vector against the newer text.
@@ -467,12 +472,23 @@ whole index can be rebuilt from `KnowledgeChunk` rows.
       delete a row's chunks first (`services/knowledge-purge.ts`, which knows a
       policy's chunks are its versions'). Each later source wires its own
       trigger in the pull request that adds its reader.
-- [ ] 2.3 `scripts/knowledge-reindex.ts`: re-embed a tenant's chunks from
+- [x] 2.3 `scripts/knowledge-reindex.ts`: re-embed a tenant's chunks from
       `KnowledgeChunk` text and rebuild its embedding rows. A test proves the
       rebuild reproduces the same `contentHash` set and, under the same model
       revision, vectors within a stated cosine tolerance. That test is what
       "rebuildable from Postgres" means, and it is also the migration path to
-      a new embedding model.
+      a new embedding model. *Landed 2026-11-16:* the body is
+      `reindexTenantKnowledge` (`services/knowledge-reindex.ts`), pages of 200
+      chunks, embedded 8 at a time, through `VectorRepository.rebuildRevision`.
+      `tests/integration/knowledge-reindex.test.ts` deletes a tenant's vectors
+      and rebuilds them with the stub embedder: the same (chunk,
+      `contentHash`) set exactly, and every vector within
+      `RECOMPUTE_COSINE_TOLERANCE` (`1 - cosine` ≤ 1e-6) of the original. The
+      stub is exact; for a real model the tolerance is floating-point noise
+      on the same revision and hardware, and a larger gap means a different
+      model behind the same id, which is a new revision needing its own
+      evaluation record (G11), not a rebuild. A rebuild over a healthy index
+      keeps every vector, and one that fails part-way deletes nothing.
 - [x] 2.4 `docs/encryption-data-protection.md` gains the embedding column: a
       plaintext derivative of encrypted text, classified business content,
       held only in Postgres and its backups. *Landed 2026-11-16* as the
