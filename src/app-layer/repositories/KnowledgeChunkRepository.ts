@@ -121,6 +121,36 @@ export class KnowledgeChunkRepository {
         return { kept: keptIndexes.size, written: fresh.length, deleted: stale.length };
     }
 
+    /** How many chunks the tenant holds, every source. */
+    static async countForTenant(db: PrismaTx, ctx: RequestContext): Promise<number> {
+        return db.knowledgeChunk.count({ where: { tenantId: ctx.tenantId } });
+    }
+
+    /**
+     * One page of the tenant's chunks, every source, in id order after
+     * `afterId` — what the rebuild reads, text decrypted.
+     */
+    static async listForTenant(
+        db: PrismaTx,
+        ctx: RequestContext,
+        page: { afterId?: string; take: number },
+    ): Promise<Array<StoredChunk & { sourceModel: string; sourceId: string }>> {
+        return db.knowledgeChunk.findMany({
+            where: { tenantId: ctx.tenantId, ...(page.afterId ? { id: { gt: page.afterId } } : {}) },
+            select: {
+                id: true,
+                sourceModel: true,
+                sourceId: true,
+                chunkIndex: true,
+                text: true,
+                contentHash: true,
+                chunkerRevision: true,
+            },
+            orderBy: { id: 'asc' },
+            take: page.take,
+        });
+    }
+
     /** Delete one source's chunks (and, by cascade, every vector of them). */
     static async deleteForSource(
         db: PrismaTx,

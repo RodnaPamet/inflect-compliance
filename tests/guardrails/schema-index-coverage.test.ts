@@ -922,12 +922,14 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'RQ-5 loadTree filters by tenantId + nodeId, getRiskNodes by tenantId + riskId — covered by @@index([tenantId, nodeId]) + @@index([tenantId, riskId]); bounded take.',
     // Vector store Phase 2.1 — the index job reads one source's chunks.
     KnowledgeChunk:
-        'KnowledgeChunkRepository.listForSource is the one list read: equality on (tenantId, '
-        + 'sourceModel, sourceId) ordered by chunkIndex, bounded take = MAX_CHUNKS_PER_SOURCE + 1 '
-        + '(2001). The tenant-leading @@unique([tenantId, sourceModel, sourceId, chunkIndex]) is '
-        + 'exactly that shape, read in order, and is also what makes a position one row; a '
-        + 'duplicate @@index over the same four columns would be a second B-tree on a table the '
-        + 'job rewrites to satisfy a matcher.',
+        'Two list reads. KnowledgeChunkRepository.listForSource (the index job): equality on '
+        + '(tenantId, sourceModel, sourceId) ordered by chunkIndex, bounded take = '
+        + 'MAX_CHUNKS_PER_SOURCE + 1 (2001); the tenant-leading @@unique([tenantId, sourceModel, '
+        + 'sourceId, chunkIndex]) is exactly that shape, read in order, and is also what makes a '
+        + 'position one row. listForTenant (the rebuild, scripts/knowledge-reindex.ts): tenantId '
+        + 'with an id cursor, ordered by id, take = REINDEX_PAGE_SIZE (200); the @@unique([id, '
+        + 'tenantId]) is that order with the tenant as its residual. A duplicate @@index over '
+        + 'either would be a second B-tree on a table the job rewrites to satisfy a matcher.',
     // RQ-6 — KRIs listed by tenantId (+ optional riskId/isActive) ordered by createdAt.
     KeyRiskIndicator:
         'RQ-6 listKris filters by tenantId (+ optional riskId/isActive) — covered by @@index([tenantId]) + @@index([tenantId, riskId]) + @@index([tenantId, isActive]); bounded take:500.',

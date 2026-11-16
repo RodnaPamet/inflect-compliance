@@ -282,9 +282,15 @@ describeFn('the vector store keeps two tenants apart (pgvector, RLS live)', () =
             // one: the question is whether the index CAN serve the query, which
             // the first draft of the query (a join ordered by distance and key)
             // failed — it planned as a scan and a full sort whatever the size.
+            // Explicit sorts are switched off too: once the table has been
+            // ANALYZEd (autovacuum, after an earlier suite in the same database
+            // wrote and deleted rows) the planner rightly prefers the
+            // (tenantId, embeddingModel) btree and a sort of a handful of rows,
+            // which says nothing about whether HNSW can serve the ORDER BY.
             const query = { embeddingRevision: MODEL, embedding: along(0), k: 10, sourceModels };
             const plan = await runInTenantContext(ctxA, async (tx) => {
                 await tx.$executeRaw`SET LOCAL enable_seqscan = off`;
+                await tx.$executeRaw`SET LOCAL enable_sort = off`;
                 await tx.$executeRaw`SELECT set_config('hnsw.iterative_scan', 'strict_order', true)`;
                 return tx.$queryRaw<Array<{ 'QUERY PLAN': string }>>(
                     Prisma.sql`EXPLAIN ${buildSearchQuery(ctxA, query, DIMS)}`,
