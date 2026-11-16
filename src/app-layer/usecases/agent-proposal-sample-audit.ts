@@ -138,6 +138,15 @@ export type SampleAuditReviewRow = {
     sampledAt: Date;
     /** When the approval under review was decided. */
     approvedAt: Date | null;
+    /**
+     * WHO WAS ASKED, which is not who replied — #5738.
+     *
+     * NULL for three reasons the row cannot tell apart: the proposal had no
+     * agent, the agent had no registered owner, or that owner was one of the
+     * approvers (#5307). So a reader is told "not assigned" and never a reason
+     * the data does not carry.
+     */
+    assignedToUserId: string | null;
     outcome: AgentSampleAuditOutcome;
     dissentCodes: string[];
     /**
@@ -192,6 +201,7 @@ export async function listSampleAuditsForReview(
                 sampledAt: true,
                 outcome: true,
                 dissentCodes: true,
+                assignedToUserId: true,
                 proposal: {
                     select: {
                         kind: true,
@@ -218,6 +228,7 @@ export async function listSampleAuditsForReview(
         agentId: row.proposal.agentId,
         sampledAt: row.sampledAt,
         approvedAt: row.proposal.reviewedAt,
+        assignedToUserId: row.assignedToUserId,
         outcome: row.outcome,
         dissentCodes: row.dissentCodes,
         refusal: sampleAuditAnswerRefusal({

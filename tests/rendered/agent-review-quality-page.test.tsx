@@ -56,6 +56,7 @@ const sampleAudits = [
         outcome: 'PENDING',
         dissentCodes: [],
         refusal: null,
+        assignedToUserId: 'u-ana',
     },
     {
         id: 'sa-2',
@@ -67,6 +68,7 @@ const sampleAudits = [
         outcome: 'PENDING',
         dissentCodes: [],
         refusal: 'SELF_REVIEW',
+        assignedToUserId: null,
     },
 ];
 /*
@@ -255,6 +257,14 @@ describe('review quality page', () => {
         expect(props.rows[0].kindLabel).toBe('Risk');
         // The codes are the module's seven, not a list the page spells.
         expect(props.dissentCodes).toHaveLength(7);
+        // WHO WAS ASKED (#5738), resolved by the page's own name lookup. `null`
+        // is passed through as null — the panel says "not assigned" and the page
+        // does not invent which of the three null causes applied.
+        expect(props.rows[0].assigneeLabel).toBe('Ana Petrova');
+        expect(props.rows[1].assigneeLabel).toBeNull();
+        // And the route to the approval being judged, naming the proposal so the
+        // proposals page can fetch it by id rather than hoping it is in view.
+        expect(props.rows[0].proposalHref).toBe('/t/acme/agents/proposals?proposal=p-1');
         expect(props.outcomes).not.toContain('PENDING');
         // And no approver identity travelled with them.
         expect(raw).not.toContain('reviewedByUserId');

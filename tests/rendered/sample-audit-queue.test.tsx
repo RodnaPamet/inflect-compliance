@@ -74,6 +74,8 @@ const row = (over: Partial<SampleAuditQueueRow> = {}): SampleAuditQueueRow => ({
     sampledAt: '2026-11-10T09:00:00.000Z',
     approvedAt: '2026-11-08T09:00:00.000Z',
     refusal: null,
+    assigneeLabel: 'Ana Petrova',
+    proposalHref: '/t/acme/agents/proposals?proposal=p-1',
     ...over,
 });
 
@@ -117,6 +119,51 @@ describe('refusals the server computed', () => {
     it('says so when nothing is waiting, rather than rendering an empty list', () => {
         mount([]);
         expect(screen.getByTestId('sample-audit-queue-empty')).toBeInTheDocument();
+    });
+});
+
+/**
+ * WHO WAS ASKED, AND WHAT THEY ARE JUDGING — #5738 items 2 and 3.
+ *
+ * Any holder of the register key may answer any row, so the assignee is
+ * orientation rather than a gate — without it a shared queue is nobody's. And a
+ * reviewer asked whether an approval was right, with no route to what was
+ * approved, is being asked to guess: the payload is encrypted business content
+ * this queue deliberately does not carry, so the answer is a link to the surface
+ * that already renders the rationale and the diff.
+ */
+describe('the row says who was asked', () => {
+    it('names the assignee', () => {
+        mount([row()]);
+        expect(screen.getByTestId('sample-audit-assignee-sa1')).toHaveTextContent('Ana Petrova');
+    });
+
+    it('says NOT ASSIGNED without claiming a reason', () => {
+        mount([row({ assigneeLabel: null })]);
+        const el = screen.getByTestId('sample-audit-assignee-sa1');
+        expect(el).toHaveTextContent('Not assigned');
+        // The column is null for THREE causes the row cannot tell apart: no
+        // agent, no registered owner, or the owner was an approver (#5307).
+        // Naming any of them would be inventing which.
+        for (const invented of ['owner', 'approver', 'former', 'no agent']) {
+            expect((el.textContent ?? '').toLowerCase()).not.toContain(invented);
+        }
+    });
+});
+
+describe('the row links to the approval under review', () => {
+    it('links to the proposals page, naming the proposal', () => {
+        mount([row()]);
+        const link = screen.getByTestId('sample-audit-proposal-link-sa1');
+        expect(link).toHaveAttribute('href', '/t/acme/agents/proposals?proposal=p-1');
+    });
+
+    it('offers the link even on a row this viewer may not answer', () => {
+        // Reading what was approved is not the same act as answering for it, and
+        // the queue is readable by holders who cannot write.
+        mount([row({ refusal: 'SELF_REVIEW' })]);
+        expect(screen.getByTestId('sample-audit-proposal-link-sa1')).toBeInTheDocument();
+        expect(screen.queryByTestId('sample-audit-answer-sa1')).toBeNull();
     });
 });
 
