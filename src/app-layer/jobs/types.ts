@@ -930,6 +930,28 @@ export interface JobPayloadMap {
     'agent-credential-hygiene': AgentCredentialHygienePayload;
     'agent-harness-estate-staleness': AgentHarnessEstateStalenessPayload;
     'agent-fingerprint': AgentFingerprintPayload;
+    'knowledge-index': KnowledgeIndexPayload;
+}
+
+/**
+ * knowledge-index — index one source row into the knowledge store (vector
+ * store Phase 2.1, `docs/ai-architecture/weaviate.md`): cut its text into
+ * chunks, store them encrypted, embed the ones that need a vector and file the
+ * vectors through `VectorRepository`.
+ *
+ * All three fields REQUIRED: the unit is one row, and there is no sweep shape.
+ * `sourceModel` is a string here (this file imports nothing) and is checked
+ * against `KNOWLEDGE_SOURCE_MODELS` by the job, which refuses an unknown one by
+ * name (`UNKNOWN_SOURCE_MODEL`). The payload carries no text: the job reads the
+ * row itself, under RLS, when it runs, so a retry indexes the row as it is
+ * then, never as it was when the job was queued.
+ */
+export interface KnowledgeIndexPayload {
+    tenantId: string;
+    /** A Prisma model name in `KNOWLEDGE_SOURCE_MODELS`, e.g. `PolicyVersion`. */
+    sourceModel: string;
+    sourceId: string;
+    requestId?: string;
 }
 
 /**
@@ -1426,6 +1448,19 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'knowledge-index': {
+        // RETRIED, because a retry can only finish what an attempt started:
+        // chunks are kept by content hash and a chunk whose vector already
+        // carries its hash is not embedded again, so a second attempt skips
+        // the batches the first stored. Only a transient embedding failure (a
+        // timeout, a refused connection, a 5xx) is retried at all; every other
+        // failure is named and marked `noRetry`. The backoff gives a busy
+        // `tei-embed` (one CPU, about 0.7 s a passage) room to drain.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: 200,
         removeOnFail: 500,
     },
     'agent-kill-switch-drill': {

@@ -15,7 +15,10 @@
  * `embeddingRevision` is stored as `embeddingModel`. A write whose chunk does
  * not exist (in this tenant) is refused `CHUNK_NOT_FOUND`: a vector of no
  * chunk is a vector of no text, and the composite foreign key would refuse
- * it anyway.
+ * it anyway. A write whose `contentHash` is not its chunk's is refused
+ * `CONTENT_HASH_MISMATCH`: the chunk was re-cut after the vector was computed
+ * (two index runs of one source overlapping), and the older run's vector
+ * must not land on the newer text.
  *
  * It fails closed: before its first statement it probes for the extension
  * (0.8.0 or later) AND the table, and refuses `PGVECTOR_NOT_INSTALLED` when
@@ -255,9 +258,17 @@ export function createPgvectorStore(): VectorStoreBackend {
         const sourceIds = [...new Set(records.map((r) => r.sourceId))];
         const sourceModels = [...new Set(records.map((r) => r.sourceModel))];
         const chunks = await tx.$queryRaw<
-            Array<{ chunkId: string; sourceModel: string; sourceId: string; chunkIndex: number; prior: string | null }>
+            Array<{
+                chunkId: string;
+                sourceModel: string;
+                sourceId: string;
+                chunkIndex: number;
+                chunkHash: string;
+                prior: string | null;
+            }>
         >(Prisma.sql`
-            SELECT c."id" AS "chunkId", c."sourceModel", c."sourceId", c."chunkIndex", e."contentHash" AS prior
+            SELECT c."id" AS "chunkId", c."sourceModel", c."sourceId", c."chunkIndex",
+                   c."contentHash" AS "chunkHash", e."contentHash" AS prior
             FROM ${CHUNKS} c
             LEFT JOIN ${TABLE} e
               ON e."tenantId" = c."tenantId" AND e."chunkId" = c."id" AND e."embeddingModel" = ${embeddingRevision}
@@ -273,6 +284,16 @@ export function createPgvectorStore(): VectorStoreBackend {
                 throw new VectorStoreError(
                     'CHUNK_NOT_FOUND',
                     `no ${r.sourceModel} chunk ${r.chunkIndex} for that source in this tenant`,
+                );
+            }
+            if (chunk.chunkHash !== r.contentHash) {
+                // The chunk's text moved after this vector was computed: a
+                // newer index run re-cut the source. Refused whole, before
+                // anything is written, so no vector is ever filed against text
+                // it was not computed from.
+                throw new VectorStoreError(
+                    'CONTENT_HASH_MISMATCH',
+                    `${r.sourceModel} chunk ${r.chunkIndex} no longer holds the text this vector was computed from`,
                 );
             }
             if (chunk.prior === null) outcome.inserted++;
@@ -356,6 +377,31 @@ export function createPgvectorStore(): VectorStoreBackend {
                 return rows.map((r) => ({
                     sourceModel: r.sourceModel,
                     sourceId: r.sourceId,
+                    chunkIndex: Number(r.chunkIndex),
+                    embeddingRevision,
+                    contentHash: r.contentHash,
+                    dimensions: Number(r.dimensions),
+                }));
+            });
+        },
+
+        async listSourceKeys(ctx, embeddingRevision, sourceModel, sourceId, limit): Promise<StoredVectorKey[]> {
+            return withTenant(ctx, async (tx) => {
+                const rows = await tx.$queryRaw<
+                    Array<{ chunkIndex: number; contentHash: string; dimensions: number }>
+                >(Prisma.sql`
+                    SELECT c."chunkIndex", e."contentHash", e."dimensions"
+                    FROM ${CHUNKS} c
+                    JOIN ${TABLE} e ON e."tenantId" = c."tenantId" AND e."chunkId" = c."id"
+                    WHERE c."tenantId" = ${ctx.tenantId}
+                      AND e."tenantId" = ${ctx.tenantId}
+                      AND c."sourceModel" = ${sourceModel} AND c."sourceId" = ${sourceId}
+                      AND e."embeddingModel" = ${embeddingRevision}
+                    ORDER BY c."chunkIndex"
+                    LIMIT ${limit}`);
+                return rows.map((r) => ({
+                    sourceModel,
+                    sourceId,
                     chunkIndex: Number(r.chunkIndex),
                     embeddingRevision,
                     contentHash: r.contentHash,

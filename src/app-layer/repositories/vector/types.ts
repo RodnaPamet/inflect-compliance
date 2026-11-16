@@ -105,6 +105,14 @@ export interface VectorStoreBackend {
         embeddingRevision: string,
         limit: number,
     ): Promise<StoredVectorKey[]>;
+    /** Keys of ONE source's rows for one revision, in chunk order, at most `limit`. */
+    listSourceKeys(
+        ctx: RequestContext,
+        embeddingRevision: string,
+        sourceModel: string,
+        sourceId: string,
+        limit: number,
+    ): Promise<StoredVectorKey[]>;
     deleteSource(ctx: RequestContext, sourceModel: string, sourceId: string): Promise<number>;
     deleteTenant(ctx: RequestContext): Promise<number>;
     /**
@@ -126,6 +134,12 @@ export type VectorStoreRefusal =
     | 'PGVECTOR_NOT_INSTALLED'
     /** pgvector only: a record names a chunk that does not exist in the tenant. */
     | 'CHUNK_NOT_FOUND'
+    /**
+     * pgvector only: a record's `contentHash` is not its chunk's. The chunk's
+     * text changed after the vector was computed (a newer index run replaced
+     * it), so storing the vector would hang one text's vector on another.
+     */
+    | 'CONTENT_HASH_MISMATCH'
     | 'INVALID_RECORD'
     | 'UNKNOWN_RECORD_FIELD'
     | 'DIMENSION_MISMATCH'

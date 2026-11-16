@@ -308,6 +308,48 @@ Use this checklist to verify encryption posture in each deployment environment.
 | **Sensitive** | Evidence content, policy text | ❌ (volume only) | ✅ Volume/provider |
 | **Business** | Controls, risks, assets, tasks | ❌ | ✅ Volume/provider |
 | **System** | Audit logs, sessions, tokens | ❌ | ✅ Volume/provider |
+| **Business (derivative)** | `KnowledgeChunkEmbedding.embedding`, the vector of an encrypted chunk | ❌ (plaintext floats, see below) | ✅ Volume/provider |
+
+### The knowledge store's vectors: a plaintext derivative of encrypted text
+
+The knowledge store (`docs/ai-architecture/weaviate.md`, owner decisions
+D-L4-1 and D-L4-2) holds chunk text in exactly one column,
+`KnowledgeChunk.text`, which is in the Epic B manifest
+(`src/lib/security/encrypted-fields.ts`) and is ciphertext at rest under the
+tenant's DEK. Beside it, `KnowledgeChunkEmbedding.embedding` holds one
+embedding model's vector of each chunk, and **that column is not encrypted**:
+an approximate-nearest-neighbour index (pgvector's HNSW) compares plaintext
+floats, so a vector the database cannot read is a vector it cannot search.
+
+What that means, stated plainly:
+
+- **The vector is derived from text the manifest protects.** Embedding
+  inversion is a real attack: a party holding a vector and the model that
+  produced it can recover an approximation of the text. So the column is
+  classified as business content, the same class as the text it came from, and
+  not as an opaque index.
+- **It is held only in Postgres and its backups.** The embedding row carries
+  the tenant, the chunk reference, the model, the dimension count, the content
+  hash and the vector, never text (the vectors-only rule, D-L4-2), and no other
+  store, cache, log or service holds it. A database backup now carries it, so
+  the backup encryption below covers it and the volume encryption above is its
+  at-rest protection.
+- **It is tenant-isolated like every other tenant row.** RLS with `FORCE`, the
+  repository's `tenantId` filter, and a composite foreign key to its chunk that
+  refuses a vector filed against another tenant's chunk even for a superuser
+  (`tests/integration/vector-tenant-isolation.test.ts`).
+- **It leaves with its chunk and its tenant.** A chunk's vectors are deleted
+  with it (`ON DELETE CASCADE`), and the tenant purge removes both tables
+  (`docs/data-retention.md`).
+- **Only the worker writes it.** The `knowledge-index` job embeds a chunk
+  through the in-deployment embedding seam (`src/lib/ai/embeddings/`) and files
+  the vector through `VectorRepository`, the only module that touches the
+  column (ESLint `local/vector-store-single-seam`). The embedding service runs
+  inside the deployment, so chunk text reaches no third party on the way to a
+  vector.
+
+The encryption-manifest entry for `KnowledgeChunk.text` is the protection; this
+section is the account of what it does not cover.
 
 ---
 

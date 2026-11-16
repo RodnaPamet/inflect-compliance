@@ -158,7 +158,14 @@ function validateBatch(records: readonly VectorRecord[], revision?: string): Vec
 
 // ─── Outcome metric ──────────────────────────────────────────────────
 
-type Operation = 'upsert' | 'search' | 'list_keys' | 'delete_source' | 'delete_tenant' | 'rebuild';
+type Operation =
+    | 'upsert'
+    | 'search'
+    | 'list_keys'
+    | 'list_source_keys'
+    | 'delete_source'
+    | 'delete_tenant'
+    | 'rebuild';
 let requestCounter: ReturnType<ReturnType<typeof metrics.getMeter>['createCounter']> | undefined;
 let requestDuration: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']> | undefined;
 
@@ -197,6 +204,17 @@ export interface VectorRepository {
     listKeys(
         ctx: RequestContext,
         embeddingRevision: string,
+        options?: { limit?: number },
+    ): Promise<StoredVectorKey[]>;
+    /**
+     * The stored keys of ONE source's chunks for one revision, in chunk order —
+     * what the index job reads to learn which chunks still need a vector.
+     */
+    listSourceKeys(
+        ctx: RequestContext,
+        embeddingRevision: string,
+        sourceModel: string,
+        sourceId: string,
         options?: { limit?: number },
     ): Promise<StoredVectorKey[]>;
     deleteSource(ctx: RequestContext, sourceModel: string, sourceId: string): Promise<number>;
@@ -259,6 +277,16 @@ export function createVectorRepository(store: VectorStoreBackend): VectorReposit
                 must(EMBEDDING_REVISION, embeddingRevision, 'embeddingRevision');
                 const limit = Math.min(Math.max(1, Math.trunc(options?.limit ?? MAX_LIST_KEYS)), MAX_LIST_KEYS);
                 return store.listKeys(ctx, embeddingRevision, limit);
+            });
+        },
+
+        listSourceKeys(ctx, embeddingRevision, sourceModel, sourceId, options) {
+            return observed('list_source_keys', ctx, async () => {
+                must(EMBEDDING_REVISION, embeddingRevision, 'embeddingRevision');
+                must(SOURCE_MODEL, sourceModel, 'sourceModel');
+                must(SOURCE_ID, sourceId, 'sourceId');
+                const limit = Math.min(Math.max(1, Math.trunc(options?.limit ?? MAX_LIST_KEYS)), MAX_LIST_KEYS);
+                return store.listSourceKeys(ctx, embeddingRevision, sourceModel, sourceId, limit);
             });
         },
 
