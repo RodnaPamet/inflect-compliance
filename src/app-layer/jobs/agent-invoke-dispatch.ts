@@ -25,6 +25,7 @@
  * about its own depth cap.
  */
 import { runJob } from '@/lib/observability/job-runner';
+import { recordAgentInvokeDepth } from '@/lib/observability/metrics';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { resolveTenantContext } from '@/lib/tenant-context';
@@ -90,6 +91,11 @@ export async function runAgentInvokeDispatch(
         const startMs = performance.now();
         const { tenantId, agentId, workflowKey } = payload;
         const depth = payload.depth ?? 1;
+        // BEFORE the cap check (#5716). Counting after it would censor the
+        // distribution at the cap: the data could then only ever say that
+        // nothing exceeded the ceiling, never that the ceiling is too low, and
+        // a depth above it is precisely the sample worth having.
+        recordAgentInvokeDepth({ depth });
 
         /**
          * The job's own result row, built the way `subflow-dispatcher` builds
