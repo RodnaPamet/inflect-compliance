@@ -428,6 +428,158 @@ describe('the output filters withhold what they do not recognise', () => {
 });
 
 /**
+ * An error line is reduced to a fixed CLASS and the name it is about, never its
+ * text. Each case is a line docker compose printed — captured from compose
+ * v5.6.1 against a local daemon on 2026-11-15, the first one in the shape
+ * `VM apply` run 43761627105 printed for postgres — with a secret-shaped token
+ * planted where a message could carry what compose read. The class must come
+ * out, the line's message must not, and the token must not.
+ */
+describe('a withheld error line is printed as its class', () => {
+    const SECRET = 'sekret';
+    // [the line compose printed, the line the filter must print (trimmed)]
+    const CASES: [string, string][] = [
+        // `up -d --dry-run` for a service whose new image is not on the host yet.
+        [`DRY-RUN MODE -  Container inflect-postgres-1 Error response from daemon: No such image: ghcr.io/x/${SECRET}:16`, 'Container inflect-postgres-1  error class: no such image'],
+        [`Error response from daemon: No such image: ghcr.io/x/${SECRET}:16`, 'error class: no such image'],
+        [`Image ghcr.io/rodnapamet/postgres-pgvector:no-such-tag Error manifest unknown ${SECRET}`, 'Image ghcr.io/rodnapamet/postgres-pgvector:no-such-tag  error class: manifest unknown'],
+        [`Image ghcr.io/rodnapamet/nope:1 Error Head "https://ghcr.io/v2/rodnapamet/nope/manifests/${SECRET}": denied`, 'Image ghcr.io/rodnapamet/nope:1  error class: pull access denied'],
+        [`Error response from daemon: pull access denied for ${SECRET}, repository does not exist or may require 'docker login'`, 'error class: pull access denied'],
+        [`Container inflect-pgbouncer-1 Error dependency postgres failed to start ${SECRET}`, 'Container inflect-pgbouncer-1  error class: dependency failed to start'],
+        [`dependency failed to start: container inflect-postgres-1 is unhealthy ${SECRET}`, 'container inflect-postgres-1  error class: dependency failed to start'],
+        [`container inflect-postgres-1 is unhealthy ${SECRET}`, 'container inflect-postgres-1  error class: container is unhealthy'],
+        [`service "migrate" didn't complete successfully: exit 3 ${SECRET}`, 'service migrate  error class: one-shot service failed'],
+        [`Error response from daemon: driver failed programming external connectivity on endpoint inflect-caddy-1 (${SECRET}): Bind for 0.0.0.0:443 failed: port is already allocated`, 'error class: port is already allocated'],
+        [`no such service: tei-embed`, 'service tei-embed  error class: no such service'],
+        [`validating /opt/inflect/docker-compose.prod.yml.new: services.app.${SECRET} additional properties not allowed`, 'error class: invalid config'],
+        [`failed to read /opt/inflect/.env.prod: line 3: unexpected character "${SECRET}" in variable name`, 'error class: invalid env file'],
+        [`Error response from daemon: something compose has never said before: ${SECRET}`, 'error class: unclassified'],
+    ];
+    const run = (script: string, input: string) => execFileSync('bash', ['-c', script], { input, encoding: 'utf8' });
+    const applyFilter = ['shape_compose', 'shape_diagnostics', 'shape_none', 'show'].map((n) => shellFunction(APPLY_SH, n)).join('\n');
+    const filters: [string, (input: string) => string][] = [
+        // apply.sh relays the dry run indented by four spaces (its `sed`).
+        [APPLY_SH, (input) => run(`${applyFilter}\nPUBLIC_LOG=1\nsed 's/^/    /' | show compose`, input)],
+        [REMOTE_SH, (input) => run(`${shellFunction(REMOTE_SH, 'shape')}\nshape`, input)],
+    ];
+
+    describe.each(filters)('%s', (_rel, filter) => {
+        it.each(CASES)('%s', (line, want) => {
+            const out = filter(`${line}\n`).split('\n').map((l) => l.trim()).filter(Boolean);
+            expect(out).toEqual([want]);
+            expect(out.join('\n')).not.toContain(SECRET);
+        });
+
+        it('leaves every resource line, a missing variable and a non-error line as they were', () => {
+            const out = filter(
+                [
+                    'Container inflect-redis-1 Running',
+                    'Image ghcr.io/rodnapamet/postgres-pgvector:16-alpine Pulled',
+                    'required variable DATA_ENCRYPTION_KEY is missing a value',
+                    `WARN[0000] The "PW=${SECRET}" variable is not set. Defaulting to a blank string.`,
+                    '',
+                ].join('\n'),
+            )
+                .split('\n')
+                .map((l) => l.trim())
+                .filter(Boolean);
+            expect(out).toEqual([
+                'Container inflect-redis-1 Running',
+                'Image ghcr.io/rodnapamet/postgres-pgvector:16-alpine Pulled',
+                'required variable DATA_ENCRYPTION_KEY',
+                '[1 line(s) withheld: this log is public]',
+            ]);
+        });
+    });
+
+    it('apply.sh and remote.sh classify with the same two functions', () => {
+        const fn = (rel: string, name: string) => {
+            const lines = shellFunction(rel, rel === APPLY_SH ? 'shape_compose' : 'shape').split('\n');
+            const start = lines.findIndex((l) => l.trim().startsWith(`function ${name}(`));
+            expect(start).toBeGreaterThan(0);
+            const end = lines.findIndex((l, i) => i > start && l === lines[start].replace(/function.*/, '}'));
+            return lines.slice(start, end + 1).join('\n');
+        };
+        for (const name of ['error_class', 'error_subject']) {
+            expect(fn(APPLY_SH, name)).toBe(fn(REMOTE_SH, name));
+        }
+    });
+
+    it('a name is taken only from a resource token or a known message position, in a narrow character set', () => {
+        const lines = shellFunction(APPLY_SH, 'shape_compose').split('\n').map((l) => l.trim());
+        const start = lines.findIndex((l) => l.startsWith('function error_subject('));
+        const end = lines.findIndex((l, i) => i > start && l === '}');
+        const returns = lines.slice(start + 1, end).filter((l) => /\breturn\b/.test(l) && l !== 'return ""');
+        // One resource token, its name in the resource lines' character set…
+        const RESOURCE = /^if \(\$i ~ \/\^\(Container\|Network\|Volume\|Image\)\$\/ && \$\(i \+ 1\) ~ \/\^\[A-Za-z0-9\._\\\/:@-\]\+\$\/\) return \$i " " \$\(i \+ 1\)$/;
+        // …or a fixed phrase whose name part is [A-Za-z0-9._-]+, returned as one word.
+        const PHRASE = /^if \(match\(l, \/[a-z :"]*\[A-Za-z0-9\._-\]\+[a-z :"]*\/\)\) \{ split\(substr\(l, RSTART, RLENGTH\), w, "(?:[^"\\]|\\.)*"\); return "(container|service) " w\[\d\] \}$/;
+        expect(returns.length).toBe(6);
+        expect(returns.filter((l) => !RESOURCE.test(l) && !PHRASE.test(l))).toEqual([]);
+        expect(returns.filter((l) => RESOURCE.test(l))).toHaveLength(1);
+    });
+
+    /**
+     * The dry run's own block, RUN with its ssh replaced by the captured
+     * stream: a `no such image` adds the note that it is the simulation's,
+     * and an image the registry refused does not.
+     */
+    describe('apply.sh’s dry-run step', () => {
+        const block = () => {
+            const lines = read(APPLY_SH).split('\n');
+            const start = lines.findIndex((l) => l.startsWith('log "simulating the apply (docker compose up -d --dry-run)"'));
+            const end = lines.findIndex((l, i) => i > start && l === 'fi');
+            expect(start).toBeGreaterThan(0);
+            return lines.slice(start, end + 1).join('\n');
+        };
+        const dryRun = (stream: string) => {
+            // The captured stream arrives on stdin, so no temporary file and
+            // no path is spliced into the shell text.
+            const script = [
+                applyFilter,
+                'PUBLIC_LOG=1 REMOTE_DIR=/x ENV_ARGS= STAGED=/x/s.yml',
+                'log() { printf "[apply] %s\\n" "$*"; }; warn() { printf "WARN %s\\n" "$*"; }',
+                // The remote command's own `| sed` runs on the VM; here stdin
+                // stands for what came back.
+                "ssh_vm() { sed 's/^/    /'; }",
+                block(),
+            ].join('\n');
+            return run(script, stream).split('\n').map((l) => l.trim());
+        };
+        const NOTE = /^\[apply\]\s+note: 'no such image' under --dry-run is the simulation/;
+
+        it('notes that a new image’s `no such image` is the simulation’s', () => {
+            const out = dryRun(
+                [
+                    ' Image ghcr.io/rodnapamet/postgres-pgvector:16-alpine Pulling ',
+                    ' Image ghcr.io/rodnapamet/postgres-pgvector:16-alpine Pulled ',
+                    ' Container inflect-postgres-1 Recreate ',
+                    ` Container inflect-postgres-1 Error response from daemon: No such image: ${SECRET} `,
+                    `Error response from daemon: No such image: ${SECRET}`,
+                    '',
+                ].join('\n'),
+            );
+            expect(out).toContain('Container inflect-postgres-1  error class: no such image');
+            expect(out.filter((l) => NOTE.test(l))).toHaveLength(1);
+            expect(out.filter((l) => l.includes(SECRET))).toEqual([]);
+        });
+
+        it('adds no note when the registry refused the image', () => {
+            const out = dryRun(
+                [
+                    ' Image ghcr.io/rodnapamet/nope:1 Pulling ',
+                    ' Image ghcr.io/rodnapamet/nope:1 Error manifest unknown',
+                    'Error response from daemon: manifest unknown',
+                    '',
+                ].join('\n'),
+            );
+            expect(out).toContain('Image ghcr.io/rodnapamet/nope:1  error class: manifest unknown');
+            expect(out.filter((l) => NOTE.test(l))).toEqual([]);
+        });
+    });
+});
+
+/**
  * A runner has no gcloud ssh key, so its first `gcloud compute ssh` makes one,
  * and ssh-keygen prints its banner and randomart on STDOUT — into whatever the
  * first `$(ssh_vm …)` captures. apply.sh is RUN here against a fake VM (a

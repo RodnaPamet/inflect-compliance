@@ -214,7 +214,12 @@ err()  { printf '\033[31m[apply] ERROR:\033[0m %s\n' "$*" >&2; }
 #   compose      the resource lines compose prints (`Container <name> <state>`,
 #                and Network, Volume, Image), each token checked against a
 #                narrow character set, and the NAME of a variable a ':?' guard
-#                found missing. Everything else is counted and withheld.
+#                found missing. An error line is reduced to a fixed CLASS from
+#                `error_class` (`dependency failed to start`, `no such image`,
+#                `manifest unknown`, `pull access denied`, …, else
+#                `unclassified`) and the container, service or image name it
+#                is about, from the positions `error_subject` knows — never
+#                the line's text. Everything else is counted and withheld.
 #   diagnostics  error-shaped lines from caddy and the ops agent's engine, whose
 #                only input is a file from this repository.
 #   none         the count alone.
@@ -228,12 +233,43 @@ if [ "$PUBLIC_LOG" = "1" ]; then QUIET_FLAG="--quiet"; fi
 
 shape_compose() {
     awk '
+        function error_class(l) {
+            if (l ~ /dependency failed to start|dependency [A-Za-z0-9._-]+ failed to start/) return "dependency failed to start"
+            if (l ~ /is unhealthy/) return "container is unhealthy"
+            if (l ~ /didn.t complete successfully/) return "one-shot service failed"
+            if (l ~ /[Nn]o such image/) return "no such image"
+            if (l ~ /manifest unknown|manifest for [^ ]+ not found/) return "manifest unknown"
+            if (l ~ /pull access denied|unauthorized|: denied$|: denied[: ]/) return "pull access denied"
+            if (l ~ /port is already allocated|address already in use/) return "port is already allocated"
+            if (l ~ /no such service/) return "no such service"
+            if (l ~ /failed to read [^ ]*\.env|\.env[^ ]*: line [0-9]+/) return "invalid env file"
+            if (l ~ /validating [^ ]+: |yaml: |[Aa]dditional propert|is not allowed/) return "invalid config"
+            if (l ~ /[Ee]rror|[Ff]ailed|denied|[Ii]nvalid|[Cc]annot|[Uu]nable/) return "unclassified"
+            return ""
+        }
+        function error_subject(l,   i, w) {
+            for (i = 1; i + 1 <= NF; i++)
+                if ($i ~ /^(Container|Network|Volume|Image)$/ && $(i + 1) ~ /^[A-Za-z0-9._\/:@-]+$/) return $i " " $(i + 1)
+            if (match(l, /dependency failed to start: container [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[6] }
+            if (match(l, /container [A-Za-z0-9._-]+ is unhealthy/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[2] }
+            if (match(l, /dependency [A-Za-z0-9._-]+ failed to start/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[2] }
+            if (match(l, /service "[A-Za-z0-9._-]+"/)) { split(substr(l, RSTART, RLENGTH), w, "\""); return "service " w[2] }
+            if (match(l, /no such service: [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[4] }
+            return ""
+        }
         { n++ }
         match($0, /required variable [A-Za-z_][A-Za-z0-9_]*/) {
             print "    " substr($0, RSTART, RLENGTH); kept++; next
         }
         match($0, /^ERROR: \(gcloud\.[a-z.-]+\)/) {
             print "    " substr($0, RSTART, RLENGTH) " (its message withheld)"; kept++; next
+        }
+        {
+            c = error_class($0)
+            if (c != "") {
+                s = error_subject($0)
+                print "    " (s != "" ? s "  " : "") "error class: " c; kept++; next
+            }
         }
         {
             for (i = 1; i + 1 <= NF; i++) {
@@ -1193,8 +1229,26 @@ log "  config OK — every \${VAR} resolved"
 #    the API calls, so this names the containers that would be recreated
 #    without creating any. Advisory: an older compose without --dry-run just
 #    warns rather than blocking the apply.
+#
+#    One error here is the simulation's, not the apply's. The dry run resolves
+#    each image at its registry (`Image <ref> Pulled` means the registry
+#    answered for that tag) but downloads nothing, and the simulated container
+#    create then inspects the image LOCALLY. So a service whose image is new to
+#    the VM reads `Container <name> Error` with the class `no such image`
+#    (reproduced with compose v5.6.1, and the shape `VM apply` run 43761627105
+#    printed for postgres on 2026-11-15). A real `up -d` pulls first. An image
+#    the registry does not have fails at its `Image` line instead, as
+#    `manifest unknown` or `pull access denied`, and no note is printed for it.
 log "simulating the apply (docker compose up -d --dry-run)"
-if ! ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'" 2>&1 | show compose; then
+if dry_run_out="$(ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose ${ENV_ARGS} -f '$(basename "$STAGED")' up -d --dry-run 2>&1 | sed 's/^/    /'" 2>&1 | show compose)"; then
+    printf '%s\n' "$dry_run_out"
+    if printf '%s\n' "$dry_run_out" | grep -qi 'no such image'; then
+        log "  note: 'no such image' under --dry-run is the simulation's: it resolves an image at"
+        log "  its registry but downloads nothing, so an image new to this VM is not there to"
+        log "  inspect. The real apply pulls it first. Check its Image line above reads Pulled."
+    fi
+else
+    printf '%s\n' "$dry_run_out"
     warn "up --dry-run was not usable on this host — continuing without the simulation."
 fi
 
