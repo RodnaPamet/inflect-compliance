@@ -52,13 +52,47 @@ TS="$(date +%Y%m%d-%H%M%S)"
 # The host env files, in apply.sh's order: interpolation needs both.
 compose() { docker compose --env-file .env --env-file .env.prod "$@"; }
 
-# Compose's output reduced to `<Kind> <name> <state>` lines and the NAME of a
-# variable a ':?' guard found missing; everything else is counted and withheld.
+# Compose's output reduced to `<Kind> <name> <state>` lines, the NAME of a
+# variable a ':?' guard found missing, and an error line's fixed CLASS with the
+# name it is about (the same `error_class` and `error_subject` as apply.sh's
+# shape_compose, held identical by tests/guards/vm-apply-workflow.test.ts);
+# everything else is counted and withheld.
 shape() {
     awk '
+        function error_class(l) {
+            if (l ~ /dependency failed to start|dependency [A-Za-z0-9._-]+ failed to start/) return "dependency failed to start"
+            if (l ~ /is unhealthy/) return "container is unhealthy"
+            if (l ~ /didn.t complete successfully/) return "one-shot service failed"
+            if (l ~ /[Nn]o such image/) return "no such image"
+            if (l ~ /manifest unknown|manifest for [^ ]+ not found/) return "manifest unknown"
+            if (l ~ /pull access denied|unauthorized|: denied$|: denied[: ]/) return "pull access denied"
+            if (l ~ /port is already allocated|address already in use/) return "port is already allocated"
+            if (l ~ /no such service/) return "no such service"
+            if (l ~ /failed to read [^ ]*\.env|\.env[^ ]*: line [0-9]+/) return "invalid env file"
+            if (l ~ /validating [^ ]+: |yaml: |[Aa]dditional propert|is not allowed/) return "invalid config"
+            if (l ~ /[Ee]rror|[Ff]ailed|denied|[Ii]nvalid|[Cc]annot|[Uu]nable/) return "unclassified"
+            return ""
+        }
+        function error_subject(l,   i, w) {
+            for (i = 1; i + 1 <= NF; i++)
+                if ($i ~ /^(Container|Network|Volume|Image)$/ && $(i + 1) ~ /^[A-Za-z0-9._\/:@-]+$/) return $i " " $(i + 1)
+            if (match(l, /dependency failed to start: container [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[6] }
+            if (match(l, /container [A-Za-z0-9._-]+ is unhealthy/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "container " w[2] }
+            if (match(l, /dependency [A-Za-z0-9._-]+ failed to start/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[2] }
+            if (match(l, /service "[A-Za-z0-9._-]+"/)) { split(substr(l, RSTART, RLENGTH), w, "\""); return "service " w[2] }
+            if (match(l, /no such service: [A-Za-z0-9._-]+/)) { split(substr(l, RSTART, RLENGTH), w, " "); return "service " w[4] }
+            return ""
+        }
         { n++ }
         match($0, /required variable [A-Za-z_][A-Za-z0-9_]*/) {
             print "  " substr($0, RSTART, RLENGTH); kept++; next
+        }
+        {
+            c = error_class($0)
+            if (c != "") {
+                s = error_subject($0)
+                print "  " (s != "" ? s "  " : "") "error class: " c; kept++; next
+            }
         }
         {
             for (i = 1; i + 1 <= NF; i++) {

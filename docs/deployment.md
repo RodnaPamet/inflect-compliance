@@ -1075,6 +1075,34 @@ file), and counts the rest as withheld; the remote script prints names,
 states, counts and limits. `tests/guards/vm-apply-workflow.test.ts` holds these
 properties, and runs the filters on a stream carrying secret-shaped lines.
 
+A compose error line is not simply withheld: both filters (`shape_compose` in
+`apply.sh`, `shape` in `remote.sh`, with identical `error_class` and
+`error_subject` functions) print it as a fixed class and the container,
+service or image it names, and never its text, for example
+`Container inflect-postgres-1  error class: no such image`. The classes are
+`dependency failed to start`, `container is unhealthy`, `one-shot service
+failed`, `no such image`, `manifest unknown`, `pull access denied`, `port is
+already allocated`, `no such service`, `invalid env file` and `invalid config`;
+any other line carrying an error word is `unclassified`, and a line with none
+is counted as withheld. A name is taken only from a resource token (`Container`,
+`Network`, `Volume`, `Image`) or a fixed message position, in a narrow character
+set. A new class is a pull request to both functions; the test holds them
+equal and runs each class on a line compose printed.
+
+**`no such image` under `up -d --dry-run` belongs to the simulation.** The dry
+run resolves each image at its registry, so `Image <ref> Pulled` means the
+registry answered for that tag, but it downloads nothing, and the simulated
+create then inspects the image on the host. A service whose image is new to
+the VM therefore reads `Container <name> Error`, class `no such image`, and the
+simulation stops there, so the services that wait on it are not simulated. This is what
+`VM apply` run 43761627105 printed for postgres on 2026-11-15, after #5719
+moved it to `ghcr.io/rodnapamet/postgres-pgvector:16-alpine`, and it reproduces
+with compose v5.6.1 against a local daemon. `apply.sh` prints a note when it
+sees it. A real `up -d` pulls first. An image the registry does not have fails
+at its `Image` line instead, as `manifest unknown` or `pull access denied`. A
+recreated service with a healthcheck that dependents wait on is not an
+artefact: the dry run reports it `Healthy` and leaves running dependents alone.
+
 ## Observability provisioning
 
 The telemetry backend (OTel Collector + Prometheus + Tempo + Grafana) is
