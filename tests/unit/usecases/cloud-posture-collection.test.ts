@@ -608,6 +608,12 @@ describe.each(ARMS)(
                 automationKey: `${CLOUD}.soc2`,
                 parsed: { provider: CLOUD, checkType: 'soc2', raw: `${CLOUD}.soc2` },
                 tenantId: TENANT,
+                // #5476: threaded so the posture provider can derive the
+                // gateway credential provider for THIS connection. Kept in
+                // the exact expectation rather than loosened to
+                // `objectContaining` — this assertion's exactness is what
+                // caught the field being added.
+                connectionId: CONN,
                 connectionConfig: {},
                 triggeredBy: 'scheduled',
             });
