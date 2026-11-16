@@ -15,7 +15,18 @@
  *      `readRetrievalFloors`, the function the nightly's checker reads them
  *      through. Over records straddling each floor, the gate mounts exactly
  *      when the nightly's reading says both are met.
+ *   3. ONE CALL. The probe's ANN arm issues the store query `searchKnowledge`
+ *      issues — the revision's depth (20) and the caller's source filter —
+ *      pinned to the index path, and the probe's own context (the index job's)
+ *      gets the same filter a reader's does. Captured from the usecase itself,
+ *      so a change to either side's depth or filter fails here (owner
+ *      decision 2026-11-16, D-L4-9 amended).
  */
+jest.mock('@/app-layer/services/knowledge-index', () => ({
+    ...jest.requireActual('@/app-layer/services/knowledge-index'),
+    readResidency: jest.fn(async () => ({ residency: 'EXTERNAL' })),
+}));
+
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -40,7 +51,12 @@ import {
 } from '@/lib/ai/evals/rag-retrieval-floors';
 import { assertPlansMatchRevision, indexParamsFromPlans } from '../../scripts/rag-eval/probe';
 import { codeOf } from '../helpers/source-blocks';
-import { retrieverRevision, searchSettings } from '../../scripts/rag-eval/search-seam';
+import { annQuery, productQuery, retrieverRevision, searchSettings } from '../../scripts/rag-eval/search-seam';
+import type { VectorRepository, VectorSearchQuery } from '@/app-layer/repositories/VectorRepository';
+import { indexContext } from '@/app-layer/services/knowledge-index';
+import { searchKnowledge } from '@/app-layer/usecases/knowledge-search';
+import { StubEmbeddingProvider, STUB_EMBEDDING_MODEL } from '@/lib/ai/embeddings';
+import { makeRequestContext } from '../helpers/make-context';
 
 const REPO = path.resolve(__dirname, '../..');
 const E5 = { model: 'intfloat/multilingual-e5-small', dimensions: 384 };
@@ -121,8 +137,9 @@ describe('1. the nightly keys its record by the revision the gate compares', () 
     it('the probe reads its plans under exactly the settings the revision states, on the index the migration builds', () => {
         const revision = retrieverRevision(E5);
         // What the probe computes from its plans (`runRetrievalProbe`), given every question planned on that index.
-        const plans = [{ hnswIndex: MIGRATION_INDEX, maxScanTuples: String(searchSettings(RECALL_AT).maxScanTuples) }];
-        const observed = indexParamsFromPlans(plans, searchSettings(RECALL_AT));
+        // At the depth the probe calls at: the product's, the revision's k.
+        const plans = [{ hnswIndex: MIGRATION_INDEX, maxScanTuples: String(searchSettings(revision.k).maxScanTuples) }];
+        const observed = indexParamsFromPlans(plans, searchSettings(revision.k));
         expect(observed).toEqual(revision.indexParams);
         expect(() => assertPlansMatchRevision(revision.indexParams, observed, plans)).not.toThrow();
     });
@@ -168,5 +185,53 @@ describe('2. one set of floors: the gate mounts exactly when the nightly’s rea
         const readings = grid.map((g) => readRetrievalFloors(retrievalFloorFigures(record(retrieverRevision(E5), g).cases)));
         expect(new Set(readings.map((r) => r.recallAt10VsExact.meets))).toEqual(new Set([true, false]));
         expect(new Set(readings.map((r) => r.p95LatencyMs.meets))).toEqual(new Set([true, false]));
+    });
+});
+
+describe('3. the probe issues the product’s own store call', () => {
+    const DIMS = 64;
+    const route = { model: STUB_EMBEDDING_MODEL, dimensions: DIMS };
+
+    /** The query `searchKnowledge` sends the store for a caller, captured at the store. */
+    async function productCall(ctx: ReturnType<typeof makeRequestContext>, k: number): Promise<VectorSearchQuery> {
+        const seen: VectorSearchQuery[] = [];
+        const vectors = { backend: 'pgvector', search: async (_c: unknown, q: VectorSearchQuery) => (seen.push(q), []) } as unknown as VectorRepository;
+        const provider = new StubEmbeddingProvider(DIMS);
+        const mount = {
+            state: 'MOUNTED' as const,
+            revision: retrieverRevision(route),
+            record: { file: 'r.json', ranAt: '2026-11-16T00:00:00.000Z' },
+            figures: { recallAt10VsExact: 1, recallScored: 1, p95LatencyMs: 1, latencySamples: 1 },
+        };
+        const r = await searchKnowledge(ctx, { query: 'access reviews', k }, { mount, vectors, embedder: () => ({ ok: true as const, provider }) });
+        expect(r.available).toBe(true);
+        expect(seen).toHaveLength(1);
+        return seen[0];
+    }
+
+    it.each([1, 5, 20])('at a caller’s limit of %i, the store is asked the revision’s depth, and the probe asks the same', async (limit) => {
+        const reader = makeRequestContext('READER');
+        const call = await productCall(reader, limit);
+        expect(call.k).toBe(retrieverRevision(route).k);
+        expect(call.sourceModels?.length).toBeGreaterThan(0);
+        const probe = productQuery(reader, call.embeddingRevision, call.embedding);
+        expect(probe).toEqual(call);
+        expect(annQuery(probe)).toEqual({ ...call, strategy: 'index' });
+    });
+
+    it('the probe’s own context (the index job’s) gets the filter a reader gets', async () => {
+        const call = await productCall(makeRequestContext('READER'), 5);
+        expect(productQuery(indexContext('probe-tenant'), call.embeddingRevision, call.embedding)).toEqual(call);
+    });
+
+    it('the plans are read at the depth the call is made at, under the settings the revision states', () => {
+        const call = annQuery(productQuery(makeRequestContext('READER'), STUB_EMBEDDING_MODEL, [1, 0]));
+        const revision = retrieverRevision(E5);
+        if (revision.indexParams.method !== 'hnsw') throw new Error('the deployment revision is an HNSW search');
+        expect(searchSettings(call.k)).toEqual({
+            iterativeScan: revision.indexParams.iterativeScan,
+            efSearch: revision.indexParams.efSearch,
+            maxScanTuples: revision.indexParams.maxScanTuples,
+        });
     });
 });

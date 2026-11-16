@@ -3,10 +3,20 @@
  * (Ragas Phase 1, `docs/ai-architecture/ragas.md` 1.2; vector store Phase 3,
  * `docs/ai-architecture/weaviate.md` 3.5-3.6).
  *
- * Three facts, each read from the product rather than spelled here:
+ * Four facts, each read from the product rather than spelled here:
  *
+ *   productQuery       the store query `searchKnowledge` issues for the
+ *                      probe's context: `knowledgeVectorQuery`, the product's
+ *                      own function — the revision's depth
+ *                      (`KNOWLEDGE_RETRIEVAL_K`, 20) over the source models
+ *                      the caller may read. The probe times that 20-deep call,
+ *                      keeps its first 10 (recall@10, D-L4-9 as amended
+ *                      2026-11-16) and compares them with the exact top 10 of
+ *                      the same tenant under the same filter.
  *   annQuery           how the probe's ANN arm asks `VectorRepository.search`:
- *                      `strategy: 'index'`. The store's default (`auto`) takes
+ *                      the product's query with `strategy: 'index'`, the path
+ *                      the product takes above the exact-scan threshold. The
+ *                      store's default (`auto`) takes
  *                      an EXACT scan for a tenant of at most
  *                      `EXACT_SCAN_MAX_ROWS` vectors and falls back to one when
  *                      the index comes up short, either of which would make
@@ -27,8 +37,9 @@
  *                      its own: the revision's is `KNOWLEDGE_RETRIEVAL_K`.
  *
  * `tests/unit/rag-eval-gate-agreement.test.ts` builds this revision and the
- * gate's for the same route and holds them equal, and holds the settings the
- * probe reads its plans under to the ones the revision states. And whatever
+ * gate's for the same route and holds them equal, holds the settings the
+ * probe reads its plans under to the ones the revision states, and holds the
+ * probe's query to the one `searchKnowledge` actually sends the store. And whatever
  * this file says, `probe.ts` refuses a run whose questions were not planned
  * the way the revision states (`assertPlansMatchRevision`), so a revision that
  * says `hnsw` can never be carried by exact plans.
@@ -36,6 +47,8 @@
 import { HNSW_SEARCH } from '@/app-layer/repositories/vector-search-params';
 import type { VectorSearchQuery } from '@/app-layer/repositories/VectorRepository';
 import { knowledgeRetrieverRevision, type EmbeddingRouteFacts } from '@/app-layer/services/knowledge-search-revision';
+import type { RequestContext } from '@/app-layer/types';
+import { knowledgeVectorQuery } from '@/app-layer/usecases/knowledge-search';
 import type { RagEvaluationRecord } from '@/lib/ai/evals/rag-record';
 
 type RetrieverRevision = RagEvaluationRecord['retrieverRevision'];
@@ -47,7 +60,12 @@ export interface SearchSettings {
     readonly maxScanTuples: number | null;
 }
 
-/** The ANN arm's query: the index path, never an exact shortcut. */
+/** The store query `searchKnowledge` would send for this context, model and question vector. */
+export function productQuery(ctx: RequestContext, embeddingRevision: string, embedding: readonly number[]): VectorSearchQuery {
+    return knowledgeVectorQuery(ctx, embeddingRevision, embedding);
+}
+
+/** The ANN arm's query: the product's, on the index path, never an exact shortcut. */
 export function annQuery(q: VectorSearchQuery): VectorSearchQuery {
     return { ...q, strategy: 'index' };
 }

@@ -62,11 +62,14 @@ flowchart LR
   (`evals/rag/`, Ragas 0.4.3, every dependency locked by version and hash)
   through a metering proxy that holds the key — `RAGAS_ANTHROPIC_API_KEY`
   when set, the repository's `ANTHROPIC_API_KEY` otherwise — and the ragas
-  share (`evals/cost-meter/anthropic-proxy.mjs`). The retrieval stage asks
-  the product's search on the index path (`strategy: 'index'`, under
-  `HNSW_SEARCH`) and keys its output by `knowledgeRetrieverRevision`, the
-  revision the `search_knowledge` mount gate looks records up by, and its
-  figures are read against D-L4-9's floors, the gate's own
+  share (`evals/cost-meter/anthropic-proxy.mjs`). The retrieval stage issues
+  the product's own store call — `searchKnowledge`'s 20-deep, source-filtered
+  query (`knowledgeVectorQuery`) — on the index path (`strategy: 'index'`,
+  under `HNSW_SEARCH`), scores recall over its first 10 against the exact
+  top 10 under the same filter and times the whole call. It keys its output
+  by `knowledgeRetrieverRevision`, the revision the `search_knowledge` mount
+  gate looks records up by, and its figures are read against D-L4-9's
+  floors, the gate's own
   (`src/lib/ai/evals/rag-retrieval-floors.ts`). The judge has nothing to
   judge until the product answers on the harness's answer route
   (`evals/rag/fixtures/answer-contract.json`), which is not built; until then
@@ -268,8 +271,10 @@ a vendor is still text to a vendor), G1.
       **Retrieval half built**: `scripts/rag-eval/probe.ts` asks every question
       through `VectorRepository.search` on a probe tenant and against an exact
       scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`),
-      **wired 2026-11-16** to the product's search: `strategy: 'index'`,
-      `HNSW_SEARCH`, and `knowledgeRetrieverRevision`, so a record the nightly
+      **wired 2026-11-16** to the product's search: `searchKnowledge`'s own
+      20-deep, source-filtered query (`knowledgeVectorQuery`, recall over its
+      first 10), `strategy: 'index'`, `HNSW_SEARCH`, and
+      `knowledgeRetrieverRevision`, so a record the nightly
       writes carries exactly the revision the mount gate compares
       (`tests/unit/rag-eval-gate-agreement.test.ts`), and the probe refuses a
       run searched with other settings than that revision states.

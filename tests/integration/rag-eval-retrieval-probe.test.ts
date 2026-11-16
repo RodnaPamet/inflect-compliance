@@ -10,9 +10,9 @@
  *      no other tenant's chunk ever reaches the probe (a hit on any other is
  *      refused, FOREIGN_SOURCE, and fails this test).
  *   3. The plans are read, not assumed: the stub model has no HNSW index, so
- *      every question — asked on the index path, `strategy: 'index'` — is
- *      planned exactly, and recall@10 against the stage's own exact scan is
- *      measured as 1.
+ *      every question — the product's 20-deep call, asked on the index path,
+ *      `strategy: 'index'` — is planned exactly, and recall@10 of its first
+ *      10 against the stage's own exact top 10 is measured.
  *   4. A record is keyed by the revision the `search_knowledge` mount gate
  *      compares (`knowledgeRetrieverRevision`), which states the HNSW index,
  *      so measurements whose questions were planned exactly cannot become
@@ -109,15 +109,25 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
         const keys = new Set(manifest.probeTenant.sources.map((s) => s.sourceKey));
         for (const c of measured.cases) {
             expect(c.retrievalProbe.exact).toHaveLength(10);
+            // The product's 20-deep call, its first 10 kept.
+            expect(c.retrievalProbe.ann).toHaveLength(10);
             for (const hit of [...c.retrievalProbe.ann, ...c.retrievalProbe.exact]) expect(keys.has(hit.sourceKey)).toBe(true);
         }
     });
 
-    it('reads the plan the store ran: exact for a model with no HNSW index, and recall is measured as 1', () => {
+    it('reads the plan the store ran: exact for a model with no HNSW index, and measures recall over every question', () => {
         expect(measured.model).toBe('stub-feature-hash@1');
         expect(measured.plans.filter((p) => p.hnswIndex)).toHaveLength(0);
         expect(measured.plans).toHaveLength(SET.cases.length);
-        expect(retrievalFloorFigures(measured.cases)).toMatchObject({ recallAt10VsExact: 1, recallScored: SET.cases.length, latencySamples: SET.cases.length });
+        // Both arms are exact here, but recall is not 1 by construction: the
+        // ANN arm keeps the first 10 of the product's 20-deep call, and the
+        // stub's feature-hash vectors tie (same words, same vector), so a tie
+        // across the 10th place can be filled by different chunks at depth 20
+        // and at depth 10. Measured, never assumed.
+        const figures = retrievalFloorFigures(measured.cases);
+        expect(figures).toMatchObject({ recallScored: SET.cases.length, latencySamples: SET.cases.length });
+        expect(figures.recallAt10VsExact).not.toBeNull();
+        expect(figures.recallAt10VsExact).toBeGreaterThan(0.5);
     });
 
     it('refuses to key exact plans by the gate’s revision, which states the index', () => {

@@ -5,17 +5,20 @@
  * For every question in the set, over the PROBE tenant `corpus.ts` built (the
  * seed policies plus distractors at the stated size):
  *
- *   ANN    the PRODUCT's search: `VectorRepository.search` at k = 10 under the
- *          evaluated tenant's context, pinned to the index path
- *          (`strategy: 'index'`) — the one seam every caller, the
- *          `search_knowledge` tool included, goes through. Its wall time is
- *          the latency sample (one untimed search first, so the first sample
- *          is not a cold connection).
- *   EXACT  computed HERE, not by the store: the store's own statement
- *          (`buildSearchQuery`, so the distance, the tenant filter and the
- *          tie-break are the ones the ANN ran) in a transaction of this
- *          stage's own, under the same tenant context and RLS, with index and
- *          bitmap scans switched off. Its plan is read once and refused if it
+ *   ANN    the PRODUCT's call: the store query `searchKnowledge` issues
+ *          (`knowledgeVectorQuery`: the revision's depth, 20, over the source
+ *          models the caller may read) through `VectorRepository.search`
+ *          under the evaluated tenant's context, pinned to the index path
+ *          (`strategy: 'index'`, the path the product takes above the
+ *          exact-scan threshold). Its first 10 are the recall@10 list; the
+ *          wall time of the whole 20-deep call is the latency sample (one
+ *          untimed search first, so the first sample is not a cold
+ *          connection). Owner decision 2026-11-16 (D-L4-9, amended).
+ *   EXACT  computed HERE, not by the store: the store's own statement at
+ *          depth 10 (`buildSearchQuery`, so the distance, the tenant filter,
+ *          the source filter and the tie-break are the ones the ANN ran) in
+ *          a transaction of this stage's own, under the same tenant context
+ *          and RLS, with index and bitmap scans switched off. Its plan is read once and refused if it
  *          touches an index: an "exact" list that came from the HNSW index
  *          would make recall 1 by construction.
  *
@@ -48,7 +51,8 @@ import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext, runWithoutRls } from '@/lib/db/rls-middleware';
 import type { PrismaTx } from '@/lib/db-context';
 import { buildSearchQuery } from '@/app-layer/repositories/vector/pgvector-store';
-import type { VectorMatch } from '@/app-layer/repositories/VectorRepository';
+import type { VectorMatch, VectorSearchQuery } from '@/app-layer/repositories/VectorRepository';
+import { KNOWLEDGE_RETRIEVAL_K } from '@/app-layer/services/knowledge-search-revision';
 import { indexContext, readResidency, type KnowledgeIndexDeps } from '@/app-layer/services/knowledge-index';
 import { getEmbeddingProvider, type EmbeddingProvider } from '@/lib/ai/embeddings';
 import {
@@ -61,7 +65,7 @@ import {
 } from '@/lib/ai/evals/rag-record';
 
 import type { CorpusManifest, CorpusTenant } from './corpus';
-import { annQuery, retrieverRevision, searchSettings, type SearchSettings } from './search-seam';
+import { annQuery, productQuery, retrieverRevision, searchSettings, type SearchSettings } from './search-seam';
 import { assertLoopbackDatabase, embedderDeps, parseArgs, vectorsOf, type EmbedderMode } from './shared';
 
 type RetrieverRevision = RagEvaluationRecord['retrieverRevision'];
@@ -165,13 +169,12 @@ async function hnswIndexes(): Promise<Array<{ indexname: string; indexdef: strin
  */
 async function annPlanOf(
     ctx: RequestContext,
-    model: string,
-    embedding: readonly number[],
+    ann: VectorSearchQuery,
     dims: number,
     hnsw: ReadonlyArray<{ indexname: string; indexdef: string }>,
 ): Promise<{ hnswIndex: { indexname: string; indexdef: string } | null; maxScanTuples: string | null }> {
-    const settings = searchSettings(RECALL_AT);
-    const query = buildSearchQuery(ctx, { embeddingRevision: model, embedding, k: RECALL_AT }, dims);
+    const settings = searchSettings(ann.k);
+    const query = buildSearchQuery(ctx, ann, dims, 'index');
     const { names, maxScanTuples } = await runInTenantContext(ctx, async (tx) => {
         await tx.$queryRaw(Prisma.sql`
             SELECT set_config('hnsw.iterative_scan', ${settings.iterativeScan}, true),
@@ -243,15 +246,18 @@ export function assertPlansMatchRevision(revision: IndexParams, observed: IndexP
     }
 }
 
-/** The exact top-k over the tenant's rows: the store's statement, sequentially scanned, in a transaction of our own. */
+/**
+ * The exact top 10 over the tenant's rows under the ANN query's own filter:
+ * the store's statement at depth `RECALL_AT`, sequentially scanned, in a
+ * transaction of our own.
+ */
 async function exactTopK(
     ctx: RequestContext,
-    model: string,
-    embedding: readonly number[],
+    ann: VectorSearchQuery,
     dims: number,
     hnswNames: ReadonlySet<string>,
 ): Promise<VectorMatch[]> {
-    const query = buildSearchQuery(ctx, { embeddingRevision: model, embedding, k: RECALL_AT }, dims);
+    const query = buildSearchQuery(ctx, { ...ann, k: RECALL_AT }, dims, 'index');
     return runInTenantContext(ctx, async (tx) => {
         // The embedding table is read sequentially; the join to the chunk
         // table may still use its primary key, which decides no ranking.
@@ -345,22 +351,30 @@ export async function measureRetrieval(opts: ProbeOptions): Promise<{
 
     const hnsw = await hnswIndexes();
     const hnswNames = new Set(hnsw.map((i) => i.indexname));
+    // The product's own call, per question: the depth and source filter
+    // `searchKnowledge` sends, pinned to the index path.
+    const annQueries = queryVectors.map((v) => annQuery(productQuery(ctx, model, v)));
     // Untimed: the first search on a fresh pool pays for the connection.
-    await vectors.search(ctx, annQuery({ embeddingRevision: model, embedding: queryVectors[0], k: RECALL_AT }));
+    await vectors.search(ctx, annQueries[0]);
 
     const out: Array<{ caseId: string; retrievalProbe: RetrievalProbe }> = [];
     const plans: QuestionPlan[] = [];
     for (let i = 0; i < cases.length; i++) {
-        plans.push(await annPlanOf(ctx, model, queryVectors[i], dims, hnsw));
+        plans.push(await annPlanOf(ctx, annQueries[i], dims, hnsw));
+        // The latency sample is the whole 20-deep call; recall reads its first 10.
         const started = performance.now();
-        const ann = await vectors.search(ctx, annQuery({ embeddingRevision: model, embedding: queryVectors[i], k: RECALL_AT }));
+        const ann = await vectors.search(ctx, annQueries[i]);
         const latencyMs = performance.now() - started;
         // Every exact plan is read too: one question's sequential scan proves
         // nothing about the next one's.
-        const exact = await exactTopK(ctx, model, queryVectors[i], dims, hnswNames);
+        const exact = await exactTopK(ctx, annQueries[i], dims, hnswNames);
         out.push({
             caseId: cases[i].id,
-            retrievalProbe: { ann: toChunkRefs(ann, tenant), exact: toChunkRefs(exact, tenant), latencyMs: Math.round(latencyMs * 1000) / 1000 },
+            retrievalProbe: {
+                ann: toChunkRefs(ann.slice(0, RECALL_AT), tenant),
+                exact: toChunkRefs(exact, tenant),
+                latencyMs: Math.round(latencyMs * 1000) / 1000,
+            },
         });
     }
     return { model, dims, probeCorpus, plans, cases: out };
@@ -368,7 +382,7 @@ export async function measureRetrieval(opts: ProbeOptions): Promise<{
 
 export async function runRetrievalProbe(opts: ProbeOptions): Promise<ProbeOutput> {
     const { model, dims, probeCorpus, plans, cases: out } = await measureRetrieval(opts);
-    const observed = indexParamsFromPlans(plans, searchSettings(RECALL_AT));
+    const observed = indexParamsFromPlans(plans, searchSettings(KNOWLEDGE_RETRIEVAL_K));
     const revision = retrieverRevision({ model, dimensions: dims });
     assertPlansMatchRevision(revision.indexParams, observed, plans);
     return {

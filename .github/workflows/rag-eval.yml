@@ -14,9 +14,11 @@ name: RAG eval (Ragas, nightly)
 #     probe tenant. Embedded by the deployment's own TEI image and model
 #     (pinned below to the canonical Compose file's digest and revision).
 #     (2) RETRIEVAL: scripts/rag-eval/probe.ts asks every question through
-#     VectorRepository.search on the probe tenant and against an exact scan the
-#     stage runs itself: recall@10 vs exact and p95 latency at k = 10. No model
-#     call, no spend. (3) ANSWER + JUDGE: the evals/rag image asks the product
+#     VectorRepository.search on the probe tenant with the product's own call
+#     (searchKnowledge's 20-deep, source-filtered query, pinned to the index)
+#     and against an exact scan the stage runs itself: recall@10 of its first
+#     10 vs the exact top 10, and the p95 latency of the 20-deep call (D-L4-9
+#     as amended 2026-11-16). No model call, no spend. (3) ANSWER + JUDGE: the evals/rag image asks the product
 #     each question through the answer contract (evals/rag/fixtures/answer-contract.json),
 #     scores it with Ragas's four metrics and the abstention verdict, and writes
 #     a record in src/lib/ai/evals/rag-record.ts's shape.

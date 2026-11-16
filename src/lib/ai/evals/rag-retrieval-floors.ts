@@ -11,7 +11,11 @@
  * trigger for the vector store's Phase 4 (Weaviate); one miss is a tuning task.
  * The owner decided on 2026-11-16 that the same values also gate whether
  * `search_knowledge` is offered (the mount gate); Ragas Phase 2's
- * answer-quality floors join the gate when Phase 2 defines them.
+ * answer-quality floors join the gate when Phase 2 defines them. And that
+ * both figures are measured on the PRODUCT's call: the 20-deep, source-filtered
+ * search `searchKnowledge` issues, pinned to the index path — recall over its
+ * first 10 against the exact top 10 under the same filter, latency the p95 of
+ * that whole call. "At k = 10" means recall over the first 10 returned.
  *
  * ‾‾‾ ONE SET OF FLOORS ‾‾‾
  *
@@ -36,7 +40,7 @@ import type { RetrievalFloorFigures } from './rag-record';
 
 /** D-L4-9: recall@10 of the indexed search at least this fraction of an exact scan of the same tenant. */
 export const RECALL_AT_10_VS_EXACT_FLOOR = 0.95;
-/** D-L4-9: p95 `search` latency at k = 10 at most this, on the VM (a CI runner's figure is not the VM's). */
+/** D-L4-9: p95 latency of the product's 20-deep `search` call at most this, on the VM (a CI runner's figure is not the VM's). */
 export const P95_SEARCH_LATENCY_MS_CEILING = 300;
 
 export interface FloorReading {

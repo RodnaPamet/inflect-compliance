@@ -681,9 +681,12 @@ all. The same record measures the floors that decide whether Phase 4 ever runs.
       (`rag-eval.yml`) measures both every night it runs, on a probe tenant of
       5,000 chunks in an index of 4 times that (the scale the owner decided
       on 2026-11-16, re-sized once production's largest tenant is indexed),
-      through `VectorRepository.search` pinned to the index path
-      (`strategy: 'index'`, `HNSW_SEARCH`) against an exact scan the stage
-      runs itself; **the record/gate path is wired** — its output is keyed by
+      on the product's own call — the 20-deep, source-filtered query
+      `searchKnowledge` issues (`knowledgeVectorQuery`), through
+      `VectorRepository.search` pinned to the index path (`strategy: 'index'`,
+      `HNSW_SEARCH`); recall over its first 10 against the exact top 10 the
+      stage computes under the same filter, latency the p95 of the whole
+      20-deep call (D-L4-9 as amended 2026-11-16); **the record/gate path is wired** — its output is keyed by
       `knowledgeRetrieverRevision`, the revision this gate compares, and read
       against the same floors. **No record can pass yet**: a record needs
       answers, and the answer half of Ragas 1.2 (the harness's answer route)
