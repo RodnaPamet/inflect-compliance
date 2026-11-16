@@ -60,7 +60,17 @@ import { AwsPostureProvider } from '@/app-layer/integrations/aws-posture-provide
 import { GcpPostureProvider } from '@/app-layer/integrations/providers/gcp-posture-provider';
 import { AzurePostureProvider } from '@/app-layer/integrations/providers/azure-posture-provider';
 import { postureProviderName } from '@/app-layer/integrations/cloud-posture/provider-name';
-import { SHARED_PROVIDER_REFUSAL } from '@/app-layer/integrations/cloud-posture/sandboxed-collector-exec';
+/*
+    THE REFUSAL IS MATCHED ON ITS PROSE, not on the exported constant.
+
+    That constant is the code the collector puts on its result's `failure`
+    field. What reaches a `CheckResult.errorMessage` is instead
+    `collector error; stderr: <the refusal's own sentence>`. Asserting the code
+    here would fail the positive case and — far worse — make the negative case
+    below pass against ANY error, which is the shape of a test that cannot
+    fail. `#5251` is the discriminator the sibling suite uses for this reason.
+*/
+const REFUSAL_PROSE = '#5251';
 import type { CheckInput } from '@/app-layer/integrations/types';
 
 const TENANT_A = 'clz1tenantaaaaaaaaaaaaaa';
@@ -192,7 +202,7 @@ describe('a check with no connection id refuses, and attaches nothing', () => {
         // and this is the only reason that is safe: with no id the provider
         // passes no name and the collector refuses before a sandbox exists.
         expect(result.status).toBe('ERROR');
-        expect(result.errorMessage ?? '').toContain(SHARED_PROVIDER_REFUSAL);
+        expect(result.errorMessage ?? '').toContain(REFUSAL_PROSE);
     });
 
     it('creates no sandbox, attaches nothing and runs nothing', async () => {
@@ -213,7 +223,10 @@ describe('the provisioned path does not reach the shared-provider refusal', () =
         );
         // #5476's acceptance criterion 5, asserted as unreachability for a
         // properly identified connection rather than as a green run.
-        expect(result.errorMessage ?? '').not.toContain(SHARED_PROVIDER_REFUSAL);
+        // A provisioned run that errors for an unrelated reason (an empty
+        // benchmark parse, say) must still not read as this refusal, so the
+        // needle is the refusal's own issue reference rather than "no error".
+        expect(result.errorMessage ?? '').not.toContain(REFUSAL_PROSE);
     });
 
     it('and with the platform switch OFF the on-host path is untouched', async () => {
