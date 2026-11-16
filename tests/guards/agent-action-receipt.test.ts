@@ -367,6 +367,11 @@ describe('D4 — OpenShell carries no MCP rules, pipelock stays the only mediato
         // been the thing that made somebody read the rule for a new file, which
         // is the argument for the constant list rather than a walk.
         'src/lib/agentic/openshell/pinned-release.ts',
+        // #5739: the gateway's provider-readiness states and the one rule that
+        // reads them. Pure — no MCP, no transport, no credential — because the
+        // attach reply is a persisted intent and the only safe reading of "not
+        // observed yet" has to be shared by the transport and its tests.
+        'src/lib/agentic/openshell/provider-readiness.ts',
         'src/lib/agentic/openshell/transport.ts',
     ] as const;
 

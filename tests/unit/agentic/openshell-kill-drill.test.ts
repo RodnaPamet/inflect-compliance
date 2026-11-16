@@ -60,6 +60,9 @@ const fake = (opts: FakeOptions = {}): SandboxTransport => ({
     attachProvider: async () => {
         throw new Error('the kill-switch drill attaches no provider');
     },
+    awaitProviderReady: async () => {
+        throw new Error('the kill-switch drill waits on no provider');
+    },
 });
 
 describe('the kill-switch drill proves a sandbox is absent, not that delete returned', () => {

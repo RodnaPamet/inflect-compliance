@@ -37,6 +37,7 @@ import {
 } from '@/lib/agentic/openshell/grpc-transport';
 import {
     DELETION_IS_SETTLED,
+    ProviderNotReadyError,
     SandboxExecIncompleteError,
     SandboxUnreachableError,
 } from '@/lib/agentic/openshell/transport';
@@ -352,6 +353,209 @@ function stubStream(script: (s: { data: (c: unknown) => void; end: () => void; e
     return stream;
 }
 
+/**
+ * THE READINESS POLL — #5739.
+ *
+ * Driven through the injected client rather than the real server, because what
+ * is under test is the loop: how many times it asks, what it does with each
+ * answer, and whether it ever returns without a READY. The wire shape of the
+ * attach request is proved against the real server above.
+ */
+describe('awaitProviderReady polls until the gateway OBSERVES the credential', () => {
+    const status = (state: string, extra: Record<string, unknown> = {}) => ({
+        status: { state, ...extra },
+    });
+
+    it('returns the attach response rather than discarding it', async () => {
+        const transport = t(
+            injected({
+                AttachSandboxProvider: (_req, _o, cb) =>
+                    cb(null, { attached: true, receipt: { receipt_id: 'rcpt-7' } }),
+            }),
+        );
+        // Discarding this is what made the race invisible: with no receipt there
+        // is nothing to ask the readiness verb about.
+        await expect(
+            transport.attachProvider({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                signal: new AbortController().signal,
+            }),
+        ).resolves.toEqual({ attached: true, receiptId: 'rcpt-7' });
+    });
+
+    it('reports an already-attached provider as attached: false, not as a failure', async () => {
+        const transport = t(
+            injected({ AttachSandboxProvider: (_req, _o, cb) => cb(null, { attached: false }) }),
+        );
+        await expect(
+            transport.attachProvider({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                signal: new AbortController().signal,
+            }),
+        ).resolves.toEqual({ attached: false, receiptId: null });
+    });
+
+    it('keeps asking while PENDING and returns once READY', async () => {
+        const answers = [
+            status('PROVIDER_READINESS_STATE_PERSISTED'),
+            status('PROVIDER_READINESS_STATE_PENDING'),
+            status('PROVIDER_READINESS_STATE_READY', { observed: { credentials_installed: true } }),
+        ];
+        const asked: unknown[] = [];
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (req, _o, cb) => {
+                    asked.push(req);
+                    cb(null, answers[Math.min(asked.length - 1, answers.length - 1)]);
+                },
+            }),
+        );
+        await transport.awaitProviderReady({
+            sandboxId: 'sbx-1',
+            providerName: 'p',
+            receiptId: 'rcpt-7',
+            signal: new AbortController().signal,
+        });
+        // Three readings, not one. A single read would have resolved on the
+        // PERSISTED answer, which is the intent and not the credential.
+        expect(asked).toHaveLength(3);
+        expect((asked[0] as { receipt_id?: string }).receipt_id).toBe('rcpt-7');
+    });
+
+    it('asks by provider name when the attach minted no receipt', async () => {
+        const asked: Array<Record<string, unknown>> = [];
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (req, _o, cb) => {
+                    asked.push(req as Record<string, unknown>);
+                    cb(null, status('PROVIDER_READINESS_STATE_READY'));
+                },
+            }),
+        );
+        await transport.awaitProviderReady({
+            sandboxId: 'sbx-1',
+            providerName: 'p',
+            receiptId: null,
+            signal: new AbortController().signal,
+        });
+        // The field is OMITTED rather than sent empty: an empty receipt id is a
+        // receipt the gateway would look up and not find.
+        expect('receipt_id' in asked[0]).toBe(false);
+        expect(asked[0].provider).toBe('p');
+    });
+
+    it('refuses a WITHHELD credential without waiting out the bound', async () => {
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(
+                        null,
+                        status('PROVIDER_READINESS_STATE_WITHHELD', {
+                            reason: 'PROVIDER_READINESS_REASON_CREDENTIALS_WITHHELD',
+                            observed: { credentials_installed: false },
+                        }),
+                    ),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('refuses a state this build does not recognise', async () => {
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(null, status('PROVIDER_READINESS_STATE_INVENTED_LATER')),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('refuses an answer carrying no state at all', async () => {
+        const transport = t(
+            injected({ GetSandboxProviderStatus: (_req, _o, cb) => cb(null, {}) }),
+        );
+        // Silence is not readiness. This is the shape a gateway returns for a
+        // provider it has no observation for.
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: new AbortController().signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('stops when the collection is aborted mid-wait', async () => {
+        const ac = new AbortController();
+        ac.abort();
+        const transport = t(
+            injected({
+                GetSandboxProviderStatus: (_req, _o, cb) =>
+                    cb(null, status('PROVIDER_READINESS_STATE_PENDING')),
+            }),
+        );
+        await expect(
+            transport.awaitProviderReady({
+                sandboxId: 'sbx-1',
+                providerName: 'p',
+                receiptId: 'r',
+                signal: ac.signal,
+            }),
+        ).rejects.toThrow(ProviderNotReadyError);
+    });
+
+    it('never resolves on PERSISTED alone, however many times it is asked', async () => {
+        jest.useFakeTimers();
+        try {
+            let asks = 0;
+            const transport = t(
+                injected({
+                    GetSandboxProviderStatus: (_req, _o, cb) => {
+                        asks += 1;
+                        cb(null, status('PROVIDER_READINESS_STATE_PERSISTED'));
+                    },
+                }),
+            );
+            const pending = transport
+                .awaitProviderReady({
+                    sandboxId: 'sbx-1',
+                    providerName: 'p',
+                    receiptId: 'r',
+                    signal: new AbortController().signal,
+                })
+                .then(
+                    () => 'RESOLVED',
+                    (e) => (e instanceof ProviderNotReadyError ? 'REFUSED' : 'OTHER'),
+                );
+            // Run the clock past the bound. The negated claim — that it does not
+            // resolve — is only meaningful once the loop has actually had its
+            // chances, which is why the timers are advanced rather than awaited.
+            await jest.advanceTimersByTimeAsync(60_000);
+            expect(await pending).toBe('REFUSED');
+            expect(asks).toBeGreaterThan(1);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
 const withCode = (code: number, msg = 'boom'): any => Object.assign(new Error(msg), { code });
 
 function injected(over: Partial<GrpcClientLike>): GrpcClientLike {
@@ -363,6 +567,7 @@ function injected(over: Partial<GrpcClientLike>): GrpcClientLike {
         GetSandbox: unimplemented,
         DeleteSandbox: unimplemented,
         AttachSandboxProvider: unimplemented,
+        GetSandboxProviderStatus: unimplemented,
         ExecSandbox: unimplemented as never,
         ...over,
     } as GrpcClientLike;

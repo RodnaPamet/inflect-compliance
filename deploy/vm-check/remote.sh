@@ -28,6 +28,10 @@
 #                        p50/p95, passage batches of 8/16/32/64 against the
 #                        seam's 15 s deadline, the cgroup's memory and CPU
 #                        throttling before and after
+#   migrate-role         the database role `prisma migrate deploy` runs as in
+#                        the app container, whether it is a superuser, and
+#                        whether the vector extension is available and
+#                        installed in the app's database (#5720)
 #
 # THE WORKFLOW'S LOGS ARE PUBLIC, because the repository is. So this prints
 # names, states, versions and counts, and never a log line, a row, an
@@ -253,6 +257,137 @@ tei_timing() {
     echo "| Throttled time (s) | $(cg_delta "$b_thu" "$a_thu" 1000000 %.1f) |"
 }
 
+# ── migrate-role ──────────────────────────────────────────────────────────────
+#
+# Which database role production migrations run as, and whether it is a
+# superuser: #5720's migration runs `CREATE EXTENSION vector`, which needs one.
+#
+# The URL is the one `prisma migrate deploy` uses in the app container, resolved
+# exactly as prisma.config.ts resolves it: DIRECT_DATABASE_URL when it is SET
+# (`??` falls back only on undefined, so a set-but-empty value is still the one
+# used), DATABASE_URL otherwise. It is read from the RUNNING container, so it is
+# the effective value whatever file set it.
+#
+# THE URL CARRIES A PASSWORD, AND THESE LOGS ARE PUBLIC. It lives only in a shell
+# variable: never printed, never echoed into a pipe, never an argument to any
+# command. It is cut apart with parameter expansion alone, and only the user name
+# and the database name leave it, each printed only when it is a plain lower-case
+# identifier and "unprintable" otherwise. The host is printed as a class. The
+# password is never used: the question goes to Postgres as the image's own
+# superuser, inside the postgres container, with the role passed as a psql
+# variable (`-v r=...`, read as :'r') so it is never part of the SQL text.
+SAFE_IDENT='^[a-z_][a-z0-9_]{0,62}$'
+SAFE_VERSION='^[0-9][0-9.]{0,15}$'
+
+migrate_role() {
+    local app url rc source rest userinfo user hostpart host db role dbname cls
+    local super createrole available installed avail_v inst_v v
+    app="$(need app)"
+    # printenv exits 1 when the variable is unset (coreutils and busybox
+    # alike); docker exec's own failures are 125 and up.
+    url="$(docker exec "$app" printenv DIRECT_DATABASE_URL)" && rc=0 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        source="DIRECT_DATABASE_URL"
+    elif [ "$rc" -eq 1 ]; then
+        url="$(docker exec "$app" printenv DATABASE_URL)" && rc=0 || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            source="DATABASE_URL (the fallback: DIRECT_DATABASE_URL is unset)"
+        elif [ "$rc" -eq 1 ]; then
+            url=""; source="neither (DIRECT_DATABASE_URL and DATABASE_URL are both unset)"
+        else
+            echo "could not read the app container's environment" >&2; exit 1
+        fi
+    else
+        echo "could not read the app container's environment" >&2; exit 1
+    fi
+
+    # scheme://user:password@host:port/db?params, cut with expansion only.
+    rest="${url#*://}"
+    user=""; hostpart="$rest"
+    if [[ "$rest" == *@* ]]; then
+        userinfo="${rest%@*}"
+        user="${userinfo%%:*}"
+        hostpart="${rest##*@}"
+    fi
+    host="${hostpart%%[/?]*}"
+    host="${host%%:*}"
+    db=""
+    if [[ "$hostpart" == */* ]]; then db="${hostpart#*/}"; db="${db%%\?*}"; fi
+    url=""; rest=""; userinfo=""; hostpart=""
+
+    role="unprintable"; [[ "$user" =~ $SAFE_IDENT ]] && role="$user"
+    dbname="unprintable"; [[ "$db" =~ $SAFE_IDENT ]] && dbname="$db"
+    case "$host" in
+        postgres) cls="the postgres service" ;;
+        pgbouncer) cls="pgbouncer" ;;
+        *) cls="other" ;;
+    esac
+
+    echo "## Database role for migrations (#5720)"
+    echo
+    echo "| Fact | Value |"
+    echo "| --- | --- |"
+    echo "| Supplied by | $source |"
+    echo "| Role | $role |"
+    echo "| Host | $cls |"
+    echo "| Database | $dbname |"
+
+    # Each answer row is a tag and fixed words or numbers; anything else in a
+    # row is dropped below, never printed.
+    super="not asked"; createrole="not asked"; available="not asked"; installed="not asked"
+    avail_v="-"; inst_v="-"
+    if [ "$role" != unprintable ] && [ "$dbname" != unprintable ]; then
+        local answer tag a b
+        answer="$(docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$(need postgres)" psql -X -q -tA -F ' ' -v ON_ERROR_STOP=1 -U postgres -d "$dbname" -v r="$role" 2>/dev/null <<'SQL'
+SELECT 'role', CASE WHEN rolsuper THEN 'yes' ELSE 'no' END, CASE WHEN rolcreaterole THEN 'yes' ELSE 'no' END FROM pg_roles WHERE rolname = :'r';
+SELECT 'available', count(*), coalesce(max(default_version), '-') FROM pg_available_extensions WHERE name = 'vector';
+SELECT 'installed', count(*), coalesce(max(extversion), '-') FROM pg_extension WHERE extname = 'vector';
+SQL
+)" || answer=""
+        if [ -z "$answer" ]; then
+            super="unknown"; createrole="unknown"; available="unknown"; installed="unknown"
+        else
+            super="no such role"; createrole="no such role"; available="unknown"; installed="unknown"
+            while read -r tag a b; do
+                case "$tag" in
+                    role) super="$a"; createrole="$b" ;;
+                    available) available="$a"; avail_v="$b" ;;
+                    installed) installed="$a"; inst_v="$b" ;;
+                esac
+            done <<< "$answer"
+        fi
+    fi
+    case "$available" in 0) available="no" ;; 1) available="yes" ;; esac
+    case "$installed" in 0) installed="no" ;; 1) installed="yes" ;; esac
+    for v in super createrole available installed; do
+        [[ "${!v}" =~ ^(yes|no|unknown|not\ asked|no\ such\ role)$ ]] || printf -v "$v" '%s' unknown
+    done
+    [[ "$avail_v" =~ $SAFE_VERSION ]] || avail_v="-"
+    [[ "$inst_v" =~ $SAFE_VERSION ]] || inst_v="-"
+
+    echo "| Superuser | $super |"
+    echo "| Can create roles | $createrole |"
+    echo "| vector available (default version) | $available ($avail_v) |"
+    echo "| vector installed in the database (version) | $installed ($inst_v) |"
+    echo
+    if [ "$super" = "not asked" ]; then
+        echo "Postgres was not asked: the role or the database name is not a plain identifier, so neither is passed on."
+        echo
+    elif [ "$super" = unknown ]; then
+        echo "Postgres did not answer, as \`postgres\` in that database."
+        echo
+    fi
+    echo "migrations run as $role, superuser: $super; vector available: $available; installed: $installed"
+    if [ "$super" = no ] || [ "$super" = "no such role" ]; then
+        echo
+        if [ "$installed" = yes ]; then
+            echo "The role is not a superuser, but the extension is already installed, so \`CREATE EXTENSION IF NOT EXISTS vector\` has nothing to do."
+        else
+            echo "The role is not a superuser, so the migration's \`CREATE EXTENSION vector\` would fail under it: create the extension first, once, as \`postgres\` in the app's database (docs/deployment.md, \"Read-only checks without a key\", migrate-role)."
+        fi
+    fi
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # The posture provider-name recipe — #5476.
 #
@@ -459,6 +594,10 @@ SQL
 
 tei-embed-timing)
     tei_timing
+    ;;
+
+migrate-role)
+    migrate_role
     ;;
 
 *)
