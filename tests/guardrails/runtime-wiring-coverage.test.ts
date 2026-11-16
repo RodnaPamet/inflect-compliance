@@ -131,6 +131,13 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // run against one tenant at a time — a cron would turn a backlog into
     // recurring load on both storage and the scanner.
     'av-rescan': 'operator-triggered one-off rescan of PENDING FileRecords',
+    // Vector store Phase 2.1. Deliberately NOT scheduled: the unit is one
+    // source row whose text changed, so the job is queued by that row's write
+    // path after it commits. A clock would re-read every source to find the
+    // few that moved; a rebuild of a whole tenant is scripts/knowledge-reindex.
+    'knowledge-index': 'dispatched by enqueueKnowledgeIndex (app-layer/jobs/knowledge-index-enqueue.ts), the '
+        + 'job\'s only enqueue site, for a source\'s write path to call after its transaction '
+        + 'commits; it enqueues nothing while the vector store or the embedding route is off.',
 };
 
 function registeredExecutorJobs(): string[] {

@@ -63,7 +63,16 @@ beforeEach(() => {
     statements.length = 0;
     tenantsBound.length = 0;
     probe = { ver: '0.8.0', tbl: true };
-    chunks = [{ chunkId: 'chunk-1', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 0, prior: null }];
+    chunks = [
+        {
+            chunkId: 'chunk-1',
+            sourceModel: 'PolicyVersion',
+            sourceId: 'pv1',
+            chunkIndex: 0,
+            chunkHash: RECORD.contentHash,
+            prior: null,
+        },
+    ];
 });
 
 describe('the pgvector backend fails closed until the extension and its table exist', () => {
@@ -96,6 +105,7 @@ describe('every pgvector statement is the caller’s tenant’s', () => {
         await store.upsert(CTX, [RECORD]);
         await store.search(CTX, { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 5 });
         await store.listKeys(CTX, 'test-embed@3', 10);
+        await store.listSourceKeys(CTX, 'test-embed@3', 'PolicyVersion', 'pv1', 10);
         await store.deleteSource(CTX, 'PolicyVersion', 'pv1');
         await store.deleteTenant(CTX);
         await store.rebuildRevision(
@@ -108,7 +118,7 @@ describe('every pgvector statement is the caller’s tenant’s', () => {
 
         expect(new Set(tenantsBound)).toEqual(new Set([CTX.tenantId]));
         const onTable = statements.filter((s) => s.sql.includes('"KnowledgeChunkEmbedding"') && !s.sql.includes('to_regclass'));
-        expect(onTable.length).toBeGreaterThanOrEqual(8);
+        expect(onTable.length).toBeGreaterThanOrEqual(9);
         for (const s of onTable) {
             expect([s.sql.includes('"tenantId"'), s.values.includes(CTX.tenantId)]).toEqual([true, true]);
         }
@@ -223,10 +233,22 @@ describe('a vector belongs to a chunk of the caller’s tenant, and the backend 
         expect(insert?.sql).toMatch(/ON CONFLICT \("tenantId", "chunkId", "embeddingModel"\)/);
     });
 
+    it('refuses CONTENT_HASH_MISMATCH, and writes nothing, when a vector was computed from text its chunk no longer holds', async () => {
+        chunks = [{ ...chunks[0], chunkHash: 'e'.repeat(64) }];
+        const store = createPgvectorStore();
+        const err = await store.upsert(CTX, [RECORD]).catch((e: unknown) => e);
+        expect((err as VectorStoreError).reason).toBe('CONTENT_HASH_MISMATCH');
+        expect(statements.some((s) => s.sql.includes('INSERT INTO'))).toBe(false);
+        expect((err as Error).message).not.toContain('pv1');
+        // The chunk's hash is read beside its id, in the same resolve.
+        const resolve = statements.find((s) => s.sql.includes('LEFT JOIN'));
+        expect(resolve?.sql).toMatch(/c\."contentHash" AS "chunkHash"/);
+    });
+
     it('counts a re-upsert of the same hash as unchanged and a moved hash as updated', async () => {
         chunks = [
-            { chunkId: 'chunk-1', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 0, prior: RECORD.contentHash },
-            { chunkId: 'chunk-2', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 1, prior: 'f'.repeat(64) },
+            { chunkId: 'chunk-1', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 0, chunkHash: RECORD.contentHash, prior: RECORD.contentHash },
+            { chunkId: 'chunk-2', sourceModel: 'PolicyVersion', sourceId: 'pv1', chunkIndex: 1, chunkHash: RECORD.contentHash, prior: 'f'.repeat(64) },
         ];
         const store = createPgvectorStore();
         await expect(store.upsert(CTX, [RECORD, { ...RECORD, chunkIndex: 1 }])).resolves.toEqual({
@@ -241,6 +263,7 @@ describe('a vector belongs to a chunk of the caller’s tenant, and the backend 
         await store.upsert(CTX, [RECORD]);
         await store.search(CTX, { embeddingRevision: 'test-embed@3', embedding: [1, 0, 0], k: 5 });
         await store.listKeys(CTX, 'test-embed@3', 10);
+        await store.listSourceKeys(CTX, 'test-embed@3', 'PolicyVersion', 'pv1', 10);
         await store.deleteSource(CTX, 'PolicyVersion', 'pv1');
         for (const s of statements) expect(s.sql).not.toMatch(/"text"/);
     });

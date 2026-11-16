@@ -134,9 +134,10 @@ describe('an executor that computes a refusal must report one', () => {
         }).toEqual({
             // 55 since #5317 added `agent-recert-packs-prepare`, whose
             // refusals throw (the job fails with the sentence) rather than
-            // ride in `details`.
-            callSites: 55,
-            carryingASignal: 10,
+            // ride in `details`. 56 since `knowledge-index` (vector store
+            // Phase 2.1), which carries its outcome as `status` and reports it.
+            callSites: 56,
+            carryingASignal: 11,
             withoutASignal: 45,
         });
     });

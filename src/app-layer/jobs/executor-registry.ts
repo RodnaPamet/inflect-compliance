@@ -1637,6 +1637,45 @@ executorRegistry.register('agent-fingerprint', async (payload) => {
     return runAgentFingerprintJob({ tenantId: payload.tenantId });
 });
 
+// knowledge-index (vector store Phase 2.1): one source row into the knowledge
+// store. On demand — enqueued after a source's write commits — and worker
+// only. Fields NAMED, for the reason `NamesEveryField` states. A run that could
+// not do its work is an ERROR naming its outcome; only a transient embedding
+// failure is left to BullMQ's retry, every other one is `noRetry` (a switch
+// that is off, an unknown model and an oversized source do not change in 30 s).
+executorRegistry.register('knowledge-index', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runKnowledgeIndexJob } = await import('./knowledge-index');
+    const { isKnowledgeIndexSuccess } = await import('@/lib/knowledge/index-outcome');
+    const forwarded: NamesEveryField<JobPayload<'knowledge-index'>> = {
+        tenantId: payload.tenantId,
+        sourceModel: payload.sourceModel,
+        sourceId: payload.sourceId,
+        requestId: payload.requestId,
+    };
+    const r = await runKnowledgeIndexJob(forwarded);
+    const ok = isKnowledgeIndexSuccess(r.outcome);
+    return makeResult(
+        'knowledge-index',
+        startedAt,
+        startMs,
+        r.chunks,
+        r.chunksWritten + r.chunksDeleted + r.embedded,
+        Math.max(0, r.chunks - r.embedded),
+        // `status` is the run's outcome, so the record carries the verdict the
+        // eighth argument reports (tests/guards/a-refusal-is-not-a-success.test.ts).
+        { ...r, status: r.outcome },
+        ok
+            ? undefined
+            : {
+                  status: 'ERROR',
+                  errorMessage: `knowledge-index: ${r.outcome}${r.embedFailure ? ` (${r.embedFailure})` : ''}${r.storeRefusal ? ` (${r.storeRefusal})` : ''}`,
+                  noRetry: !(r.outcome === 'EMBED_FAILED' && r.transient),
+              },
+    );
+});
+
 // agentic-evidence-emission: turn receipts + AI decision records into evidence
 // attached to the agentic controls they discharge. Payload passed THROUGH, both
 // fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is

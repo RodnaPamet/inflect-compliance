@@ -84,7 +84,28 @@ flowchart LR
   against the real tables
   ([implementation note](../implementation-notes/2026-11-15-knowledge-store-tables.md);
   the seam's own: [2026-11-11](../implementation-notes/2026-11-11-vector-store-seam.md)).
-  No path writes a chunk yet (Phase 2).
+- **The index job exists and nothing enqueues it.** `knowledge-index`
+  (`src/app-layer/jobs/knowledge-index.ts`, body in
+  `src/app-layer/services/knowledge-index.ts`) takes `(tenantId, sourceModel,
+  sourceId)`, reads the row under `runInTenantContext`, cuts it with the plain
+  paragraph chunker (`src/lib/knowledge/paragraph-chunker.ts`, revision
+  `paragraph@1`, at most 1,200 characters a chunk because `tei-embed` truncates
+  past the model's 512 tokens without an error), makes the source's
+  `KnowledgeChunk` rows exactly those chunks (keep by `contentHash`, replace a
+  changed position so its vectors of every model go by cascade, delete
+  positions past the end), and embeds only the chunks whose vector for the
+  model is missing or of other text, `INDEX_EMBED_BATCH` (8) passages per call.
+  A re-run over an unchanged source makes no embedding call and writes nothing.
+  The only reader is `PolicyVersion`, approved versions only. With the store or
+  the embedding route off, the job reads and writes nothing and ends
+  `VECTOR_STORE_DISABLED` / `EMBEDDING_NOT_CONFIGURED`, a failure, never a
+  success; every run counts on `knowledge_index.runs{source_model, outcome}`.
+  Its one enqueue site, `enqueueKnowledgeIndex`, enqueues nothing while either
+  switch is off, and no source's write path calls it yet (2.2)
+  ([implementation note](../implementation-notes/2026-11-16-knowledge-index-job.md)).
+  The backend also refuses a vector whose `contentHash` is not its chunk's
+  (`CONTENT_HASH_MISMATCH`), so two overlapping runs of one source cannot file
+  the older text's vector against the newer text.
   `weaviate` returns nothing under `src/`; the 18 files matching `embedding`
   use the word in its prompt/UI sense (`risk-assessment/prompt-builder.ts`,
   `EvidenceGallery.tsx`). The database is PostgreSQL 16 behind PgBouncer, and
@@ -413,12 +434,21 @@ is the only module the lint rule admits.
 whole index can be rebuilt from `KnowledgeChunk` rows.
 
 **Sub-phases.**
-- [ ] 2.1 A BullMQ job `knowledge-index` (G8) that takes `(tenantId, sourceModel,
+- [x] 2.1 A BullMQ job `knowledge-index` (G8) that takes `(tenantId, sourceModel,
       sourceId)`, reads the source row under `runInTenantContext`, chunks it
       (a plain paragraph chunker now; the parsing service later), embeds
       through the retriever seam, and upserts `KnowledgeChunk` and
       `KnowledgeChunkEmbedding` rows keyed by `contentHash`, so a re-run is a
-      no-op.
+      no-op. *Landed 2026-11-16:* on demand, worker only, wrapped in `runJob`;
+      `paragraph@1` chunks of at most 1,200 characters; 8 passages per call;
+      deletes positions the source no longer has, and every chunk of a row
+      that is gone, unapproved or soft-deleted; a named outcome on every path
+      (`src/lib/knowledge/index-outcome.ts`), metric
+      `knowledge_index.runs{source_model, outcome}`. Tests: the two-tenant and
+      idempotence cases against the real tables
+      (`tests/integration/knowledge-index-job.test.ts`), the batching case
+      (17 chunks are 3 calls of at most 8) and every outcome
+      (`tests/unit/knowledge-index-job.test.ts`).
 - [ ] 2.2 Triggers: the audit emitters for the source models enqueue the job
       after create and update; the `data-lifecycle` purge deletes a source's
       chunks when it hard-deletes the source (the reference is polymorphic, so
@@ -430,9 +460,11 @@ whole index can be rebuilt from `KnowledgeChunk` rows.
       revision, vectors within a stated cosine tolerance. That test is what
       "rebuildable from Postgres" means, and it is also the migration path to
       a new embedding model.
-- [ ] 2.4 `docs/encryption-data-protection.md` gains the embedding column: a
+- [x] 2.4 `docs/encryption-data-protection.md` gains the embedding column: a
       plaintext derivative of encrypted text, classified business content,
-      held only in Postgres and its backups.
+      held only in Postgres and its backups. *Landed 2026-11-16* as the
+      classification table's "Business (derivative)" row and the section
+      under it.
 - [ ] 2.5 First sources, in this order: `PolicyVersion.contentText` (approved
       versions only), evidence file text (post-ClamAV, via the parser seam),
       control descriptions, the questionnaire answer library.

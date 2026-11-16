@@ -16,6 +16,7 @@ import { bindObservable } from './observable-registry';
 
 import type { ServicePrincipalDisableStatus } from '@/lib/agentic/service-principal-disable';
 import type { EstateStaleReason } from '@/lib/agentic/harness-estate-staleness';
+import type { KnowledgeIndexOutcome } from '@/lib/knowledge/index-outcome';
 
 const METER_NAME = 'inflect-compliance-integrations';
 function getMeter() {
@@ -2014,4 +2015,55 @@ export function recordVendorTlsFetch(attrs: {
         reason: attrs.reason ?? 'NONE',
         signed: attrs.signed ? 'true' : 'false',
     });
+}
+
+// ── The knowledge index (vector store Phase 2.1) ────────────────────────────
+
+let _knowledgeIndexRuns: Counter | null = null;
+let _knowledgeIndexDuration: Histogram | null = null;
+let _knowledgeIndexEmbedded: Counter | null = null;
+
+/**
+ * One run of the `knowledge-index` job, by how it ended
+ * (`docs/ai-architecture/weaviate.md` Phase 2; checklist §4).
+ *
+ *   knowledge_index.runs{source_model, outcome}   every terminal path, the
+ *       outcome lower-cased from `KnowledgeIndexOutcome`, plus `error` for a
+ *       run that threw
+ *   knowledge_index.run.duration{source_model, outcome}   wall clock, ms
+ *   knowledge_index.chunks_embedded{source_model}   chunks given a vector
+ *
+ * ALERT ON — any `outcome="embed_failed"` or `"store_refused"` or `"error"`;
+ * and, on a deployment that turned the store on, any
+ * `"vector_store_disabled"` or `"embedding_not_configured"`, which mean the
+ * two switches disagree. A run of `superseded` beside no `indexed` would be
+ * two runs racing each other forever.
+ *
+ * No tenant or source-id label: the run's log line carries those.
+ */
+export function recordKnowledgeIndexRun(attrs: {
+    sourceModel: string;
+    outcome: Lowercase<KnowledgeIndexOutcome> | 'error';
+    durationMs: number;
+    embedded?: number;
+}): void {
+    const meter = getMeter();
+    _knowledgeIndexRuns ??= meter.createCounter('knowledge_index.runs', {
+        description: 'Knowledge index runs, by source model and terminal outcome',
+        unit: '1',
+    });
+    _knowledgeIndexDuration ??= meter.createHistogram('knowledge_index.run.duration', {
+        description: 'Knowledge index run duration, by source model and outcome',
+        unit: 'ms',
+    });
+    const labels = { source_model: attrs.sourceModel, outcome: attrs.outcome };
+    _knowledgeIndexRuns.add(1, labels);
+    _knowledgeIndexDuration.record(Math.max(0, attrs.durationMs), labels);
+    if (attrs.embedded && attrs.embedded > 0) {
+        _knowledgeIndexEmbedded ??= meter.createCounter('knowledge_index.chunks_embedded', {
+            description: 'Knowledge chunks given a vector, by source model',
+            unit: '1',
+        });
+        _knowledgeIndexEmbedded.add(attrs.embedded, { source_model: attrs.sourceModel });
+    }
 }

@@ -157,6 +157,28 @@ export function createInProcessVectorStore(): VectorStoreBackend {
                 }));
         },
 
+        async listSourceKeys(ctx, embeddingRevision, sourceModel, sourceId, limit): Promise<StoredVectorKey[]> {
+            const rows = tenants.get(ctx.tenantId);
+            if (!rows) return [];
+            return [...rows.values()]
+                .filter(
+                    (r) =>
+                        r.embeddingRevision === embeddingRevision &&
+                        r.sourceModel === sourceModel &&
+                        r.sourceId === sourceId,
+                )
+                .sort(compareKeys)
+                .slice(0, limit)
+                .map((r) => ({
+                    sourceModel: r.sourceModel,
+                    sourceId: r.sourceId,
+                    chunkIndex: r.chunkIndex,
+                    embeddingRevision: r.embeddingRevision,
+                    contentHash: r.contentHash,
+                    dimensions: r.embedding.length,
+                }));
+        },
+
         async deleteSource(ctx, sourceModel, sourceId) {
             const rows = tenants.get(ctx.tenantId);
             if (!rows) return 0;
