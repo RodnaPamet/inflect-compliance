@@ -260,10 +260,26 @@ verification is configured and no OIDC issuer is present", which is exactly
 this host. Writing an invented issuer here would produce a gateway that starts
 and validates nothing.
 
-The worker obtains a token by the OAuth2 **client-credentials** grant and sends
-it as a bearer token; the gateway validates it against the issuer's JWKS and
-refreshes that key set on the TTL above. Renewal is therefore a property of the
-grant and the TTL, not of a long-lived secret on the app VM.
+**If that pair were ever set**, the bearer path works like this: a client obtains
+a token by the OAuth2 **client-credentials** grant and sends it as a bearer token;
+the gateway validates it against the issuer's JWKS and refreshes that key set on
+the TTL above. Renewal would then be a property of the grant and the TTL rather
+than of a long-lived secret on the app VM — which is the argument for setting it
+up when an identity provider exists.
+
+It is NOT how this deployment authenticates today. The paragraph above says the
+OIDC pair is commented out and the client does not exist; this one describes the
+mechanism it would enable, in case somebody reads the two in isolation and
+concludes a bearer path is live. It is not, and `src/lib/agentic/openshell/
+grpc-transport.ts` says the same from the client side: no token can be minted, so
+mTLS — authorised by ROLE, with scopes unenforced — is the only live path.
+
+That matters beyond documentation. The proto annotates provider RPCs with scopes
+(`provider:write` for `CreateProvider` and `DeleteProvider`), and on a bearer path
+those could be granted. With no bearer path live, they cannot: an `OU=operator`
+certificate is the only way to reach them, and that certificate is deliberately
+absent. So provisioning a gateway provider is a CERTIFICATE decision, not a
+scope-grant one (#5476).
 
 `OPENSHELL_ENABLE_OPERATOR_AUTH=false` is set explicitly, though it is also the
 default, so that the default moving does not change this deployment. Operator
