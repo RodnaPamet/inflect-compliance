@@ -60,7 +60,9 @@
  * no hybrid `alpha`. The two retrieval floor figures — recall@10 of the ANN
  * search against an EXACT scan, and the p95 ANN latency — are recomputed from
  * each case's raw `retrievalProbe` (both top-10 lists and the latency sample),
- * never stored: a record carrying `retrievalFloors` is an unknown key.
+ * never stored: a record carrying `retrievalFloors` is an unknown key. Recall
+ * is TIE-AWARE when the probe states each hit's distance (owner decision
+ * 2026-11-16, D-L4-9 amended (f)): see `recallAgainstExact`.
  *
  * ‾‾‾ SEED ONLY ‾‾‾
  *
@@ -236,9 +238,25 @@ const chunkKey = (c: ChunkRef) => JSON.stringify([c.sourceModel, c.sourceKey, c.
 /** recall@N is measured at 10, the floor's own depth. */
 export const RECALL_AT = 10;
 
+/**
+ * A chunk a retrieval probe returned, with its distance from the question (the
+ * revision's distance, e.g. cosine distance) when the probe states it. The
+ * distance is what makes recall tie-aware; without it a probe is scored by
+ * chunk identity alone, which can only read lower, never higher.
+ */
+const ProbeRef = z
+    .object({
+        sourceModel: z.string().min(1).max(64),
+        sourceKey: z.string().regex(SOURCE_KEY),
+        chunkIndex: z.number().int().min(0),
+        distance: z.number().finite().optional(),
+    })
+    .strict();
+type ProbeRef = z.infer<typeof ProbeRef>;
+
 /** At most `RECALL_AT` chunks, each named once: a repeated chunk would count twice towards recall. */
 const TopList = z
-    .array(ChunkRef)
+    .array(ProbeRef)
     .max(RECALL_AT)
     .superRefine((list, ctx) => {
         const seen = new Set<string>();
@@ -311,7 +329,10 @@ const RecordCaseSchema = z
                 exact: TopList,
                 latencyMs: z.number().finite().min(0).max(600_000),
             })
-            .strict(),
+            .strict()
+            .refine((p) => new Set([...p.ann, ...p.exact].map((c) => c.distance === undefined)).size <= 1, {
+                message: 'a probe states the distance of every chunk in both lists, or of none',
+            }),
         metrics: z
             .object({
                 faithfulness: MetricValue,
@@ -445,8 +466,8 @@ export type RagAggregates = Record<RagCaseKind, KindAggregate>;
 
 /**
  * The two retrieval floor figures, recomputed from the probes. `recallAt10VsExact`
- * is the mean, over cases whose exact list is non-empty, of |ann ∩ exact| /
- * |exact|; `p95LatencyMs` is the nearest-rank 95th percentile of every probe's
+ * is the mean, over cases whose exact list is non-empty, of each case's
+ * `recallAgainstExact` (tie-aware when the probe states distances); `p95LatencyMs` is the nearest-rank 95th percentile of every probe's
  * latency. Either is `null` when there is nothing to compute it over, and a
  * `null` figure is never a pass.
  */
@@ -514,11 +535,42 @@ function nearestRank(samples: readonly number[], p: number): number | null {
     return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)];
 }
 
-/** recall@10 of one probe against exact search; `null` when the exact list is empty. */
-export function recallAgainstExact(ann: readonly ChunkRef[], exact: readonly ChunkRef[]): number | null {
+/**
+ * How far past the exact search's 10th-best distance an indexed hit may sit
+ * and still be the same distance: float noise between two computations of one
+ * cosine distance (the store reports a similarity, the probe recovers the
+ * distance as `1 - similarity`), never a tolerance on relevance.
+ */
+export const RECALL_TIE_EPSILON = 1e-6;
+
+/**
+ * recall@10 of one probe against exact search; `null` when the exact list is
+ * empty — a question with nothing to find is unscored, never a perfect score
+ * (zero is never complete), and `retrievalFloorFigures` leaves it out of the
+ * mean, so a run where every exact list is empty has no recall figure at all.
+ *
+ * TIE-AWARE when every chunk in both lists states its distance (owner
+ * decision 2026-11-16, D-L4-9 amended (f)): an indexed hit among the first 10
+ * is a HIT when its distance is at most the exact search's 10th-best distance
+ * (the largest distance among the exact top 10) plus `RECALL_TIE_EPSILON`, and
+ * recall = hits / min(10, exact result count). A chunk tied with the exact
+ * 10th is as near as anything the exact search kept, so which of the tied
+ * chunks a 20-deep call and a 10-deep scan happened to keep is not a miss; a
+ * chunk farther than that is a miss however it ranks. Without distances
+ * (a probe that predates them), a hit is a chunk the exact list names.
+ */
+export function recallAgainstExact(ann: readonly ProbeRef[], exact: readonly ProbeRef[]): number | null {
     const truth = exact.slice(0, RECALL_AT);
     if (truth.length === 0) return null;
-    const found = new Set(ann.slice(0, RECALL_AT).map(chunkKey));
+    const top = ann.slice(0, RECALL_AT);
+    const distances = (list: readonly ProbeRef[]) => list.map((c) => c.distance);
+    const stated = [...distances(top), ...distances(truth)].every((d): d is number => d !== undefined);
+    if (stated) {
+        const boundary = Math.max(...truth.map((c) => c.distance as number));
+        const hits = top.filter((c) => (c.distance as number) <= boundary + RECALL_TIE_EPSILON).length;
+        return Math.min(hits, truth.length) / truth.length;
+    }
+    const found = new Set(top.map(chunkKey));
     return truth.filter((c) => found.has(chunkKey(c))).length / truth.length;
 }
 

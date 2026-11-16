@@ -66,7 +66,9 @@ flowchart LR
   the product's own store call — `searchKnowledge`'s 20-deep, source-filtered
   query (`knowledgeVectorQuery`) — on the index path (`strategy: 'index'`,
   under `HNSW_SEARCH`), scores recall over its first 10 against the exact
-  top 10 under the same filter and times the whole call. It keys its output
+  top 10 under the same filter — tie-aware: a hit within 1e-6 of the exact
+  10th-best distance counts, over min(10, exact count), and an empty exact
+  list is unscored (D-L4-9 amended (f)) — and times the whole call. It keys its output
   by `knowledgeRetrieverRevision`, the revision the `search_knowledge` mount
   gate looks records up by, and its figures are read against D-L4-9's
   floors, the gate's own

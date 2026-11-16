@@ -16,6 +16,11 @@
  * search `searchKnowledge` issues, pinned to the index path — recall over its
  * first 10 against the exact top 10 under the same filter, latency the p95 of
  * that whole call. "At k = 10" means recall over the first 10 returned.
+ * And recall is TIE-AWARE (D-L4-9 amended (f)): an indexed hit among those
+ * first 10 counts when its distance is at most the exact search's 10th-best
+ * distance plus `RECALL_TIE_EPSILON` (1e-6), and recall = hits / min(10,
+ * exact result count); a question whose exact search returns nothing is
+ * unscored, never 1 (`recallAgainstExact` in `rag-record.ts`).
  *
  * ‾‾‾ ONE SET OF FLOORS ‾‾‾
  *

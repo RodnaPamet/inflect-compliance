@@ -70,7 +70,7 @@ import { assertLoopbackDatabase, embedderDeps, parseArgs, vectorsOf, type Embedd
 
 type RetrieverRevision = RagEvaluationRecord['retrieverRevision'];
 type IndexParams = RetrieverRevision['indexParams'];
-type ChunkRef = RagEvaluationRecord['cases'][number]['retrieved'][number];
+type ChunkRef = RagEvaluationRecord['cases'][number]['retrievalProbe']['ann'][number];
 type RetrievalProbe = RagEvaluationRecord['cases'][number]['retrievalProbe'];
 
 export const PROBE_OUTPUT_KIND = 'rag-retrieval-probe@1';
@@ -272,13 +272,22 @@ async function exactTopK(
     });
 }
 
-/** Map store hits to the set's keys; a source the tenant's manifest does not hold is refused. */
-export function toChunkRefs(hits: readonly Pick<VectorMatch, 'sourceModel' | 'sourceId' | 'chunkIndex'>[], tenant: CorpusTenant): ChunkRef[] {
+/**
+ * Map store hits to the set's keys; a source the tenant's manifest does not
+ * hold is refused. A hit carrying the store's score also carries its cosine
+ * distance (`1 - score`: the store's statement computes the score as
+ * `1 - (a <=> b)`), which is what makes the record's recall tie-aware.
+ */
+export function toChunkRefs(
+    hits: readonly (Pick<VectorMatch, 'sourceModel' | 'sourceId' | 'chunkIndex'> & { readonly score?: number })[],
+    tenant: CorpusTenant,
+): ChunkRef[] {
     const keyOf = new Map(tenant.sources.map((s) => [`${s.sourceModel}\u0000${s.sourceId}`, s.sourceKey]));
     return hits.map((h) => {
         const key = keyOf.get(`${h.sourceModel}\u0000${h.sourceId}`);
         if (key === undefined) throw new ProbeRefusal('FOREIGN_SOURCE', `a hit names ${h.sourceModel} ${h.sourceId}, which is not one of ${tenant.slug}'s sources`);
-        return { sourceModel: 'Policy', sourceKey: key, chunkIndex: h.chunkIndex };
+        const ref = { sourceModel: 'Policy', sourceKey: key, chunkIndex: h.chunkIndex };
+        return h.score === undefined ? ref : { ...ref, distance: 1 - h.score };
     });
 }
 

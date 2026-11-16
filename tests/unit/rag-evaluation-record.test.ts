@@ -10,6 +10,7 @@ import {
     floorEligibility,
     ragSetHash,
     recallAgainstExact,
+    RECALL_TIE_EPSILON,
     type RagEvaluationSet,
 } from '@/lib/ai/evals/rag-record';
 
@@ -390,6 +391,55 @@ describe('RAG evaluation record: the retrieval floor figures are recomputed from
         // (0.5 + 1 * 5) / 6
         expect(floorsOf(half, set).recallAt10VsExact).toBeCloseTo(5.5 / 6, 10);
         expect(recallAgainstExact(top(0, 1, 2, 3, 4, 20, 21, 22, 23, 24), top(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))).toBe(0.5);
+    });
+
+    describe('tie-aware recall (D-L4-9 amended (f), owner 2026-11-16)', () => {
+        /** Chunk `i` at `distance` from the question. */
+        const at = (i: number, distance: number) => ({ ...chunk(i), distance });
+        /** The exact top 10: chunks 0..9 at 0.10, 0.11, … 0.19; the 10th-best distance is 0.19. */
+        const EXACT = Array.from({ length: 10 }, (_, i) => at(i, 0.1 + i / 100));
+        const BOUNDARY = EXACT[9].distance;
+
+        it('a chunk tied with the exact 10th-best distance is a hit, though the exact list names another', () => {
+            const ann = [...EXACT.slice(0, 9), at(42, BOUNDARY)];
+            expect(recallAgainstExact(ann, EXACT)).toBe(1);
+            // Float noise inside the stated epsilon is the same distance.
+            expect(recallAgainstExact([...EXACT.slice(0, 9), at(42, BOUNDARY + RECALL_TIE_EPSILON / 2)], EXACT)).toBe(1);
+        });
+
+        it('a closer chunk the index missed is still a miss: what it returned instead is farther', () => {
+            // The index dropped chunk 9 (0.19) and returned chunk 42 at 0.25.
+            expect(recallAgainstExact([...EXACT.slice(0, 9), at(42, 0.25)], EXACT)).toBe(0.9);
+            // Past the epsilon is past the boundary.
+            expect(recallAgainstExact([...EXACT.slice(0, 9), at(42, BOUNDARY + 2 * RECALL_TIE_EPSILON)], EXACT)).toBe(0.9);
+            // The index's order among its first 10 does not matter, its distances do.
+            expect(recallAgainstExact([at(42, 0.3), at(43, 0.31), ...EXACT.slice(0, 8)], EXACT)).toBe(0.8);
+        });
+
+        it('is hits over min(10, exact result count), and never above 1', () => {
+            const four = EXACT.slice(0, 4);
+            expect(recallAgainstExact(four, four)).toBe(1);
+            expect(recallAgainstExact([...four.slice(0, 2), at(50, 0.5), at(51, 0.6)], four)).toBe(0.5);
+            expect(recallAgainstExact([...four, at(52, four[3].distance)], four)).toBe(1);
+        });
+
+        it('an empty exact list is unscored even with distances: zero is never complete', () => {
+            expect(recallAgainstExact([at(0, 0.1)], [])).toBeNull();
+        });
+
+        it('without distances a hit is a chunk the exact list names (a probe that predates them)', () => {
+            expect(recallAgainstExact([...top(0, 1, 2, 3, 4, 5, 6, 7, 8), chunk(42)], top(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))).toBe(0.9);
+        });
+
+        it('a record’s figure is the tie-aware one, and a probe stating some distances only is refused', () => {
+            const set = makeSet();
+            const record = makeRecord(set);
+            for (const c of record.cases) c.retrievalProbe = probe(10, [...EXACT.slice(0, 9), at(42, BOUNDARY)], EXACT);
+            expect(floorsOf(record, set)).toMatchObject({ recallAt10VsExact: 1, recallScored: 6 });
+            const mixed = makeRecord(set);
+            mixed.cases[0].retrievalProbe = probe(10, [...top(0, 1, 2, 3, 4, 5, 6, 7, 8), at(42, BOUNDARY)], EXACT);
+            expect(refusalOf(mixed, set)).toBe('MALFORMED_RECORD');
+        });
     });
 
     it('a probe with an empty exact list is unscored for recall, never a perfect score', () => {
