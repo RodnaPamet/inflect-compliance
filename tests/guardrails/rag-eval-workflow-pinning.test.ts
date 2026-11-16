@@ -11,7 +11,9 @@
  *   3. The model key reaches ONE process, the metering proxy: it is read in the
  *      first step (presence only) and the judge step (which hands it to the
  *      proxy and unsets it), never job env, and the judge container is given
- *      no environment at all. The dedicated RAGAS_ANTHROPIC_API_KEY is
+ *      no environment at all. The answer stage runs after the unset, holding
+ *      only the marker its script requires, with the share's model, its turns
+ *      sent to the proxy; the judge reads its file. The dedicated RAGAS_ANTHROPIC_API_KEY is
  *      preferred over the shared key (owner decision 2026-11-16), the
  *      workspace header goes only with the shared one, and the log names
  *      which secret was used, never its value — as garak's and Inspect's do.
@@ -23,16 +25,21 @@
  *      requirement of both locks (runtime and test stage) by sha256 hash,
  *      each installed with --no-deps --require-hashes and checked, analytics
  *      off; never the app image.
- *   6. The plan fits the share: the planned night (set cases plus sentinels)
- *      at the cost meter's price for its model, inside the ragas share, and the
- *      judge's per-call output bound inside the proxy's cap.
+ *   6. The plan fits the share: the planned night (every set case judged and
+ *      answered by the product, plus the sentinels) at the cost meter's price
+ *      for its model, inside the ragas share; the judge's and the assistant's
+ *      per-call output bounds inside the cap the workflow starts the proxy with.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** A TypeScript module with its comments blanked, so prose cannot satisfy an assertion about code. */
+const readCode = (rel: string) => codeOf(read(rel));
 const WORKFLOW_SRC = read('.github/workflows/rag-eval.yml');
 type Step = { id?: string; name?: string; if?: string; env?: Record<string, string>; run?: string; uses?: string; 'continue-on-error'?: boolean };
 const WORKFLOW = yaml.load(WORKFLOW_SRC) as {
@@ -108,7 +115,7 @@ describe('the model key reaches the metering proxy and nothing else', () => {
 
     it('starts the proxy for the ragas share, unsets the key, and runs the judge container with no environment', () => {
         const run = step('judge')?.run ?? '';
-        expect(run).toMatch(/^\s*COST_METER_JOB=ragas COST_METER_PORT=8787 node evals\/cost-meter\/anthropic-proxy\.mjs & proxy=\$!$/m);
+        expect(run).toMatch(/^\s*COST_METER_JOB=ragas COST_METER_PORT=8787 COST_METER_MAX_OUTPUT_TOKENS=8192 node evals\/cost-meter\/anthropic-proxy\.mjs & proxy=\$!$/m);
         expect(run.indexOf('unset ANTHROPIC_API_KEY')).toBeGreaterThan(run.indexOf('anthropic-proxy.mjs'));
         expect(run.indexOf('unset ANTHROPIC_API_KEY')).toBeLessThan(run.indexOf('docker run'));
         const docker = run.slice(run.indexOf('docker run')).split('\n').slice(0, 5).join('\n');
@@ -117,10 +124,29 @@ describe('the model key reaches the metering proxy and nothing else', () => {
         expect(run).not.toMatch(/echo[^\n]*\$\{?ANTHROPIC_API_KEY/);
     });
 
-    it('writes no record without an answer target, before anything is started', () => {
+    it('starts nothing without a key', () => {
         const run = step('judge')?.run ?? '';
-        expect(run.indexOf('if [ -z "$RAG_EVAL_ANSWER_URL" ]; then')).toBeLessThan(run.indexOf('anthropic-proxy.mjs'));
-        expect(JOB.env).toHaveProperty('RAG_EVAL_ANSWER_URL');
+        expect(run.indexOf('if [ "$JUDGE" != "true" ]; then')).toBeGreaterThanOrEqual(0);
+        expect(run.indexOf('if [ "$JUDGE" != "true" ]; then')).toBeLessThan(run.indexOf('anthropic-proxy.mjs'));
+        expect(JOB.env).not.toHaveProperty('RAG_EVAL_ANSWER_URL');
+    });
+
+    it('asks the product in process after the key is unset, with the marker for a key and the share’s model, and the judge reads its file', () => {
+        const run = step('judge')?.run ?? '';
+        const answer = run.indexOf('npx tsx scripts/rag-eval/answer.ts');
+        expect(answer).toBeGreaterThan(run.indexOf('unset ANTHROPIC_API_KEY'));
+        expect(answer).toBeLessThan(run.indexOf('docker run'));
+        expect(run).toContain(`share_model="$(node -p 'require("./evals/cost-meter/shares.json").shares.ragas.model')"`);
+        const command = run.slice(run.lastIndexOf('\n', run.indexOf('ANTHROPIC_API_KEY=held-by-the-metering-proxy')), answer);
+        expect(command).toContain('ANTHROPIC_API_KEY=held-by-the-metering-proxy AGENT_FLUE_MODEL="$share_model"');
+        expect(readCode('scripts/rag-eval/answer.ts')).toContain("export const PROXY_HELD_KEY = 'held-by-the-metering-proxy';");
+        expect(run).toContain('--proxy http://127.0.0.1:8787 --out rag-out/answers.json');
+        expect(run).toContain('--answers /out/answers.json');
+        // The judge runs only on a complete set of answers; a share spent while answering is said so.
+        expect(run).toMatch(/if \[ "\$answer_status" = "0" \]; then\n\s+chmod 777 rag-out\n\s+docker run/);
+        expect(run).toContain('if [ "$answer_status" = "5" ]; then');
+        // There is no answer route to call: nothing in the step names a URL for one.
+        expect(run).not.toMatch(/answer-url|RAG_EVAL_ANSWER_URL/);
     });
 });
 
@@ -240,19 +266,28 @@ describe('the plan fits the ragas share of the shared cap (D-EV-2, D-EV-11)', ()
     const budget = JSON.parse(read('evals/rag/budget.json'));
     const set = JSON.parse(read('evals/rag/sets/seed-policies.json'));
 
-    it('the planned night costs no more than the share', () => {
-        const share = shares.shares.ragas;
-        const price = prices.models[share.model];
-        const p = budget.plannedCase;
-        const perCase = (p.inputTokens * price.usdPerMillionInputTokens + p.outputTokens * price.usdPerMillionOutputTokens) / 1e6;
-        expect(perCase * (set.cases.length + budget.sentinelCases)).toBeLessThanOrEqual(share.usd);
+    const cost = (p: { inputTokens: number; outputTokens: number }) => {
+        const price = prices.models[shares.shares.ragas.model];
+        return (p.inputTokens * price.usdPerMillionInputTokens + p.outputTokens * price.usdPerMillionOutputTokens) / 1e6;
+    };
+
+    it('the planned night — every case judged and answered by the product, and the sentinels judged — costs no more than the share', () => {
+        const night = set.cases.length * (cost(budget.plannedCase) + cost(budget.plannedAnswer)) + budget.sentinelCases * cost(budget.plannedCase);
+        expect(night).toBeLessThanOrEqual(shares.shares.ragas.usd);
+        // The answers are in the plan, and measured, not left out.
+        expect(budget.plannedAnswer.inputTokens).toBeGreaterThan(0);
+        expect(budget.plannedAnswer.basis).toMatch(/^Measured \d{4}-\d{2}-\d{2}/);
     });
 
-    it('the judge asks for the output bound the plan prices, inside the proxy’s cap', () => {
+    it('the judge and the assistant ask for output bounds inside the cap the workflow starts the proxy with', () => {
         const judge = read('evals/rag/inflect_rag/judge.py');
         expect(Number(/^JUDGE_MAX_TOKENS = (\d+)$/m.exec(judge)?.[1])).toBe(budget.judge.maxTokensPerCall);
-        const cap = Number(/export const DEFAULT_MAX_OUTPUT_TOKENS = (\d+);/.exec(read('evals/cost-meter/anthropic-proxy.mjs'))?.[1]);
+        const cap = Number(/COST_METER_MAX_OUTPUT_TOKENS=(\d+) node evals\/cost-meter\/anthropic-proxy\.mjs/.exec(step('judge')?.run ?? '')?.[1]);
+        expect(cap).toBeGreaterThan(0);
         expect(budget.judge.maxTokensPerCall).toBeLessThanOrEqual(cap);
+        const assistant = Number(/^export const MAX_TOKENS = (\d+);$/m.exec(readCode('src/app-layer/ai/assistant/turn-provider.ts'))?.[1]);
+        expect(assistant).toBeGreaterThan(0);
+        expect(assistant).toBeLessThanOrEqual(cap);
         expect(Number(/strictness: int = (\d+)\):$/m.exec(judge)?.[1])).toBe(budget.judge.answerRelevancyStrictness);
     });
 });

@@ -1,44 +1,48 @@
-"""The answer stage's seam: what the harness asks, and of whom.
+"""The answer stage's seam: what the product answered, as the judge reads it.
 
 Ragas 1.2 measures the PRODUCT's composed pipeline (retrieve through
 `search_knowledge`, answer, with every guard in between), never a
-reimplementation of it. That pipeline is being built (vector store Phase
-3.1-3.5), so the harness speaks to it through one small, written contract —
+reimplementation of it. The product answers IN PROCESS, before the judge runs:
+`scripts/rag-eval/answer.ts` asks the assistant each question as a person in
+the answer tenant, with `search_knowledge` mounted for that tenant alone by
+the evaluation's scoped decision (`src/app-layer/services/rag-evaluation-mount.ts`),
+and writes one response per case into an ANSWERS FILE (`rag-answers@1`). This
+module reads that file, through one small written contract —
 `evals/rag/fixtures/answer-contract.json`, which `tests/unit/` reads too — and
-a run with no answer target configured writes NO record (an empty answer
-scored by the judge would be a record about nothing, and a record is what the
-mount gate opens on).
+a run with no answers file writes NO record (an empty answer scored by the
+judge would be a record about nothing, and a record is what the mount gate
+opens on).
 
-The contract, per question:
+One response, per case:
 
-    POST <answer url>   {"question": "..."}
-    200 {"answer": "...",
-         "retrieved": [{"sourceModel": "PolicyVersion", "sourceId": "...", "chunkIndex": 0, "text": "..."}],
-         "retriever": {"embeddingModel": "...", "k": 10},
-         "usage": {"inputTokens": 0, "outputTokens": 0} | null}
+    {"answer": "...",
+     "retrieved": [{"sourceModel": "PolicyVersion", "sourceId": "...", "chunkIndex": 0, "text": "..."}],
+     "retriever": {"embeddingModel": "...", "k": 20},
+     "usage": {"inputTokens": 0, "outputTokens": 0} | null}
 
-`retrieved` is what `search_knowledge` returned to the model, in rank order;
+`retrieved` is what `search_knowledge` returned to the model, in call order;
 `retriever` is what the product says it ran, and must equal the revision the
-retrieval stage measured; `usage` is the model spend the answer cost, settled
-against the reservation made before the call (null keeps the worst case).
+retrieval stage measured; `usage` is informational.
 
-Every question is reserved at the answer turn's declared worst case through the
-metering proxy BEFORE it is asked, so the answers and the judge share the job's
-one share and an answer that could pass it is never requested.
+The answers' SPEND is not reserved here: every answer turn went through the
+same metering proxy as the judge, which charged it to the ragas share as it was
+sent. So the answers and the judge share one share, and an answer turn that
+could pass it was refused by the proxy (402) — the answer stage then stopped,
+and its file says BUDGET_EXHAUSTED and names the cases it did not reach, which
+this reader reports to the run as the budget stopping it.
 """
 
 from __future__ import annotations
 
 import json
-import urllib.request
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
-from .meter import Meter
+from .meter import BudgetExhausted
 
 
 class AnswerContractError(Exception):
-    """The answer target answered outside the contract; the run stops rather than guess."""
+    """The product's answers are outside the contract; the run stops rather than guess."""
 
 
 @dataclass(frozen=True)
@@ -59,7 +63,7 @@ class ProductAnswer:
 
 
 class AnswerTarget(Protocol):
-    def answer(self, question: str) -> ProductAnswer: ...
+    def answer(self, case_id: str, question: str) -> ProductAnswer: ...
 
 
 MAX_ANSWER_CHARS = 8_192
@@ -99,42 +103,53 @@ def parse_answer(body: object) -> ProductAnswer:
     return ProductAnswer(answer, tuple(chunks), str(retriever["embeddingModel"]), int(retriever["k"]), usage)
 
 
-class HttpAnswerTarget:
-    """The contract over HTTP, metered: reserve the turn's worst case, ask, settle."""
+ANSWERS_CONTRACT = "rag-answers@1"
+ANSWERS_STATUSES = ("COMPLETE", "BUDGET_EXHAUSTED")
+MAX_CASES = 200
 
-    def __init__(
-        self,
-        url: str,
-        meter: Meter,
-        max_input_tokens: int,
-        max_output_tokens: int,
-        cookie: str | None = None,
-        timeout: float = 180.0,
-    ):
-        if max_input_tokens < 1 or max_output_tokens < 1:
-            raise ValueError("the answer turn needs a declared worst case to be metered")
-        self.url = url
-        self.meter = meter
-        self.max_input_tokens = max_input_tokens
-        self.max_output_tokens = max_output_tokens
-        self.cookie = cookie
-        self.timeout = timeout
 
-    def answer(self, question: str) -> ProductAnswer:
-        reservation = self.meter.reserve(self.max_input_tokens, self.max_output_tokens)
-        usage: dict | None = None
-        try:
-            headers = {"content-type": "application/json"}
-            if self.cookie:
-                headers["cookie"] = self.cookie
-            req = urllib.request.Request(
-                self.url, data=json.dumps({"question": question}).encode(), method="POST", headers=headers
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as res:  # noqa: S310 - a configured test deployment
-                if res.status != 200:
-                    raise AnswerContractError(f"the answer target answered {res.status}")
-                parsed = parse_answer(json.loads(res.read()))
-            usage = parsed.usage
-            return parsed
-        finally:
-            self.meter.settle(reservation, usage)
+class FileAnswerTarget:
+    """The answer stage's file, held to `rag-answers@1`: bound to the set and the revision, every case once."""
+
+    def __init__(self, path: str, *, set_hash: str, retriever_revision: dict[str, Any]):
+        with open(path, encoding="utf-8") as f:
+            body = json.load(f)
+        if not isinstance(body, dict) or set(body) != {"contract", "setHash", "retrieverRevision", "status", "answers", "unanswered"}:
+            raise AnswerContractError("the answers file is not {contract, setHash, retrieverRevision, status, answers, unanswered}")
+        if body["contract"] != ANSWERS_CONTRACT:
+            raise AnswerContractError(f"the answers file speaks {body['contract']!r}, not {ANSWERS_CONTRACT}")
+        if body["setHash"] != set_hash:
+            raise AnswerContractError("the answers file answers another set than the retrieval stage measured")
+        if body["retrieverRevision"] != retriever_revision:
+            raise AnswerContractError("the answers file was retrieved under another revision than the retrieval stage measured")
+        if body["status"] not in ANSWERS_STATUSES:
+            raise AnswerContractError(f"the answers file's status is {body['status']!r}")
+        answers, unanswered = body["answers"], body["unanswered"]
+        if not isinstance(answers, list) or not isinstance(unanswered, list) or len(answers) > MAX_CASES or len(unanswered) > MAX_CASES:
+            raise AnswerContractError("answers and unanswered are lists of at most 200 cases")
+        self.status: str = body["status"]
+        self._by_case: dict[str, tuple[str, ProductAnswer]] = {}
+        for a in answers:
+            if not isinstance(a, dict) or set(a) != {"caseId", "question", "response"}:
+                raise AnswerContractError("an answer is not {caseId, question, response}")
+            if a["caseId"] in self._by_case:
+                raise AnswerContractError(f"case {a['caseId']} is answered twice")
+            self._by_case[a["caseId"]] = (a["question"], parse_answer(a["response"]))
+        self.unanswered = set(unanswered)
+        if self.unanswered & set(self._by_case):
+            raise AnswerContractError("a case is both answered and unanswered")
+        if self.status == "COMPLETE" and self.unanswered:
+            raise AnswerContractError("a COMPLETE file leaves no case unanswered")
+        if self.status == "BUDGET_EXHAUSTED" and not self.unanswered:
+            raise AnswerContractError("a BUDGET_EXHAUSTED file names the cases it did not answer")
+
+    def answer(self, case_id: str, question: str) -> ProductAnswer:
+        found = self._by_case.get(case_id)
+        if found is None:
+            if case_id in self.unanswered and self.status == "BUDGET_EXHAUSTED":
+                raise BudgetExhausted(f"the share ran out before the product answered {case_id}")
+            raise AnswerContractError(f"the answers file holds no answer for {case_id}")
+        asked, parsed = found
+        if asked != question:
+            raise AnswerContractError(f"the answers file asked {case_id} another question than the set's")
+        return parsed

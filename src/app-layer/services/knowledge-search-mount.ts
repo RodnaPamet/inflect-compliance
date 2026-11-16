@@ -68,6 +68,7 @@ import {
 import { readRetrievalFloors } from '@/lib/ai/evals/rag-retrieval-floors';
 
 import { knowledgeRetrieverRevision } from './knowledge-search-revision';
+import { ragEvaluationMountInScope, type RagEvaluationMount } from './rag-evaluation-mount';
 
 export const RAG_RECORDS_DIR = path.join('evals', 'rag', 'records');
 export const RAG_SETS_DIR = path.join('evals', 'rag', 'sets');
@@ -102,7 +103,14 @@ export type KnowledgeSearchMount =
           readonly revision: RetrieverRevision;
           readonly record: { readonly file: string; readonly ranAt: string };
           readonly figures: RetrievalFloorFigures;
-      };
+          readonly evaluation?: never;
+      }
+    /**
+     * The Ragas answer stage's own decision, for the run that produces the
+     * record (`rag-evaluation-mount.ts`): no record yet, one tenant only, and
+     * never in a production process.
+     */
+    | (RagEvaluationMount & { readonly record?: never; readonly figures?: never });
 
 /** Test seams. Production passes nothing: the env decides the route and the working directory holds the files. */
 export interface ResolveKnowledgeSearchMountOptions {
@@ -265,8 +273,16 @@ let cached: KnowledgeSearchMount | null = null;
 /**
  * The process's answer. The route is env and the records ship in the image, so
  * neither changes while the process runs; resolved once.
+ *
+ * Inside the Ragas answer stage's scope (`withRagEvaluationMount`) the
+ * stage's own decision answers instead, so the run that produces the first
+ * record can be offered the tool it measures. That scope has one opener, which
+ * nothing under `src/` imports, and a production process ignores it — see
+ * `rag-evaluation-mount.ts`.
  */
 export function getKnowledgeSearchMount(): KnowledgeSearchMount {
+    const evaluating = ragEvaluationMountInScope();
+    if (evaluating !== undefined) return evaluating;
     if (cached === null) cached = resolveKnowledgeSearchMount();
     return cached;
 }

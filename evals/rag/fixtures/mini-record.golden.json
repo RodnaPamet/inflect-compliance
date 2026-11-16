@@ -26,7 +26,7 @@
   },
   "ranAt": "2026-11-16T02:30:00.000Z",
   "status": "COMPLETE",
-  "spendUsd": 0.027,
+  "spendUsd": 0.0222,
   "probeCorpus": {
     "host": "github-actions-ubuntu-latest",
     "tenantChunks": 5000,

@@ -191,9 +191,12 @@ flowchart LR
   today; with the store and route on, a run granted it records
   `RETRIEVER_NOT_EVALUATED`. The Ragas nightly measures both figures and keys
   its output by that same revision (`scripts/rag-eval/search-seam.ts`), so the
-  record it writes is the one the gate looks up; it writes none until Ragas
-  1.2's answer half (the harness's answer route) exists
-  ([note](../implementation-notes/2026-11-16-rag-eval-gate-wiring.md)).
+  record it writes is the one the gate looks up. Its answer stage asks the
+  assistant in process with the tool mounted by the evaluation's own scoped
+  decision (`services/rag-evaluation-mount.ts`), which no deployed app can
+  open; no keyed night has run, so no record exists yet
+  ([note](../implementation-notes/2026-11-16-rag-eval-gate-wiring.md),
+  [answer stage](../implementation-notes/2026-11-16-rag-eval-answer-stage.md)).
   The questionnaire feature still grounds answers from the answer library and
   ships evidence *titles* only, and agents otherwise read through the audited
   MCP read tools (`src/lib/mcp/tools/`)
@@ -691,11 +694,14 @@ all. The same record measures the floors that decide whether Phase 4 ever runs.
       the exact 10th-best distance plus 1e-6, recall = hits / min(10, exact
       count), and a question whose exact search is empty is unscored, never 1; **the record/gate path is wired** — its output is keyed by
       `knowledgeRetrieverRevision`, the revision this gate compares, and read
-      against the same floors. **No record can pass yet**: a record needs
-      answers, and the answer half of Ragas 1.2 (the harness's answer route)
-      is not built, so the nightly writes the figures and no record, and the
-      gate stays closed. The latency a CI runner measures is not the VM's,
-      which D-L4-9 states its ceiling for.
+      against the same floors; **the answers are produced** (2026-11-16) —
+      the nightly's answer stage asks the real assistant in process, with
+      `search_knowledge` mounted for its answer tenant alone by the
+      evaluation's scoped decision, which nothing under `src/` can open and a
+      production process refuses (Ragas 1.2). **No record exists yet**: no
+      keyed night has run, so the gate stays closed until a record from one is
+      committed by a reviewed pull request. The latency a CI runner measures is
+      not the VM's, which D-L4-9 states its ceiling for.
 
 **Prompt.**
 ```text
