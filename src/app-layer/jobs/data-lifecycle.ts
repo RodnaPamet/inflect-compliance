@@ -22,6 +22,7 @@ import { SOFT_DELETE_MODELS, withDeleted } from '@/lib/soft-delete';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { purgeEvidenceBlobs } from '../services/evidence-blob-purge';
+import { deleteKnowledgeOfPurgedRow } from '../services/knowledge-purge';
 
 /** Minimal delegate interface for dynamic model access by string key */
 interface ModelDelegate {
@@ -281,6 +282,13 @@ export async function purgeSoftDeletedOlderThan(
                     // child is a per-edge product decision, not something to
                     // guess at inside a sweep.
                     try {
+                        // The row's knowledge chunks first: they name it
+                        // polymorphically, so no FK takes them, and a policy's
+                        // versions cascade away with it and could not be named
+                        // after. Harmless if the DELETE below is then refused —
+                        // a soft-deleted row is not indexable anyway
+                        // (services/knowledge-purge.ts).
+                        await deleteKnowledgeOfPurgedRow(db, model, record.tenantId, record.id);
                         await db.$executeRawUnsafe(
                             `DELETE FROM "${model}" WHERE "id" = $1`,
                             record.id,

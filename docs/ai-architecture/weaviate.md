@@ -84,7 +84,7 @@ flowchart LR
   against the real tables
   ([implementation note](../implementation-notes/2026-11-15-knowledge-store-tables.md);
   the seam's own: [2026-11-11](../implementation-notes/2026-11-11-vector-store-seam.md)).
-- **The index job exists and nothing enqueues it.** `knowledge-index`
+- **The index job exists, and an approved policy version is its one source.** `knowledge-index`
   (`src/app-layer/jobs/knowledge-index.ts`, body in
   `src/app-layer/services/knowledge-index.ts`) takes `(tenantId, sourceModel,
   sourceId)`, reads the row under `runInTenantContext`, cuts it with the plain
@@ -101,8 +101,13 @@ flowchart LR
   `VECTOR_STORE_DISABLED` / `EMBEDDING_NOT_CONFIGURED`, a failure, never a
   success; every run counts on `knowledge_index.runs{source_model, outcome}`.
   Its one enqueue site, `enqueueKnowledgeIndex`, enqueues nothing while either
-  switch is off, and no source's write path calls it yet (2.2)
-  ([implementation note](../implementation-notes/2026-11-16-knowledge-index-job.md)).
+  switch is off; `decidePolicyApproval` calls it after an approval commits, and
+  a policy's soft delete and restore queue its approved versions, so the index
+  follows the policy both ways. The `data-lifecycle` purge and the admin's
+  manual purge delete a row's chunks before they hard-delete it
+  (`services/knowledge-purge.ts`), and the tenant purge removes both tables
+  ([implementation notes](../implementation-notes/2026-11-16-knowledge-index-job.md),
+  [policy source](../implementation-notes/2026-11-16-knowledge-index-policy-source.md)).
   The backend also refuses a vector whose `contentHash` is not its chunk's
   (`CONTENT_HASH_MISMATCH`), so two overlapping runs of one source cannot file
   the older text's vector against the newer text.
@@ -449,11 +454,19 @@ whole index can be rebuilt from `KnowledgeChunk` rows.
       (`tests/integration/knowledge-index-job.test.ts`), the batching case
       (17 chunks are 3 calls of at most 8) and every outcome
       (`tests/unit/knowledge-index-job.test.ts`).
-- [ ] 2.2 Triggers: the audit emitters for the source models enqueue the job
+- [x] 2.2 Triggers: the audit emitters for the source models enqueue the job
       after create and update; the `data-lifecycle` purge deletes a source's
       chunks when it hard-deletes the source (the reference is polymorphic, so
       no foreign key does it); the tenant purge removes both tables with
-      everything else tenant-scoped.
+      everything else tenant-scoped. *Landed 2026-11-16 for the policy source,*
+      from the usecases rather than the audit emitters: `logEvent` writes
+      inside the transaction, and a job queued there could run before the
+      commit. `decidePolicyApproval` queues the approved version after it
+      commits; `deletePolicy`, `bulkDeletePolicy` and `restorePolicy` queue the
+      policy's approved versions. The `data-lifecycle` purge and `purgeEntity`
+      delete a row's chunks first (`services/knowledge-purge.ts`, which knows a
+      policy's chunks are its versions'). Each later source wires its own
+      trigger in the pull request that adds its reader.
 - [ ] 2.3 `scripts/knowledge-reindex.ts`: re-embed a tenant's chunks from
       `KnowledgeChunk` text and rebuild its embedding rows. A test proves the
       rebuild reproduces the same `contentHash` set and, under the same model
@@ -467,7 +480,15 @@ whole index can be rebuilt from `KnowledgeChunk` rows.
       under it.
 - [ ] 2.5 First sources, in this order: `PolicyVersion.contentText` (approved
       versions only), evidence file text (post-ClamAV, via the parser seam),
-      control descriptions, the questionnaire answer library.
+      control descriptions, the questionnaire answer library. *2026-11-16:*
+      `PolicyVersion` is indexed (`services/knowledge-sources.ts`; HTML
+      flattened to text, Markdown kept). Evidence file text waits on
+      [`ragflow.md`](./ragflow.md): the parser seam's code is on `main` (1.1,
+      1.2, 1.4, 1.7), but its service (1.3) is a nightly window that a queued
+      document must WAIT for rather than be indexed from the stub, and the
+      evidence wiring with its chunk metadata migration is that roadmap's own
+      Phase 2. Control descriptions and the answer library come after it in
+      this order.
 
 **Decisions.**
 

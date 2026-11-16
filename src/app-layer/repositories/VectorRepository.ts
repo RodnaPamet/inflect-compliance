@@ -45,9 +45,9 @@
 import { metrics } from '@opentelemetry/api';
 import { z } from 'zod';
 import type { RequestContext } from '@/app-layer/types';
-import { env } from '@/env';
 import { logger } from '@/lib/observability';
 import { createPgvectorStore } from './vector/pgvector-store';
+import { vectorStoreEnabled } from './vector-store-switch';
 import {
     MAX_CHUNK_INDEX,
     MAX_DIMENSIONS,
@@ -344,7 +344,7 @@ let configured: VectorRepository | null | undefined;
 export function getVectorRepository(): VectorRepository | null {
     if (configured === undefined) {
         configured =
-            env.VECTOR_STORE_BACKEND === 'pgvector' ? createVectorRepository(createPgvectorStore()) : null;
+            vectorStoreEnabled() ? createVectorRepository(createPgvectorStore()) : null;
     }
     return configured;
 }

@@ -27,6 +27,7 @@ import { isRevisionOf, publishableVersionId } from '@/lib/policy/publication-sta
 import { parseReviewCadenceDays, parseEvidenceToRetain } from '@/lib/policy/template-skeleton';
 import { logger } from '@/lib/observability/logger';
 import { recordPolicyPublished } from '@/lib/observability/business-metrics';
+import { enqueueKnowledgeIndex, enqueueKnowledgeIndexForPolicies } from '../jobs/knowledge-index-enqueue';
 
 // ─── Slug helper ───
 
@@ -934,6 +935,17 @@ export async function decidePolicyApproval(ctx: RequestContext, policyId: string
         return result;
     });
     await bumpTenantCacheVersion(ctx.tenantId);
+    // An approved version is a knowledge source (vector store Phase 2.5).
+    // After the commit, so the job reads the approval; never fails the
+    // decision, and enqueues nothing while the index is off.
+    if (decision.decision === 'APPROVED') {
+        await enqueueKnowledgeIndex({
+            tenantId: ctx.tenantId,
+            sourceModel: 'PolicyVersion',
+            sourceId: committed.policyVersionId,
+            requestId: ctx.requestId,
+        });
+    }
     return committed;
 }
 
@@ -1643,6 +1655,9 @@ export async function deletePolicy(ctx: RequestContext, id: string) {
         return { success: true };
     });
     await bumpTenantCacheVersion(ctx.tenantId);
+    // The index follows the delete now rather than at the 90-day purge: the
+    // job finds the policy soft-deleted and removes its versions' chunks.
+    await enqueueKnowledgeIndexForPolicies(ctx, [id]);
     return committed;
 }
 
@@ -1708,6 +1723,8 @@ export async function unarchivePolicy(ctx: RequestContext, policyId: string) {
 export async function restorePolicy(ctx: RequestContext, id: string) {
     const committed = await restoreEntity(ctx, 'Policy', id);
     await bumpTenantCacheVersion(ctx.tenantId);
+    // Puts back the chunks the soft delete took out of the index.
+    await enqueueKnowledgeIndexForPolicies(ctx, [id]);
     return committed;
 }
 
@@ -1772,7 +1789,7 @@ export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[])
     assertCanAdminPolicies(ctx);
     const committed = await runInTenantContext(ctx, async (db) => {
         const rows = await PolicyRepository.listByIds(db, ctx, policyIds);
-        if (rows.length === 0) return { deleted: 0 };
+        if (rows.length === 0) return { deleted: 0, ids: [] as string[] };
         await db.policy.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
         for (const r of rows) {
             await logEvent(db, ctx, {
@@ -1783,10 +1800,11 @@ export async function bulkDeletePolicy(ctx: RequestContext, policyIds: string[])
                 detailsJson: { category: 'entity_lifecycle', entityName: 'Policy', operation: 'deleted', summary: 'Policy soft-deleted' },
             });
         }
-        return { deleted: rows.length };
+        return { deleted: rows.length, ids: rows.map((r) => r.id) };
     });
     await bumpTenantCacheVersion(ctx.tenantId);
-    return committed;
+    await enqueueKnowledgeIndexForPolicies(ctx, committed.ids);
+    return { deleted: committed.deleted };
 }
 
 export async function bulkArchivePolicy(ctx: RequestContext, policyIds: string[]) {
