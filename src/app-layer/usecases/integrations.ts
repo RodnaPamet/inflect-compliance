@@ -52,6 +52,14 @@ import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-f
 import { runIdentitySync } from './identity-sync';
 import { runHrisSyncJob } from '@/app-layer/jobs/hris-sync';
 import { IDENTITY_ROSTER_PAGE_SIZE, IDENTITY_ROSTER_SEARCH_MAX_LENGTH } from '@/lib/identity-roster';
+import {
+    POSTURE_CONNECTION_PROVIDERS,
+} from '@/app-layer/integrations/cloud-posture/provider-name';
+import {
+    providerStalenessVerdict,
+    type StoredCredential,
+} from '@/app-layer/integrations/cloud-posture/provider-staleness';
+import { reportPostureProviderStaleness } from './posture-provider-staleness';
 
 /** Providers whose connection-level sync runs a directory/account sync. */
 const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
@@ -374,11 +382,19 @@ export async function upsertIntegrationConnection(
     // `mergeConnection` returns `{ ...config, ...secrets }`, so the unchecked
     // bag was a way around the checked one (#2843 finding 16).
     let secretEncrypted: string | undefined;
+    /*
+        Kept for the staleness comparison below (#5476), and the canonical form
+        is the point. Comparing CIPHERTEXTS would report every save as a
+        rotation, because `encryptField` uses a fresh IV and the same plaintext
+        encrypts differently every time.
+    */
+    let suppliedSecretCanonical: string | undefined;
     if (input.secrets && Object.keys(input.secrets).length > 0) {
         const validatedSecrets = validateProviderSecrets(input.provider, input.secrets, {
             configFields: providerImpl.configSchema.configFields ?? [],
             secretFields: providerImpl.configSchema.secretFields ?? [],
         });
+        suppliedSecretCanonical = canonicalSecret(validatedSecrets);
         secretEncrypted = encryptField(JSON.stringify(validatedSecrets));
     }
 
@@ -476,6 +492,47 @@ export async function upsertIntegrationConnection(
                     ...(secretEncrypted ? { secretEncrypted } : {}),
                     isEnabled: willBeEnabled,
                 },
+            });
+
+            /*
+                THE GATEWAY'S COPY IS NOW BEHIND — #5476, criterion 4.
+
+                A posture connection's gateway credential provider is written by
+                an operator and attached by name; rotating the credential here
+                leaves the gateway holding the previous one, so every later scan
+                benchmarks an account this tenant no longer has on record.
+
+                Reported AFTER the update, inside the same transaction: a refused
+                save reports nothing, and a reported rotation is one that
+                committed. The previous credential is decrypted only to tell a
+                real change from a re-save of the same value — an unreadable one
+                is reported rather than assumed current.
+            */
+            const previousCredential = ((): StoredCredential => {
+                if (!existing.secretEncrypted) return { kind: 'none' };
+                try {
+                    return {
+                        kind: 'readable',
+                        canonical: canonicalSecret(
+                            decryptConnectionSecrets(existing.secretEncrypted),
+                        ),
+                    };
+                } catch {
+                    return { kind: 'unreadable' };
+                }
+            })();
+            const stalenessVerdict = providerStalenessVerdict({
+                isPostureConnection: (POSTURE_CONNECTION_PROVIDERS as readonly string[]).includes(
+                    existing.provider,
+                ),
+                suppliedCanonical: suppliedSecretCanonical,
+                previous: previousCredential,
+            });
+            await reportPostureProviderStaleness(db, ctx, {
+                verdict: stalenessVerdict,
+                connectionId: updated.id,
+                provider: existing.provider,
+                ownerUserId: existing.ownerUserId ?? null,
             });
 
             await logEvent(db, ctx, {
@@ -710,6 +767,22 @@ export async function testConnectionCredentials(
  * Decrypt the secrets for a connection. Used internally by execution logic.
  * @internal
  */
+/**
+ * A credential bag as ONE comparable string — #5476.
+ *
+ * Key order is normalised because two saves of the same credential can serialise
+ * their keys differently and would otherwise read as a rotation. Values are
+ * compared, never logged, and this string never leaves the function that
+ * compares it.
+ */
+function canonicalSecret(secrets: Record<string, unknown>): string {
+    return JSON.stringify(
+        Object.keys(secrets)
+            .sort()
+            .map((k) => [k, secrets[k]]),
+    );
+}
+
 function decryptConnectionSecrets(secretEncrypted: string | null): Record<string, unknown> {
     if (!secretEncrypted) return {};
     try {
