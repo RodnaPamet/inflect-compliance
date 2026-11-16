@@ -403,7 +403,8 @@ Under `src/`, no file but `src/app-layer/repositories/VectorRepository.ts` and
 the backends beside it in `repositories/vector/` loads a module from
 `repositories/vector/` — by the `@/` alias or a relative path, type-only imports
 included — and no string or template literal outside them names the store's
-table, `KnowledgeVector`.
+table, `KnowledgeChunkEmbedding`, and no member access reaches its Prisma
+delegate, `knowledgeChunkEmbedding`.
 
 **Why.** The repository is where the vector store's guarantees live: the tenant
 comes from the request context, a record carrying anything but a key, a content

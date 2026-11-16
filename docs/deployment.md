@@ -690,9 +690,15 @@ reconnecting. Order:
 2. `VM apply` → `apply`: the backup, `up -d`, the health checks.
 3. `VM check` → `containers`: `postgres` running and healthy.
 
-The extension is created by the migration that first needs it, not by the
-image; until then the database is exactly what it was, plus the extension's
-files on disk.
+The extension is created by the migration that first needs it,
+`20261115190000_knowledge_vector_store`, not by the image. pgvector is not a
+`trusted` extension, so that migration needs `prisma migrate deploy` (the
+`app` entrypoint, over `DIRECT_DATABASE_URL`, else `DATABASE_URL`) to connect
+as a superuser. The only login role this file configures is `postgres`, the
+image's superuser; if the VM's `.env.prod` names another role, run
+`CREATE EXTENSION IF NOT EXISTS vector;` once as `postgres` before the apply
+that carries the migration, and its own statement is then a no-op. Check
+which role the URL names before that apply; the repository cannot see it.
 
 **Rolling back.** Point the line tag at the previous build
 (`docker buildx imagetools create -t ghcr.io/rodnapamet/postgres-pgvector:16-alpine

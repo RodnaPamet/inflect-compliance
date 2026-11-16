@@ -583,10 +583,11 @@ export const env = createEnv({
         // exact value 'pgvector' turns it on; unset or anything else is OFF and
         // constructs nothing (`getVectorRepository()` returns null). A plain
         // string for the reason AGENT_DRIVER_FLUE above carries: a typo is "off",
-        // never a process that will not boot. Set it ONLY after the Postgres
-        // image carries the `vector` extension and the KnowledgeVector migration
-        // has run (docs/implementation-notes/2026-11-11-vector-store-seam.md);
-        // until then the backend refuses PGVECTOR_NOT_INSTALLED on every call.
+        // never a process that will not boot. Set it ONLY once the database
+        // runs the postgres-pgvector image and migration
+        // 20261115190000_knowledge_vector_store has run (vector store Phase 1,
+        // docs/ai-architecture/weaviate.md); until then the backend refuses
+        // PGVECTOR_NOT_INSTALLED on every call.
         VECTOR_STORE_BACKEND: z.string().optional(),
         // THE AGENT BEHAVIOUR FINGERPRINT (Morpheus roadmap Phase 1, D-L1-3) —
         // OFF BY DEFAULT, two keys (G9). The nightly `agent-fingerprint` job

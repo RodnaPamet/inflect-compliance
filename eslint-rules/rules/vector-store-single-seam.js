@@ -21,9 +21,15 @@
  *      an import (type-only included: the repository re-exports every type a
  *      caller needs), `import x = require(…)`, a re-export, `import()` or
  *      `require()`.
- *   2. No string or template literal names the store's table,
- *      `KnowledgeVector`. A raw query against it from elsewhere would skip the
- *      seam without importing anything, so the rule polices the NAME too.
+ *   2. No string or template literal names the embedding table,
+ *      `KnowledgeChunkEmbedding`. A raw query against it from elsewhere would
+ *      skip the seam without importing anything, so the rule polices the NAME
+ *      too. (Vector store Phase 1.5: the table and its migration landed with
+ *      `KnowledgeChunk`; the seam's draft name was `KnowledgeVector`.)
+ *   3. No member access reaches the Prisma delegate `knowledgeChunkEmbedding`
+ *      (`prisma.knowledgeChunkEmbedding.deleteMany(…)`, `tx[…]` with that
+ *      literal). Prisma cannot read the vector, but it can delete, count and
+ *      re-point rows, which is the seam's business and nobody else's.
  *
  * ── What it cannot see ───────────────────────────────────────────────
  *
@@ -36,7 +42,8 @@ const path = require('path');
 
 const VECTOR_DIR_ALIAS = /^@\/app-layer\/repositories\/vector(\/|$)/;
 const VECTOR_DIR_SEGMENT = `${path.sep}src${path.sep}app-layer${path.sep}repositories${path.sep}vector`;
-const TABLE_NAME = 'KnowledgeVector';
+const TABLE_NAME = 'KnowledgeChunkEmbedding';
+const DELEGATE_NAME = 'knowledgeChunkEmbedding';
 
 function literalSource(node) {
     if (!node) return null;
@@ -69,6 +76,8 @@ module.exports = {
                 "Only src/app-layer/repositories/VectorRepository.ts loads '{{source}}'. Use getVectorRepository() (types are re-exported there).",
             tableName:
                 "The vector store's table is named only in its backend. Read and write vectors through getVectorRepository().",
+            delegate:
+                "The embedding table's Prisma delegate is the vector store's alone. Read and write vectors through getVectorRepository().",
         },
     },
 
@@ -95,6 +104,11 @@ module.exports = {
                 if (node.callee.type === 'Identifier' && node.callee.name === 'require') {
                     check(node, node.arguments[0]);
                 }
+            },
+            MemberExpression(node) {
+                const prop = node.property;
+                const name = node.computed ? literalSource(prop) : prop.type === 'Identifier' ? prop.name : null;
+                if (name === DELEGATE_NAME) context.report({ node, messageId: 'delegate' });
             },
             Literal(node) {
                 if (typeof node.value === 'string' && node.value.includes(TABLE_NAME)) {

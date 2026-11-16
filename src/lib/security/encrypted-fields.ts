@@ -610,6 +610,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  as Finding.description. Sanitised on write (sanitizePlainText)
     //  + encrypted at rest. Not searched (no contains/orderBy).
     AuditPackShareComment: ['body'],
+
+    // ─── Layer 4 — the knowledge store (vector store Phase 1.4) ──
+    // `text` is a chunk of a source row's text (a policy version's content,
+    // evidence text, a control description), cut by the index pipeline. It is
+    // the ONLY copy of chunk text anywhere (D-L4-2, vectors only): the
+    // embedding row beside it carries a key, a hash and the vector. Business
+    // content as sensitive as the field it was cut from, so encrypted. Read by
+    // key only (tenant, source, chunk index), never filtered or sorted on —
+    // which is also why there is no lexical search over it (weaviate.md § Fit).
+    KnowledgeChunk: ['text'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

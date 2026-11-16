@@ -160,12 +160,32 @@ function validateBatch(records: readonly VectorRecord[], revision?: string): Vec
 
 type Operation = 'upsert' | 'search' | 'list_keys' | 'delete_source' | 'delete_tenant' | 'rebuild';
 let requestCounter: ReturnType<ReturnType<typeof metrics.getMeter>['createCounter']> | undefined;
+let requestDuration: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']> | undefined;
 
-function recordRequest(operation: Operation, backend: VectorStoreBackend['kind'], outcome: string): void {
-    requestCounter ??= metrics
-        .getMeter('inflect-compliance')
-        .createCounter('vector_index.requests', { description: 'Vector store requests by outcome', unit: '1' });
-    requestCounter.add(1, { operation, backend, outcome });
+/**
+ * The vector store's two signals (vector store Phase 1.8; checklist §4): an
+ * outcome counter and a latency histogram, both labelled by operation,
+ * backend and outcome (`ok`, a refusal reason, or `error`). `/api/readyz`
+ * does not gate on the store; these carry the alerting.
+ */
+function recordRequest(
+    operation: Operation,
+    backend: VectorStoreBackend['kind'],
+    outcome: string,
+    durationMs: number,
+): void {
+    const meter = metrics.getMeter('inflect-compliance');
+    requestCounter ??= meter.createCounter('vector_index.requests', {
+        description: 'Vector store requests by outcome',
+        unit: '1',
+    });
+    requestDuration ??= meter.createHistogram('vector_index.request.duration', {
+        description: 'Vector store request latency by operation and outcome',
+        unit: 'ms',
+    });
+    const labels = { operation, backend, outcome };
+    requestCounter.add(1, labels);
+    requestDuration.record(durationMs, labels);
 }
 
 // ─── The repository ──────────────────────────────────────────────────
@@ -191,13 +211,14 @@ export interface VectorRepository {
 
 export function createVectorRepository(store: VectorStoreBackend): VectorRepository {
     async function observed<T>(op: Operation, ctx: RequestContext, fn: () => Promise<T>): Promise<T> {
+        const started = performance.now();
         try {
             const result = await fn();
-            recordRequest(op, store.kind, 'ok');
+            recordRequest(op, store.kind, 'ok', performance.now() - started);
             return result;
         } catch (err) {
             const outcome = err instanceof VectorStoreError ? err.reason : 'error';
-            recordRequest(op, store.kind, outcome);
+            recordRequest(op, store.kind, outcome, performance.now() - started);
             logger.warn('vector_index.request_failed', {
                 component: 'vector-index',
                 operation: op,
