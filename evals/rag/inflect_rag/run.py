@@ -2,21 +2,23 @@
 
     python -m inflect_rag.run --set seed-policies.json --manifest corpus.json \\
         --retrieval retrieval.json --proxy http://127.0.0.1:8787 --tei http://127.0.0.1:8080 \\
-        --answer-url <url> --answer-max-input-tokens N --answer-max-output-tokens N --out record.json
+        --answers answers.json --out record.json
 
 Exit codes, each a different night:
     0  a record was written (COMPLETE, or BUDGET_EXHAUSTED with its unanswered cases left out)
-    3  NO_ANSWER_TARGET: no answer target is configured, so nothing was asked and nothing
-       was spent; the retrieval stage's figures are the night's only output
+    3  NO_ANSWER_TARGET: no answers file was given, so nothing is judged and nothing is
+       spent; the retrieval stage's figures are the night's only output
     4  SENTINELS_MISSED: the two fixed sentinel cases did not land where they must, so
        the judge is not trusted tonight and no record is written
     1  anything else
 
 Order of the night: the two sentinels (a perfect case and an empty retrieval) first;
-then every case of the set in order — ask the product, map what it retrieved back
-to the set's keys (a chunk outside the answer tenant is refused), score — until the
-set is done or the share is exhausted. A case the budget interrupted is left out
-whole and the record says BUDGET_EXHAUSTED, which never passes a floor.
+then every case of the set in order — read the product's answer from the answer
+stage's file (`scripts/rag-eval/answer.ts`), map what it retrieved back to the set's
+keys (a chunk outside the answer tenant is refused), score — until the set is done or
+the share is exhausted. A case the budget interrupted, while answering or while
+judging, is left out whole and the record says BUDGET_EXHAUSTED, which never passes a
+floor.
 """
 
 from __future__ import annotations
@@ -24,12 +26,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from datetime import datetime
 from typing import Any
 
-from .answers import AnswerTarget, HttpAnswerTarget
+from .answers import AnswerTarget, FileAnswerTarget
 from .judge import Judge, TeiEmbeddings, anthropic_judge_llm
 from .meter import BudgetExhausted, Meter
 from .record import build_record, chunk_refs, iso_now
@@ -98,7 +99,7 @@ async def judge_set(
         if meter.exhausted():
             return cases, True
         try:
-            ans = target.answer(c["question"])
+            ans = target.answer(c["id"], c["question"])
             if ans.embedding_model != revision["embeddingModel"] or ans.k != revision["k"]:
                 raise RevisionMismatch(
                     f"the product retrieved with {ans.embedding_model} at k {ans.k}; the retrieval stage measured "
@@ -135,10 +136,7 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
     p.add_argument("--tei", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--sentinels-out")
-    p.add_argument("--answer-url")
-    p.add_argument("--answer-max-input-tokens", type=int, default=0)
-    p.add_argument("--answer-max-output-tokens", type=int, default=0)
-    p.add_argument("--answer-cookie-env", help="name of an environment variable holding the session cookie")
+    p.add_argument("--answers", help="the answer stage's file (rag-answers@1)")
     p.add_argument("--now", help="a fixed ranAt (tests)")
     a = p.parse_args(argv)
 
@@ -148,14 +146,16 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
     if retrieval.get("kind") != RETRIEVAL_KIND:
         print(f"rag-eval: {a.retrieval} is not the retrieval stage's output", file=sys.stderr)
         return 1
-    if not a.answer_url:
+    if not a.answers:
         print(
-            "rag-eval: NO_ANSWER_TARGET: no answer target is configured, so no question was asked and no judge call "
-            "was made. The product answers through search_knowledge once vector store Phase 3.3-3.5 and the "
-            "harness's answer route exist (docs/ai-architecture/ragas.md 1.2).",
+            "rag-eval: NO_ANSWER_TARGET: no answers file was given, so nothing is judged and no judge call is made. "
+            "The product's answers come from the answer stage, scripts/rag-eval/answer.ts "
+            "(docs/ai-architecture/ragas.md 1.2).",
             file=sys.stderr,
         )
         return EXIT_NO_ANSWER_TARGET
+    # Read before anything is spent: a file bound to another set or revision is refused here.
+    target = FileAnswerTarget(a.answers, set_hash=retrieval["setHash"], retriever_revision=retrieval["retrieverRevision"])
 
     meter = Meter(a.proxy)
     state = meter.state()
@@ -177,8 +177,6 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
         print(f"rag-eval: SENTINELS_MISSED: {'; '.join(sentinels['problems'])}", file=sys.stderr)
         return EXIT_SENTINELS_MISSED
 
-    cookie = os.environ.get(a.answer_cookie_env) if a.answer_cookie_env else None
-    target = HttpAnswerTarget(a.answer_url, meter, a.answer_max_input_tokens, a.answer_max_output_tokens, cookie=cookie)
     cases, stopped = await judge_set(set_=set_, retrieval=retrieval, manifest=manifest, target=target, judge=judge, meter=meter)
 
     final = meter.state()
@@ -196,7 +194,7 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
             "ragasVersion": ragas.__version__,
             "priceTableHash": final.price_table_hash,
         },
-        status="BUDGET_EXHAUSTED" if stopped or final.status == "BUDGET_EXHAUSTED" else "COMPLETE",
+        status="BUDGET_EXHAUSTED" if stopped or final.status == "BUDGET_EXHAUSTED" or target.status == "BUDGET_EXHAUSTED" else "COMPLETE",
         spend_usd=final.spent_usd,
         cases=cases,
         ran_at=a.now or iso_now(datetime.now().astimezone()),

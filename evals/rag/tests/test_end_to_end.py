@@ -2,10 +2,11 @@
 
 Ragas's metrics → Instructor → the Anthropic SDK → the REAL metering proxy
 (`evals/cost-meter/anthropic-proxy.mjs`, run under node) → a fake Anthropic
-upstream that answers by rule. Beside it, a fake TEI and a fake answer route
-speaking `fixtures/answer-contract.json`. So the test sees what the nightly
-will send: the share's model, a `max_tokens` inside the proxy's cap, no
-`top_p` beside `temperature`, no stream, and no key from the harness.
+upstream that answers by rule. Beside it, a fake TEI and an answers file in
+the answer stage's shape (`rag-answers@1`, `fixtures/answer-contract.json`).
+So the test sees what the nightly will send: the share's model, a
+`max_tokens` inside the proxy's cap, no `top_p` beside `temperature`, no
+stream, and no key from the harness.
 
 The record it produces is compared with `fixtures/mini-record.golden.json`,
 which `tests/unit/rag-eval-harness-record.test.ts` validates with the
@@ -100,20 +101,30 @@ class Upstream:
         }
 
 
-def answer_route(set_: dict, manifest: dict) -> Callable[[str, str, Any], tuple[int, Any]]:
-    by_q = {c["question"]: c for c in set_["cases"]}
+def answers_file(set_: dict, manifest: dict, retrieval: dict, *, stop_after: int | None = None) -> dict:
+    """What the answer stage writes: the product's answer to each case, or, when the share stopped it, the rest named."""
     version = {s["sourceKey"]: s["sourceId"] for s in manifest["answerTenant"]["sources"]}
-
-    def handle(method: str, path: str, body: Any) -> tuple[int, Any]:
-        c = by_q[body["question"]]
+    revision = retrieval["retrieverRevision"]
+    answers, unanswered = [], []
+    for n, c in enumerate(set_["cases"]):
+        if stop_after is not None and n >= stop_after:
+            unanswered.append(c["id"])
+            continue
         refs = c["groundTruth"]["refs"]
         retrieved = [{"sourceModel": "PolicyVersion", "sourceId": version[r["sourceKey"]], "chunkIndex": i, "text": r["passage"]} for i, r in enumerate(refs)]
         if c.get("injected"):
             retrieved.append({"sourceModel": "PolicyVersion", "sourceId": version[c["injected"]["sourceKey"]], "chunkIndex": 0, "text": c["injected"]["text"]})
         answer = c["groundTruth"]["answer"] if refs else "The documents do not contain this information."
-        return 200, {"answer": answer, "retrieved": retrieved, "retriever": {"embeddingModel": "intfloat/multilingual-e5-small", "k": 10}, "usage": {"inputTokens": 900, "outputTokens": 60}}
-
-    return handle
+        response = {"answer": answer, "retrieved": retrieved, "retriever": {"embeddingModel": revision["embeddingModel"], "k": revision["k"]}, "usage": {"inputTokens": 900, "outputTokens": 60}}
+        answers.append({"caseId": c["id"], "question": c["question"], "response": response})
+    return {
+        "contract": "rag-answers@1",
+        "setHash": retrieval["setHash"],
+        "retrieverRevision": revision,
+        "status": "COMPLETE" if not unanswered else "BUDGET_EXHAUSTED",
+        "answers": answers,
+        "unanswered": unanswered,
+    }
 
 
 def tei(method: str, path: str, body: Any) -> tuple[int, Any]:
@@ -144,10 +155,12 @@ def load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
 
 
-def run_harness(tmp: Path, share_usd: float, upstream: Upstream) -> tuple[int, dict | None, list[dict]]:
-    set_, manifest = load("mini-set.json"), load("mini-manifest.json")
-    servers = [serve(upstream), serve(answer_route(set_, manifest)), serve(tei)]
-    (_, up_port), (_, answer_port), (_, tei_port) = servers
+def run_harness(tmp: Path, share_usd: float, upstream: Upstream, *, stop_after: int | None = None) -> tuple[int, dict | None, list[dict]]:
+    set_, manifest, retrieval = load("mini-set.json"), load("mini-manifest.json"), load("mini-retrieval.json")
+    answers = tmp / "answers.json"
+    answers.write_text(json.dumps(answers_file(set_, manifest, retrieval, stop_after=stop_after)))
+    servers = [serve(upstream), serve(tei)]
+    (_, up_port), (_, tei_port) = servers
     proxy, proxy_port = start_proxy(up_port, share_usd)
     try:
         out = tmp / "record.json"
@@ -159,9 +172,7 @@ def run_harness(tmp: Path, share_usd: float, upstream: Upstream) -> tuple[int, d
                     "--retrieval", str(FIXTURES / "mini-retrieval.json"),
                     "--proxy", f"http://127.0.0.1:{proxy_port}",
                     "--tei", f"http://127.0.0.1:{tei_port}",
-                    "--answer-url", f"http://127.0.0.1:{answer_port}/answer",
-                    "--answer-max-input-tokens", "4000",
-                    "--answer-max-output-tokens", "1000",
+                    "--answers", str(answers),
                     "--out", str(out),
                     "--now", "2026-11-16T02:30:00.000Z",
                 ]
@@ -185,9 +196,10 @@ def test_a_full_night_through_the_real_proxy(tmp_path: Path) -> None:
     # What reached the wire: the share's model, the proxy's output bound, no top_p, no stream.
     assert bodies and all(b["model"] == "claude-haiku-4-5" for b in bodies)
     assert all(b["max_tokens"] == 1024 and "top_p" not in b and not b.get("stream") for b in bodies)
-    # Spend is the meter's: every call settled at the upstream's usage, the answers at theirs.
-    calls, answers = len(bodies), len(record["cases"])
-    assert record["spendUsd"] == pytest.approx(calls * (400 * 1 + 40 * 5) / 1e6 + answers * (900 + 60 * 5) / 1e6)
+    # Spend is the meter's: every judge call settled at the upstream's usage. The answers'
+    # turns were charged by the same proxy when the answer stage sent them, not again here.
+    calls = len(bodies)
+    assert record["spendUsd"] == pytest.approx(calls * (400 * 1 + 40 * 5) / 1e6)
     if os.environ.get("UPDATE_GOLDEN") == "1":
         GOLDEN.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     assert record == json.loads(GOLDEN.read_text()), "the harness's record moved; regenerate the golden with UPDATE_GOLDEN=1"
@@ -217,3 +229,11 @@ def test_no_answer_target_spends_nothing(tmp_path: Path) -> None:
     )
     assert code == EXIT_NO_ANSWER_TARGET
     assert not (tmp_path / "record.json").exists()
+
+
+def test_an_answer_stage_the_share_stopped_yields_a_record_that_says_so(tmp_path: Path) -> None:
+    # The answer stage answered the first two cases and the share refused the third.
+    code, record, _ = run_harness(tmp_path, 2.5, Upstream(), stop_after=2)
+    assert code == 0
+    assert record is not None and record["status"] == "BUDGET_EXHAUSTED"
+    assert [c["caseId"] for c in record["cases"]] == [c["id"] for c in load("mini-set.json")["cases"][:2]]

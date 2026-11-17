@@ -196,9 +196,14 @@ async function memberContext(tenantId: string, userId: string): Promise<RequestC
     return { ...resolved.ctx, actorType: 'JOB' };
 }
 
+/** The corpus tenant's OWNER: who writes its policies, and who asks the answer stage's questions. */
+export function corpusOwnerEmail(slug: string): string {
+    return `owner@${slug}.rag-eval.test`;
+}
+
 /** A tenant with an OWNER (creates and requests) and an ADMIN (approves): two people, as approval needs. */
 async function createCorpusTenant(slug: string): Promise<People> {
-    const ownerEmail = `owner@${slug}.rag-eval.test`;
+    const ownerEmail = corpusOwnerEmail(slug);
     const approverEmail = `approver@${slug}.rag-eval.test`;
     const created = await createTenantWithOwner({ name: slug, slug, ownerEmail, requestId: `rag-eval-${randomUUID()}` });
     const tenantId = created.tenant.id;

@@ -168,6 +168,11 @@ export async function searchKnowledge(
     const mount = deps.mount ?? getKnowledgeSearchMount();
     if (mount.state === 'ABSENT') return { available: false, reason: mount.reason };
     if (mount.state === 'UNMOUNTED') return { available: false, reason: 'NOT_EVALUATED', detail: mount.reason };
+    // The Ragas answer stage's decision admits its own answer tenant and no
+    // other (`services/rag-evaluation-mount.ts`).
+    if (mount.evaluation !== undefined && mount.evaluation.tenantId !== ctx.tenantId) {
+        return { available: false, reason: 'NOT_EVALUATED', detail: 'EVALUATION_SCOPE_OTHER_TENANT' };
+    }
 
     const vectors = deps.vectors === undefined ? getVectorRepository() : deps.vectors;
     if (!vectors) return { available: false, reason: 'VECTOR_STORE_DISABLED' };

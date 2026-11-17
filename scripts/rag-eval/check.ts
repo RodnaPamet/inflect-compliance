@@ -7,8 +7,8 @@
  *                    hash, the models it prices and the ragas share. A refusal
  *                    exits 1 and names its reason. Every figure in the summary
  *                    is RECOMPUTED from the record's raw per-case values.
- *   --probe <file>   the retrieval stage's output alone (a night with no answer
- *                    target): the two retrieval figures recomputed from its
+ *   --probe <file>   the retrieval stage's output alone (every night, and the
+ *                    only output of one with no key): the two retrieval figures recomputed from its
  *                    probes, read against the D-L4-9 floors.
  *
  * Prints a JSON verdict on stdout ({ ok, refused?, retrieval, revisionId }) for the

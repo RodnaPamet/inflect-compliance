@@ -29,7 +29,7 @@ Green: Phase 0, on `main` with D-EV-2 decided. Blue: a phase not yet on `main`; 
 ```mermaid
 flowchart LR
   P0["Phase 0 · sets and judge<br/>seed-policies set, four case kinds<br/>rag-record schema<br/>D-EV-2 decided"]:::done
-  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures, judge<br/>keyed by the gate's revision<br/>answer route not built"]:::todo
+  P1["Phase 1 · harness and nightly<br/>built: corpus, retrieval figures,<br/>in-process answers, judge<br/>no record yet"]:::todo
   P2["Phase 2 · floors and the gate<br/>search_knowledge only<br/>with a passing record"]:::todo
   P3["Phase 3 · drift and distractors<br/>re-run on every revision"]:::todo
   WV["weaviate P2<br/>an index to evaluate"]:::ext
@@ -72,13 +72,19 @@ flowchart LR
   by `knowledgeRetrieverRevision`, the revision the `search_knowledge` mount
   gate looks records up by, and its figures are read against D-L4-9's
   floors, the gate's own
-  (`src/lib/ai/evals/rag-retrieval-floors.ts`). The judge has nothing to
-  judge until the product answers on the harness's answer route
-  (`evals/rag/fixtures/answer-contract.json`), which is not built; until then
-  a night produces the retrieval figures and no record, and no record can
-  pass the gate. See
-  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md` and
-  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md`.
+  (`src/lib/ai/evals/rag-retrieval-floors.ts`). **The product answers in
+  process** (`scripts/rag-eval/answer.ts`): the answer tenant's owner asks the
+  real assistant usecase each question, `search_knowledge` runs through the
+  offer, the funnel and the guards, and its model turns go through the same
+  metering proxy as the judge. The tool is mounted for that run by the
+  evaluation's own scoped decision (`src/app-layer/services/rag-evaluation-mount.ts`),
+  which nothing under `src/` can open and a production process refuses — there
+  is no route and no flag. The answers file (`rag-answers@1`,
+  `evals/rag/fixtures/answer-contract.json`) is what the judge scores. **No
+  keyed night has run**, so no record exists and the gate stays closed. See
+  `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md`,
+  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md` and
+  `docs/implementation-notes/2026-11-16-rag-eval-answer-stage.md`.
 - **The house already has the eval discipline Ragas must fit into.**
   `flue/skills/evaluation-record.ts` and
   `identity-match/evaluation-record.ts`: an *evaluation set* authored beside the
@@ -269,7 +275,7 @@ a vendor is still text to a vendor), G1.
       for the test stage's pytest) carry every PyPI file's sha256 and are
       installed `--require-hashes`; the key is the dedicated
       `RAGAS_ANTHROPIC_API_KEY` when set (D-EV-2, amended).
-- [ ] 1.2 The harness drives the *product's* retrieval, not a reimplementation.
+- [x] 1.2 The harness drives the *product's* retrieval, not a reimplementation.
       **Retrieval half built**: `scripts/rag-eval/probe.ts` asks every question
       through `VectorRepository.search` on a probe tenant and against an exact
       scan it runs itself, through one seam (`scripts/rag-eval/search-seam.ts`),
@@ -280,13 +286,33 @@ a vendor is still text to a vendor), G1.
       writes carries exactly the revision the mount gate compares
       (`tests/unit/rag-eval-gate-agreement.test.ts`), and the probe refuses a
       run searched with other settings than that revision states.
-      **Answer half open**: the harness asks
-      through a written contract (`evals/rag/fixtures/answer-contract.json`,
-      held by `src/lib/ai/evals/rag-answer-contract.ts` and the Python reader)
-      that the product's answer route must serve — `search_knowledge` through
-      the assistant on the answer tenant, the mount gate bypassed for that
-      tenant only by a test-mode flag. No route serves it yet, so no record is
-      written; every answer is reserved through the same meter.
+      **Answer half built 2026-11-16, in process and with no route and no
+      flag** (owner rule: no gate bypass may exist in a deployed app):
+      `scripts/rag-eval/answer.ts` asks every question through the real
+      `askAssistant` usecase as the answer tenant's owner — the feature gate,
+      the rate limit, the input guard, the tool loop, `search_knowledge`
+      through `runGuardedTool` and the funnel to `searchKnowledge`, the
+      egress guard, the decision log — and writes the answers file
+      (`rag-answers@1`; the contract in `evals/rag/fixtures/answer-contract.json`,
+      held by `src/lib/ai/evals/rag-answer-contract.ts` and the Python reader).
+      The chicken and the egg (the gate offers the tool only with a passing
+      record, and the record needs answers given with the tool) is broken by
+      the stage's own decision, supplied rather than read:
+      `withRagEvaluationMount` (`src/app-layer/services/rag-evaluation-mount.ts`)
+      mounts the tool for one call's async scope, for the measured revision and
+      the answer tenant alone. No file under `src/` imports the opener, no app
+      entry point reaches `scripts/rag-eval/`, `askAssistant` is called with
+      two arguments everywhere in `src/`
+      (`tests/guards/rag-evaluation-mount-unreachable.test.ts`, an import
+      graph and call-site walk with the TypeScript parser), and a production
+      process refuses the scope at both ends. The model turns are the ragas
+      share's model's, sent through the loopback metering proxy by the
+      product's own provider (`askAssistant`'s `turnProvider` seam), so the
+      answers and the judge spend one USD 2.50 share; a 402 stops answering and
+      the file says BUDGET_EXHAUSTED, which the record then says too. The
+      contexts are the `search_knowledge` results as the model saw them, read
+      off the loop's next request. *Not yet true:* no keyed night has run, so
+      no record exists.
 - [x] 1.3 Output → the TS record shape; `scripts/rag-eval/check.ts` validates
       it with `checkRagEvaluationRecord` (price table and share included)
       before it is uploaded; the artifact names it
@@ -336,9 +362,12 @@ the search_knowledge mount gate open for the seed retriever revision.
 ```
 
 **Hardening.** G11 (the harness measures the product, through its guards;
-the gate bypass is test-mode-only and build-guarded), G10 (dated marker +
-parsing guard), G5 (Python in a CI image). The record-by-PR rule keeps a
-human between a nightly run and a gate opening.
+the prompt above asked for a test-mode flag, and the owner ruled on
+2026-11-16 that no gate bypass may exist in a deployed app, so there is no
+flag and no route: the answer stage runs in process and supplies the mount
+decision through a scope nothing under `src/` can open, held by an import-graph
+guard), G10 (dated marker + parsing guard), G5 (Python in a CI image). The
+record-by-PR rule keeps a human between a nightly run and a gate opening.
 
 ### Phase 2 — Floors and the gate
 

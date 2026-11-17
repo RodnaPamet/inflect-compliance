@@ -1,10 +1,11 @@
 """The run's cost meter, as the judge sees it: the metering proxy on loopback.
 
 `evals/cost-meter/anthropic-proxy.mjs` holds the key and the job's share and
-reserves every judge call before it is sent. This module only READS its state
-(what the record's `spendUsd`, `status` and `priceTableHash` are taken from)
-and reserves / settles spend the job causes elsewhere (the product answering a
-question), so the judge and the answers share one share.
+reserves every call before it is sent: the judge's, and the product's answer
+turns, which the answer stage (`scripts/rag-eval/answer.ts`) sent through the
+same proxy before the judge ran, so the judge and the answers share one share.
+This module only READS its state (what the record's `spendUsd`, `status` and
+`priceTableHash` are taken from).
 
 There is no way here to spend without the proxy: the judge's client is pointed
 at it, and the harness never holds the key.
@@ -67,18 +68,3 @@ class Meter:
 
     def exhausted(self) -> bool:
         return self.state().status == "BUDGET_EXHAUSTED"
-
-    def reserve(self, input_tokens: int, max_output_tokens: int) -> int:
-        """Reserve spend the job causes outside the proxy; raises BudgetExhausted when it cannot fit."""
-        status, r = self._call("POST", "/meter/reserve", {"inputTokens": input_tokens, "maxOutputTokens": max_output_tokens})
-        if status == 402:
-            raise BudgetExhausted("the share cannot fit the answer turn")
-        if status != 200 or not r.get("ok"):
-            raise RuntimeError(f"the metering proxy refused a reservation ({status})")
-        return int(r["id"])
-
-    def settle(self, reservation: int, usage: dict | None) -> None:
-        """Settle a reservation; `None` (or an unreadable usage) keeps the worst case."""
-        status, _ = self._call("POST", "/meter/settle", {"id": reservation, "usage": usage})
-        if status != 200:
-            raise RuntimeError(f"the metering proxy could not settle reservation {reservation} ({status})")

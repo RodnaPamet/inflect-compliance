@@ -228,18 +228,39 @@ export interface AssistantAnswer {
 
 
 /**
+ * Seams for the in-process callers that are not a person's request: the Ragas
+ * answer stage (`scripts/rag-eval/answer.ts`) and the tests. The `/assistant`
+ * routes pass NONE of this — `tests/guards/rag-evaluation-mount-unreachable.test.ts`
+ * fails if any file under `src/` calls `askAssistant` with a third argument.
+ */
+export interface AssistantDeps {
+    /**
+     * The model client for a resolved choice, in place of the deployment's
+     * (`assistantProviderFor`). The residency decision is still made first
+     * (`resolveFlueModel`), the specifier still names the model the decision
+     * log records, and the transfer gate still runs before the first call;
+     * this replaces only the socket the call leaves on. The Ragas answer stage
+     * points it at the loopback metering proxy, which holds the key and
+     * charges every answer turn to the ragas share; the tests point it at a
+     * fake. `null` falls back exactly as an unconfigured deployment does.
+     */
+    readonly turnProvider?: (choice: { ok: true; specifier: string; residency: 'EXTERNAL' | 'LOCAL_ONLY' }) => AssistantTurnProvider | null;
+}
+
+/**
  * Answer a read question from live tenant data, or PROPOSE an action (via the
  * existing agent-proposal queue — never a direct mutation).
  */
 export async function askAssistant(
     ctx: RequestContext,
     input: z.infer<typeof AskAssistantSchema>,
+    deps: AssistantDeps = {},
 ): Promise<AssistantAnswer> {
     return runGoverned(
         ctx,
         input.question,
         (question, contextBlock, history) =>
-            produceAnswer(ctx, question, contextBlock, {}, history),
+            produceAnswer(ctx, question, contextBlock, {}, history, deps),
         input.pageContext,
         input.history ?? [],
     );
@@ -507,6 +528,7 @@ async function produceAnswer(
      * keyword fallback answers from the question alone, as it always did.
      */
     history: readonly AssistantHistoryTurn[] = [],
+    deps: AssistantDeps = {},
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy }> {
     const q = question.toLowerCase();
     let answer: AssistantAnswer;
@@ -544,7 +566,7 @@ async function produceAnswer(
     // What is NOT lost: the sentence stays deterministic. The loop's propose
     // outcomes are composed by `proposalOutcomeMessage` from the funnel's own
     // id arrays, never from the model's prose — see that function's header.
-    const loop = await answerFromToolLoop(ctx, question, observe, contextBlock, history);
+    const loop = await answerFromToolLoop(ctx, question, observe, contextBlock, history, deps);
     if (loop !== null) {
         answer = loop.answer;
         by = loop.by;
@@ -692,6 +714,7 @@ async function answerFromToolLoop(
     observe: ToolLoopObservers = {},
     contextBlock: string | null = null,
     history: readonly AssistantHistoryTurn[] = [],
+    deps: AssistantDeps = {},
 ): Promise<{ answer: AssistantAnswer; by: ProducedBy } | null> {
     const postures = await assistantPosturesFor(ctx);
     // AI sovereignty: the residency posture decides the model, and LOCAL_ONLY
@@ -700,7 +723,11 @@ async function answerFromToolLoop(
     // Never `setProvider` — see the header on `tool-loop.ts` for why a race
     // here is a cross-tenant egress rather than a flake.
     const choice = resolveFlueModel(postures.residency);
-    const configured = choice.ok ? assistantProviderFor(choice, env) : null;
+    const configured = choice.ok
+        ? deps.turnProvider !== undefined
+            ? deps.turnProvider(choice)
+            : assistantProviderFor(choice, env)
+        : null;
     if (!choice.ok || configured === null) {
         // Said, not silent: an operator reading the logs of a deployment whose
         // assistant answers only from the keyword router must be able to see
@@ -1021,7 +1048,7 @@ export async function streamAssistant(
             : isTransferRefusal(err)
             ? transferRefusalSentence(err)
             : isGuardRefusal(err)
-            ? 'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. If you asked me to raise something, check the agent-proposals review queue before asking again.'
+            ? GUARD_REFUSAL_SENTENCE
             : 'The assistant could not complete this. If you asked me to raise something, check the agent-proposals review queue before asking again — it may already be there.';
         opts.emit({ type: 'refusal', reason: refusal });
         opts.emit({ type: 'done', truncatedAny: false });
@@ -1043,6 +1070,14 @@ export async function streamAssistant(
  * rename is visible rather than silent.
  */
 export const GUARD_REFUSAL_PREFIXES = ['ai_guard_blocked:', 'ai_guard_review_required:'] as const;
+
+/**
+ * The stream's sentence for a turn the content guard withheld. Exported so the
+ * Ragas answer stage records what the person would have been shown, not the
+ * guard's internal message (which carries rule ids).
+ */
+export const GUARD_REFUSAL_SENTENCE =
+    'That request was withheld by the content guard, which refuses material that reads as an instruction rather than as a record. If you asked me to raise something, check the agent-proposals review queue before asking again.';
 
 /** The stream's sentence for a request whose earlier turns the guard withheld (#5054). */
 export const HISTORY_REFUSAL_SENTENCE =
@@ -1077,7 +1112,7 @@ export function transferRefusalSentence(err: ForbiddenError): string {
     );
 }
 
-function isGuardRefusal(err: unknown): boolean {
+export function isGuardRefusal(err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err);
     return GUARD_REFUSAL_PREFIXES.some((p) => message.includes(p));
 }

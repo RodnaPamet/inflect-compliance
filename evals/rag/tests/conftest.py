@@ -1,7 +1,7 @@
 """Fakes for the harness's tests: a judge that answers by rule, embeddings, and a network fence.
 
 The fence refuses every connection that is not to loopback, for every test:
-the harness may reach the metering proxy, TEI and the answer target — all on
+the harness may reach the metering proxy and TEI — both on
 the runner — and nothing else, and a library that phones home (Ragas's usage
 analytics, a tokenizer download) fails here rather than in the nightly.
 """
