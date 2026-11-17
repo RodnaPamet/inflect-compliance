@@ -106,7 +106,7 @@ describe('OrgEvaluationsCard', () => {
         const garak = screen.getByTestId('org-evals-garak');
         expect(garak).toHaveTextContent('01:15 UTC');
         expect(garak).toHaveTextContent('USD 2.50 a night');
-        expect(garak).toHaveTextContent('USD 5 nightly cap');
+        expect(garak).toHaveTextContent('USD 6.50 nightly cap');
         expect(garak).toHaveTextContent('D-EV-11');
         expect(garak).toHaveTextContent('GARAK_CI_ANTHROPIC_KEY');
         const inspect = screen.getByTestId('org-evals-inspect');

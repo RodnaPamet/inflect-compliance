@@ -12,8 +12,9 @@
  *      first step (presence only) and the judge step (which hands it to the
  *      proxy and unsets it), never job env, and the judge container is given
  *      no environment at all. The answer stage runs after the unset, holding
- *      only the marker its script requires, with the share's model, its turns
- *      sent to the proxy; the judge reads its file. The dedicated RAGAS_ANTHROPIC_API_KEY is
+ *      only the marker its script requires, with NO model set (the assistant
+ *      resolves its own production model, owner decision 2026-11-17), its
+ *      turns sent to the proxy; the judge reads its file. The dedicated RAGAS_ANTHROPIC_API_KEY is
  *      preferred over the shared key (owner decision 2026-11-16), the
  *      workspace header goes only with the shared one, and the log names
  *      which secret was used, never its value — as garak's and Inspect's do.
@@ -25,9 +26,11 @@
  *      requirement of both locks (runtime and test stage) by sha256 hash,
  *      each installed with --no-deps --require-hashes and checked, analytics
  *      off; never the app image.
- *   6. The plan fits the share: the planned night (every set case judged and
- *      answered by the product, plus the sentinels) at the cost meter's price
- *      for its model, inside the ragas share; the judge's and the assistant's
+ *   6. The plan fits the share: the planned night (every set case judged at
+ *      the judge's model and answered by the product at the assistant's model,
+ *      plus the sentinels), at the cost meter's prices, inside the ragas share
+ *      (USD 4.00, D-EV-11 as amended 2026-11-17), each model one the share
+ *      lists and the answer model the assistant's own default; the judge's and the assistant's
  *      per-call output bounds inside the cap the workflow starts the proxy with.
  */
 import * as fs from 'fs';
@@ -131,14 +134,18 @@ describe('the model key reaches the metering proxy and nothing else', () => {
         expect(JOB.env).not.toHaveProperty('RAG_EVAL_ANSWER_URL');
     });
 
-    it('asks the product in process after the key is unset, with the marker for a key and the share’s model, and the judge reads its file', () => {
+    it('asks the product in process after the key is unset, with the marker for a key and no model of its own, and the judge reads its file', () => {
         const run = step('judge')?.run ?? '';
         const answer = run.indexOf('npx tsx scripts/rag-eval/answer.ts');
         expect(answer).toBeGreaterThan(run.indexOf('unset ANTHROPIC_API_KEY'));
         expect(answer).toBeLessThan(run.indexOf('docker run'));
-        expect(run).toContain(`share_model="$(node -p 'require("./evals/cost-meter/shares.json").shares.ragas.model')"`);
         const command = run.slice(run.lastIndexOf('\n', run.indexOf('ANTHROPIC_API_KEY=held-by-the-metering-proxy')), answer);
-        expect(command).toContain('ANTHROPIC_API_KEY=held-by-the-metering-proxy AGENT_FLUE_MODEL="$share_model"');
+        expect(command).toContain('ANTHROPIC_API_KEY=held-by-the-metering-proxy AI_RISK_DAILY_QUOTA=100 AI_RISK_USER_RPM=100');
+        // The answers are the assistant's own model's: nothing in the job or the
+        // step names one, so it resolves as the deployment's does.
+        expect(command).not.toContain('AGENT_FLUE_MODEL=');
+        expect(JSON.stringify(JOB.env)).not.toContain('AGENT_FLUE_MODEL');
+        expect(JSON.stringify(step('judge')?.env ?? {})).not.toContain('AGENT_FLUE_MODEL');
         expect(readCode('scripts/rag-eval/answer.ts')).toContain("export const PROXY_HELD_KEY = 'held-by-the-metering-proxy';");
         expect(run).toContain('--proxy http://127.0.0.1:8787 --out rag-out/answers.json');
         expect(run).toContain('--answers /out/answers.json');
@@ -266,17 +273,28 @@ describe('the plan fits the ragas share of the shared cap (D-EV-2, D-EV-11)', ()
     const budget = JSON.parse(read('evals/rag/budget.json'));
     const set = JSON.parse(read('evals/rag/sets/seed-policies.json'));
 
-    const cost = (p: { inputTokens: number; outputTokens: number }) => {
-        const price = prices.models[shares.shares.ragas.model];
+    const cost = (p: { model: string; inputTokens: number; outputTokens: number }) => {
+        expect(shares.shares.ragas.models).toContain(p.model);
+        const price = prices.models[p.model];
         return (p.inputTokens * price.usdPerMillionInputTokens + p.outputTokens * price.usdPerMillionOutputTokens) / 1e6;
     };
+    const judgeCase = () => cost({ ...budget.plannedCase, model: budget.judge.model });
 
     it('the planned night — every case judged and answered by the product, and the sentinels judged — costs no more than the share', () => {
-        const night = set.cases.length * (cost(budget.plannedCase) + cost(budget.plannedAnswer)) + budget.sentinelCases * cost(budget.plannedCase);
+        const night = set.cases.length * (judgeCase() + cost(budget.plannedAnswer)) + budget.sentinelCases * judgeCase();
         expect(night).toBeLessThanOrEqual(shares.shares.ragas.usd);
         // The answers are in the plan, and measured, not left out.
         expect(budget.plannedAnswer.inputTokens).toBeGreaterThan(0);
         expect(budget.plannedAnswer.basis).toMatch(/^Measured \d{4}-\d{2}-\d{2}/);
+    });
+
+    it('the judge is Haiku and the answers are priced at the assistant’s own model (owner decision 2026-11-17)', () => {
+        const judge = readCode('evals/rag/inflect_rag/judge.py');
+        expect(/^JUDGE_MODEL = "([^"]+)"$/m.exec(judge)?.[1]).toBe(budget.judge.model);
+        expect(budget.judge.model).toBe('claude-haiku-4-5');
+        const assistant = /export const AGENT_FLUE_MODEL_DEFAULT = '([^']+)';/.exec(readCode('src/lib/ai/model-defaults.ts'))?.[1];
+        expect(budget.plannedAnswer.model).toBe(assistant);
+        expect(readCode('src/env.ts')).toContain('AGENT_FLUE_MODEL: z.string().default(AGENT_FLUE_MODEL_DEFAULT),');
     });
 
     it('the judge and the assistant ask for output bounds inside the cap the workflow starts the proxy with', () => {

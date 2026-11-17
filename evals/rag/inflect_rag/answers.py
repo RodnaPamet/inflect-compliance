@@ -114,8 +114,17 @@ class FileAnswerTarget:
     def __init__(self, path: str, *, set_hash: str, retriever_revision: dict[str, Any]):
         with open(path, encoding="utf-8") as f:
             body = json.load(f)
-        if not isinstance(body, dict) or set(body) != {"contract", "setHash", "retrieverRevision", "status", "answers", "unanswered"}:
-            raise AnswerContractError("the answers file is not {contract, setHash, retrieverRevision, status, answers, unanswered}")
+        if not isinstance(body, dict) or set(body) != {"contract", "setHash", "retrieverRevision", "answerModel", "status", "answers", "unanswered"}:
+            raise AnswerContractError("the answers file is not {contract, setHash, retrieverRevision, answerModel, status, answers, unanswered}")
+        model = body["answerModel"]
+        if not (
+            isinstance(model, dict)
+            and set(model) == {"provider", "model"}
+            and all(isinstance(v, str) and v for v in model.values())
+        ):
+            raise AnswerContractError("answerModel is not {provider, model}")
+        # The model that wrote the answers; the record carries it as answerRevision.
+        self.answer_model: dict[str, str] = dict(model)
         if body["contract"] != ANSWERS_CONTRACT:
             raise AnswerContractError(f"the answers file speaks {body['contract']!r}, not {ANSWERS_CONTRACT}")
         if body["setHash"] != set_hash:

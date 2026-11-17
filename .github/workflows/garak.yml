@@ -20,10 +20,11 @@ name: garak (LLM red-team, nightly)
 #     the gate ADMITS fails the step (the role list would then be wrong).
 #   - MODEL (D-EV-1, owner, 2026-11-11): Haiku-class (AGENT_FLUE_MODEL below)
 #     through the DEDICATED CI key in the repository secret
-#     GARAK_CI_ANTHROPIC_KEY, seed data only. The USD 5 nightly cap is shared
-#     with Ragas (D-EV-2): garak meters against its SHARE from the shared cost
-#     meter, evals/cost-meter/ — USD 2.50, the split the owner decided
-#     under D-EV-11 (2026-11-12). With the secret
+#     GARAK_CI_ANTHROPIC_KEY, seed data only. The nightly cap is shared with
+#     Ragas (D-EV-2): garak meters against its SHARE from the shared cost
+#     meter, evals/cost-meter/ — USD 2.50 on Haiku alone (D-EV-11, 2026-11-12,
+#     unchanged when the owner raised the cap to USD 6.50 and the Ragas share
+#     to USD 4.00 on 2026-11-17). With the secret
 #     absent the job SKIPS cleanly (first step) and says so.
 #   - SPEND, three layers, each in config: garak's own prompt cap
 #     (.garak/config.yaml), the proxy's per-role wire cap and the product's

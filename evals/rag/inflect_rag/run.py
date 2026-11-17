@@ -31,7 +31,7 @@ from datetime import datetime
 from typing import Any
 
 from .answers import AnswerTarget, FileAnswerTarget
-from .judge import Judge, TeiEmbeddings, anthropic_judge_llm
+from .judge import JUDGE_MODEL, Judge, TeiEmbeddings, anthropic_judge_llm
 from .meter import BudgetExhausted, Meter
 from .record import build_record, chunk_refs, iso_now
 
@@ -93,7 +93,6 @@ async def judge_set(
 ) -> tuple[list[dict], bool]:
     """Every case in order; returns the scored cases and whether the budget stopped the run."""
     revision = retrieval["retrieverRevision"]
-    sources = manifest["answerTenant"]["sources"]
     cases: list[dict] = []
     for c in set_["cases"]:
         if meter.exhausted():
@@ -105,7 +104,11 @@ async def judge_set(
                     f"the product retrieved with {ans.embedding_model} at k {ans.k}; the retrieval stage measured "
                     f"{revision['embeddingModel']} at k {revision['k']}"
                 )
-            refs = chunk_refs(ans.retrieved, sources)
+            # Each case was asked in its own tenant (owner decision 2026-11-17):
+            # the injection cases in the injection tenant, every other case in
+            # the answer tenant. A chunk from the other tenant is refused.
+            tenant = manifest["injectionTenant"] if c["kind"] == "injection" else manifest["answerTenant"]
+            refs = chunk_refs(ans.retrieved, tenant["sources"])
             score = await judge.score(c["question"], ans.answer, [r.text for r in ans.retrieved], c["groundTruth"]["answer"])
         except BudgetExhausted:
             return cases, True
@@ -162,9 +165,12 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
     if state.job != JOB:
         print(f"rag-eval: the metering proxy meters job {state.job}, not {JOB}", file=sys.stderr)
         return 1
+    if JUDGE_MODEL not in state.models:
+        print(f"rag-eval: the {JOB} share does not list the judge's model {JUDGE_MODEL}", file=sys.stderr)
+        return 1
     tei = embeddings or TeiEmbeddings(a.tei)
     embedding_model = tei.model_id()
-    judge = Judge(judge_llm or anthropic_judge_llm(a.proxy, state.model), tei, meter.exhausted)
+    judge = Judge(judge_llm or anthropic_judge_llm(a.proxy, JUDGE_MODEL), tei, meter.exhausted)
 
     try:
         sentinels = await run_sentinels(judge, set_)
@@ -189,11 +195,12 @@ async def main_async(argv: list[str] | None = None, *, judge_llm: Any = None, em
         retrieval=retrieval,
         judge_revision={
             "provider": "anthropic",
-            "model": final.model,
+            "model": JUDGE_MODEL,
             "embeddingModel": embedding_model,
             "ragasVersion": ragas.__version__,
             "priceTableHash": final.price_table_hash,
         },
+        answer_revision=target.answer_model,
         status="BUDGET_EXHAUSTED" if stopped or final.status == "BUDGET_EXHAUSTED" or target.status == "BUDGET_EXHAUSTED" else "COMPLETE",
         spend_usd=final.spent_usd,
         cases=cases,

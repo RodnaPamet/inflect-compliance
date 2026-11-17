@@ -20,7 +20,7 @@ inflect · ai architecture · garak · roadmap v1 · 2026-10-29
 | Wave | 3 (with the Layer 1 additions, so it measures them as they land) — but Phase 1 can start now against the existing guard |
 | Depends on | a model to probe (the external provider with a CI key; a local model only if Layer 5 is taken up) |
 | Unblocks | an evidence line for [`nemo-guardrails.md`](./nemo-guardrails.md) and [`presidio.md`](./presidio.md): a before/after |
-| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night, seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while the repository variable `GARAK_ENABLED` is `true` (off by default). A manual dispatch always runs |
+| Owner decisions | **D-EV-1 — decided (owner, 2026-11-11):** a Haiku-class external model through a dedicated CI key, hard-capped at USD 5 per night (USD 6.50 since the owner's amendment of 2026-11-17, shared with Ragas; garak's share is unchanged), seed data only. Owner actions it leaves: create the repository secret `GARAK_CI_ANTHROPIC_KEY` from a key in its own Anthropic workspace, and set that workspace's spend limit (the invoice-level backstop, see Phase 1). **Amended 2026-11-12 (owner):** without that secret the workflow uses the existing `ANTHROPIC_API_KEY` secret, so its spend counts against that key's workspace limit; and the nightly runs only while the repository variable `GARAK_ENABLED` is `true` (off by default). A manual dispatch always runs |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -165,7 +165,8 @@ scored per probe, published and gated exactly like DAST.
       (attacker-model probes that multiply requests).
 - [x] 0.3 D-EV-1 decided by the owner (2026-11-11): Haiku-class
       (`claude-haiku-4-5`, the repository's existing Haiku pin) through the
-      dedicated CI key `GARAK_CI_ANTHROPIC_KEY`, USD 5 a night, seed data only.
+      dedicated CI key `GARAK_CI_ANTHROPIC_KEY`, USD 5 a night (a shared USD
+      6.50 since 2026-11-17), seed data only.
       Sub-processor consequence: the key sends garak's own probe text and the
       seed tenant's CI data to Anthropic, no customer content. The Anthropic
       row of `docs/sub-processors.md` already names Anthropic as the model
@@ -306,14 +307,14 @@ ZAP one bit once).
          room for a whole role, or the role does not start.
       At the planned heavy turn (20,000 tokens in, 2,000 out: USD 0.03 at
       Haiku rates) 80 requests are USD 2.40, inside garak's USD 2.50 share of
-      the USD 5 cap it shares with Ragas (`evals/cost-meter/`; the split is
-      D-EV-11, decided 2026-11-12). The prompt cap was 5 (45, 50 and 100,
+      the USD 6.50 cap it shares with Ragas (`evals/cost-meter/`; the split is
+      D-EV-11, decided 2026-11-12 and amended 2026-11-17, garak unchanged). The prompt cap was 5 (45, 50 and 100,
       USD 3.00) until the shared meter (Ragas 0.6, 2026-11-12): the planned
       night must fit the share the breaker enforces, or the editor role is
       skipped on a night that costs what was planned. **What config cannot
       prove:** the product's worst case for one turn is 6 iterations x 8,192
       output tokens (`spend-ceiling.ts`), about USD 0.25 of output alone, so 80
-      turns that all hit it would exceed the share and the whole USD 5. Layer 4 catches that between roles, not
+      turns that all hit it would exceed the share and the whole nightly cap. Layer 4 catches that between roles, not
       within one; the invoice-level hard stop is the spend limit on the
       dedicated key's workspace, an owner action.
 - [ ] 1.5 Done-when evidence: a green scheduled run with the key, and a

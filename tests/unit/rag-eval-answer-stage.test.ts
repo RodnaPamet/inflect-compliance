@@ -121,7 +121,7 @@ describe('a search_knowledge result as the model saw it', () => {
 
 describe('the provider the stage hands the loop', () => {
     const turn = (over: Partial<ProviderTurn> = {}): ProviderTurn => ({ text: 'ok', toolCalls: [], stopReason: 'end', usage: { tokensIn: 100, tokensOut: 10 }, ...over });
-    const req = (history: ProviderRequest['history'] = [], model = 'claude-haiku-4-5'): ProviderRequest => ({
+    const req = (history: ProviderRequest['history'] = [], model = 'claude-sonnet-5-5'): ProviderRequest => ({
         specifier: `inflect-external/${model}`,
         system: 's',
         question: 'q',
@@ -135,7 +135,7 @@ describe('the provider the stage hands the loop', () => {
 
     it('collects the contexts in call order, once each, and sums the usage', async () => {
         const inner = { complete: jest.fn(async () => turn()) };
-        const p = new CapturingTurnProvider(inner, 'claude-haiku-4-5', REVISION.embeddingModel);
+        const p = new CapturingTurnProvider(inner, 'claude-sonnet-5-5', REVISION.embeddingModel);
         await p.complete(req());
         const first = searched('t1', [hit(1), hit(0)]);
         await p.complete(req(first));
@@ -147,7 +147,7 @@ describe('the provider the stage hands the loop', () => {
 
     it('a turn with no usage makes the answer’s usage unknown, never a smaller number', async () => {
         const inner = { complete: jest.fn().mockResolvedValueOnce(turn()).mockResolvedValueOnce(turn({ usage: undefined })) };
-        const p = new CapturingTurnProvider(inner, 'claude-haiku-4-5', REVISION.embeddingModel);
+        const p = new CapturingTurnProvider(inner, 'claude-sonnet-5-5', REVISION.embeddingModel);
         await p.complete(req());
         await p.complete(req());
         expect(p.usageReported).toBeNull();
@@ -156,34 +156,34 @@ describe('the provider the stage hands the loop', () => {
     it('tells the proxy’s budget refusal from any other failure', async () => {
         const budget = new CapturingTurnProvider(
             { complete: async () => Promise.reject(new Error('Anthropic API error 402: {"type":"error","error":{"type":"budget_exhausted"}}')) },
-            'claude-haiku-4-5',
+            'claude-sonnet-5-5',
             REVISION.embeddingModel,
         );
         await expect(budget.complete(req())).rejects.toThrow(/402/);
         expect(budget.budgetExhausted).toBe(true);
         expect(budget.failure).toBeNull();
-        const down = new CapturingTurnProvider({ complete: async () => Promise.reject(new Error('Anthropic API error 529: overloaded')) }, 'claude-haiku-4-5', REVISION.embeddingModel);
+        const down = new CapturingTurnProvider({ complete: async () => Promise.reject(new Error('Anthropic API error 529: overloaded')) }, 'claude-sonnet-5-5', REVISION.embeddingModel);
         await expect(down.complete(req())).rejects.toThrow(/529/);
         expect(down.budgetExhausted).toBe(false);
         expect(down.failure).toMatchObject({ reason: 'PROVIDER_FAILED', retryable: true });
     });
 
-    it('refuses a turn for a model the share does not price, before it is sent', async () => {
+    it('refuses a turn for any model but the assistant’s own the stage resolved, before it is sent', async () => {
         const inner = { complete: jest.fn(async () => turn()) };
-        const p = new CapturingTurnProvider(inner, 'claude-haiku-4-5', REVISION.embeddingModel);
-        await expect(p.complete(req([], 'claude-sonnet-5-5'))).rejects.toThrow(/MODEL_NOT_THE_SHARES/);
+        const p = new CapturingTurnProvider(inner, 'claude-sonnet-5-5', REVISION.embeddingModel);
+        await expect(p.complete(req([], 'claude-haiku-4-5'))).rejects.toThrow(/MODEL_NOT_THE_ASSISTANTS/);
         expect(inner.complete).not.toHaveBeenCalled();
     });
 
     it('refuses an unavailable search, and one answered under another embedding model', async () => {
-        const unavailable = new CapturingTurnProvider({ complete: async () => turn() }, 'claude-haiku-4-5', REVISION.embeddingModel);
+        const unavailable = new CapturingTurnProvider({ complete: async () => turn() }, 'claude-sonnet-5-5', REVISION.embeddingModel);
         const h: ProviderRequest['history'] = [
             { role: 'assistant', text: null, toolCalls: [{ id: 'x', name: 'search_knowledge', args: {} }] },
             { role: 'tool', id: 'x', name: 'search_knowledge', content: toolText({ available: false, reason: 'NOT_EVALUATED' }) },
         ];
         await expect(unavailable.complete(req(h))).rejects.toThrow(/SEARCH_UNAVAILABLE/);
         expect(unavailable.failure?.retryable).toBe(false);
-        const other = new CapturingTurnProvider({ complete: async () => turn() }, 'claude-haiku-4-5', 'another-model');
+        const other = new CapturingTurnProvider({ complete: async () => turn() }, 'claude-sonnet-5-5', 'another-model');
         await expect(other.complete(req(searched('y', [hit(0)])))).rejects.toThrow(/SEARCH_OTHER_REVISION/);
     });
 });
@@ -194,6 +194,7 @@ describe('the answers file the judge reads', () => {
         contract: 'rag-answers@1',
         setHash: `sha256:${'b'.repeat(64)}`,
         retrieverRevision: REVISION,
+        answerModel: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
         status: 'COMPLETE',
         answers: [{ caseId: 'am-01', question: 'q?', response }],
         unanswered: [],
@@ -212,5 +213,9 @@ describe('the answers file the judge reads', () => {
         expect(RagAnswersFileSchema.safeParse({ ...file, status: 'BUDGET_EXHAUSTED', unanswered: ['am-02'] }).success).toBe(true);
         expect(RagAnswersFileSchema.safeParse({ ...file, status: 'BUDGET_EXHAUSTED', unanswered: ['am-01'] }).success).toBe(false);
         expect(RagAnswersFileSchema.safeParse({ ...file, passRate: 1 }).success).toBe(false);
+        // The file names the model that wrote the answers, or it is refused.
+        const { answerModel: _model, ...anonymous } = file;
+        void _model;
+        expect(RagAnswersFileSchema.safeParse(anonymous).success).toBe(false);
     });
 });

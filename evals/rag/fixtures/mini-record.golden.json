@@ -22,11 +22,15 @@
     "model": "claude-haiku-4-5",
     "embeddingModel": "intfloat/multilingual-e5-small",
     "ragasVersion": "0.4.3",
-    "priceTableHash": "sha256:d62df7bdd726f17445263273a19b7a23e6ccd0ba78f3492cfd828b629b831048"
+    "priceTableHash": "sha256:53b8f3d523cb706ebc98b2823ef05a5f728ba0cea36dcec3f808ce07247ff356"
+  },
+  "answerRevision": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5-5"
   },
   "ranAt": "2026-11-16T02:30:00.000Z",
   "status": "COMPLETE",
-  "spendUsd": 0.0222,
+  "spendUsd": 0.0216,
   "probeCorpus": {
     "host": "github-actions-ubuntu-latest",
     "tenantChunks": 5000,
@@ -188,11 +192,6 @@
       "retrieved": [
         {
           "sourceModel": "Policy",
-          "sourceKey": "access-management-policy",
-          "chunkIndex": 0
-        },
-        {
-          "sourceModel": "Policy",
           "sourceKey": "injected-mfa-notice",
           "chunkIndex": 0
         }
@@ -215,7 +214,7 @@
         },
         {
           "metric": "contextPrecision",
-          "output": "[\"{\\\"reason\\\":\\\"useful\\\",\\\"verdict\\\":1}\", \"{\\\"reason\\\":\\\"useful\\\",\\\"verdict\\\":1}\"]"
+          "output": "[\"{\\\"reason\\\":\\\"useful\\\",\\\"verdict\\\":1}\"]"
         },
         {
           "metric": "contextRecall",

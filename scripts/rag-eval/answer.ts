@@ -4,7 +4,9 @@
  * `search_knowledge` mount gate, vector store Phase 3.5-3.6).
  *
  * Asks the PRODUCT each question of the set, in process, the way a person in
- * the answer tenant asks the assistant, and writes what it answered and what
+ * the tenant the case belongs to asks the assistant — the injection cases in
+ * the injection tenant, every other case in the answer tenant (owner decision
+ * 2026-11-17) — and writes what it answered and what
  * `search_knowledge` returned to the model into an answers file
  * (`rag-answers@1`, `src/lib/ai/evals/rag-answer-contract.ts`) the judge reads.
  *
@@ -13,9 +15,12 @@
  *   ├─ the offer and the funnel: `search_knowledge` through `runGuardedTool`
  *   │   → `runReadTool` → `searchKnowledge` → the deployment's embedder and
  *   │   the pgvector store under RLS, its result guarded before the model sees it
- *   └─ the model: the share's model through the LOOPBACK METERING PROXY
+ *   └─ the model: the assistant's own production model (`agentFlueModel()`,
+ *       resolved by the assistant's own `resolveFlueModel`, never named here;
+ *       owner decision 2026-11-17), through the LOOPBACK METERING PROXY
  *       (`evals/cost-meter/anthropic-proxy.mjs`), which holds the key and
- *       charges every answer turn to the ragas share the judge spends from
+ *       charges every answer turn to the ragas share the judge spends from.
+ *       The share must list that model, and the answers file names it.
  *
  * Three things are supplied here rather than read from a deployment, and each
  * is a seam production never uses:
@@ -23,8 +28,8 @@
  *   • THE MOUNT. With no record yet, the gate would withhold the tool the
  *     record is about. The stage runs each question inside
  *     `withRagEvaluationMount` (`services/rag-evaluation-mount.ts`): mounted,
- *     for the revision the retrieval stage measured, for the answer tenant
- *     only. Nothing under `src/` can open that scope, and a production
+ *     for the revision the retrieval stage measured, for the ONE tenant the
+ *     question is asked in, for that question only. Nothing under `src/` can open that scope, and a production
  *     process refuses it (`tests/guards/rag-evaluation-mount-unreachable.test.ts`).
  *   • THE SOCKET. `askAssistant`'s `turnProvider` seam hands the loop the
  *     product's own Anthropic provider pointed at the proxy. The residency
@@ -51,7 +56,7 @@
  *     content guard's: the stage fails (exit 1) and writes no file.
  *
  * Usage (the workflow, after the proxy is up and the key is unset):
- *   ANTHROPIC_API_KEY=held-by-the-metering-proxy AGENT_FLUE_MODEL=<share model> \
+ *   ANTHROPIC_API_KEY=held-by-the-metering-proxy \
  *   npx tsx scripts/rag-eval/answer.ts --set evals/rag/sets/seed-policies.json \
  *       --manifest rag-out/corpus.json --retrieval rag-out/retrieval.json \
  *       --proxy http://127.0.0.1:8787 --out rag-out/answers.json
@@ -80,7 +85,9 @@ import {
 } from '@/lib/ai/evals/rag-answer-contract';
 import { hashForLookup } from '@/lib/security/encryption';
 
-import { corpusOwnerEmail, type CorpusManifest } from './corpus';
+import { resolveFlueModel } from '@/lib/agentic/flue/model-selection';
+
+import { corpusOwnerEmail, type CorpusManifest, type CorpusTenant } from './corpus';
 import { PROBE_OUTPUT_KIND } from './probe';
 import { assertLoopbackDatabase, parseArgs } from './shared';
 
@@ -96,7 +103,8 @@ export type AnswerStageRefusal =
     | 'SET_MISMATCH'
     | 'REVISION_MISMATCH'
     | 'METER_NOT_RAGAS'
-    | 'MODEL_NOT_THE_SHARES'
+    | 'MODEL_NOT_THE_ASSISTANTS'
+    | 'ANSWER_MODEL_NOT_IN_SHARE'
     | 'NO_ASKER'
     | 'NO_MODEL_CALL'
     | 'PROVIDER_FAILED'
@@ -246,7 +254,7 @@ export class CapturingTurnProvider implements AssistantTurnProvider {
 
     constructor(
         private readonly inner: AssistantTurnProvider,
-        private readonly shareModel: string,
+        private readonly answerModel: string,
         private readonly embeddingModel: string,
     ) {}
 
@@ -292,7 +300,7 @@ export class CapturingTurnProvider implements AssistantTurnProvider {
         if (this.failure) throw new AnswerStageError(this.failure.reason, this.failure.detail);
         this.collect(req.history);
         const model = splitSpecifier(req.specifier)?.model;
-        if (model !== this.shareModel) this.fail('MODEL_NOT_THE_SHARES', `the turn asked for ${String(model)}, the ragas share prices ${this.shareModel}`);
+        if (model !== this.answerModel) this.fail('MODEL_NOT_THE_ASSISTANTS', `the turn asked for ${String(model)}, the stage resolved ${this.answerModel}`);
         this.calls += 1;
         let turn: ProviderTurn;
         try {
@@ -323,9 +331,9 @@ export interface RetrievalStageOutput {
     readonly retrieverRevision: RagEvaluationRecord['retrieverRevision'];
 }
 
-/** What the stage reads off the metering proxy: whose share it meters, and for which model. */
+/** What the stage reads off the metering proxy: whose share it meters, and the models that share may spend on. */
 export interface MeterReading {
-    state(): Promise<{ readonly job: string; readonly model: string }>;
+    state(): Promise<{ readonly job: string; readonly models: readonly string[] }>;
 }
 
 export function proxyMeter(proxy: string): MeterReading {
@@ -333,8 +341,8 @@ export function proxyMeter(proxy: string): MeterReading {
         async state() {
             const res = await fetch(`${proxy}/meter/state`);
             if (!res.ok) throw new Error(`rag-eval answer: the metering proxy answered ${res.status} for its state`);
-            const s = (await res.json()) as { job?: unknown; model?: unknown };
-            return { job: String(s.job), model: String(s.model) };
+            const s = (await res.json()) as { job?: unknown; models?: unknown };
+            return { job: String(s.job), models: Array.isArray(s.models) ? s.models.map(String) : [] };
         },
     };
 }
@@ -359,14 +367,23 @@ function deploymentRoute(): EmbeddingRouteFacts {
     return { model: modelOf(route.specifier), dimensions: route.dimensions };
 }
 
-async function askerContext(manifest: CorpusManifest, caseId: string): Promise<RequestContext> {
+/**
+ * The tenant a case is asked in (owner decision 2026-11-17): the injection
+ * cases in the injection tenant, which holds the set's injected chunks and
+ * nothing else; every other case in the answer tenant, which holds none.
+ */
+export function tenantForCase(manifest: CorpusManifest, kind: RagEvaluationSet['cases'][number]['kind']): CorpusTenant {
+    return kind === 'injection' ? manifest.injectionTenant : manifest.answerTenant;
+}
+
+async function askerContext(tenant: CorpusTenant, caseId: string): Promise<RequestContext> {
     const user = await prisma.user.findUnique({
-        where: { emailHash: hashForLookup(corpusOwnerEmail(manifest.answerTenant.slug)) },
+        where: { emailHash: hashForLookup(corpusOwnerEmail(tenant.slug)) },
         select: { id: true },
     });
-    if (!user) throw new AnswerStageError('NO_ASKER', `the answer tenant ${manifest.answerTenant.slug} has no corpus owner`);
+    if (!user) throw new AnswerStageError('NO_ASKER', `the corpus tenant ${tenant.slug} has no corpus owner`);
     const resolved = await resolveMemberContextWithReason({
-        tenantId: manifest.answerTenant.id,
+        tenantId: tenant.id,
         userId: user.id,
         job: 'rag-eval-answer',
         discriminator: caseId,
@@ -382,12 +399,12 @@ async function answerCase(
     ctx: RequestContext,
     question: string,
     mount: RagEvaluationMount,
-    shareModel: string,
+    answerModel: string,
 ): Promise<CaseOutcome> {
     const endpoint = `${opts.proxy}/v1/messages`;
     const make = opts.provider ?? ((url: string) => new AnthropicAssistantProvider(PROXY_HELD_KEY, undefined, url));
     for (let attempt = 1; ; attempt++) {
-        const capture = new CapturingTurnProvider(make(endpoint), shareModel, mount.revision.embeddingModel);
+        const capture = new CapturingTurnProvider(make(endpoint), answerModel, mount.revision.embeddingModel);
         let message: string;
         try {
             const answer = await withRagEvaluationMount(mount, () =>
@@ -433,13 +450,25 @@ export async function runAnswerStage(opts: AnswerStageOptions): Promise<RagAnswe
     const meter = await (opts.meter ?? proxyMeter(opts.proxy)).state();
     if (meter.job !== RAGAS_JOB) throw new AnswerStageError('METER_NOT_RAGAS', `the proxy meters ${meter.job}, not ${RAGAS_JOB}`);
 
+    // The answers are the deployment's assistant's (owner decision
+    // 2026-11-17): the model is resolved by the function the assistant's own
+    // turn resolves it with, never named here, and the ragas share must list
+    // it. Every turn is then held to it (`CapturingTurnProvider`).
+    const choice = resolveFlueModel();
+    const answerModel = choice.ok ? splitSpecifier(choice.specifier)?.model : undefined;
+    if (!choice.ok || choice.residency !== 'EXTERNAL' || !answerModel) {
+        throw new AnswerStageError('MODEL_NOT_THE_ASSISTANTS', `the assistant resolves no external model here (${choice.ok ? choice.specifier : choice.reason})`);
+    }
+    if (!meter.models.includes(answerModel)) {
+        throw new AnswerStageError('ANSWER_MODEL_NOT_IN_SHARE', `the assistant answers with ${answerModel}; the ragas share spends on ${meter.models.join(', ')}`);
+    }
+
     // The answers must be retrieved under the revision the retrieval stage
     // measured, which is the gate's key for this deployment.
     const revision = knowledgeRetrieverRevision(opts.route ?? deploymentRoute());
     if (retrieverRevisionKey(revision) !== retrieverRevisionKey(opts.retrieval.retrieverRevision)) {
         throw new AnswerStageError('REVISION_MISMATCH', 'this deployment’s retriever revision is not the one the retrieval stage measured');
     }
-    const mount: RagEvaluationMount = { state: 'MOUNTED', revision, evaluation: { tenantId: opts.manifest.answerTenant.id, setHash } };
 
     const answers: RagAnswersFile['answers'] = [];
     const unanswered: string[] = [];
@@ -449,8 +478,12 @@ export async function runAnswerStage(opts: AnswerStageOptions): Promise<RagAnswe
             unanswered.push(c.id);
             continue;
         }
-        const ctx = await askerContext(opts.manifest, c.id);
-        const outcome = await answerCase(opts, ctx, c.question, mount, meter.model);
+        // ONE tenant per question: the scope admits the tenant this case is
+        // asked in, and no other, for exactly the duration of its question.
+        const tenant = tenantForCase(opts.manifest, c.kind);
+        const mount: RagEvaluationMount = { state: 'MOUNTED', revision, evaluation: { tenantId: tenant.id, setHash } };
+        const ctx = await askerContext(tenant, c.id);
+        const outcome = await answerCase(opts, ctx, c.question, mount, answerModel);
         if (outcome.kind === 'budget') {
             stopped = true;
             unanswered.push(c.id);
@@ -464,6 +497,7 @@ export async function runAnswerStage(opts: AnswerStageOptions): Promise<RagAnswe
         contract: RAG_ANSWERS_FILE_CONTRACT,
         setHash,
         retrieverRevision: revision,
+        answerModel: { provider: 'anthropic', model: answerModel },
         status: stopped ? 'BUDGET_EXHAUSTED' : 'COMPLETE',
         answers,
         unanswered,

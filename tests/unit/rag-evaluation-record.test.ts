@@ -93,6 +93,7 @@ function makeRecord(set: RagEvaluationSet) {
             ragasVersion: '0.0.0',
             priceTableHash: PRICE_TABLE_HASH,
         },
+        answerRevision: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
         ranAt: '2026-11-11T00:00:00.000Z',
         status: 'COMPLETE' as string,
         spendUsd: 0.42,
@@ -301,7 +302,7 @@ describe('RAG evaluation record: the dense pgvector revision (0.6)', () => {
 });
 
 describe('RAG evaluation record: spend and the shared cost meter (0.6)', () => {
-    const table = { hash: PRICE_TABLE_HASH, models: ['claude-haiku-4-5'] };
+    const table = { hash: PRICE_TABLE_HASH, models: ['claude-haiku-4-5', 'claude-sonnet-5-5'] };
     const check = (record: unknown, set: unknown, options = {}) => {
         const c = checkRagEvaluationRecord(record, set, options);
         return c.ok ? 'ACCEPTED' : c.reason;
@@ -320,7 +321,7 @@ describe('RAG evaluation record: spend and the shared cost meter (0.6)', () => {
         expect(refusalOf({ ...makeRecord(set), status: 'PARTIAL' }, set)).toBe('MALFORMED_RECORD');
         expect(refusalOf({ ...makeRecord(set), spendUsd: -0.01 }, set)).toBe('MALFORMED_RECORD');
         // No record can have cost more than the decided nightly cap.
-        expect(refusalOf({ ...makeRecord(set), spendUsd: 5.01 }, set)).toBe('MALFORMED_RECORD');
+        expect(refusalOf({ ...makeRecord(set), spendUsd: 6.51 }, set)).toBe('MALFORMED_RECORD');
     });
 
     it('refuses a record priced under another table, or by a judge the table does not price', () => {
@@ -328,6 +329,15 @@ describe('RAG evaluation record: spend and the shared cost meter (0.6)', () => {
         expect(check(makeRecord(set), set, { priceTable: table })).toBe('ACCEPTED');
         expect(check(makeRecord(set), set, { priceTable: { ...table, hash: `sha256:${'b'.repeat(64)}` } })).toBe('PRICE_TABLE_MISMATCH');
         expect(check(makeRecord(set), set, { priceTable: { ...table, models: ['claude-sonnet-4-5'] } })).toBe('MODEL_NOT_PRICED');
+        // The answers were bought from the same share: their model must be priced too.
+        expect(check(makeRecord(set), set, { priceTable: { ...table, models: ['claude-haiku-4-5'] } })).toBe('MODEL_NOT_PRICED');
+    });
+
+    it('a record says which model wrote the answers, or it is refused', () => {
+        const set = makeSet();
+        const anonymous = makeRecord(set) as Record<string, unknown>;
+        delete anonymous.answerRevision;
+        expect(refusalOf(anonymous, set)).toBe('MALFORMED_RECORD');
     });
 
     it("refuses a record that spent more than the job's share, and accepts one that spent exactly it", () => {

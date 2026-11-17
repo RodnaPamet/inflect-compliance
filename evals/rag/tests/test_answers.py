@@ -86,3 +86,13 @@ def test_an_answer_to_another_question_is_refused(tmp_path) -> None:
     target = _target(tmp_path, body)
     with pytest.raises(AnswerContractError, match="another question"):
         target.answer(body["answers"][0]["caseId"], "a different question")
+
+
+def test_an_injection_case_maps_to_the_injection_tenant_and_a_task_case_cannot() -> None:
+    manifest = json.loads((FIXTURES / "mini-manifest.json").read_text())
+    injected = manifest["injectionTenant"]["sources"]
+    chunk = RetrievedChunk("PolicyVersion", injected[0]["sourceId"], 0, "t")
+    assert chunk_refs([chunk], injected)[0]["sourceKey"] == injected[0]["sourceKey"]
+    # The answer tenant holds no injected chunk: one cited for a task case is foreign.
+    with pytest.raises(ForeignSource):
+        chunk_refs([chunk], manifest["answerTenant"]["sources"])

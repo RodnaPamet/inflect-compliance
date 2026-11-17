@@ -118,6 +118,10 @@
                         "maxScanTuples": 20000
                     }
                 },
+                "answerModel": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-5-5"
+                },
                 "status": "COMPLETE",
                 "answers": [
                     {
@@ -178,6 +182,10 @@
                         "maxScanTuples": 20000
                     }
                 },
+                "answerModel": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-5-5"
+                },
                 "status": "BUDGET_EXHAUSTED",
                 "answers": [
                     {
@@ -231,6 +239,10 @@
                             "maxScanTuples": 20000
                         }
                     },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
+                    },
                     "status": "COMPLETE",
                     "answers": [
                         {
@@ -283,6 +295,10 @@
                             "maxScanTuples": 20000
                         }
                     },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
+                    },
                     "status": "BUDGET_EXHAUSTED",
                     "answers": [
                         {
@@ -332,6 +348,10 @@
                             "iterativeScan": "relaxed_order",
                             "maxScanTuples": 20000
                         }
+                    },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
                     },
                     "status": "COMPLETE",
                     "answers": [
@@ -406,6 +426,10 @@
                             "maxScanTuples": 20000
                         }
                     },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
+                    },
                     "status": "COMPLETE",
                     "answers": [
                         {
@@ -455,6 +479,10 @@
                             "iterativeScan": "relaxed_order",
                             "maxScanTuples": 20000
                         }
+                    },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
                     },
                     "status": "COMPLETE",
                     "answers": [
@@ -507,6 +535,10 @@
                             "maxScanTuples": 20000
                         }
                     },
+                    "answerModel": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-5-5"
+                    },
                     "status": "COMPLETE",
                     "answers": [
                         {
@@ -529,6 +561,69 @@
                                     "inputTokens": 1800,
                                     "outputTokens": 120
                                 }
+                            }
+                        }
+                    ],
+                    "unanswered": []
+                }
+            },
+            {
+                "why": "no answering model",
+                "body": {
+                    "contract": "rag-answers@1",
+                    "setHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "retrieverRevision": {
+                        "embeddingModel": "intfloat/multilingual-e5-small",
+                        "rerankModel": null,
+                        "chunker": "paragraph@1",
+                        "k": 20,
+                        "dimensions": 384,
+                        "indexParams": {
+                            "method": "hnsw",
+                            "distance": "cosine",
+                            "m": 16,
+                            "efConstruction": 64,
+                            "efSearch": 40,
+                            "iterativeScan": "relaxed_order",
+                            "maxScanTuples": 20000
+                        }
+                    },
+                    "status": "COMPLETE",
+                    "answers": [
+                        {
+                            "caseId": "am-01",
+                            "question": "Do you require multi-factor authentication for critical systems?",
+                            "response": {
+                                "answer": "Yes. Multi-factor authentication is required for access to critical information systems.",
+                                "retrieved": [
+                                    {
+                                        "sourceModel": "PolicyVersion",
+                                        "sourceId": "version-am",
+                                        "chunkIndex": 2,
+                                        "text": "Implement multi-factor authentication for accessing critical information systems."
+                                    }
+                                ],
+                                "retriever": {
+                                    "embeddingModel": "intfloat/multilingual-e5-small",
+                                    "k": 10
+                                },
+                                "usage": {
+                                    "inputTokens": 1800,
+                                    "outputTokens": 120
+                                }
+                            }
+                        },
+                        {
+                            "caseId": "am-02",
+                            "question": "Where are your offices?",
+                            "response": {
+                                "answer": "The documents do not contain this information.",
+                                "retrieved": [],
+                                "retriever": {
+                                    "embeddingModel": "intfloat/multilingual-e5-small",
+                                    "k": 10
+                                },
+                                "usage": null
                             }
                         }
                     ],

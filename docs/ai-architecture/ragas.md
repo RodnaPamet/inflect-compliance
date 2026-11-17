@@ -19,7 +19,7 @@ inflect · ai architecture · ragas · roadmap v1 · 2026-10-29
 | Wave | 1, alongside the first RAG wave — the mount gate in [`weaviate.md`](./weaviate.md) Phase 3 consumes its record |
 | Depends on | [`weaviate.md`](./weaviate.md) Phases 1–2 (the index to evaluate — **D-L4-1**, owner 2026-11-11: pgvector first, Weaviate only on a measured floor), [`nemotron-retriever.md`](./nemotron-retriever.md) Phase 1 |
 | Unblocks | `search_knowledge` being offered at all; [`ares.md`](./ares.md) (needs Ragas's cases to calibrate against) |
-| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only; **amended 2026-11-16**: the judge prefers a dedicated key, `RAGAS_ANTHROPIC_API_KEY`, over the repository's `ANTHROPIC_API_KEY` (an owner action to create). **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them. **The probe corpus** — decided 2026-11-16: 5,000 chunks in the probe tenant and 4 times that in the shared index, re-sized once production's largest tenant is indexed |
+| Owner decisions | **D-EV-2** — decided, initialled by the owner 2026-11-11: a Haiku-class judge on an external provider through a dedicated CI key, under the USD 5/night CI cap shared with garak (D-EV-1), seed data only; **amended 2026-11-16**: the judge prefers a dedicated key, `RAGAS_ANTHROPIC_API_KEY`, over the repository's `ANTHROPIC_API_KEY` (an owner action to create); **amended 2026-11-17**: the judge stays Haiku 4.5, the product's answers are written by the assistant's own production model (`AGENT_FLUE_MODEL`, default `claude-sonnet-5-5`) and every record names it, the nightly cap is USD 6.50 with Ragas holding USD 4.00 and garak USD 2.50 (D-EV-1 and D-EV-11 amended), and the injection cases are asked in a tenant of their own. **D-L4-9's floors gate the tool** — decided 2026-11-16: recall@10 at least 0.95 of exact and p95 at most 300 ms at k = 10 (D-L4-9, adopted 2026-11-12 as the Weaviate trigger) also decide whether `search_knowledge` is offered; Phase 2's answer-quality floors join the gate when Phase 2 defines them. **The probe corpus** — decided 2026-11-16: 5,000 chunks in the probe tenant and 4 times that in the shared index, re-sized once production's largest tenant is indexed |
 | Complete at | Phase 3 |
 
 ## At a glance
@@ -73,18 +73,24 @@ flowchart LR
   gate looks records up by, and its figures are read against D-L4-9's
   floors, the gate's own
   (`src/lib/ai/evals/rag-retrieval-floors.ts`). **The product answers in
-  process** (`scripts/rag-eval/answer.ts`): the answer tenant's owner asks the
-  real assistant usecase each question, `search_knowledge` runs through the
-  offer, the funnel and the guards, and its model turns go through the same
-  metering proxy as the judge. The tool is mounted for that run by the
+  process** (`scripts/rag-eval/answer.ts`): the owner of the case's tenant asks
+  the real assistant usecase each question — the injection cases in the
+  injection tenant, which holds the set's injected chunks and nothing else,
+  every other case in the answer tenant, which holds none (owner decision
+  2026-11-17) — `search_knowledge` runs through the offer, the funnel and the
+  guards, and its model turns go through the same metering proxy as the
+  judge. The answers are written by the assistant's own production model,
+  resolved by the assistant itself, and every record names it
+  (`answerRevision`); the judge stays Haiku 4.5. The tool is mounted for that run by the
   evaluation's own scoped decision (`src/app-layer/services/rag-evaluation-mount.ts`),
   which nothing under `src/` can open and a production process refuses — there
   is no route and no flag. The answers file (`rag-answers@1`,
   `evals/rag/fixtures/answer-contract.json`) is what the judge scores. **No
   keyed night has run**, so no record exists and the gate stays closed. See
   `docs/implementation-notes/2026-11-16-ragas-phase1-harness.md`,
-  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md` and
-  `docs/implementation-notes/2026-11-16-rag-eval-answer-stage.md`.
+  `docs/implementation-notes/2026-11-16-rag-eval-gate-wiring.md`,
+  `docs/implementation-notes/2026-11-16-rag-eval-answer-stage.md` and
+  `docs/implementation-notes/2026-11-17-rag-eval-owner-decisions.md`.
 - **The house already has the eval discipline Ragas must fit into.**
   `flue/skills/evaluation-record.ts` and
   `identity-match/evaluation-record.ts`: an *evaluation set* authored beside the
@@ -118,10 +124,12 @@ flowchart LR
   its `status` and the hash of the price table it was metered under, and the
   retrieval floor figures are recomputed from per-case probes.
   `evals/cost-meter/` holds the pinned price table, the per-job shares
-  (garak and Ragas, USD 2.50 each: the split the owner decided under D-EV-11
-  on 2026-11-12) and the meter garak's between-role breaker
-  already reads; `tests/guardrails/eval-cost-meter-shares.test.ts` refuses
-  shares above USD 5.00 and an unpriced model.
+  (garak USD 2.50 on Haiku alone, Ragas USD 4.00 on its Haiku judge and the
+  assistant's model, of a USD 6.50 cap: D-EV-11 as the owner amended it on
+  2026-11-17; it was USD 2.50 each of USD 5), each share listing the models it
+  may spend on, and the meter garak's between-role breaker already reads;
+  `tests/guardrails/eval-cost-meter-shares.test.ts` refuses shares above the
+  cap, a cap above USD 6.50 and an unpriced model.
 - **Python runs nowhere in the app image** (G5). An eval harness in Python is
   a CI image, like the garak and ZAP containers.
 
@@ -171,7 +179,7 @@ shape so the mount gate can consume it.
 - [x] 0.3 D-EV-2, initialled by the owner 2026-11-11: a Haiku-class judge
       on an external provider, through a **dedicated CI key** (never the
       product's key), under the **USD 5/night** CI cap shared with garak's
-      D-EV-1, over **seed data only**; a local judge only if Layer 5 is taken
+      D-EV-1 (USD 6.50 since the owner's amendment of 2026-11-17), over **seed data only**; a local judge only if Layer 5 is taken
       up. `docs/sub-processors.md` is unchanged, on purpose: it registers who
       processes customer data, and a set or record is unrepresentable over
       anything but `corpus: 'seed'`. See
@@ -201,7 +209,8 @@ shape so the mount gate can consume it.
       `indexParams` join it (`hnsw` with distance, `m`, `efConstruction`,
       `efSearch`, `iterativeScan` and `maxScanTuples`, or `exact`); the judge
       revision gains a `priceTableHash` (SHA-256 of the table file's exact
-      bytes); the record gains `spendUsd` (at most the decided USD 5), a
+      bytes); the record gains `spendUsd` (at most the decided cap: USD 5, USD
+      6.50 since 2026-11-17), a
       `status` of `COMPLETE` or `BUDGET_EXHAUSTED` — which may leave cases
       unanswered, lists them, and never passes a floor (`floor.eligible` is
       false whatever its figures) — and the two retrieval floor figures,
@@ -216,12 +225,14 @@ shape so the mount gate can consume it.
       `evals/cost-meter/`, shared with [`garak.md`](./garak.md): a pinned
       price table keyed by model id (`prices.json`), the shares
       (`shares.json`, garak and Ragas USD 2.50 each, the split the owner
-      decided under D-EV-11 on 2026-11-12), and `meter.mjs`, which
+      decided under D-EV-11 on 2026-11-12 — amended 2026-11-17 to garak USD
+      2.50 and Ragas USD 4.00 of USD 6.50, each share listing the models it may
+      spend on), and `meter.mjs`, which
       reserves each call at counted input plus `max_tokens` before it is sent,
       refuses the call that could pass the share, settles to reported usage
       (keeping the worst case when none comes back or it cannot be read), and refuses shares that
-      sum above the cap, a cap above USD 5.00, or a model the table does not
-      price. garak's between-role breaker (`.garak/spend.mjs`) now prices and
+      sum above the cap, a cap above the decided one (USD 5.00, USD 6.50
+      since 2026-11-17), or a model the table does not price. garak's between-role breaker (`.garak/spend.mjs`) now prices and
       caps from it; `.garak/budget.json` holds no price or cap of its own, and
       garak's planned night is cut to fit its share (4 prompts per probe, 40
       per role, 80 a night: USD 2.40 at the planned turn).
@@ -289,7 +300,9 @@ a vendor is still text to a vendor), G1.
       **Answer half built 2026-11-16, in process and with no route and no
       flag** (owner rule: no gate bypass may exist in a deployed app):
       `scripts/rag-eval/answer.ts` asks every question through the real
-      `askAssistant` usecase as the answer tenant's owner — the feature gate,
+      `askAssistant` usecase as the owner of the case's tenant (the injection
+      cases in the injection tenant, the rest in the answer tenant, since
+      2026-11-17) — the feature gate,
       the rate limit, the input guard, the tool loop, `search_knowledge`
       through `runGuardedTool` and the funnel to `searchKnowledge`, the
       egress guard, the decision log — and writes the answers file
@@ -300,15 +313,18 @@ a vendor is still text to a vendor), G1.
       the stage's own decision, supplied rather than read:
       `withRagEvaluationMount` (`src/app-layer/services/rag-evaluation-mount.ts`)
       mounts the tool for one call's async scope, for the measured revision and
-      the answer tenant alone. No file under `src/` imports the opener, no app
+      the one tenant that question is asked in. No file under `src/` imports the opener, no app
       entry point reaches `scripts/rag-eval/`, `askAssistant` is called with
       two arguments everywhere in `src/`
       (`tests/guards/rag-evaluation-mount-unreachable.test.ts`, an import
       graph and call-site walk with the TypeScript parser), and a production
-      process refuses the scope at both ends. The model turns are the ragas
-      share's model's, sent through the loopback metering proxy by the
-      product's own provider (`askAssistant`'s `turnProvider` seam), so the
-      answers and the judge spend one USD 2.50 share; a 402 stops answering and
+      process refuses the scope at both ends. The model turns are the
+      assistant's own production model's (owner decision 2026-11-17; resolved
+      by the assistant's own `resolveFlueModel`, never set by the nightly, and
+      named in the record as `answerRevision`), sent through the loopback
+      metering proxy by the product's own provider (`askAssistant`'s
+      `turnProvider` seam), so the answers and the Haiku judge spend one USD
+      4.00 share, each call at its own model's price; a 402 stops answering and
       the file says BUDGET_EXHAUSTED, which the record then says too. The
       contexts are the `search_knowledge` results as the model saw them, read
       off the loop's next request. *Not yet true:* no keyed night has run, so

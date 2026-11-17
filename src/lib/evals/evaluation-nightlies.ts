@@ -63,7 +63,7 @@ export const EVAL_NIGHTLIES: readonly EvalNightly[] = [
         roadmapDoc: 'docs/ai-architecture/garak.md',
         scheduleUtc: '01:15',
         budgetUsd: 2.5,
-        sharedCapUsd: 5,
+        sharedCapUsd: 6.5,
         budgetDecision: 'D-EV-11',
         switchVariable: 'GARAK_ENABLED',
         dedicatedKeySecret: 'GARAK_CI_ANTHROPIC_KEY', // pragma: allowlist secret -- a GitHub secret's NAME shown on the card, never a value

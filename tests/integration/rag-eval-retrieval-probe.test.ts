@@ -97,7 +97,8 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
     it('builds the stated corpus through the product', () => {
         const probeChunks = manifest.probeTenant.sources.reduce((s, x) => s + x.chunks, 0);
         expect(probeChunks).toBeGreaterThanOrEqual(120);
-        expect(manifest.answerTenant.sources.map((s) => s.kind).sort()).toEqual(['injected', 'seed-policy']);
+        expect(manifest.answerTenant.sources.map((s) => s.kind).sort()).toEqual(['seed-policy']);
+        expect(manifest.injectionTenant.sources.map((s) => s.kind)).toEqual(['injected']);
         expect(manifest.probeTenant.sources.some((s) => s.kind === 'distractor')).toBe(true);
         expect(manifest.fillerTenants).toHaveLength(1);
         expect(measured.probeCorpus.tenantChunks).toBe(probeChunks);
@@ -146,6 +147,7 @@ describeFn('the Ragas retrieval stage against pgvector under RLS', () => {
             corpus: 'seed',
             retrieverRevision: knowledgeRetrieverRevision({ model: measured.model, dimensions: measured.dims }),
             judgeRevision: { provider: 'anthropic', model: 'claude-haiku-4-5', embeddingModel: 'm', ragasVersion: '0.4.3', priceTableHash: `sha256:${'0'.repeat(64)}` },
+            answerRevision: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
             ranAt: new Date().toISOString(),
             status: 'BUDGET_EXHAUSTED',
             spendUsd: 0,

@@ -10,6 +10,7 @@ import { parseCidr } from "@/lib/security/cidr";
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from '@/lib/security/encryption-constants';
+import { AGENT_FLUE_MODEL_DEFAULT } from '@/lib/ai/model-defaults';
 import { checkWebBotAuthSeed, seedRefusalMessage } from '@/lib/web-bot-auth/seed';
 
 /**
@@ -702,7 +703,7 @@ export const env = createEnv({
         // workspace stay shared (ANTHROPIC_API_KEY / ANTHROPIC_WORKSPACE_ID):
         // one key to rotate, two model pins. A LOCAL_ONLY tenant's run never
         // reads it — that route is AI_LOCAL_MODEL.
-        AGENT_FLUE_MODEL: z.string().default('claude-sonnet-5-5'),
+        AGENT_FLUE_MODEL: z.string().default(AGENT_FLUE_MODEL_DEFAULT),
         // The WORKER role's model (D-L3-1, 2026-11-11): the model a Flue run's
         // subagents run on, on the same EXTERNAL provider and key as
         // AGENT_FLUE_MODEL — so it must be a model that provider serves, and
