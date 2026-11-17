@@ -131,7 +131,7 @@ describeFn('the Ragas answer stage asks the product, in process, through search_
     const saved = { ...env };
 
     beforeAll(async () => {
-        env.ANTHROPIC_API_KEY = 'held-by-the-metering-proxy';
+        env.ANTHROPIC_API_KEY = 'held-by-the-metering-proxy'; // pragma: allowlist secret -- the marker the answer stage requires in place of a key, never a credential
         env.AGENT_FLUE_MODEL = SHARE_MODEL;
         env.AI_RISK_DAILY_QUOTA = '100';
         env.AI_RISK_USER_RPM = '100';
