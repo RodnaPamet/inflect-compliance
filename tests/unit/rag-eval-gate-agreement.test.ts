@@ -83,6 +83,7 @@ function record(revision: RagEvaluationRecord['retrieverRevision'], opts: { miss
         corpus: 'seed',
         retrieverRevision: revision,
         judgeRevision: { provider: 'anthropic', model: 'claude-haiku-4-5', embeddingModel: 'judge-embed', ragasVersion: '0.4.3', priceTableHash: PRICE_HASH },
+        answerRevision: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
         ranAt: '2026-11-16T01:00:00.000Z',
         status: 'COMPLETE',
         spendUsd: 0.4,

@@ -14,9 +14,15 @@
  *   ANSWER TENANT (`rag-eval-seed`) — what the Ragas metrics are about: the
  *     three templates the seed publishes, each chosen as the library entry
  *     whose text holds every ground-truth passage the set names for it (a
- *     template change that would move the answers is a refusal here), plus one
- *     policy per injected chunk. Nothing else, so a refusal case's "the corpus
- *     does not say" stays true.
+ *     template change that would move the answers is a refusal here). Nothing
+ *     else, so a refusal case's "the corpus does not say" stays true. Every
+ *     case but the injection cases is asked here.
+ *   INJECTION TENANT (`rag-eval-injection`) — one policy per injected chunk of
+ *     the set, and nothing else (owner decision 2026-11-17). The injection
+ *     cases are asked here. Before, the injected chunks sat in the answer
+ *     tenant, so a task question near an injected topic retrieved one, the
+ *     content guard withheld the whole result and the answer halted: the
+ *     injection cases measured the guard, and the task cases measured it too.
  *   PROBE TENANT (`rag-eval-probe`) — what the two retrieval figures are about:
  *     the same three templates plus DISTRACTOR paragraphs until it holds the
  *     stated chunk count (`--probe-tenant-chunks`). A tenant the size of the
@@ -59,6 +65,7 @@ import { checkRagEvaluationSet, type RagEvaluationSet } from '@/lib/ai/evals/rag
 import { assertLoopbackDatabase, embedderDeps, parseArgs, type EmbedderMode } from './shared';
 
 export const ANSWER_TENANT_SLUG = 'rag-eval-seed';
+export const INJECTION_TENANT_SLUG = 'rag-eval-injection';
 export const PROBE_TENANT_SLUG = 'rag-eval-probe';
 export const FILLER_SLUG_PREFIX = 'rag-eval-filler-';
 /** No run creates more filler tenants than this, nor a probe tenant larger than this. */
@@ -89,8 +96,10 @@ export interface CorpusTenant {
 }
 
 export interface CorpusManifest {
-    /** The Ragas metrics' corpus: the seed policies and the injected chunks. */
+    /** The Ragas metrics' corpus: the seed policies, and nothing else. Every case but the injection cases is asked here. */
     readonly answerTenant: CorpusTenant;
+    /** The set's injected chunks, and nothing else. The injection cases are asked here. */
+    readonly injectionTenant: CorpusTenant;
     /** The retrieval figures' corpus: the seed policies and distractors, at the stated size. */
     readonly probeTenant: CorpusTenant;
     readonly fillerTenants: ReadonlyArray<{ readonly id: string; readonly slug: string; readonly chunks: number }>;
@@ -307,9 +316,10 @@ export async function prepareRagEvalCorpus(opts: PrepareOptions): Promise<Corpus
         throw new Error(`rag-eval corpus: --scale-multiple is a number in 1..${MAX_FILLER_TENANTS + 1}`);
     }
     const answerSlug = `${prefix}${ANSWER_TENANT_SLUG}`;
+    const injectionSlug = `${prefix}${INJECTION_TENANT_SLUG}`;
     const probeSlug = `${prefix}${PROBE_TENANT_SLUG}`;
     const fillerSlug = (n: number) => `${prefix}${FILLER_SLUG_PREFIX}${String(n + 1).padStart(3, '0')}`;
-    const slugs = [answerSlug, probeSlug, ...Array.from({ length: MAX_FILLER_TENANTS }, (_, n) => fillerSlug(n))];
+    const slugs = [answerSlug, injectionSlug, probeSlug, ...Array.from({ length: MAX_FILLER_TENANTS }, (_, n) => fillerSlug(n))];
     const existing = await prisma.tenant.findMany({ where: { slug: { in: slugs } }, select: { slug: true } });
     if (existing.length > 0) throw new Error(`rag-eval corpus: tenant(s) already exist (${existing.map((t) => t.slug).join(', ')}); build on a fresh database`);
 
@@ -320,15 +330,22 @@ export async function prepareRagEvalCorpus(opts: PrepareOptions): Promise<Corpus
     const seedIds = new Set(seedTemplates.map((t) => t.id));
     const sentences = librarySentences(templates.filter((t) => !seedIds.has(t.id)).map((t) => t.contentText));
 
-    // The answer tenant: the seed policies and the injected chunks, nothing else.
+    // The answer tenant: the seed policies, nothing else.
     const answerPeople = await createCorpusTenant(answerSlug);
     const answer = await adoptSeedTemplates(answerPeople, seedTemplates, deps);
-    for (const [key, text] of injectedChunks(opts.set)) {
-        const policy = await createPolicy(answerPeople.owner, { title: `Notice ${key}`, content: text, contentType: 'MARKDOWN' });
-        const done = await approveAndIndex(answerPeople, policy.id, deps);
-        answer.sources.push({ sourceModel: SOURCE_MODEL, sourceId: done.versionId, sourceKey: key, kind: 'injected', chunks: done.chunks });
-    }
     log(`${answerSlug}: ${answer.sources.length} sources, ${chunksOf(answer.sources)} chunks`);
+
+    // The injection tenant: the set's injected chunks, nothing else.
+    const injected = injectedChunks(opts.set);
+    if (injected.size === 0) throw new Error('rag-eval corpus: the set carries no injected chunk for the injection tenant');
+    const injectionPeople = await createCorpusTenant(injectionSlug);
+    const injectionSources: CorpusSource[] = [];
+    for (const [key, text] of injected) {
+        const policy = await createPolicy(injectionPeople.owner, { title: `Notice ${key}`, content: text, contentType: 'MARKDOWN' });
+        const done = await approveAndIndex(injectionPeople, policy.id, deps);
+        injectionSources.push({ sourceModel: SOURCE_MODEL, sourceId: done.versionId, sourceKey: key, kind: 'injected', chunks: done.chunks });
+    }
+    log(`${injectionSlug}: ${injectionSources.length} sources, ${chunksOf(injectionSources)} chunks`);
 
     // The probe tenant: the seed policies, then distractors to the stated size.
     const probePeople = await createCorpusTenant(probeSlug);
@@ -339,7 +356,7 @@ export async function prepareRagEvalCorpus(opts: PrepareOptions): Promise<Corpus
     log(`${probeSlug}: ${probe.sources.length} sources, ${probeChunks} chunks`);
 
     // Filler tenants until the shared index holds the stated multiple.
-    let tableChunks = chunksOf(answer.sources) + probeChunks;
+    let tableChunks = chunksOf(answer.sources) + chunksOf(injectionSources) + probeChunks;
     const fillers: Array<{ id: string; slug: string; chunks: number }> = [];
     for (let n = 0; tableChunks < opts.scaleMultiple * probeChunks; n++) {
         if (n >= MAX_FILLER_TENANTS) throw new Error(`rag-eval corpus: ${MAX_FILLER_TENANTS} filler tenants could not reach ${opts.scaleMultiple} x ${probeChunks}`);
@@ -353,6 +370,7 @@ export async function prepareRagEvalCorpus(opts: PrepareOptions): Promise<Corpus
     }
     return {
         answerTenant: { id: answerPeople.tenantId, slug: answerSlug, sources: answer.sources },
+        injectionTenant: { id: injectionPeople.tenantId, slug: injectionSlug, sources: injectionSources },
         probeTenant: { id: probePeople.tenantId, slug: probeSlug, sources: probe.sources },
         fillerTenants: fillers,
         embeddingModel: probe.embeddingModel,

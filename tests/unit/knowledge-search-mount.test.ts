@@ -42,6 +42,7 @@ function record(opts: { revision?: unknown; ranAt?: string; recallMiss?: number;
             ragasVersion: '0.2.0',
             priceTableHash: PRICE_HASH,
         },
+        answerRevision: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
         ranAt: opts.ranAt ?? '2026-11-16T01:00:00.000Z',
         status: opts.status ?? 'COMPLETE',
         spendUsd: opts.spendUsd ?? 0.4,
@@ -128,7 +129,7 @@ describe('search_knowledge is offered only with a passing record for the current
     });
 
     it('a record over the Ragas share, or priced under another table, is refused by the record check', () => {
-        expect(refusal(resolve({ 'r.json': record({ spendUsd: 2.51 }) }))).toBe('SPEND_OVER_SHARE');
+        expect(refusal(resolve({ 'r.json': record({ spendUsd: 4.01 }) }))).toBe('SPEND_OVER_SHARE');
         const reprice = record();
         reprice.judgeRevision.priceTableHash = `sha256:${'b'.repeat(64)}`;
         expect(refusal(resolve({ 'r.json': reprice }))).toBe('PRICE_TABLE_MISMATCH');

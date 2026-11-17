@@ -13,9 +13,10 @@
  * The price and the share are NOT garak's own numbers. They come from the
  * shared cost meter (evals/cost-meter/: prices.json, shares.json), which Ragas
  * meters against too, so the two jobs together cannot be configured past the
- * owner's USD 5 a night (D-EV-1, D-EV-2): the meter refuses shares that sum
- * above it, and refuses a model its price table does not price. budget.json
- * names the model; a model that is not the one garak's share names is refused.
+ * owner's nightly cap (D-EV-1, D-EV-2; USD 6.50 since the owner's amendment of
+ * 2026-11-17): the meter refuses shares that sum above it, and refuses a model
+ * its price table does not price. budget.json names the model, and garak's
+ * share must list that model and no other: garak spends on one model.
  *
  *   node .garak/spend.mjs usd <tokensIn> <tokensOut>           -> prints USD
  *   node .garak/spend.mjs may-continue <tokensIn> <tokensOut>  -> exit 0 / 1
@@ -39,15 +40,16 @@ export function loadBudget(path = new URL('./budget.json', import.meta.url)) {
 
 /**
  * garak's share and its model's price, from the shared meter. Throws when the
- * shares cannot be metered, or when budget.json names another model than the
- * share does: the price would then be some other model's.
+ * shares cannot be metered, or when garak's share lists anything but the one
+ * model budget.json names: the price would then be some other model's, or a
+ * night's spend could not be priced from one rate.
  */
 export function garakShare(budget, shares = loadShares(), table = loadPriceTable().table) {
     const share = jobBudget(shares, table, 'garak');
-    if (share.model !== budget.model) {
-        throw new Error(`spend.mjs: budget.json names ${budget.model}, garak's share is metered as ${share.model}`);
+    if (share.models.length !== 1 || share.models[0] !== budget.model) {
+        throw new Error(`spend.mjs: budget.json names ${budget.model}, garak's share lists ${share.models.join(', ')}`);
     }
-    return share;
+    return { shareUsd: share.shareUsd, model: budget.model, price: share.prices[budget.model] };
 }
 
 export function usdFor(share, tokensIn, tokensOut) {

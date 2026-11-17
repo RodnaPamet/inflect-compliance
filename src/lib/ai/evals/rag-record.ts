@@ -101,8 +101,8 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/;
 export const RAG_RECORD_STATUSES = ['COMPLETE', 'BUDGET_EXHAUSTED'] as const;
 export type RagRecordStatus = (typeof RAG_RECORD_STATUSES)[number];
 
-/** The decided nightly CI cap (D-EV-1, D-EV-2): no record can have cost more. */
-const MAX_SPEND_USD = 5;
+/** The decided nightly CI cap (D-EV-1, D-EV-2; USD 6.50 as amended 2026-11-17): no record can have cost more. */
+const MAX_SPEND_USD = 6.5;
 export const MAX_RAG_CASES = 200;
 const MAX_TEXT = 8_192;
 const MAX_K = 50;
@@ -381,6 +381,19 @@ export const RagEvaluationRecordSchema = z
                 ragasVersion: z.string().min(1).max(32),
                 /** `sha256:` over the exact bytes of the price table the run was metered under. */
                 priceTableHash: z.string().regex(SHA256),
+            })
+            .strict(),
+        /**
+         * The model that wrote the product's answers (owner decision
+         * 2026-11-17: the assistant's own production model, not the judge's).
+         * Not part of the gate's key — the record is about the retriever — but
+         * every answer-quality figure is a figure about this model, so a
+         * record that cannot say which one is refused.
+         */
+        answerRevision: z
+            .object({
+                provider: z.string().min(1).max(64),
+                model: z.string().min(1).max(128),
             })
             .strict(),
         ranAt: z.string().datetime(),
@@ -676,6 +689,10 @@ export function checkRagEvaluationRecord(
         }
         if (!options.priceTable.models.includes(record.judgeRevision.model)) {
             return { ok: false, reason: 'MODEL_NOT_PRICED', detail: record.judgeRevision.model };
+        }
+        // The answers were bought from the same share, so their model must be priced too.
+        if (!options.priceTable.models.includes(record.answerRevision.model)) {
+            return { ok: false, reason: 'MODEL_NOT_PRICED', detail: record.answerRevision.model };
         }
     }
     // Compared in whole micro-dollars (the meter's unit), so float noise is

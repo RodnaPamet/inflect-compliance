@@ -26,7 +26,7 @@ class BudgetExhausted(Exception):
 @dataclass(frozen=True)
 class MeterState:
     job: str
-    model: str
+    models: tuple[str, ...]
     share_usd: float
     price_table_hash: str
     spent_usd: float
@@ -58,7 +58,7 @@ class Meter:
             raise RuntimeError(f"the metering proxy answered {status} for its state")
         return MeterState(
             job=s["job"],
-            model=s["model"],
+            models=tuple(s["models"]),
             share_usd=s["shareUsd"],
             price_table_hash=s["priceTableHash"],
             spent_usd=s["spentUsd"],

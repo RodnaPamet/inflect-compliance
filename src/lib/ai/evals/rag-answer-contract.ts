@@ -72,7 +72,8 @@ export type RagAnswerResponse = z.infer<typeof RagAnswerResponseSchema>;
  *           BUDGET_EXHAUSTED, which never passes a floor or opens the gate.
  *
  * Bound to the set and the retriever revision the retrieval stage measured;
- * the judge refuses a file bound to anything else.
+ * the judge refuses a file bound to anything else. Names the model that wrote
+ * the answers (`answerModel`), which the record carries as `answerRevision`.
  */
 export const RAG_ANSWERS_FILE_CONTRACT = 'rag-answers@1';
 
@@ -84,6 +85,8 @@ export const RagAnswersFileSchema = z
         contract: z.literal(RAG_ANSWERS_FILE_CONTRACT),
         setHash: z.string().regex(/^sha256:[0-9a-f]{64}$/),
         retrieverRevision: RagEvaluationRecordSchema.shape.retrieverRevision,
+        /** The model that wrote every answer: the assistant's own (owner decision 2026-11-17). The record carries it on. */
+        answerModel: RagEvaluationRecordSchema.shape.answerRevision,
         status: z.enum(['COMPLETE', 'BUDGET_EXHAUSTED']),
         answers: z
             .array(

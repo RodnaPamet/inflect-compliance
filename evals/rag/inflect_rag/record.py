@@ -42,6 +42,7 @@ def build_record(
     *,
     retrieval: Mapping[str, Any],
     judge_revision: Mapping[str, str],
+    answer_revision: Mapping[str, str],
     status: str,
     spend_usd: float,
     cases: Sequence[Mapping[str, Any]],
@@ -60,6 +61,7 @@ def build_record(
         "corpus": "seed",
         "retrieverRevision": retrieval["retrieverRevision"],
         "judgeRevision": dict(judge_revision),
+        "answerRevision": dict(answer_revision),
         "ranAt": ran_at,
         "status": status,
         # The meter's settled sum, rounded to the micro-dollar it counts in.

@@ -6,8 +6,8 @@
  *
  * A job's judge (Ragas's Python client) is pointed at this proxy on
  * 127.0.0.1 and never holds the key: the proxy holds it, and it checks every
- * call against the job's SHARE of the USD 5 nightly cap (D-EV-1, D-EV-2,
- * D-EV-11) BEFORE it is sent, with `meter.mjs` — the same reservation garak's
+ * call against the job's SHARE of the USD 6.50 nightly cap (D-EV-1, D-EV-2,
+ * D-EV-11, as amended 2026-11-17) BEFORE it is sent, with `meter.mjs` — the same reservation garak's
  * between-role breaker is priced by. So "hard-capped" is a property of the
  * only socket the judge has, not of the judge's own good behaviour.
  *
@@ -15,8 +15,9 @@
  *
  *   • the request is POST /v1/messages, JSON, not streamed (a streamed answer's
  *     usage arrives last, after the money is spent);
- *   • the model is the share's model (`shares.json`): a call to an unpriced or
- *     other model is refused, never metered as something cheaper;
+ *   • the model is one the share lists (`shares.json`): a call to an unpriced
+ *     or unlisted model is refused, never metered as something cheaper. Each
+ *     call is reserved and settled at ITS model's price;
  *   • `max_tokens` is present and at most the proxy's cap (2048 by default):
  *     the reservation needs a worst case, and an absent one has none;
  *   • the reservation fits: input is bounded by the request body's UTF-8 BYTE
@@ -38,9 +39,9 @@
  * ‾‾‾ SPEND THE JOB MAKES ELSEWHERE ‾‾‾
  *
  * A model call the job causes but does not send itself (the product answering
- * a question, Ragas Phase 1.2) is metered through the same share with
- * `POST /meter/reserve` before it and `POST /meter/settle` after it, so the
- * judge and the answers can never together pass the job's share.
+ * a question, Ragas Phase 1.2, now sends its turns through `/v1/messages`
+ * itself) can be metered through the same share with `POST /meter/reserve`
+ * (naming its model) before it and `POST /meter/settle` after it.
  *
  * `GET /meter/state` is what the record's `spendUsd` and `status` are read
  * from, with the price table's hash.
@@ -119,14 +120,14 @@ export function createProxy({
     log = (line) => process.stderr.write(`${line}\n`),
 } = {}) {
     if (!apiKey) throw new Error('anthropic-proxy: no API key');
-    const { shareUsd, model, price } = jobBudget(shares, priceTable.table, job);
-    const meter = createMeter({ shareUsd, price });
+    const { shareUsd, models, prices } = jobBudget(shares, priceTable.table, job);
+    const meter = createMeter({ shareUsd, prices });
     const counts = { calls: 0, refused: 0, upstreamErrors: 0, overran: 0, external: 0 };
 
     function state() {
         return {
             job,
-            model,
+            models,
             shareUsd,
             priceTableHash: priceTable.hash,
             spentUsd: meter.spentUsd(),
@@ -151,11 +152,13 @@ export function createProxy({
             return refuse(res, 400, 'invalid_request_error', 'body is not JSON');
         }
         if (body.stream === true) return refuse(res, 400, 'invalid_request_error', 'streamed calls are not metered; send stream:false');
-        if (body.model !== model) return refuse(res, 400, 'model_not_in_share', `this job's share prices ${model} only`);
+        if (typeof body.model !== 'string' || !models.includes(body.model)) {
+            return refuse(res, 400, 'model_not_in_share', `this job's share spends on ${models.join(', ')} only`);
+        }
         if (!Number.isInteger(body.max_tokens) || body.max_tokens < 1 || body.max_tokens > maxOutputTokens) {
             return refuse(res, 400, 'invalid_request_error', `max_tokens must be an integer in 1..${maxOutputTokens}`);
         }
-        const reservation = meter.reserve({ inputTokens: raw.length, maxOutputTokens: body.max_tokens });
+        const reservation = meter.reserve({ model: body.model, inputTokens: raw.length, maxOutputTokens: body.max_tokens });
         if (!reservation.ok) {
             counts.refused += 1;
             log(`anthropic-proxy: refused a call worth up to USD ${reservation.worstCaseUsd}; USD ${reservation.remainingUsd} of ${shareUsd} left`);
@@ -213,7 +216,8 @@ export function createProxy({
         }
         if (kind === 'reserve') {
             if (!isCount(body?.inputTokens) || !isCount(body?.maxOutputTokens)) return send(res, 400, { ok: false, reason: 'INVALID' });
-            const r = meter.reserve({ inputTokens: body.inputTokens, maxOutputTokens: body.maxOutputTokens });
+            if (typeof body?.model !== 'string' || !models.includes(body.model)) return send(res, 400, { ok: false, reason: 'MODEL_NOT_IN_SHARE' });
+            const r = meter.reserve({ model: body.model, inputTokens: body.inputTokens, maxOutputTokens: body.maxOutputTokens });
             if (!r.ok) {
                 counts.refused += 1;
                 return send(res, 402, r);
@@ -251,7 +255,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     });
     server.listen(port, '127.0.0.1', () => {
         const s = state();
-        process.stderr.write(`anthropic-proxy: ${job} on 127.0.0.1:${port}, model ${s.model}, share USD ${s.shareUsd}, prices ${s.priceTableHash}\n`);
+        process.stderr.write(`anthropic-proxy: ${job} on 127.0.0.1:${port}, models ${s.models.join(', ')}, share USD ${s.shareUsd}, prices ${s.priceTableHash}\n`);
     });
     const stop = () => server.close(() => process.exit(0));
     process.on('SIGTERM', stop);

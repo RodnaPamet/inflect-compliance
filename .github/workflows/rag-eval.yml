@@ -8,7 +8,8 @@ name: RAG eval (Ragas, nightly)
 #
 #   - THREE STAGES. (1) CORPUS: scripts/rag-eval/corpus.ts builds, through the
 #     product's own usecases and index job, an answer tenant (the three seeded
-#     policies and the set's injected chunks), a probe tenant (the same policies
+#     policies), an injection tenant (the set's injected chunks alone, owner
+#     decision 2026-11-17), a probe tenant (the same policies
 #     plus distractor paragraphs to RAG_EVAL_PROBE_TENANT_CHUNKS) and filler
 #     tenants until the shared index holds RAG_EVAL_SCALE_MULTIPLE times the
 #     probe tenant. Embedded by the deployment's own TEI image and model
@@ -19,10 +20,11 @@ name: RAG eval (Ragas, nightly)
 #     and against an exact scan the stage runs itself: recall@10 of its first
 #     10 vs the exact top 10, and the p95 latency of the 20-deep call (D-L4-9
 #     as amended 2026-11-16). No model call, no spend. (3) ANSWER: scripts/rag-eval/answer.ts
-#     asks the PRODUCT each question in process, as the answer tenant's owner
-#     asks the assistant: the real usecase, its guards and tool loop, and
-#     search_knowledge through the funnel, mounted for the answer tenant alone
-#     by the evaluation's scoped decision (src/app-layer/services/rag-evaluation-mount.ts:
+#     asks the PRODUCT each question in process, as the owner of the tenant
+#     the case belongs to asks the assistant (the injection cases in the
+#     injection tenant, the rest in the answer tenant): the real usecase, its
+#     guards and tool loop, and search_knowledge through the funnel, mounted
+#     for that one tenant, for that one question, by the evaluation's scoped decision (src/app-layer/services/rag-evaluation-mount.ts:
 #     no route, no flag, nothing a deployed app can open). Its model turns go
 #     through the metering proxy. It writes an answers file
 #     (evals/rag/fixtures/answer-contract.json, rag-answers@1). (4) JUDGE: the
@@ -37,8 +39,12 @@ name: RAG eval (Ragas, nightly)
 #     run: stages 1 and 2 still run and their figures are the night's output.
 #     A record over answers the product did not give would be a record about
 #     nothing, and a record is what the search_knowledge mount gate opens on.
-#   - MODEL (D-EV-2): the cost meter's share model (Haiku-class,
-#     evals/cost-meter/shares.json) through a dedicated key when the
+#   - MODELS: the judge is Haiku 4.5 (D-EV-2); the product's answers are
+#     written by the assistant's own production model, resolved by the
+#     assistant itself (AGENT_FLUE_MODEL, default claude-sonnet-5-5; owner
+#     decision 2026-11-17), never set here. The ragas share lists both
+#     (evals/cost-meter/shares.json), and the record names each. Both go
+#     through a dedicated key when the
 #     RAGAS_ANTHROPIC_API_KEY secret is set (owner decision 2026-11-16: the
 #     judge prefers a dedicated key; created in its own workspace, it needs no
 #     header), otherwise the repository's ANTHROPIC_API_KEY with the
@@ -47,10 +53,11 @@ name: RAG eval (Ragas, nightly)
 #     was used, never its value.
 #     The key goes to ONE process, the metering proxy on loopback
 #     (evals/cost-meter/anthropic-proxy.mjs), which reserves every call — the
-#     product's answer turns and the judge's — against the ragas share (USD 2.50
-#     of the shared USD 5, D-EV-11) before it is sent; neither the answer stage
-#     nor the judge container holds it. The answers are the share's model's
-#     (the proxy prices one model per share). Seed data only.
+#     product's answer turns and the judge's, each at its own model's price —
+#     against the ragas share (USD 4.00 of the shared USD 6.50, D-EV-11 as
+#     amended 2026-11-17) before it is sent, and refuses a model the share does
+#     not list; neither the answer stage nor the judge container holds it.
+#     Seed data only.
 #   - NON-BLOCKING until the date below, under a dated marker that
 #     tests/guardrails/rag-eval-workflow-pinning.test.ts PARSES and compares to
 #     today. Phase 2 sets floors (evals/rag/floors.json) and turns a regression
@@ -260,14 +267,15 @@ jobs:
           unset ANTHROPIC_API_KEY
           sleep 1
           # ANSWER, in process (scripts/rag-eval/answer.ts): the assistant as
-          # the answer tenant's owner asks it, its model turns sent to the
+          # each case's tenant's owner asks it, its model turns sent to the
           # proxy. It never holds the key: ANTHROPIC_API_KEY carries only the
-          # marker the stage requires. The model is the ragas share's, read off
-          # the cost meter. The assistant's quota (50 turns a tenant-day, 5 a
-          # user-minute) is raised for this one command: the set has 52 questions.
-          share_model="$(node -p 'require("./evals/cost-meter/shares.json").shares.ragas.model')"
+          # marker the stage requires. The model is the assistant's own: no
+          # AGENT_FLUE_MODEL is set here, so it resolves as the deployment's
+          # does, and the stage refuses it unless the ragas share lists it. The
+          # assistant's quota (50 turns a tenant-day, 5 a user-minute) is raised
+          # for this one command: the set has 52 questions.
           answer_status=0
-          ANTHROPIC_API_KEY=held-by-the-metering-proxy AGENT_FLUE_MODEL="$share_model" AI_RISK_DAILY_QUOTA=100 AI_RISK_USER_RPM=100 \
+          ANTHROPIC_API_KEY=held-by-the-metering-proxy AI_RISK_DAILY_QUOTA=100 AI_RISK_USER_RPM=100 \
             npx tsx scripts/rag-eval/answer.ts --set evals/rag/sets/seed-policies.json --manifest rag-out/corpus.json \
             --retrieval rag-out/retrieval.json --proxy http://127.0.0.1:8787 --out rag-out/answers.json || answer_status=$?
           judge_status=0

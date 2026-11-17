@@ -30,9 +30,15 @@
  *     the app image, the worker and the scheduler all run under. That is a
  *     second line behind the first, not a switch: no value of it opens the
  *     gate by itself.
- *   • The decision is bound to ONE tenant. `searchKnowledge` refuses it for any
- *     other (`NOT_EVALUATED`), so even inside the scope only the answer tenant
- *     the harness built is searched.
+ *   • The decision is bound to ONE tenant, and the stage opens a scope per
+ *     question: the injection tenant for an injection case, the answer tenant
+ *     for every other (owner decision 2026-11-17). `searchKnowledge` refuses
+ *     any other tenant (`NOT_EVALUATED`), so even inside a scope only the
+ *     tenant that question is asked in is searched — a task question's scope
+ *     does not admit the injection tenant. One tenant per question rather
+ *     than a list of the harness's tenants, because a list would let either
+ *     tenant's question search the other's chunks if a context were ever
+ *     built for the wrong one.
  *
  * What the scope does NOT do: it changes no other gate, guard, permission or
  * budget. Everything else the answer runs through — the assistant's feature
@@ -52,7 +58,7 @@ export interface RagEvaluationMount {
     readonly state: 'MOUNTED';
     readonly revision: RetrieverRevision;
     readonly evaluation: {
-        /** The only tenant the decision admits: the harness's answer tenant. */
+        /** The only tenant the decision admits: the tenant this one question is asked in. */
         readonly tenantId: string;
         /** The authored set's content hash the run answers, for the logs and the answers file. */
         readonly setHash: string;

@@ -3,10 +3,13 @@
  * The CI evaluation cost meter, shared by garak and Ragas
  * (docs/ai-architecture/ragas.md sub-phase 0.6; D-EV-1 and D-EV-2).
  *
- * One USD 5 nightly cap on the dedicated CI key (decided: D-EV-1, D-EV-2),
- * split into per-job SHARES (`shares.json`). The split itself — USD 2.50 each
- * — is D-EV-11 (owner, 2026-11-12); the meter enforces whatever split the
- * file states. Every number that turns tokens
+ * One nightly cap on the dedicated CI key, USD 6.50 (D-EV-1 and D-EV-2 as
+ * amended by the owner on 2026-11-17; it was USD 5), split into per-job SHARES
+ * (`shares.json`): garak USD 2.50, Ragas USD 4.00 (D-EV-11, amended the same
+ * day). The meter enforces whatever split the file states, under the decided
+ * cap. A share lists the MODELS it may spend on (Ragas: its Haiku judge and
+ * the product's answer model; garak: Haiku alone), each priced from the
+ * table, and a call for any other model is refused. Every number that turns tokens
  * into dollars comes from ONE pinned price table (`prices.json`), keyed by
  * model id, and a record names the table it was priced under by
  * `priceTableHash` — the SHA-256 of the file's exact bytes, so a reformatted
@@ -37,11 +40,12 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /**
- * The owner's decided ceiling (D-EV-1, D-EV-2: USD 5 a night, one shared
- * cap). `shares.json` may state a LOWER nightly cap; nothing in a file can
- * raise this one. How it is split between jobs is D-EV-11 (`shares.json`).
+ * The owner's decided ceiling (D-EV-1, D-EV-2: one shared cap a night; USD 5
+ * from 2026-11-11, USD 6.50 from the owner's amendment of 2026-11-17).
+ * `shares.json` may state a LOWER nightly cap; nothing in a file can raise
+ * this one. How it is split between jobs is D-EV-11 (`shares.json`).
  */
-export const DECIDED_NIGHTLY_CAP_USD = 5;
+export const DECIDED_NIGHTLY_CAP_USD = 6.5;
 
 const MICRO = 1_000_000;
 
@@ -100,9 +104,10 @@ export function usdFor(price, inputTokens, outputTokens) {
 
 /**
  * Every reason the shares cannot be metered, or `[]`. Refuses: a cap above the
- * decided USD 5.00; a share that is not a positive whole-cent amount; shares
- * that SUM above the cap (in integer cents, so 2.50 + 2.51 is caught exactly);
- * and a share whose model the price table does not price.
+ * decided USD 6.50; a share that is not a positive whole-cent amount; shares
+ * that SUM above the cap (in integer cents, so 2.50 + 4.01 is caught exactly);
+ * a share that lists no model, or one model twice; and a listed model the
+ * price table does not price.
  */
 export function shareProblems(shares, table) {
     const problems = [];
@@ -116,14 +121,22 @@ export function shareProblems(shares, table) {
     let sum = 0;
     for (const [job, share] of entries) {
         const keys = Object.keys(share ?? {}).sort();
-        if (keys.join(',') !== 'model,usd') problems.push(`share "${job}" must have exactly {usd, model}, has {${keys.join(', ')}}`);
+        if (keys.join(',') !== 'models,usd') problems.push(`share "${job}" must have exactly {usd, models}, has {${keys.join(', ')}}`);
         const c = cents(share?.usd);
         if (c === null || c <= 0) problems.push(`share "${job}" is not a positive whole-cent USD amount`);
         else sum += c;
-        try {
-            priceFor(table, share?.model);
-        } catch {
-            problems.push(`share "${job}" names model "${share?.model}", which the price table does not price`);
+        const models = share?.models;
+        if (!Array.isArray(models) || models.length === 0 || !models.every((m) => typeof m === 'string' && m !== '')) {
+            problems.push(`share "${job}" must list the models it may spend on`);
+            continue;
+        }
+        if (new Set(models).size !== models.length) problems.push(`share "${job}" lists a model twice`);
+        for (const model of models) {
+            try {
+                priceFor(table, model);
+            } catch {
+                problems.push(`share "${job}" lists model "${model}", which the price table does not price`);
+            }
         }
     }
     if (capCents !== null && sum > capCents) {
@@ -135,22 +148,29 @@ export function shareProblems(shares, table) {
     return problems;
 }
 
-/** One job's share and the price of its model, after the shares are checked. */
+/**
+ * One job's share, the models it may spend on and each one's price, after the
+ * shares are checked.
+ */
 export function jobBudget(shares, table, job) {
     const problems = shareProblems(shares, table);
     if (problems.length > 0) throw new Error(`cost-meter: the shares cannot be metered: ${problems.join('; ')}`);
     const share = shares.shares[job];
     if (!share) throw new Error(`cost-meter: job "${job}" holds no share`);
-    return { shareUsd: share.usd, model: share.model, price: priceFor(table, share.model) };
+    const prices = Object.fromEntries(share.models.map((model) => [model, priceFor(table, model)]));
+    return { shareUsd: share.usd, models: [...share.models], prices };
 }
 
 /**
- * A run's meter. `reserve` before each call, `settle` after it; `status` is
- * what the record says.
+ * A run's meter over one share and the models it may spend on (`prices`:
+ * model id -> price). `reserve` before each call, naming its model, `settle`
+ * after it; `status` is what the record says. A call for a model the share
+ * does not list is refused by a throw, never metered as another model.
  */
-export function createMeter({ shareUsd, price }) {
+export function createMeter({ shareUsd, prices }) {
     const shareCents = cents(shareUsd);
     if (shareCents === null || shareCents <= 0) throw new Error(`cost-meter: share ${shareUsd} is not a positive whole-cent USD amount`);
+    if (!prices || typeof prices !== 'object' || Object.keys(prices).length === 0) throw new Error('cost-meter: a meter needs the price of every model its share lists');
     const share = shareCents * (MICRO / 100);
     const open = new Map();
     let spent = 0;
@@ -158,8 +178,14 @@ export function createMeter({ shareUsd, price }) {
     let next = 1;
     let exhausted = false;
 
-    function worstCase({ inputTokens, maxOutputTokens }) {
-        return microUsdFor(price, inputTokens, maxOutputTokens);
+    function priceOf(model) {
+        const price = Object.prototype.hasOwnProperty.call(prices, model) ? prices[model] : undefined;
+        if (!price) throw new Error(`cost-meter: model "${model}" is not one this share may spend on`);
+        return price;
+    }
+
+    function worstCase({ model, inputTokens, maxOutputTokens }) {
+        return microUsdFor(priceOf(model), inputTokens, maxOutputTokens);
     }
 
     return {
@@ -180,7 +206,7 @@ export function createMeter({ shareUsd, price }) {
                 return { ok: false, reason: 'BUDGET_EXHAUSTED', worstCaseUsd: worst / MICRO, remainingUsd: (share - spent - reserved) / MICRO };
             }
             const id = next++;
-            open.set(id, worst);
+            open.set(id, { worst, price: priceOf(call.model) });
             reserved += worst;
             return { ok: true, id, worstCaseUsd: worst / MICRO };
         },
@@ -196,8 +222,9 @@ export function createMeter({ shareUsd, price }) {
          * reservation leaves `reserved` only by entering `spent`.
          */
         settle(id, usage) {
-            const worst = open.get(id);
-            if (worst === undefined) throw new Error(`cost-meter: no open reservation ${id}`);
+            const reservation = open.get(id);
+            if (reservation === undefined) throw new Error(`cost-meter: no open reservation ${id}`);
+            const { worst, price } = reservation;
             let charged = worst;
             let usageUnreadable = false;
             if (usage != null) {

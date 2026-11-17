@@ -66,7 +66,7 @@
     },
     "garak.yml:garak": {
         "kind": "never",
-        "reason": "Nightly garak LLM red-team of the assistant (schedule + dispatch only). It boots the full app, spends a capped budget on the dedicated CI model key (D-EV-1, USD 5/night) and needs that repository secret, which a pull request from a fork never has; running it per PR would multiply the spend by the PR count.",
+        "reason": "Nightly garak LLM red-team of the assistant (schedule + dispatch only). It boots the full app, spends a capped budget on the dedicated CI model key (D-EV-1, garak's USD 2.50 share of a USD 6.50 nightly cap shared with Ragas) and needs that repository secret, which a pull request from a fork never has; running it per PR would multiply the spend by the PR count.",
         "coveredBy": "PARTIAL: the AI guard's injection and egress pattern sets are unit-tested at PR time (src/app-layer/ai/guard/), skills carry mandatory injection cases in their evaluation sets, and tests/guardrails/garak-workflow-pinning.test.ts holds this workflow's deferral date, budget and skip-without-key shape in Ratchets on every PR. The composed-system probe itself is accepted as post-merge, reported nightly."
     },
     "ghcr-publish.yml:build-push": {
@@ -106,7 +106,7 @@
     },
     "rag-eval.yml:rag-eval": {
         "kind": "never",
-        "reason": "Nightly Ragas evaluation of Layer 4 retrieval (schedule + dispatch only). It builds a scaled corpus through the product's usecases and index job against the deployment's TEI embedder, measures the two retrieval figures (weaviate.md 3.6), and, once an answer target exists, spends a metered share of the shared nightly cap (D-EV-2, D-EV-11, USD 2.50) on the repository's model key, which a pull request from a fork never has; running it per PR would multiply the spend and the 20,000-chunk embedding pass by the PR count.",
+        "reason": "Nightly Ragas evaluation of Layer 4 retrieval (schedule + dispatch only). It builds a scaled corpus through the product's usecases and index job against the deployment's TEI embedder, measures the two retrieval figures (weaviate.md 3.6), asks the product its questions in process and judges the answers, spending a metered share of the shared nightly cap (D-EV-2, D-EV-11, USD 4.00 of USD 6.50) on the dedicated or repository model key, which a pull request from a fork never has; running it per PR would multiply the spend and the 20,000-chunk embedding pass by the PR count.",
         "coveredBy": "PARTIAL: tests/unit/rag-eval-harness.test.ts holds the Python harness's golden record to the TypeScript record schema, the answer contract on both sides, the retrieval stage's plan reading and the corpus stage's template choice and distractors; tests/integration/rag-eval-retrieval-probe.test.ts runs the corpus and retrieval stages against pgvector under RLS with the stub embedder; tests/guardrails/rag-eval-workflow-pinning.test.ts holds this workflow's deferral date, switch, key placement, image and model pins and budget plan in Ratchets on every PR. The real-model figures and the judge itself are accepted as post-merge, reported nightly."
     },
     "release.yml:release": {

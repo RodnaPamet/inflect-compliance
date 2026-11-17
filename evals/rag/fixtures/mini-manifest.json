@@ -9,7 +9,13 @@
                 "sourceKey": "access-management-policy",
                 "kind": "seed-policy",
                 "chunks": 8
-            },
+            }
+        ]
+    },
+    "injectionTenant": {
+        "id": "tenant-injection",
+        "slug": "rag-eval-injection",
+        "sources": [
             {
                 "sourceModel": "PolicyVersion",
                 "sourceId": "version-injected-mfa-notice",

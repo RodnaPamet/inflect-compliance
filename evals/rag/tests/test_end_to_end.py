@@ -103,7 +103,8 @@ class Upstream:
 
 def answers_file(set_: dict, manifest: dict, retrieval: dict, *, stop_after: int | None = None) -> dict:
     """What the answer stage writes: the product's answer to each case, or, when the share stopped it, the rest named."""
-    version = {s["sourceKey"]: s["sourceId"] for s in manifest["answerTenant"]["sources"]}
+    answer_tenant = {s["sourceKey"]: s["sourceId"] for s in manifest["answerTenant"]["sources"]}
+    injection_tenant = {s["sourceKey"]: s["sourceId"] for s in manifest["injectionTenant"]["sources"]}
     revision = retrieval["retrieverRevision"]
     answers, unanswered = [], []
     for n, c in enumerate(set_["cases"]):
@@ -111,9 +112,11 @@ def answers_file(set_: dict, manifest: dict, retrieval: dict, *, stop_after: int
             unanswered.append(c["id"])
             continue
         refs = c["groundTruth"]["refs"]
-        retrieved = [{"sourceModel": "PolicyVersion", "sourceId": version[r["sourceKey"]], "chunkIndex": i, "text": r["passage"]} for i, r in enumerate(refs)]
         if c.get("injected"):
-            retrieved.append({"sourceModel": "PolicyVersion", "sourceId": version[c["injected"]["sourceKey"]], "chunkIndex": 0, "text": c["injected"]["text"]})
+            # Asked in the injection tenant, which holds the injected chunk and nothing else.
+            retrieved = [{"sourceModel": "PolicyVersion", "sourceId": injection_tenant[c["injected"]["sourceKey"]], "chunkIndex": 0, "text": c["injected"]["text"]}]
+        else:
+            retrieved = [{"sourceModel": "PolicyVersion", "sourceId": answer_tenant[r["sourceKey"]], "chunkIndex": i, "text": r["passage"]} for i, r in enumerate(refs)]
         answer = c["groundTruth"]["answer"] if refs else "The documents do not contain this information."
         response = {"answer": answer, "retrieved": retrieved, "retriever": {"embeddingModel": revision["embeddingModel"], "k": revision["k"]}, "usage": {"inputTokens": 900, "outputTokens": 60}}
         answers.append({"caseId": c["id"], "question": c["question"], "response": response})
@@ -121,6 +124,7 @@ def answers_file(set_: dict, manifest: dict, retrieval: dict, *, stop_after: int
         "contract": "rag-answers@1",
         "setHash": retrieval["setHash"],
         "retrieverRevision": revision,
+        "answerModel": {"provider": "anthropic", "model": "claude-sonnet-5-5"},
         "status": "COMPLETE" if not unanswered else "BUDGET_EXHAUSTED",
         "answers": answers,
         "unanswered": unanswered,
@@ -135,7 +139,7 @@ def tei(method: str, path: str, body: Any) -> tuple[int, Any]:
 
 def start_proxy(upstream_port: int, share_usd: float) -> tuple[subprocess.Popen, int]:
     port = free_port()
-    shares = {"nightlyCapUsd": 5, "shares": {"ragas": {"usd": share_usd, "model": "claude-haiku-4-5"}}}
+    shares = {"nightlyCapUsd": 6.5, "shares": {"ragas": {"usd": share_usd, "models": ["claude-haiku-4-5", "claude-sonnet-5-5"]}}}
     script = (
         f"import {{ createProxy }} from {json.dumps(PROXY.as_uri())};"
         f"const {{ server }} = createProxy({{ job: 'ragas', apiKey: 'test-key', upstream: 'http://127.0.0.1:{upstream_port}', shares: {json.dumps(shares)}, log: () => {{}} }});"
@@ -200,6 +204,9 @@ def test_a_full_night_through_the_real_proxy(tmp_path: Path) -> None:
     # turns were charged by the same proxy when the answer stage sent them, not again here.
     calls = len(bodies)
     assert record["spendUsd"] == pytest.approx(calls * (400 * 1 + 40 * 5) / 1e6)
+    # The record says which model wrote the answers, and the judge is Haiku.
+    assert record["answerRevision"] == {"provider": "anthropic", "model": "claude-sonnet-5-5"}
+    assert record["judgeRevision"]["model"] == "claude-haiku-4-5"
     if os.environ.get("UPDATE_GOLDEN") == "1":
         GOLDEN.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     assert record == json.loads(GOLDEN.read_text()), "the harness's record moved; regenerate the golden with UPDATE_GOLDEN=1"

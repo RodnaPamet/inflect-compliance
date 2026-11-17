@@ -1,6 +1,8 @@
 """The judge: Ragas's four metrics and the abstention verdict, per case (D-EV-2).
 
-The model is the cost meter's share model (Haiku-class, `evals/cost-meter/shares.json`),
+The model is `JUDGE_MODEL`, Haiku 4.5 (D-EV-2; it stays Haiku when the ragas share
+also pays for the product's answers on the assistant's model, owner decision
+2026-11-17), one of the models the ragas share lists (`evals/cost-meter/shares.json`),
 reached ONLY through the metering proxy on loopback, which holds the key and
 reserves every call before it is sent. `answer_relevancy`'s embeddings come
 from the deployment's own TEI (`multilingual-e5-small`, D-L4-3) running beside
@@ -31,6 +33,8 @@ MAX_OUTPUT_CHARS = 8_192
 # Each judge call's output bound; the proxy refuses a call that asks for more
 # than its cap, and reserves exactly this much output in the worst case.
 JUDGE_MAX_TOKENS = 1024
+# The judge's model (D-EV-2). The ragas share must list it; the run refuses otherwise.
+JUDGE_MODEL = "claude-haiku-4-5"
 
 _current_metric: contextvars.ContextVar[str] = contextvars.ContextVar("current_metric", default="")
 

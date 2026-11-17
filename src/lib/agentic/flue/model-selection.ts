@@ -1,5 +1,6 @@
 import { env } from '@/env';
 import { resolveLocalGateway } from '@/lib/ai/local-gateway';
+import { AGENT_FLUE_MODEL_DEFAULT } from '@/lib/ai/model-defaults';
 
 /**
  * WHICH MODEL A FLUE RUN MAY ASK FOR — and why this is a model specifier
@@ -202,6 +203,18 @@ export type FlueModelChoice =
     | { ok: false; reason: FlueModelRefusal };
 
 /**
+ * The model an EXTERNAL run and the assistant name: the deployment's
+ * `AGENT_FLUE_MODEL`, or the schema's default when the environment was not
+ * validated (`SKIP_ENV_VALIDATION` hands back the raw value, with no default
+ * applied). One reader, so the agent runtime, the assistant and the Ragas
+ * nightly's answer stage cannot name different models for one deployment.
+ * `??`, not `||`: a deployment that sets the variable keeps exactly what it set.
+ */
+export function agentFlueModel(): string {
+    return env.AGENT_FLUE_MODEL ?? AGENT_FLUE_MODEL_DEFAULT;
+}
+
+/**
  * Resolve the model a run may ask for, or refuse with a named reason.
  *
  * ── REFUSES RATHER THAN FALLS BACK, AND THAT IS THE DIFFERENCE FROM THE
@@ -275,14 +288,14 @@ export function resolveFlueModel(sel?: FlueModelSelection): FlueModelChoice {
         return {
             ok: true,
             residency: 'EXTERNAL',
-            specifier: `${FLUE_PROVIDER_IDS.external}/${env.AGENT_FLUE_MODEL}`,
+            specifier: `${FLUE_PROVIDER_IDS.external}/${agentFlueModel()}`,
             fallback: 'worker_fallback',
         };
     }
     return {
         ok: true,
         residency: 'EXTERNAL',
-        specifier: `${FLUE_PROVIDER_IDS.external}/${env.AGENT_FLUE_MODEL}`,
+        specifier: `${FLUE_PROVIDER_IDS.external}/${agentFlueModel()}`,
     };
 }
 

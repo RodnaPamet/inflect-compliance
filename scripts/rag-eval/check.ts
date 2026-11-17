@@ -85,7 +85,7 @@ export function aggregatesMarkdown(aggregates: RagAggregates, record: RagEvaluat
     const lines = [
         `### Ragas record (${record.status}, USD ${record.spendUsd.toFixed(4)})`,
         ``,
-        `Judge: ${record.judgeRevision.provider} ${record.judgeRevision.model}, embeddings ${record.judgeRevision.embeddingModel}, ragas ${record.judgeRevision.ragasVersion}. Every figure below is recomputed from the record's raw per-case values.`,
+        `Answers: ${record.answerRevision.provider} ${record.answerRevision.model} (the assistant's model). Judge: ${record.judgeRevision.provider} ${record.judgeRevision.model}, embeddings ${record.judgeRevision.embeddingModel}, ragas ${record.judgeRevision.ragasVersion}. Every figure below is recomputed from the record's raw per-case values.`,
         ``,
         `| Kind | Cases | ${RAG_METRICS.join(' | ')} | Declined correctly | Abstained / answered / unjudged |`,
         `| --- | --- | ${RAG_METRICS.map(() => '---').join(' | ')} | --- | --- |`,

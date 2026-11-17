@@ -2,7 +2,7 @@
  * The shared CI evaluation cost meter (evals/cost-meter/meter.mjs; Ragas
  * sub-phase 0.6, D-EV-1 and D-EV-2): the check is before the call, an unknown
  * cost is never read as a small one, and shares cannot be configured past the
- * owner's USD 5 a night.
+ * owner's USD 6.50 a night (D-EV-1/D-EV-2 as amended 2026-11-17).
  *
  * The meter is an ES module run by plain `node` in CI (garak's breaker calls
  * it), so it is exercised here the way the workflows run it: in a child node.
@@ -29,11 +29,11 @@ const HAIKU = `{ usdPerMillionInputTokens: 1, usdPerMillionOutputTokens: 5 }`;
 describe('cost meter: the check is before the call', () => {
     it('reserves a call at counted input plus max_tokens, and refuses the call that could pass the share', () => {
         const out = inMeter<{ first: { ok: boolean }; second: { ok: boolean; reason?: string }; status: string; spent: number }>(`
-            const meter = m.createMeter({ shareUsd: 0.01, price: ${HAIKU} });
+            const meter = m.createMeter({ shareUsd: 0.01, prices: { 'claude-haiku-4-5': ${HAIKU} } });
             // 1000 in + 1000 max out = 0.001 + 0.005 = 0.006.
-            const first = meter.reserve({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const first = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             // Another 0.006 would make 0.012 > 0.01: refused before it is sent.
-            const second = meter.reserve({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const second = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             return { first, second, status: meter.status(), spent: meter.spentUsd() };
         `);
         expect(out.first.ok).toBe(true);
@@ -44,19 +44,19 @@ describe('cost meter: the check is before the call', () => {
 
     it('admits a call whose worst case lands exactly on the share', () => {
         const out = inMeter<{ ok: boolean }>(`
-            const meter = m.createMeter({ shareUsd: 0.01, price: ${HAIKU} });
-            return meter.reserve({ inputTokens: 5000, maxOutputTokens: 1000 });
+            const meter = m.createMeter({ shareUsd: 0.01, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            return meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 5000, maxOutputTokens: 1000 });
         `);
         expect(out.ok).toBe(true);
     });
 
     it('settles to the reported usage, and keeps the worst case when no usage came back', () => {
         const out = inMeter<{ reported: number; unknown: number; open: number }>(`
-            const a = m.createMeter({ shareUsd: 1, price: ${HAIKU} });
-            const r1 = a.reserve({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const a = m.createMeter({ shareUsd: 1, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            const r1 = a.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             a.settle(r1.id, { inputTokens: 1000, outputTokens: 10 });
-            const b = m.createMeter({ shareUsd: 1, price: ${HAIKU} });
-            const r2 = b.reserve({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const b = m.createMeter({ shareUsd: 1, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            const r2 = b.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             b.settle(r2.id, null);
             return { reported: a.spentUsd(), unknown: b.spentUsd(), open: a.openReservations() + b.openReservations() };
         `);
@@ -72,10 +72,10 @@ describe('cost meter: the check is before the call', () => {
         const out = inMeter<{ settled: { chargedUsd: number; usageUnreadable: boolean }; spent: number; reserved: number; open: number; next: boolean }[]>(`
             const results = [];
             for (const usage of [{ inputTokens: 1000000 }, { inputTokens: 1000000, outputTokens: -1 }, { inputTokens: 1.5, outputTokens: 0 }, {}]) {
-                const meter = m.createMeter({ shareUsd: 2.5, price: ${HAIKU} });
-                const r = meter.reserve({ inputTokens: 1000000, maxOutputTokens: 200000 });
+                const meter = m.createMeter({ shareUsd: 2.5, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+                const r = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000000, maxOutputTokens: 200000 });
                 const settled = meter.settle(r.id, usage);
-                const next = meter.reserve({ inputTokens: 1000000, maxOutputTokens: 200000 });
+                const next = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000000, maxOutputTokens: 200000 });
                 results.push({ settled, spent: meter.spentUsd(), reserved: meter.reservedUsd(), open: meter.openReservations(), next: next.ok });
             }
             return results;
@@ -93,11 +93,11 @@ describe('cost meter: the check is before the call', () => {
 
     it('a settled refund frees room for the next call; an open reservation still holds it', () => {
         const out = inMeter<{ heldRefused: boolean; afterSettle: boolean }>(`
-            const meter = m.createMeter({ shareUsd: 0.01, price: ${HAIKU} });
-            const r = meter.reserve({ inputTokens: 1000, maxOutputTokens: 1000 });
-            const held = meter.precheck({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const meter = m.createMeter({ shareUsd: 0.01, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            const r = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
+            const held = meter.precheck({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             meter.settle(r.id, { inputTokens: 1000, outputTokens: 0 });
-            const after = meter.precheck({ inputTokens: 1000, maxOutputTokens: 1000 });
+            const after = meter.precheck({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
             return { heldRefused: !held.fits, afterSettle: after.fits };
         `);
         expect(out).toEqual({ heldRefused: true, afterSettle: true });
@@ -105,9 +105,9 @@ describe('cost meter: the check is before the call', () => {
 
     it('once exhausted, refuses even a call that would fit: a stopped run stays stopped', () => {
         const out = inMeter<{ ok: boolean }>(`
-            const meter = m.createMeter({ shareUsd: 0.01, price: ${HAIKU} });
-            meter.reserve({ inputTokens: 100000, maxOutputTokens: 0 });
-            return meter.reserve({ inputTokens: 1, maxOutputTokens: 1 });
+            const meter = m.createMeter({ shareUsd: 0.01, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 100000, maxOutputTokens: 0 });
+            return meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1, maxOutputTokens: 1 });
         `);
         expect(out.ok).toBe(false);
     });
@@ -115,11 +115,11 @@ describe('cost meter: the check is before the call', () => {
     it('refuses token counts that are not non-negative integers, and a reservation settled twice', () => {
         const out = inMeter<string[]>(`
             const errs = [];
-            const meter = m.createMeter({ shareUsd: 1, price: ${HAIKU} });
+            const meter = m.createMeter({ shareUsd: 1, prices: { 'claude-haiku-4-5': ${HAIKU} } });
             for (const call of [{ inputTokens: -1, maxOutputTokens: 1 }, { inputTokens: 1.5, maxOutputTokens: 1 }, { inputTokens: 1, maxOutputTokens: Number.NaN }]) {
                 try { meter.reserve(call); errs.push('accepted'); } catch { errs.push('refused'); }
             }
-            const r = meter.reserve({ inputTokens: 1, maxOutputTokens: 1 });
+            const r = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1, maxOutputTokens: 1 });
             meter.settle(r.id, null);
             try { meter.settle(r.id, null); errs.push('accepted'); } catch { errs.push('refused'); }
             return errs;
@@ -135,40 +135,81 @@ describe('cost meter: the check is before the call', () => {
     });
 });
 
-describe('cost meter: shares never pass the decided USD 5', () => {
-    const TABLE = `{ models: { 'claude-haiku-4-5': ${HAIKU} } }`;
+describe('cost meter: shares never pass the decided USD 6.50', () => {
+    const SONNET = `{ usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 }`;
+    const TABLE = `{ models: { 'claude-haiku-4-5': ${HAIKU}, 'claude-sonnet-5-5': ${SONNET} } }`;
     const problems = (shares: string) => inMeter<string[]>(`return m.shareProblems(${shares}, ${TABLE});`);
-    const share = (usd: number, model = 'claude-haiku-4-5') => `{ usd: ${usd}, model: '${model}' }`;
+    const share = (usd: number, ...models: string[]) =>
+        `{ usd: ${usd}, models: ${JSON.stringify(models.length > 0 ? models : ['claude-haiku-4-5'])} }`;
 
-    it('accepts the decided split (D-EV-11: USD 2.50 each)', () => {
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(2.5)} } }`)).toEqual([]);
+    it('accepts the decided split (D-EV-11 as amended 2026-11-17: garak USD 2.50 on Haiku, Ragas USD 4.00 on two models)', () => {
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(2.5)}, ragas: ${share(4, 'claude-haiku-4-5', 'claude-sonnet-5-5')} } }`)).toEqual([]);
     });
 
-    it('refuses shares summing a cent above the cap, and a cap above USD 5.00', () => {
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(2.51)} } }`).join()).toMatch(/sum to USD 5\.01/);
-        expect(problems(`{ nightlyCapUsd: 4, shares: { garak: ${share(2.5)}, ragas: ${share(2.5)} } }`).join()).toMatch(/above the nightly cap of USD 4\.00/);
-        expect(problems(`{ nightlyCapUsd: 6, shares: { garak: ${share(3)}, ragas: ${share(3)} } }`).join()).toMatch(/above the decided USD 5\.00/);
+    it('refuses shares summing a cent above the cap, and a cap above USD 6.50', () => {
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(2.5)}, ragas: ${share(4.01)} } }`).join()).toMatch(/sum to USD 6\.51/);
+        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(4)} } }`).join()).toMatch(/above the nightly cap of USD 5\.00/);
+        expect(problems(`{ nightlyCapUsd: 7, shares: { garak: ${share(3.5)}, ragas: ${share(3.5)} } }`).join()).toMatch(/above the decided USD 6\.50/);
     });
 
-    it('refuses a share whose model the price table does not price', () => {
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.5)}, ragas: ${share(2.5, 'claude-opus-4-1')} } }`).join()).toMatch(
-            /"ragas" names model "claude-opus-4-1", which the price table does not price/,
+    it('refuses a share listing a model the price table does not price, no model, or one model twice', () => {
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(2.5)}, ragas: ${share(4, 'claude-haiku-4-5', 'claude-opus-4-1')} } }`).join()).toMatch(
+            /"ragas" lists model "claude-opus-4-1", which the price table does not price/,
         );
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: { usd: 2.5, models: [] } } }`).join()).toMatch(/must list the models/);
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(2.5, 'claude-haiku-4-5', 'claude-haiku-4-5')} } }`).join()).toMatch(/lists a model twice/);
     });
 
-    it('refuses a share that is not a positive whole-cent amount, or carries another key', () => {
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(0)} } }`)).not.toEqual([]);
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: ${share(2.505)} } }`)).not.toEqual([]);
-        expect(problems(`{ nightlyCapUsd: 5, shares: { garak: { usd: 2.5, model: 'claude-haiku-4-5', cap: 9 } } }`)).not.toEqual([]);
-        expect(problems(`{ nightlyCapUsd: 5, shares: {} }`)).not.toEqual([]);
+    it('refuses a share that is not a positive whole-cent amount, or carries another key (the single-model shape included)', () => {
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(0)} } }`)).not.toEqual([]);
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: ${share(2.505)} } }`)).not.toEqual([]);
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: { usd: 2.5, models: ['claude-haiku-4-5'], cap: 9 } } }`)).not.toEqual([]);
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: { garak: { usd: 2.5, model: 'claude-haiku-4-5' } } }`)).not.toEqual([]);
+        expect(problems(`{ nightlyCapUsd: 6.5, shares: {} }`)).not.toEqual([]);
     });
 
-    it('jobBudget refuses to hand out a share from a split that cannot be metered', () => {
-        const out = inMeter<string>(`
-            try { m.jobBudget({ nightlyCapUsd: 5, shares: { garak: ${share(3)}, ragas: ${share(3)} } }, ${TABLE}, 'garak'); return 'handed out'; }
-            catch { return 'refused'; }
+    it('jobBudget refuses to hand out a share from a split that cannot be metered, and prices every model it lists', () => {
+        const out = inMeter<{ refused: string; ragas: unknown }>(`
+            let refused;
+            try { m.jobBudget({ nightlyCapUsd: 6.5, shares: { garak: ${share(3.5)}, ragas: ${share(3.5)} } }, ${TABLE}, 'garak'); refused = 'handed out'; }
+            catch { refused = 'refused'; }
+            const ragas = m.jobBudget({ nightlyCapUsd: 6.5, shares: { garak: ${share(2.5)}, ragas: ${share(4, 'claude-haiku-4-5', 'claude-sonnet-5-5')} } }, ${TABLE}, 'ragas');
+            return { refused, ragas };
         `);
-        expect(out).toBe('refused');
+        expect(out.refused).toBe('refused');
+        expect(out.ragas).toEqual({
+            shareUsd: 4,
+            models: ['claude-haiku-4-5', 'claude-sonnet-5-5'],
+            prices: {
+                'claude-haiku-4-5': { usdPerMillionInputTokens: 1, usdPerMillionOutputTokens: 5 },
+                'claude-sonnet-5-5': { usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 },
+            },
+        });
+    });
+});
+
+describe('cost meter: a share over more than one model prices each call at its own model', () => {
+    const PRICES = `{ 'claude-haiku-4-5': ${HAIKU}, 'claude-sonnet-5-5': { usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 } }`;
+
+    it('reserves and settles each call at its model’s rate, on one share', () => {
+        const out = inMeter<{ haiku: number; sonnet: number; spent: number }>(`
+            const meter = m.createMeter({ shareUsd: 1, prices: ${PRICES} });
+            const h = meter.reserve({ model: 'claude-haiku-4-5', inputTokens: 1000, maxOutputTokens: 1000 });
+            const s = meter.reserve({ model: 'claude-sonnet-5-5', inputTokens: 1000, maxOutputTokens: 1000 });
+            meter.settle(h.id, { inputTokens: 1000, outputTokens: 100 });
+            meter.settle(s.id, { inputTokens: 1000, outputTokens: 100 });
+            return { haiku: h.worstCaseUsd, sonnet: s.worstCaseUsd, spent: meter.spentUsd() };
+        `);
+        // Haiku 0.001 + 0.005; Sonnet 0.002 + 0.010.
+        expect(out).toEqual({ haiku: 0.006, sonnet: 0.012, spent: 0.0045 });
+    });
+
+    it('refuses a call for a model the share does not list: never metered as another model', () => {
+        const out = inMeter<string>(`
+            const meter = m.createMeter({ shareUsd: 1, prices: { 'claude-haiku-4-5': ${HAIKU} } });
+            try { meter.reserve({ model: 'claude-sonnet-5-5', inputTokens: 1, maxOutputTokens: 1 }); return 'reserved'; } catch (e) { return String(e.message); }
+        `);
+        expect(out).toMatch(/not one this share may spend on/);
     });
 });
 

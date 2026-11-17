@@ -10,8 +10,9 @@
  *   2. Without the CI key the job SKIPS cleanly: the first step reads the
  *      secret, every later step is conditioned on its output, and the key
  *      reaches only the app's process, never job-level env.
- *   3. The spend cap is held in config and the numbers agree (D-EV-1, USD 5 a
- *      night, shared with Ragas by D-EV-2): the price and garak's share come
+ *   3. The spend cap is held in config and the numbers agree (D-EV-1, a cap
+ *      shared with Ragas by D-EV-2; USD 6.50 since the owner's amendment of
+ *      2026-11-17, garak's share USD 2.50 on Haiku alone): the price and garak's share come
  *      from the shared cost meter (evals/cost-meter/), garak's own request
  *      count fits the proxy's wire cap, the roles fit the night, the planned
  *      night fits garak's share (so the measured breaker starts every role
@@ -129,7 +130,7 @@ const steps = job?.steps ?? [];
 const budget = JSON.parse(read(BUDGET)) as Budget;
 const shares = JSON.parse(read('evals/cost-meter/shares.json')) as {
     nightlyCapUsd: number;
-    shares: Record<string, { usd: number; model: string }>;
+    shares: Record<string, { usd: number; models: string[] }>;
 };
 const prices = JSON.parse(read('evals/cost-meter/prices.json')) as {
     models: Record<string, { usdPerMillionInputTokens: number; usdPerMillionOutputTokens: number }>;
@@ -223,7 +224,7 @@ describe('garak skips cleanly without its CI key', () => {
     });
 });
 
-describe('garak spend cap (D-EV-1: USD 5 a night, shared with Ragas by D-EV-2)', () => {
+describe('garak spend cap (D-EV-1, shared with Ragas by D-EV-2; USD 6.50 a night as amended 2026-11-17)', () => {
     const garakShare = shares.shares.garak;
     const price = prices.models[budget.model];
     const plannedUsdPerRequest =
@@ -231,10 +232,10 @@ describe('garak spend cap (D-EV-1: USD 5 a night, shared with Ragas by D-EV-2)',
             budget.plannedTurn.outputTokens * price.usdPerMillionOutputTokens) /
         1_000_000;
 
-    it('garak meters against its share of the decided USD 5, on the decided Haiku-class model', () => {
-        expect(shares.nightlyCapUsd).toBe(5);
+    it('garak meters against its share of the decided USD 6.50, on the decided Haiku-class model alone', () => {
+        expect(shares.nightlyCapUsd).toBe(6.5);
         expect(garakShare.usd).toBeLessThanOrEqual(shares.nightlyCapUsd);
-        expect(garakShare.model).toBe(budget.model);
+        expect(garakShare.models).toEqual([budget.model]);
         expect(budget.model).toMatch(/haiku/);
         expect(job.env?.AGENT_FLUE_MODEL).toBe(budget.model);
         // budget.json carries no price and no cap of its own: a second copy
@@ -268,7 +269,7 @@ describe('garak spend cap (D-EV-1: USD 5 a night, shared with Ragas by D-EV-2)',
 
     it("the roles fit the night, and the planned night fits garak's share — the cap the breaker enforces", () => {
         expect(budget.roles.length * budget.maxRequestsPerRole).toBeLessThanOrEqual(budget.maxRequestsPerNight);
-        // Held against the SHARE, not the whole USD 5: the measured breaker
+        // Held against the SHARE, not the whole nightly cap: the measured breaker
         // (.garak/spend.mjs mayContinue) starts a role only while spent + one
         // planned role fits garak's share, so a planned night above the share
         // means the last role is skipped on a night that costs what was
