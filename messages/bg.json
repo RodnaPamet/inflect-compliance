@@ -3405,6 +3405,11 @@
   "training": {
     "title": "Обучение",
     "description": "{total, plural, one {# задача за обучение по сигурност} other {# задачи за обучение по сигурност}}.",
+    "descriptionMatching": "{total, plural, one {# задача съответства} other {# задачи съответстват}} на търсенето и филтрите.",
+    "shownOfTotal": "Показани {shown, number} от {total, number}",
+    "loadMore": "Зареди още",
+    "loading": "Зареждане…",
+    "loadFailed": "Следващите задачи не можаха да се заредят. Опитайте отново.",
     "resourceSingular": "задача",
     "resourcePlural": "задачи",
     "searchPlaceholder": "Търсене на задачи…",

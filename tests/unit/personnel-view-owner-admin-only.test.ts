@@ -50,6 +50,8 @@ function recordingTable(name: string) {
             tablesRead.push(name);
             return [];
         }),
+        // The paged training read counts its matches beside the page.
+        count: jest.fn(async () => 0),
     };
 }
 jest.mock('@/lib/db-context', () => ({

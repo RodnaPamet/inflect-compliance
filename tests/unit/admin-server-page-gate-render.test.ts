@@ -77,7 +77,12 @@ jest.mock('next-intl/server', () => {
 const reads = {
     listEmployees: jest.fn(async () => ({ employees: [], truncated: false, total: 0 })),
     listDevices: jest.fn(async () => []),
-    listTrainingAssignments: jest.fn(async () => []),
+    listTrainingAssignments: jest.fn(async () => ({
+        rows: [] as unknown[],
+        nextCursor: null as string | null,
+        total: 0,
+        filters: { q: '', statuses: [] as string[] },
+    })),
     listAuditLogPage: jest.fn(async (_ctx: unknown, _input: unknown) => ({
         rows: [] as unknown[],
         nextCursor: null as string | null,
