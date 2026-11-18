@@ -15,7 +15,7 @@ Open the organization (see [{{ui:org.dashboard.title}}](portfolio-overview.md)).
 | Action | Roles |
 | --- | --- |
 | Open the page and see every workspace | Owner, Admin, Reader |
-| Open a workspace from its row | Anyone who belongs to that workspace. Owners and Admins of the organization are given Admin access to every workspace in it |
+| Open a workspace from its row | Owner, Admin. Owners and Admins of the organization are given Admin access to every workspace in it |
 | Create a workspace | Owner |
 | Delete a workspace | Owner |
 
@@ -25,7 +25,7 @@ A table, one row per workspace:
 
 | Column | What it shows |
 | --- | --- |
-| {{ui:org.tenants.colTenant}} | The workspace's name. Click it to open the workspace's dashboard |
+| {{ui:org.tenants.colTenant}} | The workspace's name. An Owner or Admin clicks it to open the workspace's dashboard; for a Reader the name is not a link |
 | {{ui:org.tenants.colHealth}} | **{{ui:org.health.GREEN}}**, **{{ui:org.health.AMBER}}** or **{{ui:org.health.RED}}**, worked out from the latest snapshot (see [{{ui:org.dashboard.title}}](portfolio-overview.md)), or **{{ui:org.common.pending}}** before the first one |
 | {{ui:org.tenants.colCoverage}} | The share of the workspace's applicable controls that are implemented |
 | {{ui:org.tenants.colOpenRisks}} | Risks still open, not closed |

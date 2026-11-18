@@ -14,6 +14,8 @@ Click your picture or initials at the top right of any page, then **{{ui:account
 
 Everyone, for their own profile. You cannot change anyone else's name or photo here.
 
+If you signed in through a workspace's single sign-on and you also belong to another workspace or an organization, you cannot change your name or photo in that session: the change would show in places that workspace's sign-in does not vouch for. Sign in with your password, or with Google or Microsoft, to make it.
+
 ## What it is for
 
 Set a real first and last name so your colleagues see a person rather than an email address when you own a risk or are assigned a task. Add a photo so you are easy to recognise.
@@ -54,6 +56,7 @@ Your name and photo change everywhere straight away: in the top bar, on this pag
 | The reason the photo was refused, such as an image that is too large | The photo was not uploaded | Follow the reason given, for example by choosing a smaller image |
 | **{{ui:account.profile.uploadFailed}}** | The photo was not uploaded, and the server gave no reason | Try again |
 | **{{ui:account.profile.couldNotRemovePhoto}}**, or the reason it was refused | The photo was not removed | Try again |
+| A message that the change applies to your account in every workspace | You signed in through one workspace's single sign-on, and you belong to other workspaces or an organization | Sign in with your password, or with Google or Microsoft, and make the change again |
 
 ## Related
 

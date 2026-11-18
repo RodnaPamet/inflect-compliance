@@ -17,36 +17,49 @@ Every node on the canvas reads at three levels:
      ANNOTATE the process.
    - `note` is a flat sticker. It is not part of the graph at all.
 
-2. **Shape** (R26-PR-B) — `rect` / `diamond` / `note`. Three shapes total. A
-   diamond is universally a branch point; a note is universally a sticker;
-   everything else is a rectangle.
+2. **Shape** — `rect` / `note`. A note is universally a sticker; everything
+   else is a rectangle. The decision diamond was retired in R31: a branch
+   point reads by its `GitBranch` icon and corner sticker, not by divergent
+   geometry.
 
 3. **Accent + icon** — per-kind colour-coding and icon. The accent
    distinguishes one rectangular context node from another (risk = warning
    amber, asset = success green, external = subtle/dashed).
 
-## The seven canonical kinds
+## The document kinds
 
 | Kind | Category | Shape | Accent | Icon | In palette? |
 |---|---|---|---|---|---|
 | `processStep` | flow | rect | brand | Box | ✅ |
-| `decision` | flow | diamond | neutral | GitBranch | ✅ |
+| `decision` | flow | rect | neutral | GitBranch | ✅ |
 | `control` | context | rect | brand-secondary | ShieldCheck | ❌ (edge-only) |
 | `risk` | context | rect | warning | AlertTriangle | ✅ |
 | `asset` | context | rect | success | FileText | ✅ |
 | `external` | context | rect | subtle (dashed) | Globe | ✅ |
 | `annotation` | note | note | subtle | StickyNote | ✅ |
+| `group` | group | rect | subtle | Group | ✅ |
+
+A `group` is a labelled, translucent container that bundles steps under one
+heading. It carries no connections itself: edges run into and out of the steps
+inside it. On an automation map a group is a sub-flow.
+
+An **automation** map adds five flow kinds, offered in their own palette
+section only in that mode: `trigger`, `condition`, `action`, `agent` and
+`slaGate`. The `action` and `agent` steps each own an automation rule, and the
+steps wired into them configure it; see
+[the canvas architecture](./processes-canvas.md#document-and-automation-maps).
 
 ## Why control is **edge-first**
 
 Controls in IC are governance objects that GATE a transition between two
 process steps. The Roadmap-25 brief committed to representing them ON the <!-- docs-accuracy-allow: phase name, not future tense -->
-connection (`<ControlOnEdge>` overlay) rather than as standalone nodes
-floating beside the flow. R26-PR-D enforces that commitment:
+connection rather than as standalone nodes floating beside the flow.
+R26-PR-D enforces that commitment:
 
-- Controls are no longer offered in the palette. The canonical entry point
-  for adding a control is the **"Add control"** affordance that appears when
-  the user selects an edge with no existing control.
+- Controls are not offered in the palette. A control is attached to a
+  connection through the inspector's Control picker when the edge is
+  selected; an edge can carry several, each persisted as a
+  `ProcessEdgeControl` row and listed as a pill in the inspector.
 - The `control` taxonomy entry stays in `NODE_TAXONOMY` so legacy map data
   (R25 + R26-PR-A/B/C era) carrying `nodeType: 'control'` still rehydrates
   correctly. The kind renders identically to other context nodes when it
@@ -80,10 +93,10 @@ visual convention for "outside the org". One quick look and the reader knows
 
 ## What this document is NOT
 
-This is not a developer setup guide. For the persistence layer see
-`prisma/schema/processes.prisma` + the R26-PR-A implementation note. For
-the palette + taxonomy implementation see `node-taxonomy.ts`. For the
-proximity auto-bind interaction see `use-proximity-auto-bind.ts`.
+This is not a developer setup guide. For the architecture, persistence and
+automation mode see [the canvas architecture](./processes-canvas.md); for the
+palette and taxonomy implementation see
+`src/components/processes/node-taxonomy.ts`.
 
 This document is purely the design rationale future contributors need to
 NOT accidentally undo when "tidying up" the canvas.

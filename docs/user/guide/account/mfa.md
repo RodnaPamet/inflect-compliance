@@ -55,7 +55,7 @@ Click **{{ui:mfa.removeMfa}}** and confirm **{{ui:mfa.removeConfirmTitle}}** The
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:mfa.loadingTitle}}** | The page is loading | Wait a moment |
-| **{{ui:mfa.loadFailed}}** | Your MFA status did not load | Reload the page |
+| **{{ui:mfa.loadFailed}}**, or the reason the server gave | Your MFA status did not load or was refused | Reload the page, or follow the reason given |
 | **{{ui:mfa.invalidCodeFormat}}** | The code is not six digits | Type the six digits the app shows |
 | **{{ui:mfa.invalidCodeRetry}}**, or the reason the server gave | The code was wrong or has expired | Type the code that shows now; codes change every 30 seconds |
 | **{{ui:mfa.startFailed}}** | Setup could not start | Try again |

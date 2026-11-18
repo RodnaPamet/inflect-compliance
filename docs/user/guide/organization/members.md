@@ -84,7 +84,7 @@ Every addition, removal, role change and invitation is recorded in the organizat
 | **{{ui:org.members.refused.LAST_ORG_OWNER}}** | The change would leave the organization without an Owner | Make another member an Owner first |
 | **{{ui:org.members.refused.LAST_ORG_ADMIN}}** | The change would leave the organization without an Owner or Admin | Make another member an Admin first |
 | **{{ui:org.forbidden.title}}** | You are a Reader | Ask an Owner or Admin |
-| **{{ui:org.members.ownerNeedsOwner}}** | You are an Admin and the row is an Owner's | Ask an Owner |
+| **{{ui:org.members.ownerNeedsOwner}}**, or **{{ui:org.members.refused.OWNER_MEMBERSHIP_NEEDS_OWNER}}** | You are an Admin and the row is an Owner's | Ask an Owner |
 
 ## Related
 

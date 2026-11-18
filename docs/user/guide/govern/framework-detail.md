@@ -8,7 +8,7 @@ A framework's page shows one framework, such as ISO 27001 or NIS2, as your works
 
 ## Where to find it
 
-Open **{{ui:nav.frameworks}}** and click a framework. The breadcrumb reads **{{ui:frameworks.crumb.dashboard}}** › **{{ui:frameworks.crumb.frameworks}}** › the framework's name. Arrows beside the title step to the previous or next framework.
+Open the [{{ui:frameworks.list.heading}}](frameworks.md) page, which explains where to find it, and click a framework. The breadcrumb reads **{{ui:frameworks.crumb.dashboard}}** › **{{ui:frameworks.crumb.frameworks}}** › the framework's name. Arrows beside the title step to the previous or next framework.
 
 ## Who can use it
 
@@ -51,16 +51,16 @@ Click **{{ui:frameworks.detail.installPack}}**, in the header for the framework 
 
 ### Take a pack out of scope
 
-When you have chosen more than one pack, **{{ui:frameworks.detail.removePack}}** on a pack's card takes it out of scope. Its controls stay in your workspace; only its requirements stop counting towards coverage. You have a few seconds to click **{{ui:frameworks.detail.undo}}**. The last chosen pack cannot be removed: {{ui:frameworks.detail.packRemoveLast}}
+When you have chosen more than one pack, **{{ui:frameworks.detail.removePack}}** on a pack's card takes it out of scope. Its controls stay in your workspace; only its requirements stop counting towards coverage. You have a few seconds to click **{{ui:frameworks.detail.undo}}**. The last chosen pack cannot be removed: {{ui:frameworks.detail.packRemoveLast}} To put a pack back in scope, click **{{ui:frameworks.detail.installPack}}**, tick it, and install: when it adds no controls, the install button offers to add the pack to scope.
 
 ### Change the order of requirements
 
-On **{{ui:frameworks.detail.builderTab}}**, drag sections and requirements into the order you want, and save. The order applies to this workspace only.
+On **{{ui:frameworks.detail.builderTab}}**, drag sections and requirements into the order you want, and save. A requirement moves only within its own section, because its section comes from the framework; dropping it on another section leaves it where it was. The order applies to this workspace only.
 
 ## What happens next
 
 - Installing a pack creates its controls on the controls list, mapped to the framework's requirements, and raises the coverage here.
-- A control you map to a requirement from the control's own page counts on this page's coverage straight away.
+- A control you map to a requirement from the control's own page counts on this page's coverage straight away. A control in the trash is not shown against any requirement and does not count.
 - A requirement whose only controls are out of scope shows under **{{ui:frameworks.detail.outOfScope}}** rather than as a gap.
 
 ## Empty and error states

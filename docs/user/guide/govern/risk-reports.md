@@ -31,7 +31,7 @@ Hand management, the board or an auditor a current, consistent document without 
 
 **{{ui:risks.reports.schedulesTitle}}.** A form to create a schedule: **{{ui:risks.reports.scheduleTemplate}}**, **{{ui:risks.reports.scheduleCadence}}**, **{{ui:risks.reports.scheduleFormat}}**, **{{ui:risks.reports.scheduleRecipients}}**, and **{{ui:risks.reports.scheduleSharePointLabel}}**. Below it, each schedule with its state, template, cadence, format, recipients and next run. A deep-dive schedule says whether it covers one risk or the whole portfolio, and a schedule that saves to SharePoint says **{{ui:risks.reports.scheduleToSharePoint}}**. Roles that can change schedules also see **{{ui:risks.reports.scheduleEdit}}**, **{{ui:risks.reports.schedulePause}}** (or **{{ui:risks.reports.scheduleResume}}**) and **{{ui:risks.reports.scheduleDelete}}**.
 
-**{{ui:risks.reports.recent}}.** The reports already generated, newest first: when, which template, the format and the status. A finished report has **{{ui:risks.reports.download}}**. A failed one shows why, with **{{ui:risks.reports.retry}}**. The list refreshes on its own while a report is being generated. It holds the latest 50 reports, and says so when it is full.
+**{{ui:risks.reports.recent}}.** The reports already generated, newest first: when, which template, the format and the status. A finished report has **{{ui:risks.reports.download}}**. A failed one shows why, with **{{ui:risks.reports.retry}}**, which runs it again for the same scope: a failed whole-portfolio deep dive is retried for the whole portfolio, whatever risk the template's picker now holds. The list refreshes on its own while a report is being generated. It holds the latest 50 reports, and says so when it is full.
 
 ## What you can do
 

@@ -29,7 +29,7 @@ Answer, in one place, whether a control is in place and working: what it is mean
 
 ## What you see
 
-**The header.** The control's name, its **{{ui:controls.detailPage.metaCode}}** (click it to copy), **{{ui:controls.status}}** and **{{ui:controls.detailPage.metaApplicability}}**. When the control is fed by an integration, a badge shows whether the last sync worked: **{{ui:controls.detailPage.synced}}**, **{{ui:controls.detailPage.syncFailedBadge}}** or **{{ui:controls.detailPage.syncConflictBadge}}**. A badge also shows an exception in force.
+**The header.** The control's name, its **{{ui:controls.detailPage.metaCode}}** (click it to copy), **{{ui:controls.status}}** and **{{ui:controls.detailPage.metaApplicability}}**. Applicability reads **{{ui:controls.applicable}}**, **{{ui:controls.notApplicable}}**, or **{{ui:controls.list.notAssessed}}** for a control nobody has decided on yet, as on the controls list; the health card says the same. When the control is fed by an integration, a badge shows whether the last sync worked: **{{ui:controls.detailPage.synced}}**, **{{ui:controls.detailPage.syncFailedBadge}}** or **{{ui:controls.detailPage.syncConflictBadge}}**. A badge also shows the control's exception: one approved and still in force is shown in preference to a newer renewal request.
 
 On the right: **{{ui:controls.detailPage.whereUsed}}**, and, if you can edit, the status picker and **{{ui:controls.detailPage.applicabilityButton}}**. **{{ui:controls.detailPage.aiSuggestions}}** opens a side panel of suggestions.
 
@@ -76,7 +76,7 @@ Under **{{ui:controls.detailPage.eyebrowContributors}}**, pick a member and clic
 
 ### Attach evidence
 
-On **{{ui:controls.detailPage.tabEvidence}}**, upload a file or give a link with a title. The evidence is added to the workspace's evidence library and linked to this control. Unlinking takes it off the control and leaves it in the library, with a few seconds to undo.
+On **{{ui:controls.detailPage.tabEvidence}}**, upload a file or give a link with a title. The evidence is added to the workspace's evidence library and linked to this control. If your workspace uses custom roles, uploading a file also needs permission to upload evidence, and adding a link needs permission to edit evidence; the form offers only the half your role can use. Unlinking takes it off the control and leaves it in the library, with a few seconds to undo.
 
 ### Map requirements, risks and assets
 
@@ -84,7 +84,7 @@ On **{{ui:controls.detailPage.tabRequirements}}**, pick a framework requirement 
 
 ### Request an exception
 
-When the control cannot be put in place as designed, click **{{ui:panels.exceptions.request}}** under **{{ui:panels.exceptions.title}}**. Give a **{{ui:panels.exceptions.justification}}** and choose who it is **{{ui:panels.exceptions.riskAcceptedBy}}**. Optionally add a **{{ui:panels.exceptions.compensatingControl}}** and a **{{ui:panels.exceptions.proposedExpiry}}**. An Owner or Admin then approves it, with an expiry date, or rejects it with a reason. **{{ui:panels.exceptions.renew}}** starts a new request from an approved or expired exception.
+When the control cannot be put in place as designed, click **{{ui:panels.exceptions.request}}** under **{{ui:panels.exceptions.title}}**. Give a **{{ui:panels.exceptions.justification}}** and choose who it is **{{ui:panels.exceptions.riskAcceptedBy}}**. Optionally add a **{{ui:panels.exceptions.compensatingControl}}** and a **{{ui:panels.exceptions.proposedExpiry}}**. An Owner or Admin then approves it, with an expiry date no earlier than tomorrow, or rejects it with a reason. Nobody can approve or reject their own request, so the buttons are not offered on it. If a request, approval, rejection or renewal is refused, the dialog shows the reason. **{{ui:panels.exceptions.renew}}** starts a new request from an approved or expired exception.
 
 ### See where the control is used
 
@@ -109,6 +109,7 @@ When the control cannot be put in place as designed, click **{{ui:panels.excepti
 | **{{ui:controls.detailPage.errors.updateFailed}}**, or the reason it was refused | The edit was not saved | Follow the reason given, then try again |
 | **{{ui:controls.detailPage.errors.addContributorFailed}}** or the reason it was refused, or **{{ui:controls.detailPage.errors.removeContributorFailed}}** | The contributor was not added or removed | Follow the reason given, then try again |
 | **{{ui:controls.detailPage.couldntLoadEvidence}}** or **{{ui:controls.detailPage.couldntLoadActivity}}** | That tab could not load | Reload the page |
+| **{{ui:controls.checksTab.loadError}}** | The automated checks could not load. It does not mean the control has never been checked | Click **{{ui:controls.checksTab.retry}}** |
 | **{{ui:controls.detailPage.syncFailedBadge}}** or **{{ui:controls.detailPage.syncConflictBadge}}** | The integration that feeds the control could not sync it, or found changes on both sides | Hover over the badge for the reason, then check the integration |
 
 ## Related

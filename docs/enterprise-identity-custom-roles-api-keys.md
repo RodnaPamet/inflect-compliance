@@ -134,6 +134,9 @@ merged over the base role's defaults on read by `parsePermissionsJson()`.
 | `lastUsedAt` | DateTime? | Updated on each successful auth |
 | `lastUsedIp` | String? | Client IP of last auth |
 | `createdById` | FK → User | Audit trail — who created the key |
+| `agentId` | FK → RegisteredAgent? | The registered agent the key acts for, if any. A bound key is refused at REST and at `/api/mcp` while that agent is killed or not ACTIVE |
+| `maxAutonomyLevel` | Int? | The autonomy ceiling an agent-bound key carries into the MCP funnel |
+| `requiresTokenExchange` | Boolean | Set at creation, never changed (#5004): the key reaches MCP tools only through an exchanged token (see below) |
 
 ### Key Lifecycle
 
@@ -180,6 +183,31 @@ Scopes use the format `resource:action`:
 | `evidence:write` | evidence.upload, evidence.edit |
 | `policies:admin` | policies.approve |
 | `admin:write` | admin.manage, admin.members, admin.sso, admin.scim |
+| `processes:read` | No REST permission. It is the resource scope of the MCP tool `propose_process_map` (#5055): a propose key carries it so it never needs `processes:write`, which would let it overwrite maps over REST |
+| `mcp:read` / `mcp:propose` | Capability scopes for `/api/mcp`: they set no permission flag. `mcp:read` admits the read tools, `mcp:propose` the propose-not-commit tools; each tool still needs its own resource scope |
+
+`VALID_SCOPES` in `src/lib/auth/api-key-auth.ts` is the full list; the table
+above is the shape, not the inventory. Two scopes are granted only by their
+own name — `admin:agent_registry_view` and `audits:workpaper_view` — and no
+`*` or `<resource>:*` key carries them (`WILDCARD_EXCLUDED_ACTIONS`).
+
+### MCP keys and the exchanged token
+
+A key with an MCP scope can be traded at `POST /api/mcp/token` (RFC 8693
+token exchange) for a short-lived `ifxt_` access token naming an audience:
+up to 32 MCP tool names, or `mcp:resources`. The token lives five minutes by
+default and fifteen at most, the exchange runs the same credential, scope,
+registration and tool-allowlist checks as `/api/mcp`, and `/api/mcp` refuses
+the token at any tool outside its audience, so an exchange only ever narrows.
+The route takes `API_KEY_CREATE_LIMIT`, the budget minting a key takes.
+
+A key created with `requiresTokenExchange` (offered only when the key holds an
+MCP scope; a request without one is a 400) is refused when presented directly
+at `/api/mcp`: a 403 with an `AUTHZ_DENIED` row (gate `token_exchange_required`),
+after the per-key budget and before the registration gate. Its exchanged token
+is admitted, and it starts no agent run, because a run's tool calls carry no
+audience. REST routes are unaffected. To move a key in or out of the
+requirement, re-issue it.
 
 ### Scope Enforcement
 

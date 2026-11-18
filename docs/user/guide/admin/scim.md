@@ -75,6 +75,7 @@ Creating and revoking a token are both recorded in the [{{ui:admin.auditLog}}](a
 
 - The identity provider's changes show on the [{{ui:admin.members.title}}](members.md) page. A person it deactivates is marked deactivated and loses access to the workspace; the identity provider can reactivate them later.
 - When the identity provider deactivates an AI admin, the workspace's Owners are notified.
+- When the workspace is removed, every SCIM token stops working at once, so the identity provider can no longer add or reactivate anyone in it.
 
 ## Empty and error states
 

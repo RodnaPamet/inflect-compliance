@@ -31,7 +31,7 @@ Use it to judge whether testing is healthy, rather than to work through it. The 
 | {{ui:controlTests.dashboard.kpi.failRate}} | Failed runs out of completed runs |
 | {{ui:controlTests.dashboard.kpi.evidenceRate}} | Completed runs with at least one piece of evidence attached |
 
-Each card is green, amber or red against fixed thresholds: 80% and 50% for the completion, pass and evidence rates, 10% and 30% for the fail rate. With no runs in the period, the cards show a dash and **{{ui:controlTests.dashboard.kpi.noRunsInPeriod}}** instead of a rate.
+Each card is green, amber or red against fixed thresholds: 80% and 50% for the completion, pass and evidence rates, 10% and 30% for the fail rate. With no runs in the period, the cards show a dash and **{{ui:controlTests.dashboard.kpi.noRunsInPeriod}}** instead of a rate. With runs but none completed, the pass, fail and evidence cards show a dash and **{{ui:controlTests.dashboard.noCompleted}}**, because those rates are shares of completed runs.
 
 **The overdue card.** The number of active plans that are overdue, counting both their frequency date and their schedule. Click it, or **{{ui:controlTests.dashboard.viewQueue}}**, to open the {{ui:controlTests.list.title}} list filtered to exactly those plans.
 
