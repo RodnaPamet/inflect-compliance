@@ -54,6 +54,8 @@ While the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**, and the vendor
 
 The document must be one of this vendor's. Pre-filling follows the workspace's AI switches on the [{{ui:admin.nav.aiFeatures}}](ai-features.md) page: while **{{ui:admin.aiFeatures.risk.name}}** or **{{ui:admin.aiFeatures.ai.name}}** is off, it is refused. While the workspace's AI processing is set to **{{ui:admin.aiResidency.localLabel}}**, the document is not sent to an outside model and no answers are proposed.
 
+If the document cannot be read, the panel says why under the button, for example that AI is turned off, that today's AI allowance is used up, or that the document belongs to another vendor. Each case is listed under [Empty and error states](#empty-and-error-states).
+
 ### Close the assessment
 
 When it is **{{ui:vendors.statusLabel.REVIEWED}}**, click **{{ui:admin.assessmentReview.closeAssessment}}** and confirm **{{ui:admin.assessmentReview.closeConfirmTitle}}** {{ui:admin.assessmentReview.closeConfirmBody}} The page then shows when it was closed and the final rating.
@@ -72,6 +74,14 @@ Once an assessment is reviewed, its answers are the scored record: pre-filled an
 | {{ui:vendors.prefill.updateFailed}} | A proposed answer was not approved or rejected | Reload the page and try again |
 | {{ui:vendors.prefill.proposalsFromDocMsg}} | The document gave no answers to propose. A workspace whose AI processing is **{{ui:admin.aiResidency.localLabel}}** always sees this | Answer from the document yourself, or choose another |
 | {{ui:vendors.prefill.proposalsFailedMsg}} | The document could not be read | Try again, or review without it |
+| {{ui:vendors.prefill.refused.AI_DISABLED}} | AI is switched off for the whole installation | Ask your administrator, or review without it |
+| {{ui:vendors.prefill.refused.AI_TURNED_OFF_FOR_WORKSPACE}} | AI is turned off for this workspace | Ask the workspace owner to turn it on, or review without it |
+| {{ui:vendors.prefill.refused.AI_DAILY_LIMIT_REACHED}} | The workspace has used its AI allowance for today. The message says when it resets when it can | Try again once it resets |
+| {{ui:vendors.prefill.refused.AI_TOO_MANY_REQUESTS}} | Too many AI requests in a short time | Wait a moment and try again |
+| {{ui:vendors.prefill.refused.AI_GUARD_BLOCKED}} | The AI Guard found text in the document aimed at the AI, or secret material, and stopped the reading | Check the document with the vendor, or review without it |
+| {{ui:vendors.prefill.refused.DOCUMENT_VENDOR_MISMATCH}} | The chosen document was uploaded for another vendor | Choose a document of the assessed vendor |
+| Another sentence under **{{ui:vendors.prefill.prefillBtn}}** | The server's own reason, such as a document that no longer exists | Act on the reason, or choose another document |
+| {{ui:vendors.prefill.extractionFailed}} | The request did not reach the server, or it gave no reason | Try again |
 
 ## Related
 

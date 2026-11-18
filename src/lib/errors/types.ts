@@ -90,8 +90,8 @@ export class ConflictError extends AppError {
 }
 
 export class RateLimitedError extends AppError {
-    constructor(message: string = 'Too many requests') {
-        super(message, 'RATE_LIMITED', 429, true);
+    constructor(message: string = 'Too many requests', details?: unknown) {
+        super(message, 'RATE_LIMITED', 429, true, details);
         this.name = 'RateLimitedError';
     }
 }
@@ -187,8 +187,8 @@ export const notFound = (message: string = 'Not Found', details?: unknown) =>
 export const conflict = (message: string = 'Conflict') =>
     new ConflictError(message);
 
-export const rateLimited = (message: string = 'Too many requests') =>
-    new RateLimitedError(message);
+export const rateLimited = (message: string = 'Too many requests', details?: unknown) =>
+    new RateLimitedError(message, details);
 
 export const gone = (message: string = 'Gone', details?: unknown) =>
     new GoneError(message, details);

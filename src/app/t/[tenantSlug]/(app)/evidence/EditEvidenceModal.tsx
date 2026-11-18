@@ -457,10 +457,13 @@ export function EditEvidenceModal({
                         </FormField>
                         {/* Body. Hidden for FILE evidence, whose `content`
                             is the internal storage pathKey rather than
-                            anything a user wrote. */}
+                            anything a user wrote. A note's body is labelled
+                            as the create form labels it ("Content"), so it is
+                            never a second "Description" beside the
+                            Description field below (#5764). */}
                         {contentEditable && (
                         <FormField
-                            label={isLink ? t('edit.addressLabel') : t('edit.descriptionLabel')}
+                            label={isLink ? t('edit.addressLabel') : t('text.contentLabel')}
                             error={linkNeedsUrl ? t('edit.linkNeedsUrl') : undefined}
                         >
                             <Textarea

@@ -646,11 +646,17 @@ export function EvidenceDetailSheet({
                             {/* The body. Rendered from `content`, which is
                                 the note for TEXT and the URL for LINK — and
                                 the internal storage pathKey for FILE, which
-                                must NOT be shown. */}
+                                must NOT be shown. Labelled as the forms label
+                                it (a note's "Content", a link's "Address"),
+                                never "Description", which is the evidence's
+                                own Description row above (#5764). */}
                             {evidence.content && contentRole !== 'internal' && (
                                 <div className="space-y-tight">
-                                    <p className="text-xs font-medium uppercase tracking-widest text-content-subtle">
-                                        {t('detail.descriptionLabel')}
+                                    <p
+                                        className="text-xs font-medium uppercase tracking-widest text-content-subtle"
+                                        data-testid="evidence-sheet-content-label"
+                                    >
+                                        {contentRole === 'url' ? t('edit.addressLabel') : t('text.contentLabel')}
                                     </p>
                                     {/* A link opens only when its address is safe to
                                         follow (`normaliseHref`: never `javascript:`,
