@@ -63,8 +63,11 @@ The carrier rides on the job payload under the sentinel key
 - **Namespaced** with a double underscore so it can never collide with
   a typed `JobPayload<T>` field. Executors read only their own payload
   shape and never see it.
-- **Stripped** before the payload reaches the executor (and before the
-  worker logs the payload) via `stripTraceCarrier`.
+- **Stripped** before the payload reaches the executor via
+  `stripTraceCarrier`. The worker never logs the payload itself, only
+  `jobPayloadLogFields` of it — the key names and an allowlist of opaque
+  ids (`src/lib/observability/job-payload-log.ts`) — so the carrier is
+  not logged either.
 - **Internal observability plumbing — never logged, never shipped in
   audit-stream events.** It is not PII, but it does not belong in the
   audit trail. This is a review sentinel: a PR that logs `job.data`

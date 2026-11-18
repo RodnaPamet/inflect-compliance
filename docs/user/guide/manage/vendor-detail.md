@@ -18,7 +18,7 @@ Open **{{ui:nav.vendors}}** under **{{ui:nav.manage}}** and click a vendor's nam
 | Edit the vendor, fill it in from its website, add documents, links and subprocessors | Owner, Admin, Editor |
 | Send or resend a questionnaire, create and freeze evidence bundles | Owner, Admin, Editor |
 
-If your workspace uses custom roles, the page offers only what your role's permissions allow.
+If your workspace uses custom roles, the page offers only what your role's permissions allow: every change, **{{ui:vendors.detail.resendInvite}}** included, needs permission to edit vendors.
 
 ## What it is for
 
@@ -35,7 +35,7 @@ Keep each supplier's risk on record and up to date: what they do for you, what t
 | **{{ui:vendors.detail.tabs.overview}}** | The vendor's details, its risk and its key dates |
 | **{{ui:vendors.detail.tabs.documents}}** | Contracts, certificates, reports and other files or links, sorted into folders |
 | **{{ui:vendors.detail.tabs.assessments}}** | Questionnaires sent to the vendor, their answers and scores |
-| **{{ui:vendors.detail.tabs.monitoring}}** | Signals collected about the vendor, such as breaches or certificate changes |
+| **{{ui:vendors.detail.tabs.monitoring}}** | Signals collected about the vendor, such as breaches or certificate changes, and the grade of its website's encryption. When the latest check could not grade the site, the grade is marked **{{ui:vendors.monitoring.tlsStale}}** with the date of that check and why it failed, for example that the site refused the monitor or could not be reached. A failed **{{ui:vendors.monitoring.runNow}}** or settings change is shown in the panel |
 | **{{ui:vendors.detail.tabs.links}}** | The controls, risks, assets and other records the vendor is linked to |
 | **{{ui:vendors.detail.tabs.bundles}}** | Evidence bundles: a set of the vendor's documents and answers, frozen at a point in time |
 | **{{ui:vendors.detail.tabs.subprocessors}}** | The vendors this vendor passes your data on to, and their own subprocessors |
@@ -98,6 +98,8 @@ On **{{ui:vendors.detail.tabs.subprocessors}}**, pick the vendor that acts as a 
 | **{{ui:vendors.detail.sendRefused.SEND_TEMPLATE_DRAFT}}** | The template chosen is still a draft | Publish the template, or choose a published one |
 | **{{ui:vendors.detail.sendRefused.SEND_ALREADY_IN_FLIGHT}}** | The respondent already has this questionnaire to answer | Click **{{ui:vendors.detail.resendInvite}}** on the waiting questionnaire |
 | **{{ui:vendors.detail.sendFailed}}** | The questionnaire was not sent, for another reason | Try again |
+| {{ui:vendors.detail.activationReassessmentInProgress}} | The vendor cannot be made Active while its reassessment is open | Complete the review of its latest assessment, with a risk rating |
+| **{{ui:vendors.detail.addDocFailed}}**, **{{ui:vendors.detail.createBundleFailed}}**, **{{ui:vendors.detail.addSubFailed}}** or **{{ui:vendors.detail.enrichFailed}}** | The change was refused; a reason from the server is shown when there is one, and what you typed is kept | Correct it and try again |
 | **{{ui:vendors.detail.loadDocsFailed}}**, **{{ui:vendors.detail.loadLinksFailed}}**, **{{ui:vendors.detail.loadBundlesFailed}}** or **{{ui:vendors.detail.loadSubsFailed}}** | That tab could not load | Reload the page |
 
 ## Related

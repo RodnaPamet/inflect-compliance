@@ -60,7 +60,7 @@ Click **{{ui:audits.biaDetail.markReviewed}}**. The review is recorded as today'
 
 ### Edit it
 
-Click **{{ui:audits.biaDetail.edit}}**. In **{{ui:audits.biaDetail.editTitle}}**, change **{{ui:audits.bia.fieldProcess}}**, **{{ui:audits.bia.fieldCriticality}}**, **{{ui:audits.bia.fieldRto}}**, **{{ui:audits.bia.fieldRpo}}**, **{{ui:audits.bia.fieldMtpd}}**, **{{ui:audits.bia.fieldOwner}}** and **{{ui:audits.bia.fieldNotes}}**, then click **{{ui:audits.biaDetail.save}}**.
+Click **{{ui:audits.biaDetail.edit}}**. In **{{ui:audits.biaDetail.editTitle}}**, change **{{ui:audits.bia.fieldProcess}}**, **{{ui:audits.bia.fieldCriticality}}**, **{{ui:audits.bia.fieldRto}}**, **{{ui:audits.bia.fieldRpo}}**, **{{ui:audits.bia.fieldMtpd}}**, **{{ui:audits.bia.fieldOwner}}** and **{{ui:audits.bia.fieldNotes}}**, then click **{{ui:audits.biaDetail.save}}**. The three objectives take whole hours, zero or more; leave one empty to clear it. The owner must be an active member of the workspace. Anything else, such as 24h or 1.5, is marked **{{ui:audits.biaDetail.hoursInvalid}}** and the save button stays greyed out until you correct it.
 
 ### Describe the impact over time
 
@@ -68,7 +68,7 @@ Under **{{ui:audits.biaDetail.secImpact}}**, click **{{ui:audits.biaDetail.impac
 
 ### Add or remove a dependency
 
-Under **{{ui:audits.biaDetail.secDependencies}}**, choose the kind (process, asset, vendor or risk) and the item, and add it. Click **{{ui:audits.biaDetail.depRemove}}** beside one to take it off; the message **{{ui:audits.biaDetail.dependencyRemoved}}** offers **{{ui:audits.biaDetail.undo}}** for a few seconds.
+Under **{{ui:audits.biaDetail.secDependencies}}**, choose the kind (process, asset, vendor or risk) and the item, and add it. Click **{{ui:audits.biaDetail.depRemove}}** beside one to take it off; it leaves the list at once, and the message **{{ui:audits.biaDetail.dependencyRemoved}}** offers **{{ui:audits.biaDetail.undo}}** for a few seconds. If the removal is refused, the dependency comes back and a message says why.
 
 ### Link a control
 
@@ -86,7 +86,7 @@ Click **{{ui:audits.biaDetail.delete}}** and confirm **{{ui:audits.biaDetail.del
 | {{ui:audits.biaDetail.dependenciesEmpty}} | Nothing is recorded as a dependency | Add the process's dependencies |
 | **{{ui:audits.biaDetail.noControlsTitle}}** | The analysis is evidence for no control yet | Click **{{ui:audits.biaDetail.linkControlAction}}** |
 | {{ui:audits.biaDetail.controlNoMappings}} | A linked control is not mapped to any framework requirement | Map the control on its page |
-| {{ui:audits.biaDetail.saveFailed}}, {{ui:audits.biaDetail.addDependencyFailed}} or {{ui:audits.biaDetail.deleteFailed}} | The change was not saved; the reason may be shown | Try again |
+| {{ui:audits.biaDetail.saveFailed}}, {{ui:audits.biaDetail.addDependencyFailed}}, {{ui:audits.biaDetail.removeDependencyFailed}} or {{ui:audits.biaDetail.deleteFailed}} | The change was not saved; the reason may be shown | Try again |
 | The page-not-found screen | The analysis does not exist in this workspace | Open it from the register |
 
 ## Related

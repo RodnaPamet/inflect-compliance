@@ -81,10 +81,14 @@ far more often than the dashboard is viewed) or the TTL is too short.
    the scope. If you need a new entity, add it to the `AggregationEntity`
    union first.
 2. **Wrap the route's compute** in `cachedAggregationRead({ scopeKey,
-   aggregation, dependsOn, ttlSeconds, variant?, compute })`. Use
-   `ctx.tenantId` for tenant scope, `ctx.organizationId` for org scope.
+   aggregation, dependsOn, ttlSeconds, variant?, authorize, compute })`.
+   Use `ctx.tenantId` for tenant scope, `ctx.organizationId` for org scope.
    Pass `variant` for any query arg that changes the result (period,
    filter id) — omitting it serves the wrong slice from cache.
+   `authorize` is required and holds the read check the usecase makes
+   (`assertCanRead…`): it runs first, on every call, before the cache is
+   read. A check that lived only inside `compute` would be skipped on
+   every cache hit (#5401).
 3. **Verify the bumps cover `dependsOn`**: every entity must be bumped by
    the usecase(s) that mutate it (`bumpEntityCacheVersion(ctx, entity)`,
    or `bumpEntityCacheVersionForScope(scopeKey, entity)` for org scope).

@@ -48,7 +48,7 @@ Use access reviews to show, period by period, that someone accountable checked w
 
 Clicking elsewhere on a row does nothing; use the campaign's name.
 
-**A campaign's own page.** It lists one row per account in the campaign, with a decision list in each row for the people who may decide it, and the buttons that change the reviewer and the due date, close the campaign and download its evidence PDF. The how-tos under Related walk through it.
+**A campaign's own page.** It lists one row per account in the campaign, with a member's latest sign-in in a member campaign and a decision list in each row for the people who may decide it, and the buttons that change the reviewer and the due date, close the campaign and download its evidence PDF. The how-tos under Related walk through it.
 
 ## What you can do
 
@@ -71,7 +71,7 @@ Click **{{ui:accessReviews.newCampaign}}**. The **{{ui:accessReviews.createTitle
 - **{{ui:accessReviews.fieldPeriod}}**, a start and an end date. It is printed on the evidence PDF.
 - **{{ui:accessReviews.fieldDue}}**. A due date is what sends the reviewer reminder emails.
 
-Click **{{ui:accessReviews.createCampaign}}**. The campaign's page opens. For a {{ui:accessReviews.scopeAgent}} campaign, Inflect then asks the preparing agent for the reviewer packs. If that does not succeed, the campaign is kept, and while it is **{{ui:accessReviews.statusLabels.OPEN}}** its page offers Owners and Admins **{{ui:accessReviews.agentPreparePacks}}**.
+Click **{{ui:accessReviews.createCampaign}}**. The campaign's page opens. For a {{ui:accessReviews.scopeAgent}} campaign, Inflect then asks the preparing agent for the reviewer packs. A large campaign's packs are prepared in the background, and its page shows how many agents are done until they are ready. If the request does not succeed, the campaign is kept, and while it is **{{ui:accessReviews.statusLabels.OPEN}}** its page offers Owners and Admins **{{ui:accessReviews.agentPreparePacks}}**.
 
 [Run an access review](../../how-to/access-reviews/run-an-access-review.md) takes you through a member campaign and a legacy application campaign step by step, including what each refusal means.
 

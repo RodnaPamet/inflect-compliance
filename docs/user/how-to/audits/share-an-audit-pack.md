@@ -16,7 +16,7 @@ To give an external auditor your audit pack, send them a share link. The auditor
 2. On the cycle's card, click **{{ui:audits.cycles.openCycle}}**. Under **{{ui:audits.cycleDetail.packs}}**, click the pack. Its status must read {{ui:audits.packStatus.FROZEN}}.
 3. Click **{{ui:audits.packs.generateShareLink}}**, the share icon at the top of the page. The {{ui:audits.packs.shareModal.title}} dialog opens.
 4. Choose when the link stops working. It starts at 30 days from today.
-    - Click **7 days**, **30 days** or **90 days**, or pick a date in **{{ui:audits.packs.shareModal.expiryLabel}}**.
+    - Click **7 days**, **30 days** or **90 days**, or pick a date in **{{ui:audits.packs.shareModal.expiryLabel}}**. A link set to a date works until the end of that day, in UTC, so you can pick today.
     - Click **{{ui:audits.packs.shareModal.noExpiry}}** only if the link must keep working until you revoke it.
 5. Click **{{ui:audits.packs.shareModal.submit}}**. A message reads {{ui:audits.packs.shareCreated}}.
 6. The **{{ui:audits.packs.shareLinkGenerated}}** box shows the link. Click **{{ui:audits.packs.copyShareLink}}**. A message reads {{ui:audits.packs.shareLinkCopied}}.

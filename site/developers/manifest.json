@@ -78,6 +78,10 @@
         {
             "label": "Agentic AI governance",
             "docs": [
+                "docs/claude-agent-sdk-design.md",
+                "docs/claude-tool-runner-design.md",
+                "docs/assistant.md",
+                "docs/knowledge-store.md",
                 "docs/agent-skill-standard.md",
                 "docs/agent-harness-contract.md",
                 "docs/agent-harness-scanner-onboarding.md",

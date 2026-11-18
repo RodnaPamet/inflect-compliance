@@ -41,7 +41,7 @@ The newest 100 receipts that match the filter, newest first, with a count above 
   | --- | --- |
   | {{ui:admin.mcp.receiptProvenanceValue.BUILTIN}} | The tool is one of this product's own |
   | {{ui:admin.mcp.receiptProvenanceValue.UNATTESTED}} | The outside tool's description had not been approved, so what the agent was told is not known |
-  | The approved description has changed since | Someone approved a newer description of the tool after this action; the sentence names the revision |
+  | {{ui:admin.mcp.receiptProvenanceValue.PIN_MOVED}} | Someone approved a newer description of the tool after this action, so the one the agent was told is not known |
   | {{ui:admin.mcp.receiptProvenanceValue.NONE}} | The receipt predates this record |
 
 An unverified receipt is kept so that it can be investigated, but it is not evidence of anything. The agent it names is only what the receipt claims.

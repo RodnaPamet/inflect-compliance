@@ -34,7 +34,7 @@ The `AuditLog` table stores all audit events with the following key columns:
 | `entryHash` | `String?` | SHA-256 hash of this entry's canonical representation |
 | `version` | `Int` | Hash schema version (currently `1`) |
 | `requestId` | `String?` | Correlation ID for request tracing |
-| `diffJson` | `Json?` | Prisma middleware field-level diffs |
+| `diffJson` | `Json?` | Prisma middleware field-level diffs. A field in the Epic B encryption manifest never appears in `before` or `after` and is never compared: it is listed in `undiffableFields` instead, because the column is not encrypted and the prior read is decrypted (#5420) |
 | `metadataJson` | `Json?` | Middleware metadata |
 | `createdAt` | `DateTime` | Insertion timestamp |
 
@@ -105,6 +105,20 @@ eventType, occurredAt, previousHash, tenantId, version
 ```
 
 **Excluded** from hash: `id`, `requestId`, `recordIds`, `metadataJson`, `diffJson`, `details`, `createdAt`.
+
+Two rules keep the stored chain verifiable (#5441), in both the tenant and the
+org writer:
+
+- **The hash covers what is stored.** `detailsJson` is JSON round-tripped once
+  (`toStoredAuditJson` in `src/lib/audit/canonical-hash.ts`) before it is both
+  hashed and written, so a `Date` or `Decimal` is hashed in the same form the
+  column holds, and the verifier recomputes the same hash from the row.
+- **Timestamp order is chain order.** The append timestamp is taken inside the
+  advisory lock and strictly after the predecessor's (`nextChainTimestamp`), so
+  two appends in one millisecond are walked in the order they were chained.
+
+Every audit row a usecase writes goes through `logEvent`, so it is chained and
+streamed; tenant data export and import rows included.
 
 ---
 
@@ -223,6 +237,7 @@ const report = await verifyAllTenants();
 | **Raw INSERT** | `tests/guards/audit-structured-events.test.ts` | No raw INSERT outside `audit-writer.ts` |
 | **Script Exists** | `tests/guards/audit-structured-events.test.ts` | `verify-audit-chain.ts` exists with required flags |
 | **Schema Validation** | `tests/guards/audit-structured-events.test.ts` | 5 of the 6 event categories validate via Zod (the `relationship` schema exists but is absent from this guard's fixture set) |
-| **Hash Stability** | `tests/unit/audit-canonical-hash.test.ts` | Canonical serialization is deterministic |
-| **Chain Integrity** | `tests/unit/audit-chain-verify.test.ts` | Tampering and discontinuity detection |
+| **Hash Stability** | `tests/unit/audit-trail-canonical-hash.test.ts`, `tests/unit/audit-trail-org-canonical-hash.test.ts` | Canonical serialization is deterministic |
+| **Chain Integrity** | `tests/unit/audit-trail-chain-verify.test.ts` | Tampering and discontinuity detection |
+| **Stored form and order** | `tests/integration/audit-chain-stored-form-and-order.test.ts` | The stored `detailsJson` re-hashes, and same-millisecond appends verify in chain order |
 | **Integration** | `tests/integration/audit-hash-chain.test.ts` | Full chain lifecycle against PostgreSQL |

@@ -18,6 +18,8 @@ On the [{{ui:reports.title}}](reports.md) page, choose an ISO 27001 framework an
 | Export it as a CSV file | Owner, Admin, Editor, Auditor |
 | Map a control to a requirement, and justify an exclusion or correct its reason | Owner, Admin, Editor |
 
+If your workspace uses custom roles, mapping and justifying also need your role's permission to edit controls.
+
 ## What it is for
 
 Show the auditor, requirement by requirement, which Annex A controls you apply and which you exclude, with a reason for every exclusion. Find the gaps that keep the statement from being ready, and close them here.

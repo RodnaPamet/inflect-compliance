@@ -47,6 +47,8 @@ Get a first draft of a risk register quickly, or check an existing one for gaps,
 
 Each accepted suggestion becomes a risk in the register, with the status Open and the likelihood and impact it carried, your corrections included. A suggestion whose title matches a risk you already have is linked to that risk instead of being added again, and the result says how many were linked that way. Review each new risk on its own page.
 
+Every generation is recorded as an AI decision, including one that fails: when the AI service returns an error, the record of the attempt is kept and the set is closed as dismissed, and the page shows the error.
+
 ## Empty and error states
 
 | What you see | What it means | What to do |

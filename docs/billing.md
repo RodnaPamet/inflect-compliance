@@ -121,6 +121,13 @@ export async function createControl(ctx, data) {
 }
 ```
 
+Every path that creates controls asks the same gate, with the number
+it would create as `assertWithinLimit`'s third argument: a framework
+install (a pack, several packs, a single template or a bulk install,
+`usecases/framework/install.ts`) and installing controls from templates
+(`usecases/control/mappings.ts`) count the controls that do not already
+exist and refuse the whole install before any row is written (#5263).
+
 The gate runs **before any write** so the DB never observes a row
 that violated the plan. Read paths and UI rendering are NOT
 considered the enforcement boundary — anything visible to the user
@@ -282,6 +289,19 @@ truth. The webhook handler is responsible for moving the row from
 `PRO` back to `FREE` when a subscription cancels. If the row is
 still `PRO`, the webhook didn't fire or didn't apply (look at
 `BillingEvent` for the trail).
+
+### Setting a plan by hand
+
+A tenant cannot set its own plan: in SaaS mode the plan decides
+entitlements, so the workspace route that once let an OWNER set it was
+removed (#5379, owner decision 2026-11-12). The platform operator sets a
+plan by hand with `POST /api/admin/tenants/:slug/plan`, gated by
+`PLATFORM_ADMIN_API_KEY`, through `setTenantPlanAsPlatform` in
+`src/app-layer/usecases/tenant-lifecycle.ts`; the change is audited in the
+tenant's own trail as its system user. A hand-made `BillingAccount` row
+carries a `manual:<tenantId>` placeholder customer, which is replaced by a
+real Stripe customer when the tenant first opens checkout or the portal,
+keeping the plan the operator set.
 
 ### How the webhook applies a subscription event
 
