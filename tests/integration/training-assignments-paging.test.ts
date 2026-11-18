@@ -13,6 +13,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 import { listTrainingAssignments } from '@/app-layer/usecases/training';
 import { TRAINING_PAGE_SIZE } from '@/lib/training-list';
@@ -113,6 +114,9 @@ describeFn('the Training list, paged and filtered on the server', () => {
             await prisma.trainingCourse.deleteMany({ where: { tenantId } });
             await prisma.employee.deleteMany({ where: { tenantId } });
         }
+        // Audit rows reference the tenant: clear them through the helper that
+        // lifts the immutability trigger, or this delete depends on suite order.
+        await deleteAuditRowsForTenants(prisma, [TENANT, OTHER_TENANT]);
         await prisma.tenant.deleteMany({ where: { id: { in: [TENANT, OTHER_TENANT] } } });
         await prisma.$disconnect();
     });
