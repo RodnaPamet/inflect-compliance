@@ -274,6 +274,19 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── The Training list, paged (#5764 item 6) ─────────────────────
+    {
+        model: 'TrainingAssignment',
+        fields: ['tenantId', 'createdAt'],
+        justification:
+            'usecases/training.ts::listTrainingAssignments pages the Training list: equality on '
+            + 'tenantId, ORDER BY createdAt DESC, id DESC with a keyset cursor on those two columns, '
+            + 'bounded take TRAINING_PAGE_SIZE + 1, and a count over the same filters. The search '
+            + '(employee / course) and the status filter are residual predicates on that scan. The '
+            + 'other reads are served by the existing indexes: the training provider by tenantId '
+            + '(bounded take INTERNAL_CHECK_READ_TAKE) and the compliance calendar by '
+            + '@@index([tenantId, dueAt]).',
+    },
     // ── Internal audit's sampling of the auditor's workpapers (#3677) ──
     {
         model: 'AuditWorkpaperSampleReview',
@@ -720,7 +733,6 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     ConnectedIdentityAccount: 'personnel provider reads all accounts for a tenant (offboarded-access join) — covered by @@index([tenantId, status]); bounded take ≤10000.',
     Device: 'listDevices + device provider read by tenantId (+platform) — covered by @@index([tenantId, platform]); bounded take ≤10000.',
     TenantDeviceToken: 'listDeviceTokens by tenantId — covered by @@index([tenantId]) / @@index([tenantId, revokedAt]); bounded take ≤200.',
-    TrainingAssignment: 'listTrainingAssignments + training provider by tenantId (+status) — covered by @@index([tenantId, status]) / @@index([tenantId, employeeId]); bounded take ≤10000.',
     BackgroundCheck: 'listBackgroundChecks + training provider by tenantId (+status) — covered by @@index([tenantId, status]) / @@index([tenantId, employeeId]); bounded take ≤10000.',
     AccessReviewConnectedDecision: 'listConnectedDecisions + close by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId]); bounded take ≤5000.',
     AccessReviewAgentPack: 'getAgentReviewPacks + the agent close read one campaign\'s packs by (tenantId, accessReviewId) — covered by @@index([tenantId, accessReviewId]); bounded take ≤ MAX_AGENT_SUBJECTS + 1 (501). One pack per subject (@@unique([decisionId, tenantId])).',

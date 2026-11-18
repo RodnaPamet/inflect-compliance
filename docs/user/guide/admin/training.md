@@ -24,7 +24,7 @@ Security-awareness training is a control in most frameworks, and auditors ask fo
 
 ## What you see
 
-Under the title, a line counts the assignments the page shows. Then a table:
+Under the title, a line counts every assignment in the workspace. While a search or the status filter is on, it counts the assignments that match instead. Then a table:
 
 | Column | What it shows |
 | --- | --- |
@@ -34,15 +34,15 @@ Under the title, a line counts the assignments the page shows. Then a table:
 | {{ui:training.colDue}} | When it is due, or — when no date was set |
 | {{ui:training.colCompleted}} | When it was completed, or — |
 
-The table is grouped by status, with the most recently assigned first within each.
+The most recently assigned is first.
 
-The page shows at most 500 assignments: the first 500 in that order. When there are more, a notice says so, and the count under the title is of the 500 shown. The search and the status filter look only through those 500, so an assignment past them cannot be found on this page, whatever the notice suggests.
+The table shows 100 assignments at first. When there are more, the bottom of the table says how many are showing out of the total, and **{{ui:training.loadMore}}** adds the next 100. Click it as often as you need to reach every assignment.
 
 ## What you can do
 
-**Search.** Open the filter and type in the search box at the top. The list narrows to assignments whose employee, email or course contains what you type.
+**Search.** Open the filter and type in the search box at the top. The list narrows to assignments whose employee, email or course contains what you type. The search looks through every assignment in the workspace, not only the ones already showing.
 
-**Filter by status.** In the same filter, choose **{{ui:training.filters.status}}**: {{ui:training.filterEnums.status.ASSIGNED}}, {{ui:training.filterEnums.status.IN_PROGRESS}}, {{ui:training.filterEnums.status.COMPLETED}} or {{ui:training.filterEnums.status.OVERDUE}}. You can choose more than one. Overdue finds every open assignment past its due date.
+**Filter by status.** In the same filter, choose **{{ui:training.filters.status}}**: {{ui:training.filterEnums.status.ASSIGNED}}, {{ui:training.filterEnums.status.IN_PROGRESS}}, {{ui:training.filterEnums.status.COMPLETED}} or {{ui:training.filterEnums.status.OVERDUE}}. You can choose more than one. Overdue finds every open assignment past its due date. Like the search, the filter looks through every assignment.
 
 Nothing on this page creates a course, assigns one or records a completion.
 
@@ -53,7 +53,7 @@ Nothing on this page creates a course, assigns one or records a completion.
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 | **{{ui:training.emptyTitle}}** | No training has been assigned in this workspace. {{ui:training.emptyDesc}} | Ask whoever assigns your training to do it through Inflect's API |
 | **{{ui:training.emptyMatchingTitle}}** | No assignment matches the search or the status filter | Clear the search or the filter |
-| A notice that not every assignment is shown | There are more than 500 assignments, and only the first 500 are on the page | Searching and filtering narrow those 500 only, and Inflect lists no more than 500 anywhere. Check the rest in the system that assigns your training |
+| {{ui:training.loadFailed}} | The next assignments did not load | Click **{{ui:training.loadMore}}** again |
 
 ## Related
 

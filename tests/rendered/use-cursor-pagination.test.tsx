@@ -53,15 +53,18 @@ function Harness({
     initialRows,
     initialNextCursor,
     fetchUrl,
+    resetKey,
 }: {
     initialRows: Row[];
     initialNextCursor: string | null;
     fetchUrl: (cursor: string) => string;
+    resetKey?: string;
 }) {
     const p = useCursorPagination<Row>({
         initialRows,
         initialNextCursor,
         fetchUrl,
+        resetKey,
     });
     return (
         <div>
@@ -289,5 +292,52 @@ describe('useCursorPagination', () => {
         });
         expect(screen.getByTestId('error')).toHaveTextContent('');
         expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    });
+
+    // #5764 item 6 — a list whose first page the server renders for its URL
+    // filters passes those filters as `resetKey`, so a new filter replaces the
+    // list rather than keeping rows the old filters loaded.
+    it('re-seeds from the current initial page when resetKey changes', async () => {
+        const { impl } = installFetchStub();
+        impl.mockResolvedValueOnce(canned({ rows: [ROW_B], nextCursor: 'cursor-3' }));
+        const fetchUrl = (c: string) => `/api?cursor=${c}`;
+        const { rerender } = render(
+            <Harness initialRows={[ROW_A]} initialNextCursor="cursor-2" fetchUrl={fetchUrl} resetKey="old" />,
+        );
+        const user = userEvent.setup();
+        await act(async () => {
+            await user.click(screen.getByTestId('load-more'));
+        });
+        expect(screen.getAllByRole('listitem')).toHaveLength(2);
+
+        // Same key, new props: the accumulator keeps what it loaded.
+        rerender(<Harness initialRows={[ROW_C]} initialNextCursor={null} fetchUrl={fetchUrl} resetKey="old" />);
+        expect(screen.getByTestId('row-b')).toBeInTheDocument();
+
+        rerender(<Harness initialRows={[ROW_C]} initialNextCursor={null} fetchUrl={fetchUrl} resetKey="new" />);
+        expect(screen.getAllByRole('listitem')).toHaveLength(1);
+        expect(screen.getByTestId('row-c')).toBeInTheDocument();
+        expect(screen.getByTestId('has-more')).toHaveTextContent('false');
+    });
+
+    it('drops a page that was in flight when resetKey changed', async () => {
+        const { impl } = installFetchStub();
+        let answer: (v: unknown) => void = () => undefined;
+        impl.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+        const fetchUrl = (c: string) => `/api?cursor=${c}`;
+        const { rerender } = render(
+            <Harness initialRows={[ROW_A]} initialNextCursor="cursor-2" fetchUrl={fetchUrl} resetKey="old" />,
+        );
+        await act(async () => {
+            screen.getByTestId('load-more').click();
+        });
+        rerender(<Harness initialRows={[ROW_C]} initialNextCursor="cursor-9" fetchUrl={fetchUrl} resetKey="new" />);
+        await act(async () => {
+            answer(canned({ rows: [ROW_B], nextCursor: null }));
+        });
+        expect(screen.queryByTestId('row-b')).toBeNull();
+        expect(screen.getByTestId('row-c')).toBeInTheDocument();
+        expect(screen.getByTestId('cursor')).toHaveTextContent('cursor-9');
+        expect(screen.getByTestId('loading')).toHaveTextContent('false');
     });
 });

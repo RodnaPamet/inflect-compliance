@@ -3405,6 +3405,11 @@
   "training": {
     "title": "Training",
     "description": "{total, plural, one {# security-awareness training assignment} other {# security-awareness training assignments}}.",
+    "descriptionMatching": "{total, plural, one {# assignment matches} other {# assignments match}} the search and filters.",
+    "shownOfTotal": "Showing {shown, number} of {total, number}",
+    "loadMore": "Load more",
+    "loading": "Loading…",
+    "loadFailed": "The next assignments could not be loaded. Try again.",
     "resourceSingular": "assignment",
     "resourcePlural": "assignments",
     "searchPlaceholder": "Search assignments…",

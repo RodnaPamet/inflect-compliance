@@ -26,7 +26,7 @@ jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 const mockDb = {
     employee: { findMany: jest.fn(async () => []) },
     device: { findMany: jest.fn(async () => []) },
-    trainingAssignment: { findMany: jest.fn(async () => []) },
+    trainingAssignment: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
     trustCenter: { findUnique: jest.fn(async () => null) },
 };
 
