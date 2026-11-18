@@ -97,6 +97,17 @@ Every request with it is refused with a 403 while a kill switch covers the agent
 or while the agent is anything but ACTIVE in the register (draft, suspended,
 retired). It works again once the kill is lifted or the agent is activated.
 
+### The MCP endpoint — `/api/mcp`
+
+A key with `mcp:read` (and `mcp:propose`, for the propose-not-commit write
+tools) also reaches the Model Context Protocol endpoint at `/api/mcp`, which
+has its own rate limits (section 3). Each tool still needs the key's scope on
+its resource. A key can be traded at `POST /api/mcp/token` for a short-lived
+`ifxt_` token that names the tools it may call, and a key created with
+"requires token exchange" is refused at `/api/mcp` unless it presents such a
+token. The scope list and the exchange are described in
+[custom roles and API keys](./enterprise-identity-custom-roles-api-keys.md).
+
 ### Session cookie — `__Secure-next-auth.session-token` (browser / dev only)
 
 When you're signed in to the app in a browser, requests carry a NextAuth
@@ -127,14 +138,16 @@ the slug in the path selects it.
 
 ## 3. Rate limiting
 
-Three tiers, each scoped to a traffic class. All limits are per-minute,
-keyed per IP + identity (and per tenant for reads).
+Three tiers, each scoped to a traffic class, plus the MCP endpoint's own
+pair. All limits are per-minute, keyed per IP + identity (and per tenant
+for reads).
 
 | Tier | Applies to | Default limit |
 |---|---|---|
 | **Read** (`API_READ_LIMIT`) | Tenant-scoped `GET /api/t/<slug>/…` | 120 / min |
 | **Mutation** (`API_MUTATION_LIMIT`) | `POST` / `PUT` / `PATCH` / `DELETE` | 60 / min |
 | **Auth** | Sign-in / session / csrf endpoints | 10–60 / min (per endpoint) |
+| **MCP** (`MCP_PER_KEY_LIMIT`, `MCP_IP_CEILING_LIMIT`) | `/api/mcp`, in place of the mutation tier | 60 JSON-RPC messages / min per key; 600 requests / min per IP |
 
 Stricter presets apply to a few sensitive routes (login, API-key
 creation, email dispatch). The `x-rate-limit` extension on each

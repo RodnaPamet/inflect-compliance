@@ -45,6 +45,7 @@ Here, a risk is critical when its inherent score falls in the highest severity b
 | --- | --- | --- |
 | **{{ui:org.risks.emptyTitle}}** | No risk in any workspace is in its workspace's highest band and still open or being mitigated | Nothing |
 | **{{ui:org.risks.failedLoadMore}}** | The next batch did not load | Click **{{ui:org.risks.loadMore}}** again |
+| **{{ui:org.forbidden.title}}** | You are a Reader: the list names items inside the workspaces, which only Owners and Admins can open | Use the [{{ui:org.dashboard.title}}](portfolio-overview.md); **{{ui:org.forbidden.back}}** takes you there |
 
 ## Related
 

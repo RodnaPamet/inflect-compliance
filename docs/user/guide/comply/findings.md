@@ -62,11 +62,11 @@ Use the register to follow every finding to closure, whichever audit raised it: 
 
 Click **{{ui:findings.newFinding}}**. The **{{ui:findings.create.title}}** dialog has three parts:
 
-- **{{ui:findings.create.sectionDetails}}**: a **{{ui:findings.create.labelTitle}}** and a **{{ui:findings.create.labelDescription}}**, both required; a **{{ui:findings.create.labelType}}**, starting on {{ui:findings.typeOptions.OBSERVATION}}; a **{{ui:findings.create.labelSeverity}}**, starting on {{ui:findings.severityOptions.MEDIUM}}; an **{{ui:findings.create.labelAssignee}}**, chosen from the workspace's members and starting on {{ui:findings.create.placeholderUnassigned}}; a **{{ui:findings.create.labelDueDate}}**, today or later; and an **{{ui:findings.create.labelOriginatingAudit}}**, the audit the finding was raised during.
+- **{{ui:findings.create.sectionDetails}}**: a **{{ui:findings.create.labelTitle}}** and a **{{ui:findings.create.labelDescription}}**, both required; a **{{ui:findings.create.labelType}}**, starting on {{ui:findings.typeOptions.OBSERVATION}}; a **{{ui:findings.create.labelSeverity}}**, starting on {{ui:findings.severityOptions.MEDIUM}}; an **{{ui:findings.create.labelAssignee}}**, chosen from the workspace's members and starting on {{ui:findings.create.placeholderUnassigned}}; a **{{ui:findings.create.labelDueDate}}**, today or later; and an **{{ui:findings.create.labelOriginatingAudit}}**, the audit the finding was raised during. The audit must still be open: a finding cannot be added to a completed or cancelled audit.
 - **{{ui:findings.create.sectionControlsRisks}}**: a **{{ui:findings.create.labelLinkedControl}}**, the control the finding is raised against, and a **{{ui:findings.create.labelCompensatingControl}}**, one that mitigates it. Below them, tick the risks the finding implicates. The box above the list, **{{ui:findings.create.searchRisks}}**, narrows it by title or reference.
 - **{{ui:findings.create.sectionAnalysis}}**: **{{ui:findings.create.labelAnalysis}}**, free text for investigation notes.
 
-Click **{{ui:findings.create.submit}}**. It stays greyed out until the title and description are filled in. The finding is added at the top of the table as {{ui:findings.open}}.
+Click **{{ui:findings.create.submit}}**. It stays greyed out until the title and description are filled in. The finding is added at the top of the table as {{ui:findings.open}}, and it appears in a filtered register too when its status matches the filter.
 
 ### Edit a finding
 
@@ -96,6 +96,7 @@ Click it, and the status changes at once. If the change is refused, the status f
 | **{{ui:findings.noFindings}}** | The workspace has no findings | Click **{{ui:findings.newFinding}}**, if your role can create findings |
 | **{{ui:findings.list.emptyMatchTitle}}** | No finding has the status you filtered on | Pick another status, or click **{{ui:findings.list.clearFilters}}** |
 | An error in the create dialog or the edit form | The finding was refused, for example because the assignee, a control or a risk is no longer valid. The message gives the reason | Correct your choice and try again |
+| A message that the audit is completed or cancelled, in the create dialog | The {{ui:findings.create.labelOriginatingAudit}} you chose is closed, so no finding can be added to it | Choose another audit or none. To add it to a completed audit, move that audit back to in progress first |
 | **Failed to create finding** or **Failed to save finding** followed by a number in brackets | Inflect answered with an error and gave no reason | Try again |
 | A status that flips back after you click, with a message | The change was refused or did not go through; the message gives the reason, or reads **{{ui:findings.statusUpdateFailed}}** | Try again, or act on the reason |
 | **{{ui:findings.detail.errorTitle}}** in the panel | The finding could not be loaded, for example because it no longer exists or the link is wrong | Close the panel and open the finding from the register |

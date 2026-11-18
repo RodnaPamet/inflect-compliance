@@ -17,7 +17,7 @@ On the [{{ui:admin.vendorTemplates.title}}](vendor-templates.md) page, click a t
 | Open a template | Owner, Admin |
 | Add, edit, remove and reorder sections and questions, publish, copy into a new draft | Owner, Admin |
 
-Everyone else is refused the page.
+Everyone else is refused the page. An Admin whose membership carries a custom role can change a template only if that role can edit vendors; otherwise the page opens without its editing buttons, **{{ui:admin.templateBuilder.publish}}** or **{{ui:admin.templateBuilder.cloneToDraft}}**.
 
 ## What you see
 
@@ -62,13 +62,13 @@ Drag a section, or a question within or between sections, to its new place, or u
 
 ### Publish
 
-Click **{{ui:admin.templateBuilder.publish}}** and confirm **{{ui:admin.templateBuilder.publishConfirmTitle}}** {{ui:admin.templateBuilder.publishConfirmBody}} An order you have not saved yet is saved first.
+**{{ui:admin.templateBuilder.publish}}** appears once the template has at least one question. Click it and confirm **{{ui:admin.templateBuilder.publishConfirmTitle}}** {{ui:admin.templateBuilder.publishConfirmBody}} An order you have not saved yet is saved first.
 
 On a published template:
 
 ### Revise it
 
-Click **{{ui:admin.templateBuilder.cloneToDraft}}**. A new draft version opens, with the same sections and questions, ready to change and publish. Assessments already sent keep the version they were sent with.
+Click **{{ui:admin.templateBuilder.cloneToDraft}}**. A new draft opens, numbered one version above the template's latest, with the same sections and questions, ready to change and publish. If a draft of this template already exists, the copy is refused and the message names that draft's version: edit it instead of starting another. Assessments already sent keep the version they were sent with.
 
 ## Empty and error states
 
@@ -80,6 +80,7 @@ Click **{{ui:admin.templateBuilder.cloneToDraft}}**. A new draft version opens, 
 | {{ui:admin.templateBuilder.scaleOrder}} | The scale's lowest value is not below its highest | Fix the two values |
 | {{ui:admin.templateBuilder.weightInvalid}} | The weight is not a number of 0 or more | Enter one |
 | {{ui:admin.templateBuilder.notFound}} | The template does not exist in this workspace | Open it from the list |
+| A message that a version of the template is already a draft | You clicked **{{ui:admin.templateBuilder.cloneToDraft}}** while another version is still a draft | Open that draft from the [{{ui:admin.vendorTemplates.title}}](vendor-templates.md) page and edit it |
 | A sentence saying what failed, such as {{ui:admin.templateBuilder.saveError}} | The change was not saved | Read the reason, and try again |
 
 ## Related

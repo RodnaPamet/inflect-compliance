@@ -24,7 +24,7 @@ An audit pack is the set of controls, policies, evidence and open issues you han
     - Click **{{ui:audits.packs.addPicker.submit}}**. A message reads {{ui:audits.packs.addPicker.added}}.
 7. Repeat step 6 for each item you want to add.
 8. To take an item out of the draft, click the cross at the end of its row. The item leaves the list at once, and a message reads {{ui:audits.packs.removeItem.removed}}. Click **{{ui:audits.packs.removeItem.undo}}** in the message within five seconds to keep the item. After that, it is removed from the pack.
-9. When the pack is complete, click **{{ui:audits.packs.freezePack}}**, the padlock icon at the top of the page.
+9. When the pack is complete, click **{{ui:audits.packs.freezePack}}**, the padlock icon at the top of the page. It is greyed out while the pack has no items.
 10. In the {{ui:audits.packs.freezeConfirm.title}} dialog, click **{{ui:audits.packs.freezeConfirm.confirm}}**.
 
 What the default pack takes in:
@@ -73,7 +73,8 @@ Inflect creates a new {{ui:audits.packStatus.DRAFT}} pack in the same cycle, nam
 | {{ui:audits.packs.addPicker.added}}, but the item list does not change | The item was already in the pack | Nothing to do. A pack holds each item once |
 | {{ui:audits.packs.addPicker.addError}}, or the reason the server gave | The item was not added | Try again. If the pack was frozen meanwhile, reload the page |
 | {{ui:audits.packs.removeItem.error}}, or the reason the server gave, and the item is back in the list | The item was not removed. Usually the pack was frozen meanwhile | Reload the page. A frozen pack cannot change; use **{{ui:audits.packs.cloneForRetest}}** |
-| {{ui:audits.packs.failedFreeze}}, or the reason the server gave, such as **Cannot freeze an empty pack** | The pack was not frozen | Add at least one item, then freeze it again |
+| **{{ui:audits.packs.freezePack}}** is greyed out | The pack has no items. An empty pack cannot be frozen | Add at least one item with **{{ui:audits.packs.addItems}}** |
+| {{ui:audits.packs.failedFreeze}}, or the reason the server gave | The pack was not frozen | Reload the page to see the pack's current state, then try again |
 | {{ui:audits.packs.cloneError}} | No copy was made | Try again |
 | {{ui:audits.packs.loadError}} | The pack could not be loaded | Click **{{ui:audits.packs.retry}}** |
 | {{ui:audits.packs.notFound}} | The pack does not exist in this workspace, or the link is wrong | Open the pack from its cycle's page |

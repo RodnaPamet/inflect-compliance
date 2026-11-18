@@ -39,7 +39,7 @@ Use the register to answer three questions: what could hurt the business, how ba
 **The toolbar.** From left to right:
 
 - **{{ui:risks.addRisk}}** opens the new-risk dialog. Only roles that can create risks see it.
-- The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:risks.searchPlaceholder}}**, filters the table as you type. The filters are {{ui:risks.filters.status}}, {{ui:risks.filters.category}}, {{ui:risks.filters.owner}}, {{ui:risks.filters.score}}, {{ui:risks.filters.residualScore}}, {{ui:risks.filters.treatment}}, {{ui:risks.filters.quantified}}, {{ui:risks.filters.stale}} and {{ui:risks.filters.cell}}. Each active filter shows as a pill beside the button; remove a pill to drop that filter.
+- The **{{ui:common.ui.filter}}** button holds the search and the filters. Its search box, **{{ui:risks.searchPlaceholder}}**, filters the table as you type. The filters are {{ui:risks.filters.status}}, {{ui:risks.filters.category}}, {{ui:risks.filters.owner}}, {{ui:risks.filters.score}}, {{ui:risks.filters.residualScore}}, {{ui:risks.filters.treatment}}, {{ui:risks.filters.quantified}}, {{ui:risks.filters.stale}} and {{ui:risks.filters.cell}}. {{ui:risks.filters.status}}, {{ui:risks.filters.category}}, {{ui:risks.filters.owner}} and {{ui:risks.filters.treatment}} take several values at once; a risk that matches any of them is listed. Each active filter shows as a pill beside the button; remove a pill to drop that filter.
 - **{{ui:risks.register}}** and **{{ui:risks.heatmap}}** switch between the table and the risk matrix. The page remembers your choice.
 - **{{ui:risks.viewsMenu}}** holds the other views, in three groups:
     - **{{ui:risks.viewsAnalytics}}:** {{ui:risks.histogram}}, {{ui:risks.viewLinks.board}}, {{ui:risks.viewLinks.scenarios}}, {{ui:risks.viewLinks.hierarchy}}, {{ui:risks.viewLinks.kri}}, {{ui:risks.viewLinks.correlations}}, {{ui:risks.viewLinks.lossEvents}} and {{ui:risks.viewLinks.reports}}.
@@ -77,7 +77,7 @@ A risk is stale when any of these is true:
 
 A risk with none of these signals, such as one with no review date, no linked controls and no indicators, is never flagged as stale. Missing data is a gap in coverage, which the register does not report as staleness.
 
-**The matrix.** **{{ui:risks.heatmap}}** draws every risk on the workspace's likelihood × impact grid. Click a cell to return to the table filtered to exactly that cell. Two cells with the same score product, such as 3 × 4 and 4 × 3, stay separate.
+**The matrix.** **{{ui:risks.heatmap}}** draws every risk on the workspace's likelihood × impact grid. Click a cell to return to the table filtered to exactly that cell. Two cells with the same score product, such as 3 × 4 and 4 × 3, stay separate. From the keyboard, Tab into the grid and move between cells, empty ones included, with the arrow keys; Enter opens a cell that holds risks. Loss amounts on the grid are in your workspace's currency.
 
 **The histogram.** **{{ui:risks.histogram}}**, in the **{{ui:risks.viewsMenu}}** menu, places each quantified risk in a loss bucket on a logarithmic scale, stacked by its matrix band. When your workspace has a risk appetite, a line marks the per-risk appetite. Below the chart, **{{ui:risks.collisions.title}}** lists risks that share a matrix cell while their loss estimates differ by more than ten times. Click one to see those risks in the table.
 
@@ -87,7 +87,7 @@ A risk with none of these signals, such as one with no review date, no linked co
 
 ### Create a risk
 
-Click **{{ui:risks.addRisk}}**. The **{{ui:risks.new.title}}** dialog asks for a **{{ui:risks.new.titleLabel}}**, which is required. Its other fields are optional: a **{{ui:risks.new.templateLabel}}**, **{{ui:risks.new.categoryLabel}}**, **{{ui:risks.new.ownerLabel}}**, **{{ui:risks.new.descriptionLabel}}**, likelihood and impact, **{{ui:risks.new.treatmentLabel}}**, **{{ui:risks.new.treatmentNotesLabel}}**, a **{{ui:risks.new.nextReviewLabel}}** date and **{{ui:risks.new.linkControls}}**. Click **{{ui:risks.new.submit}}**. The new risk appears in the table.
+Click **{{ui:risks.addRisk}}**. The **{{ui:risks.new.title}}** dialog asks for a **{{ui:risks.new.titleLabel}}**, which is required. Its other fields are optional: a **{{ui:risks.new.templateLabel}}**, **{{ui:risks.new.categoryLabel}}**, **{{ui:risks.new.ownerLabel}}**, **{{ui:risks.new.descriptionLabel}}**, likelihood and impact, **{{ui:risks.new.treatmentLabel}}**, **{{ui:risks.new.treatmentNotesLabel}}**, a **{{ui:risks.new.nextReviewLabel}}** date and **{{ui:risks.new.linkControls}}**. Likelihood and impact run over the levels of your workspace's risk matrix. Picking a template fills in its fields, and the risk's audit log entry records which template it came from. The templates include the AI risks catalogued by the FINOS AI Governance Framework. **{{ui:risks.new.linkControls}}** appears only for a role that can also edit controls. Click **{{ui:risks.new.submit}}**. The new risk appears in the table. If the risk is refused, the dialog shows the reason it was refused.
 
 ### Change many risks at once
 
@@ -95,7 +95,7 @@ Tick the rows you want, up to 100 at a time, and pick an action in the selection
 
 - **{{ui:risks.bulk.setStatus}}** moves every selected risk to the status you choose.
 - **{{ui:risks.bulk.assignOwner}}** gives them all one owner. Leave the owner empty to unassign them.
-- **{{ui:risks.bulk.delete}}** removes them from the register. For five seconds a message offers **{{ui:risks.bulk.undo}}**. Nothing is deleted until that time runs out.
+- **{{ui:risks.bulk.delete}}** removes them from the register. For five seconds a message offers **{{ui:risks.bulk.undo}}**. Nothing is deleted until that time runs out. A risk that has a treatment plan cannot be deleted, because the plan is kept as a record: if any selected risk has one, none of the selection is deleted, and the message says how many risks are held and why.
 
 If an action is refused, the message gives the reason, for example an owner who is no longer a member of the workspace. A failed status or owner change leaves the rows selected, so you can try again without picking them again. A failed deletion puts the rows back in the table.
 

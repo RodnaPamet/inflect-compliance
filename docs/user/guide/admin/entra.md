@@ -78,6 +78,7 @@ When someone signs in with Microsoft from your directory, Inflect looks at the m
 - When two of their groups share the top priority, the more senior role wins. AI admin is the exception: {{ui:admin.entra.mappings.aiAdminTieHint}}
 - Someone in **no** mapped group keeps the role they have. With the group gate on, they are refused instead.
 - A sign-in from another Microsoft directory, or from a domain not on a non-empty allowed list, gets no role from the mappings. With the group gate on, it is refused instead.
+- For someone in a very large number of groups, Inflect asks Microsoft for the full list. If Microsoft does not return all of it, the sign-in changes nothing: they keep the role they have, and the group gate does not refuse them.
 - An **Owner's** role never changes, and the gate never refuses an Owner.
 - A member with a custom role keeps it, and is not moved into a role their custom role cannot go with.
 

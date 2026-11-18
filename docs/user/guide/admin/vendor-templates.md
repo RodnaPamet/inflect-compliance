@@ -17,7 +17,7 @@ Open [{{ui:admin.crumb.admin}}](administration.md) and click **{{ui:admin.nav.ve
 | Open the page and the templates | Owner, Admin |
 | Create a template | Owner, Admin |
 
-Everyone else is refused the page.
+Everyone else is refused the page. An Admin whose membership carries a custom role sees **{{ui:admin.vendorTemplates.createHeading}}** only if that role can edit vendors.
 
 ## What you see
 

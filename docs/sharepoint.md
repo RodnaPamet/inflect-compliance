@@ -1,8 +1,21 @@
 # SharePoint Integration — Operator Guide
 
-IC sources compliance evidence from SharePoint document libraries (and, later,
-syncs policies + exports audit packs). SharePoint is reached **exclusively via
-Microsoft Graph**, reusing the Entra ID OAuth foundation (EI-1) — no new IdP.
+IC imports compliance evidence from SharePoint document libraries, keeps
+linked policies in sync with SharePoint files, and exports frozen audit packs
+to a library. SharePoint is reached **exclusively via Microsoft Graph**, reusing
+the Entra ID OAuth foundation (EI-1) — no new IdP. Code:
+`src/app-layer/integrations/providers/sharepoint/`.
+
+## What IC may reach
+
+Every Graph request resolves through `graphUrl()` in `client.ts`, which accepts
+`https://graph.microsoft.com/v1.0/` and nothing else, so a server-supplied
+paging or delta link cannot send the bearer token anywhere but Graph (#5321).
+Reading is limited to the drives of the sites an admin approved under
+**Sites**: browsing, evidence import, policy linking and upload all ask
+`assertDriveAllowed`, and nothing is read while no site is approved. The site
+list follows Graph's paging, and a save keeps an approved site the list did not
+return.
 
 ## SP-1 — Connecting SharePoint (delegated consent)
 
@@ -33,6 +46,26 @@ On IC's App Registration:
 Access tokens are refreshed on expiry and the rotated pair is re-encrypted
 transparently on the next Graph call.
 
+## SP-2 / SP-3 — Evidence import and delta sync
+
+From an evidence form, a person browses an approved library and imports up to
+20 files at a time (`importSharePointItems`), with the controls, category and
+description the form carries. Each file becomes an Evidence row through the
+ordinary upload path, plus a sync mapping that records its drive item and cTag.
+
+The `sharepoint-delta-sync-dispatch` job runs every four hours, one delta sync
+per enabled connection (`runSharePointDeltaSync`):
+
+- A **changed** file is re-imported as a new Evidence row that carries the
+  previous row's control links; the old row keeps its own, because it remains
+  the evidence for the period it covered. The mapping is claimed by a status
+  transition, so two concurrent runs cannot both re-import it (#5193).
+- A **deleted** file marks its mapping STALE.
+- The delta token is stored per drive only when the walk succeeded. A walk that
+  stops at its page limit (50 pages) hands back a resume cursor — the opaque
+  token, prefixed with the Graph parameter it belongs to, never a URL — and the
+  run reports itself truncated rather than clean (#5555).
+
 ## SP-4 — Policy document sync (bidirectional)
 
 Link a policy to a SharePoint file on the policy's **Current** tab. Publishing the
@@ -47,7 +80,23 @@ banner appears when the SharePoint copy is newer than the last sync — pull fir
 > the automatic pull-on-change requires the webhook + subscription.
 
 Subscriptions are renewed daily by the `sharepoint-subscription-renew` cron
-(Graph caps them at ~3 days). Content syncs as Markdown (DOCX is not supported).
+(Graph caps them at ~3 days). A notification whose file eTag equals the one
+already stored — the echo of IC's own push, among others — does nothing.
+
+A Markdown-linked policy syncs both ways. A Word-linked (`.docx`) policy is
+SharePoint-authoritative: IC pulls it, converting DOCX to sanitised HTML with
+mammoth, and stores the result as an HTML policy version, but never pushes back
+into the `.docx`, which would corrupt it (`docx.ts`).
+
+## SP-5 — Audit pack export
+
+A FROZEN audit pack can be exported to a library
+(`POST /api/t/:slug/audits/packs/:packId/sharepoint-export`, `admin.manage`;
+`src/app-layer/usecases/audit-pack-sharepoint-export.ts`). The export is one
+ZIP holding a README, a `pack.json` manifest, `items.csv` and the evidence files
+under `evidence/`, including the generated exports the pack holds by storage
+key, within a 200 MB cap on the bundled files; the manifest is always
+included.
 
 ## Smoke verification (staging — real Graph)
 

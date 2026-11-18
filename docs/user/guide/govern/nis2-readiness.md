@@ -17,7 +17,7 @@ On the NIS2 gap assessment page, click **{{ui:audits.nis2Gap.viewReadiness}}**. 
 | View the score, the domains and the gaps | Everyone who can see audits |
 | Create findings and tasks from the gaps | Owner, Admin, Editor |
 
-Every other role sees, under the gap list: {{ui:frameworks.readiness.createRestricted}}
+If your workspace uses custom roles, creating them needs permission both to create and to edit findings, because a second run reopens and closes findings it made earlier. Every other role sees, under the gap list: {{ui:frameworks.readiness.createRestricted}}
 
 ## What it is for
 
@@ -59,7 +59,7 @@ Go back to the NIS2 gap assessment and run it again. The score, the domains and 
 ## What happens next
 
 - Each finding names its gap and carries a remediation task. Work on them on the [findings](../comply/findings.md) and [tasks](../comply/tasks.md) pages.
-- Running **{{ui:frameworks.readiness.createFindings}}** again creates no duplicates: it closes the findings for gaps you have resolved and reopens those that came back.
+- Running **{{ui:frameworks.readiness.createFindings}}** again creates no duplicates: it closes the findings for gaps you have resolved and reopens those that came back. A gap counts as resolved only when its question is now answered yes or not applicable; a question left unanswered closes nothing.
 
 ## Empty and error states
 

@@ -54,7 +54,7 @@ Use it for questions that would otherwise take several pages to answer, such as 
 
 Type your question and click **{{ui:agents.ask.ask}}**. The button reads **{{ui:agents.ask.asking}}** while the agent works, the box is locked, and the page shows **{{ui:agents.ask.runningTitle}}** until the answer arrives.
 
-The page waits about two minutes. If the agent has not finished by then, it stops waiting, says so, and offers **{{ui:agents.ask.checkAgain}}**, which looks at the same question's run again. It keeps that offer until you ask another question or leave the page.
+The page waits about two minutes. If the agent has not finished by then, or the page loses its connection while it waits, it stops waiting, says so, and offers **{{ui:agents.ask.checkAgain}}**, which looks at the same question's run again. It keeps that offer until you ask another question or leave the page.
 
 You can ask up to 20 questions an hour. Each question starts fresh: the agent does not remember your earlier questions, and the page keeps no history of them. Leaving the page drops the answer on screen.
 
@@ -72,7 +72,8 @@ You can ask up to 20 questions an hour. Each question starts fresh: the agent do
 | **{{ui:agents.ask.refusedBadge}}**, with a reason | The question was not run. The reason says why: for example, the question was empty or too long, no agent has been chosen to answer questions, or that agent has been stopped | For a question problem, change the question and ask again. For anything about the agent, ask an Owner, Admin or AI admin |
 | **{{ui:agents.ask.refusedBadge}}** and **{{ui:agents.ask.refusedUnknown}}** | The question was refused without a reason | Try again; if it keeps happening, ask an Owner or Admin |
 | The counter turns red, with a message that the question is too long | The question is over 2,000 characters, and **{{ui:agents.ask.ask}}** stays unavailable | Shorten it |
-| **{{ui:agents.ask.timedOut}}** | The page stopped waiting after about two minutes | Click **{{ui:agents.ask.checkAgain}}** after a moment |
+| **{{ui:agents.ask.networkError}}** | Your question never reached Inflect, so no run started | Check your connection and ask again |
+| **{{ui:agents.ask.timedOut}}** | The page stopped waiting after about two minutes, or lost its connection while waiting. The run may still finish | Click **{{ui:agents.ask.checkAgain}}** after a moment |
 | **{{ui:agents.ask.noAnswerTitle}}** | The agent finished without an answer | Read the lookups it made, then rephrase and ask again |
 | **{{ui:agents.ask.emptyCatalogueTitle}}** | The agent has no tools to read records with | Ask an Owner, Admin or AI admin to give it tools |
 
