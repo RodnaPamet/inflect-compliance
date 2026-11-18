@@ -246,6 +246,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         process.exit(2);
     }
     const port = Number.parseInt(process.env.GARAK_PROXY_PORT ?? '3107', 10);
-    await startProxy({ targetUrl, cookie, maxRequests, port, ledgerPath: process.env.GARAK_LEDGER });
-    process.stdout.write(`target-proxy: listening on 127.0.0.1:${port}, cap ${maxRequests}\n`);
+    const { server } = await startProxy({ targetUrl, cookie, maxRequests, port, ledgerPath: process.env.GARAK_LEDGER });
+    // The port actually bound, so `GARAK_PROXY_PORT=0` (any free port) can be read back.
+    process.stdout.write(`target-proxy: listening on 127.0.0.1:${server.address().port}, cap ${maxRequests}\n`);
 }
