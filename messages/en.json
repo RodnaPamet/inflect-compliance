@@ -2295,6 +2295,8 @@
       "delete": "Delete",
       "entityLabel": "controls",
       "deletedToast": "{count, plural, one {# control deleted} other {# controls deleted}}",
+      "deleteBlocked": "{blocked} of {total} selected controls were not deleted. They still have test plans, test runs or exceptions, which are kept as a record. Remove those first, or keep the controls.",
+      "deleteSkipped": "{skipped} of {total} selected controls could not be deleted and were left as they were.",
       "actionFailed": "Bulk action failed. Please try again.",
       "applied": "Changes applied",
       "partlyApplied": "Changes applied to {applied} of {total} selected controls. {skipped} could not be changed and were left as they were.",

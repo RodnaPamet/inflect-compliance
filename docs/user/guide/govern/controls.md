@@ -103,7 +103,7 @@ Tick the rows you want, up to 100 at a time. In the selection bar, open **{{ui:c
 
 - **{{ui:controls.bulk.setStatus}}** moves every selected control to the status you choose. {{ui:controls.filterEnums.status.NOT_APPLICABLE}} is not offered, because scoping a control out needs a justification; do that on the control's own page.
 - **{{ui:controls.bulk.assignOwner}}** gives them all one owner, who must be an active member. Leave the owner empty to unassign them.
-- **{{ui:controls.bulk.delete}}** removes them from the list. For five seconds a message offers **{{ui:controls.deleted.undo}}**. Nothing is deleted until that time runs out.
+- **{{ui:controls.bulk.delete}}** removes them from the list. For five seconds a message offers **{{ui:controls.deleted.undo}}**. Nothing is deleted until that time runs out. A control that still has test plans, test runs or exceptions is not deleted, because those are kept as a record. The others are deleted, and a warning says how many of the selected controls were kept. They come back into the list.
 
 A status or owner change shows **{{ui:controls.bulk.applied}}** and clears the selection. If some of the selected controls could not be changed, a warning says how many were changed, and the others stay as they were. If none could be, it reads **{{ui:controls.bulk.noneApplied}}** A failed change leaves the rows selected, so you can try again. A failed deletion puts the rows back in the table.
 
@@ -136,6 +136,7 @@ Choose **{{ui:controls.deleted.toggle}}** again to return to the normal list.
 | **{{ui:controls.health.loadError}}** above the table | The health verdicts did not load, so the {{ui:controls.list.healthColumn}} column shows dashes | Reload the page |
 | **{{ui:controls.detail.taskRows.error}}** under a row | The control's tasks did not load | Collapse the row and open it again |
 | **{{ui:controls.bulk.actionFailed}}** | A bulk action did not go through, for example because more than 100 rows were selected | Select fewer rows and try again |
+| A warning after a bulk deletion saying some selected controls were not deleted | Those controls still have test plans, test runs or exceptions. They stay in the list, and the rest were deleted | Remove or reassign their test plans, test runs and exceptions first, or keep the controls |
 | **{{ui:controls.new.createFailed}}**, or a reason from the server, in the dialog | The control was not created. On a plan that limits controls, the message says how many controls the plan allows and how many the workspace already has | Fix what the reason says, or ask an Owner or Admin about the plan |
 | **{{ui:controls.new.applicabilityFailed}}** | The control exists, but marking it not applicable failed | Click **{{ui:controls.new.submit}}** again; it retries only that step |
 | **{{ui:controls.detail.errors.saveFailed}}** or **{{ui:controls.detail.errors.ownerUpdateFailed}}** in the quick view | The change was not saved | Try again, or make the change on the control's own page |

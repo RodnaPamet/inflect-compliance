@@ -164,6 +164,10 @@ export function softDeleteBlockedMessage(
  * was asked would leave the caller guessing which, and the alternative —
  * changing the result shape to report skips — is a bigger change than the
  * refusal warrants while the children are kept deliberately.
+ *
+ * Controls do not use it (#5763): their bulk delete already answered per id
+ * before the check existed, so a blocked control is its own `blocked` result
+ * beside the ones that were deleted, and the client says how many stayed.
  */
 export function bulkSoftDeleteBlockedMessage(
     parentLabelPlural: string,

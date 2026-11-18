@@ -7,6 +7,7 @@ import {
 import { logEvent } from '../../events/audit';
 import { notFound, forbidden, badRequest, conflict } from '@/lib/errors/types';
 import {
+    findBlockedParents,
     findSoftDeleteBlockers,
     softDeleteBlockedMessage,
 } from '@/lib/soft-delete-blockers';
@@ -385,6 +386,24 @@ export async function setControlOwner(ctx: RequestContext, id: string, ownerUser
 
 // ─── Soft Delete / Restore / Purge ───
 
+/**
+ * Why a bulk delete left a selected control in place. A stable code, never a
+ * sentence: the client words it, and an API caller can branch on it.
+ */
+export const BULK_DELETE_CONTROL_BLOCKED_REASON = 'CONTROL_HAS_KEPT_RECORDS' as const;
+
+/** One selected id's outcome in a bulk control delete. */
+export type BulkDeleteControlResult =
+    | { id: string; status: 'ok' }
+    | { id: string; status: 'not_found' }
+    | {
+        id: string;
+        status: 'blocked';
+        reason: typeof BULK_DELETE_CONTROL_BLOCKED_REASON;
+        /** The child models holding it down, e.g. `ControlTestPlan`. Sorted. */
+        blockedBy: string[];
+    };
+
 /** Bulk soft-delete controls selected in the table action bar. */
 export async function bulkDeleteControl(ctx: RequestContext, controlIds: string[]) {
     assertCanAdmin(ctx);
@@ -393,15 +412,36 @@ export async function bulkDeleteControl(ctx: RequestContext, controlIds: string[
         // doesn't own (foreign or global-library ids) is absent from `rows`.
         const rows = await ControlRepository.listByIds(db, ctx, controlIds);
         const ownedIds = new Set(rows.map((r) => r.id));
+
+        // #5763: the same refusal `deleteControl` makes (#5083), per id. A
+        // control with test runs, test plans or exceptions sits behind an ON
+        // DELETE RESTRICT key, so soft-deleting it would only park it in the
+        // trash until the 90-day purge fails on it. It is left in place and
+        // reported as `blocked`, while the rest of the selection is deleted:
+        // this route already answers per id, so a partial result names
+        // exactly which controls stayed and why. One query per blocking
+        // edge, not per control.
+        const blocked = await findBlockedParents(db, 'Control', [...ownedIds]);
+        const deletable = rows.filter((r) => !blocked.has(r.id));
+
         // Per-id verdict so the caller can tell which ids were dropped rather
         // than silently reconciling a bare count against its selection.
-        const results: Array<{ id: string; status: 'ok' | 'not_found' }> = controlIds.map((id) => ({
-            id,
-            status: ownedIds.has(id) ? 'ok' : 'not_found',
-        }));
-        if (rows.length > 0) {
-            await db.control.deleteMany({ where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId } });
-            for (const r of rows) {
+        const results = controlIds.map((id): BulkDeleteControlResult => {
+            if (!ownedIds.has(id)) return { id, status: 'not_found' };
+            const holders = blocked.get(id);
+            if (holders) {
+                return {
+                    id,
+                    status: 'blocked',
+                    reason: BULK_DELETE_CONTROL_BLOCKED_REASON,
+                    blockedBy: holders.map((b) => b.model).sort(),
+                };
+            }
+            return { id, status: 'ok' };
+        });
+        if (deletable.length > 0) {
+            await db.control.deleteMany({ where: { id: { in: deletable.map((r) => r.id) }, tenantId: ctx.tenantId } });
+            for (const r of deletable) {
                 // Sequential by design — audit rows are hash-chained per tenant
                 // (each entry hashes the previous entry's committed hash under a
                 // per-tenant advisory lock; see events/audit.ts). No batch API
@@ -416,7 +456,7 @@ export async function bulkDeleteControl(ctx: RequestContext, controlIds: string[
             }
         }
         // `deleted` kept for backward compatibility with existing callers.
-        return { results, deleted: rows.length };
+        return { results, deleted: deletable.length };
     });
     // Was missing — without it the cached list served the deleted rows for the
     // full TTL. Mirrors the sibling bulk ops.
