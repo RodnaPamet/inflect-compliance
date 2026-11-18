@@ -12,6 +12,8 @@ import { cardVariants } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { frameworkTemplateRefusal } from '@/lib/framework-template-refusals';
+import { planLimitRefusalOf } from '@/lib/billing/plan-limit-message';
+import { apiErrorMessage } from '@/lib/api-error';
 import { usePermissions } from '@/lib/tenant-context-provider';
 import { cn } from '@inflect/ui/lib/cn';
 
@@ -116,13 +118,24 @@ export default function TemplateLibraryPage() {
         setLoadAttempt((n) => n + 1);
     };
 
-    /** A refused install, in the reader's language (#4735). */
+    /**
+     * A refused install: a named refusal in the reader's language (#4735);
+     * the plan limit, asked before the role note because it is a 403 too and
+     * an Owner was told only an Owner or Admin could install (#5764); the
+     * role note for any other 403; else the server's own reason. A 5xx, or a
+     * refusal with no reason, gets the generic sentence.
+     */
     const installFailure = async (res: Response) => {
         const body: unknown = await res.json().catch(() => null);
         const code = frameworkTemplateRefusal(body);
         if (code) return tx(`templates.refused.${code}`);
+        const planLimit = planLimitRefusalOf(body);
+        if (planLimit) {
+            return tx('templates.planLimitReached', { limit: planLimit.limit, current: planLimit.current });
+        }
         if (res.status === 403) return tx('templates.installRestricted');
-        return tx('templates.installFailed');
+        const fallback = tx('templates.installFailed');
+        return res.status >= 500 ? fallback : apiErrorMessage(body, fallback);
     };
 
     // Both installs check `res.ok` and show the server's own message. They

@@ -66,9 +66,9 @@ Removing a pack does not delete or change any control, task or mapping it instal
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | **{{ui:frameworks.detail.installPack}}** does not appear on the framework's page, or **{{ui:frameworks.list.importFramework}}** does not appear on the {{ui:frameworks.list.heading}} page | Your role cannot add frameworks | Ask an Owner or Admin |
-| Your role can add frameworks, but the install page or the template library says only an Owner or Admin can install, after you click an install button | The install would take the workspace past the number of controls its plan allows. Nothing was installed | Ask an Owner to check the workspace's plan on the **{{ui:admin.billing.title}}** page in {{ui:admin.title}}, or install fewer controls from the template library |
 | {{ui:frameworks.install.restrictedTitle}} on the install page | You opened the install page, but your role cannot add frameworks | Ask an Owner or Admin |
-| **You do not have permission to install frameworks.** after you click an install button | Your role cannot add frameworks. It may have changed after you opened the page | Ask an Owner or Admin |
+| {{ui:frameworks.install.restricted}} or {{ui:frameworks.templates.installRestricted}} after you click an install button | Your role cannot add frameworks. It may have changed after you opened the page | Ask an Owner or Admin |
+| A notice that your plan allows a number of controls and the install would go over the limit | The workspace's plan does not allow that many more controls. Nothing was installed | Install fewer templates, or upgrade the plan on the [billing](../../guide/admin/billing.md) page |
 | The template library shows no **{{ui:frameworks.templates.install}}** buttons and no tick boxes | Your role cannot add controls from a framework | Ask an Owner or Admin |
 | {{ui:frameworks.templates.installFailed}} in the template library | The install did not finish | Reload the page. Controls that now exist read {{ui:frameworks.templates.installed}}. Install the rest again |
 | The install button reads {{ui:frameworks.install.allInstalled}} and is greyed out | Every control in the pack is already in your workspace, with all its requirement mappings | Nothing to do. The framework is already in place |

@@ -64,6 +64,7 @@ Type part of a template's code or title, or choose a category or a section. Each
 | --- | --- | --- |
 | **{{ui:frameworks.templates.emptyFilter}}** | No template matches the search and filters | Clear the search, and choose **{{ui:frameworks.templates.allCategories}}** and **{{ui:frameworks.templates.allSections}}** |
 | **{{ui:frameworks.templates.loadFailed}}** | The templates could not load | Click **{{ui:frameworks.templates.retry}}** |
+| A notice that the plan allows a number of controls and this install would go over the limit | The templates would take the workspace past its plan's control limit. Nothing was installed | Install fewer templates, or upgrade the plan on the [billing](../admin/billing.md) page |
 | **{{ui:frameworks.templates.installRestricted}}** | Your role cannot install templates | Ask an Owner or Admin |
 | **{{ui:frameworks.templates.installFailed}}**, or another reason the install was refused | Some or none of the templates were installed. A refusal for your plan's limit on controls installs none | Reload the page to see what was added, then try again. For a plan limit, install fewer templates or move to a larger plan |
 

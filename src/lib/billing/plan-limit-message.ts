@@ -9,8 +9,12 @@
  *
  * `formatPlanLimitMessage` is what the server throws and
  * `parsePlanLimitMessage` is what a client reads, so the two cannot drift.
- * Dependency-free: client components import it.
+ * `planLimitRefusalOf` reads it straight out of a refused response's body.
+ * Client-safe (its one import, `@/lib/api-error`, has none): client
+ * components import it.
  */
+
+import { apiErrorMessage } from '@/lib/api-error';
 
 export interface PlanLimitRefusal {
     /** The tenant's effective plan, e.g. `FREE`. */
@@ -42,4 +46,16 @@ export function parsePlanLimitMessage(message: string | null | undefined): PlanL
     const m = PATTERN.exec(message);
     if (!m) return null;
     return { plan: m[1], limit: Number(m[2]), resource: m[3], current: Number(m[4]) };
+}
+
+/**
+ * The plan-limit refusal in a parsed API error body, or `null` when the body
+ * is any other refusal (#5764).
+ *
+ * The refusal is a 403, the same status as a missing permission, so a page
+ * that words every 403 as "only an Owner or Admin can…" tells an Owner the
+ * wrong thing. Ask this before treating a 403 as a role refusal.
+ */
+export function planLimitRefusalOf(body: unknown): PlanLimitRefusal | null {
+    return parsePlanLimitMessage(apiErrorMessage(body, ''));
 }

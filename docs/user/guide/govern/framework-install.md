@@ -65,7 +65,9 @@ Click **{{ui:frameworks.install.back}}** on the preview.
 | **{{ui:frameworks.install.packsEmpty}}** | The framework has no pack to install | Map your own controls to its requirements instead |
 | **{{ui:frameworks.install.choosePacksRequired}}** | No pack is ticked | Tick at least one |
 | **{{ui:frameworks.install.allInstalled}}** | You already have every control in the pack, with all its mappings | Nothing to install |
-| **{{ui:frameworks.install.installFailed}}**, or a reason the install was refused | Nothing was installed. One reason is your plan's limit on controls | Follow the reason given, then try again. For a plan limit, remove controls you do not need or move to a larger plan |
+| A notice that the plan allows a number of controls and this install would go over the limit | The pack would take the workspace past its plan's control limit. Nothing was installed | Remove controls you do not need, or move to a larger plan on the [billing](../admin/billing.md) page (or ask an Owner or Admin to) |
+| **{{ui:frameworks.install.restricted}}** after you click the install button | Your role cannot install frameworks. It may have changed after you opened the page | Ask an Owner or Admin |
+| **{{ui:frameworks.install.installFailed}}**, or a reason the install was refused | Nothing was installed | Follow the reason given, then try again |
 
 ## Related
 

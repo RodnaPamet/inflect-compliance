@@ -49,6 +49,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import InstallWizardPage from '@/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/install/page';
 import TemplateLibraryPage from '@/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/templates/page';
+import { formatPlanLimitMessage } from '@/lib/billing/plan-limit-message';
 
 const en = require('../../messages/en.json');
 
@@ -374,5 +375,93 @@ describe('the template library', () => {
 
         fireEvent.click(screen.getByText('Roles'));
         expect(screen.queryByTestId('suggested-evidence-A-5.2')).toBeNull();
+    });
+});
+
+// #5764 — the plan-limit refusal is a 403, like a missing permission, and both
+// pages worded every 403 as "only an Owner or Admin… can install", so an Owner
+// whose plan was full was told it was a role problem.
+describe('a refused install names the reason it was refused for', () => {
+    const PLAN_LIMIT_BODY = {
+        error: {
+            code: 'FORBIDDEN',
+            message: formatPlanLimitMessage({ plan: 'FREE', resource: 'control', limit: 10, current: 9 }),
+        },
+    };
+    const PERMISSION_BODY = { error: { code: 'FORBIDDEN', message: 'You do not have permission to install frameworks.' } };
+    const OTHER_BODY = { error: { code: 'CONFLICT', message: 'Another install is already running.' } };
+
+    describe('the install wizard', () => {
+        const I = en.frameworks.install;
+
+        async function refusedInstall(status: number, body: unknown) {
+            permissions.frameworks.install = true;
+            packsResponse = [PACKS[0]];
+            previewResponse = {
+                packKey: 'iso-base', packName: 'ISO base', framework: { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
+                totalTemplates: 1, newControls: 1, existingControls: 0,
+                templates: [{ code: 'A-5.1', title: 'Policies', tasks: 3, requirements: [], alreadyInstalled: false }],
+            };
+            postHandler = () => ({ ok: false, status, body });
+            render(<InstallWizardPage />);
+            const install = await waitFor(() => {
+                const b = document.getElementById('confirm-install-btn') as HTMLButtonElement | null;
+                if (!b) throw new Error('no install button yet');
+                return b;
+            });
+            await act(async () => { fireEvent.click(install); });
+        }
+
+        it('says the plan is full, not that the role cannot install', async () => {
+            await refusedInstall(403, PLAN_LIMIT_BODY);
+            expect(await screen.findByText(I.planLimitReached.replace('{limit}', '10').replace('{current}', '9'))).toBeTruthy();
+            expect(screen.queryByText(I.restricted)).toBeNull();
+            expect(screen.queryByText(PLAN_LIMIT_BODY.error.message)).toBeNull();
+        });
+
+        it('keeps the role note for a permission refusal', async () => {
+            await refusedInstall(403, PERMISSION_BODY);
+            expect(await screen.findByText(I.restricted)).toBeTruthy();
+            expect(screen.queryByText(PERMISSION_BODY.error.message)).toBeNull();
+        });
+
+        it("shows the server's reason for any other refusal", async () => {
+            await refusedInstall(409, OTHER_BODY);
+            expect(await screen.findByText(OTHER_BODY.error.message)).toBeTruthy();
+            expect(screen.queryByText(I.restricted)).toBeNull();
+            expect(screen.queryByText(I.installFailed)).toBeNull();
+        });
+    });
+
+    describe('the template library', () => {
+        const T = en.frameworks.templates;
+
+        async function refusedInstall(status: number, body: unknown) {
+            permissions.frameworks.install = true;
+            postHandler = () => ({ ok: false, status, body });
+            render(<TemplateLibraryPage />);
+            await screen.findByText('Policies');
+            await act(async () => { fireEvent.click(screen.getAllByText(T.install)[0]); });
+        }
+
+        it('says the plan is full, not that the role cannot install', async () => {
+            await refusedInstall(403, PLAN_LIMIT_BODY);
+            expect(await screen.findByText(T.planLimitReached.replace('{limit}', '10').replace('{current}', '9'))).toBeTruthy();
+            expect(screen.queryByText(T.installRestricted)).toBeNull();
+            expect(screen.queryByText(PLAN_LIMIT_BODY.error.message)).toBeNull();
+        });
+
+        it('keeps the role note for a permission refusal', async () => {
+            await refusedInstall(403, PERMISSION_BODY);
+            expect(await screen.findByText(T.installRestricted)).toBeTruthy();
+            expect(screen.queryByText(PERMISSION_BODY.error.message)).toBeNull();
+        });
+
+        it("shows the server's reason for any other refusal", async () => {
+            await refusedInstall(409, OTHER_BODY);
+            expect(await screen.findByText(OTHER_BODY.error.message)).toBeTruthy();
+            expect(screen.queryByText(T.installRestricted)).toBeNull();
+            expect(screen.queryByText(T.installFailed)).toBeNull();
+        });
     });
 });
