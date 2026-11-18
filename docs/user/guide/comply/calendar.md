@@ -25,7 +25,7 @@ The calendar collects deadlines from many registers, and each kind follows the r
 - **{{ui:calendar.source.training}}** due dates are shown only to Owners and Admins.
 - **{{ui:calendar.source.agent-harness-acceptance}}** expiry dates are shown to Owners, Admins and AI admins.
 
-When a kind is left out, a grey note above the calendar names it, so a missing kind is never mistaken for one with nothing due. If your workspace uses custom roles, each kind follows your custom role's own permissions for its register.
+When a kind is left out, a grey note above the calendar names it, so a missing kind is never mistaken for one with nothing due. If your workspace uses custom roles, each kind follows your custom role's own permissions for its register. Creating, completing or rescheduling a task needs the task permissions and a base role that can make changes: Owner, Admin or Editor.
 
 ## What it is for
 
@@ -39,7 +39,7 @@ Use the calendar to plan the weeks ahead and to catch what is late. Every entry 
 
 | View | Window |
 | --- | --- |
-| {{ui:calendar.viewMonth}} | One month, padded with the days that complete its first and last weeks |
+| {{ui:calendar.viewMonth}} | Six weeks: the month, with the days before and after it that fill the grid. Entries due on those days are shown too |
 | {{ui:calendar.viewHeatmap}} | {{ui:calendar.heatmapWindowLabel}} |
 | {{ui:calendar.viewTimeline}} | {{ui:calendar.ganttWindowLabel}}: six months back and six months ahead |
 
@@ -56,7 +56,7 @@ Each entry has a category, shown by its colour, and a status:
 | {{ui:calendar.status.overdue}} | The date has passed and the obligation is still open |
 | {{ui:calendar.status.due_soon}} | Due within the next seven days |
 | {{ui:calendar.status.scheduled}} | Due later |
-| {{ui:calendar.status.done}} | Already met, for example a closed task |
+| {{ui:calendar.status.done}} | Already met, for example a closed task. A cancelled audit also counts as done, never as overdue |
 
 Statuses are judged against one day that is the same for everyone, so "today" is the same day in all three views, wherever you are.
 

@@ -187,6 +187,13 @@ A mapping set's hash (`computeMappingSetHash`) covers its whole parsed content,
 the rationales included, so a reworded rationale reaches every database without
 a version bump. A mapping set records no diff, so it needs none.
 
+Both hashes are written LAST, so an import that stops half way heals on the next
+sync (#5457). A framework's content hash is stored only after every requirement
+is applied, and a mapping set's only when every entry resolved — so a set
+imported before one of its frameworks existed imports again once it does. A
+requirement code the library drops and later re-adds is revived (its
+`deprecatedAt` cleared) rather than colliding on its unique key.
+
 ### Migration Strategies
 
 | Strategy | Behavior | When to Use |

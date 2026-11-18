@@ -38,11 +38,27 @@ enforcement; the `_catalogueCheck` assertion in `event-contracts.ts`
 fires a TypeScript error if a catalogue entry lands without a
 contract variant.
 
-**The bus.** Module-level singleton. `emit()` stamps tenantId from
-`RequestContext` (non-forgeable), fans to in-process subscribers,
-hands off to a pluggable dispatcher. Default dispatcher: no-op.
-Production dispatcher: BullMQ-backed, enqueues an
+**The bus.** One per process, held on `globalThis` (like the BullMQ
+queue), because Next.js compiles `instrumentation.ts` and the route
+handlers into different module instances: a module-level singleton left
+every web-request event on the no-op default dispatcher (#5541).
+`emit()` stamps tenantId from `RequestContext` (non-forgeable), fans to
+in-process subscribers, and hands off to a pluggable dispatcher. Default
+dispatcher: no-op. Production dispatcher: BullMQ-backed, enqueues an
 `automation-event-dispatch` job per event.
+
+**Web-tier events are behind a switch.** `installAutomationBusDispatcher`
+takes the tier it runs in (`src/app-layer/automation/bus-bootstrap.ts`).
+The worker installs `'worker'`, and its events are dispatched as they
+always were. The web process installs `'web'`, whose dispatcher reads
+`AUTOMATION_WEB_EVENTS_ENABLED` per event
+(`src/app-layer/automation/web-events-switch.ts`): unset, or any value
+but `1` / `true`, holds every event a web request emits — a task, risk or
+control created through the UI or the API — and logs the hold once per
+process. The switch is off by default (owner decision, 2026-11-13)
+because turning it on wakes every ENABLED rule for new web events at
+once; it replays nothing emitted while it was off. The repo-canonical
+production Compose file sets it to `1` for the app service (#5580).
 
 **The dispatcher.** One job per event. Loads `ENABLED`, non-deleted
 rules matching `(tenantId, triggerEvent)` in priority order, runs

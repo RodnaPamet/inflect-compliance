@@ -39,7 +39,7 @@ When the answers are high-risk enough, a risk is created in the register for you
 
 When the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**:
 
-1. Read each answer. Where an answer deserves more or fewer points than it earned, type the points in its override box, and say why in **{{ui:admin.assessmentReview.notes}}**.
+1. Read each answer. Where an answer deserves more or fewer points than it earned, type the points in its override box, and say why in **{{ui:admin.assessmentReview.notes}}**. Points can be a decimal, such as 2.5, or negative, such as -1. Clear the box to keep the points the answer earned.
 2. Choose the **{{ui:admin.assessmentReview.finalRating}}**. The suggestion from the scoring is shown until you choose.
 3. Add **{{ui:admin.assessmentReview.reviewerNotes}}** for the assessment as a whole.
 4. Click **{{ui:admin.assessmentReview.saveReview}}**. The assessment becomes **{{ui:vendors.statusLabel.REVIEWED}}**.
@@ -51,6 +51,8 @@ While the assessment is **{{ui:vendors.statusLabel.SUBMITTED}}**, and the vendor
 1. Under **{{ui:vendors.prefill.heading}}**, choose the **{{ui:vendors.prefill.document}}** and click **{{ui:vendors.prefill.prefillBtn}}**.
 2. Each proposed answer appears with where in the document it came from and how confident the reading is. A report whose period has ended is flagged **{{ui:vendors.prefill.periodExpired}}**.
 3. Click **{{ui:vendors.prefill.approve}}** or **{{ui:vendors.prefill.reject}}** on each. Only an approved answer is recorded and scored.
+
+The document must be one of this vendor's. Pre-filling follows the workspace's AI switches on the [{{ui:admin.nav.aiFeatures}}](ai-features.md) page: while **{{ui:admin.aiFeatures.risk.name}}** or **{{ui:admin.aiFeatures.ai.name}}** is off, it is refused. While the workspace's AI processing is set to **{{ui:admin.aiResidency.localLabel}}**, the document is not sent to an outside model and no answers are proposed.
 
 If the document cannot be read, the panel says why under the button, for example that AI is turned off, that today's AI allowance is used up, or that the document belongs to another vendor. Each case is listed under [Empty and error states](#empty-and-error-states).
 
@@ -67,7 +69,10 @@ Once an assessment is reviewed, its answers are the scored record: pre-filled an
 | {{ui:admin.assessmentReview.notFound}} | The assessment does not exist in this workspace | Open it from the queue |
 | {{ui:admin.assessmentReview.loadErrorNetwork}} | The assessment did not load | Reload the page |
 | An error that saving failed, or {{ui:admin.assessmentReview.closeError}} | The review or the close did not go through | Read the reason, and try again |
-| {{ui:vendors.prefill.proposalsFromDocMsg}} | The document gave no answers to propose | Answer from the document yourself, or choose another |
+| **{{ui:admin.assessmentReview.overrideInvalid}}** | An override box holds something that is not a number. Nothing was saved | Correct the highlighted box, or clear it |
+| {{ui:vendors.prefill.extractionFailed}} | The document was not read: the workspace's AI features are off, the document is another vendor's, or reading it failed | Check the workspace's AI settings, choose a document of this vendor, or try again |
+| {{ui:vendors.prefill.updateFailed}} | A proposed answer was not approved or rejected | Reload the page and try again |
+| {{ui:vendors.prefill.proposalsFromDocMsg}} | The document gave no answers to propose. A workspace whose AI processing is **{{ui:admin.aiResidency.localLabel}}** always sees this | Answer from the document yourself, or choose another |
 | {{ui:vendors.prefill.proposalsFailedMsg}} | The document could not be read | Try again, or review without it |
 | {{ui:vendors.prefill.refused.AI_DISABLED}} | AI is switched off for the whole installation | Ask your administrator, or review without it |
 | {{ui:vendors.prefill.refused.AI_TURNED_OFF_FOR_WORKSPACE}} | AI is turned off for this workspace | Ask the workspace owner to turn it on, or review without it |

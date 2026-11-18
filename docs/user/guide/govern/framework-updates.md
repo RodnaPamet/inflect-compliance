@@ -17,7 +17,7 @@ Click the notification that announces the update, in the bell at the top of any 
 | See the updates | Every role |
 | Dismiss an update, mark it reviewed, or create findings from it | Owner, Admin, Editor |
 
-Every other role sees, on a new update: {{ui:frameworkUpdates.restricted}}
+If your workspace uses custom roles, **{{ui:frameworkUpdates.createFindings}}** also needs permission to create findings; a role without it can still dismiss or review an update. Every other role sees, on a new update: {{ui:frameworkUpdates.restricted}}
 
 ## What it is for
 

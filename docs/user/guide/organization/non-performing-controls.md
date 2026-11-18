@@ -35,7 +35,7 @@ Controls marked implemented or not applicable are not listed. The figures here a
 
 **Sort.** Click a column heading.
 
-**Load more.** The page loads the first batch of controls, and the line under the title counts them. When there are more, it adds **more to load below** and a **{{ui:org.controls.loadMore}}** button appears below the table; click it to add the next batch.
+**Load more.** The page loads the first batch of controls, the most urgent statuses first ({{ui:org.controls.statusNeedsReview}}, then {{ui:org.controls.statusNotStarted}}, down to {{ui:org.controls.statusImplementing}}), and the line under the title counts them. When there are more, it adds **more to load below** and a **{{ui:org.controls.loadMore}}** button appears below the table; click it to add the next batch.
 
 **Open a control.** Click its name to work on it in its workspace.
 
@@ -45,6 +45,7 @@ Controls marked implemented or not applicable are not listed. The figures here a
 | --- | --- | --- |
 | **{{ui:org.controls.emptyTitle}}** | Every applicable control in every workspace is implemented | Nothing |
 | **{{ui:org.controls.failedLoadMore}}** | The next batch did not load | Click **{{ui:org.controls.loadMore}}** again |
+| **{{ui:org.forbidden.title}}** | You are a Reader: the list names items inside the workspaces, which only Owners and Admins can open | Use the [{{ui:org.dashboard.title}}](portfolio-overview.md); **{{ui:org.forbidden.back}}** takes you there |
 
 ## Related
 

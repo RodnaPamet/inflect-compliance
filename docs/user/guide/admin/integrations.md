@@ -115,7 +115,7 @@ An **{{ui:admin.integrations.providerLabels.mcp-server}}** connection that signs
 
 Click **{{ui:admin.sharepoint.connect}}** on the {{ui:admin.sharepoint.title}} card. Microsoft asks you to sign in and consent, then returns you here, and the card shows one of three messages: **{{ui:admin.sharepoint.connected}}**, **{{ui:admin.sharepoint.declined}}** or **{{ui:admin.sharepoint.connectionFailed}}**
 
-- **{{ui:admin.sharepoint.sites}}** opens a list of the sites the connection can reach. Choose the ones Inflect may read and click **{{ui:admin.sharepoint.saveSites}}**. If the save is refused, the list stays open and the card says why. If the sites cannot be read, the card says why instead of opening an empty list.
+- **{{ui:admin.sharepoint.sites}}** opens a list of the sites the connection can reach. Choose the ones Inflect may read and click **{{ui:admin.sharepoint.saveSites}}**. A site already allowed that the list does not show stays allowed. If the save is refused, the list stays open and the card says why. If the sites cannot be read, the card says why instead of opening an empty list.
 - **{{ui:admin.sharepoint.test}}** checks the connection and shows the result under it.
 - **{{ui:admin.sharepoint.disconnect}}** removes the connection. For five seconds a message offers **{{ui:admin.sharepoint.undo}}**.
 
@@ -137,6 +137,7 @@ The SharePoint connection is managed on its card only, and is not listed in {{ui
 | A red message in place of the table | Your role cannot read the connections, or Inflect could not list them. The message says which | Ask an Owner or Admin, or reload the page |
 | **{{ui:admin.integrations.loadFailed}}** | The page could not reach Inflect | Reload the page |
 | A message that starts **This tenant already has an enabled HRIS connection** | Another HR connection is enabled | Disable it first |
+| **{{ui:admin.integrations.nameInvalidCharacters}}**, under {{ui:admin.integrations.connectionName}} | The name holds an invisible control character or a broken character, often from pasting | Retype the name and save again |
 | A message that starts **Changing** and asks you to re-enter the credential | You changed the address and kept the stored secret | Type the secret again and save |
 | **Test failed:** with a reason | The system refused the settings or secrets | Fix them with **{{ui:admin.integrations.editConnection}}**, then test again |
 | **{{ui:admin.integrations.syncFailed}}**, or a reason from the server | The sync could not start | Reload the page and try again |

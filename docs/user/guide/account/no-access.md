@@ -28,9 +28,12 @@ The heading, the email address you are signed in with, and one explanation. When
 
 Below it, links to where you can go: **{{ui:noTenant.goToWorkspaces}}** when you have other workspaces, and one link per organization you belong to.
 
+When you were given access to a workspace after you signed in, your session does not show it yet. The page then says so, **{{ui:noTenant.refreshStale}}**, with a **{{ui:noTenant.refreshAccess}}** button. It appears only when checking again would find a workspace your session is missing.
+
 ## What you can do
 
 - Click **{{ui:noTenant.goToWorkspaces}}**, or an organization, to go somewhere you do have access.
+- Click **{{ui:noTenant.refreshAccess}}**, when it is shown, to pick up access you were just given without signing out. It reads **{{ui:noTenant.refreshingAccess}}** and then opens [your workspaces](workspaces.md).
 - Click **{{ui:noTenant.signOut}}** to sign in with a different account, for example the address an invitation was sent to.
 
 To get into a workspace, ask one of its admins to invite you, to reactivate your membership, or, for Entra, to check its group mappings and allowed domains.
