@@ -42,7 +42,8 @@ const commits = parseGitLog(raw);
 const problems = findIdentityProblems(commits);
 
 const escape = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
-const cell = (s) => String(s).replace(/\|/g, '\\|');
+/** A markdown table cell: backslashes first, so the `|` escape cannot be undone; no line breaks. */
+const cell = (s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
 
 for (const p of problems) {
     console.log(

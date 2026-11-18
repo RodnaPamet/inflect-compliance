@@ -62,7 +62,10 @@ describe('target proxy', () => {
 
     async function startProxy(maxRequests: number): Promise<void> {
         ledgerPath = path.join(tmp, `ledger-${Date.now()}.json`);
-        proxyPort = 32000 + Math.floor(Math.random() * 20000);
+        // Port 0: the OS picks a free port and the proxy prints the one it bound.
+        // A random pick in 32000-52000 overlapped Linux's ephemeral range
+        // (32768-60999), so any outbound socket on the runner could already
+        // hold it, and the proxy died with EADDRINUSE.
         const { port } = upstream.address() as AddressInfo;
         const child = spawn(process.execPath, [PROXY], {
             env: {
@@ -70,13 +73,19 @@ describe('target proxy', () => {
                 GARAK_TARGET_URL: `http://127.0.0.1:${port}/api/t/acme-corp/assistant/ask`,
                 GARAK_SESSION_COOKIE: COOKIE,
                 GARAK_MAX_REQUESTS: String(maxRequests),
-                GARAK_PROXY_PORT: String(proxyPort),
+                GARAK_PROXY_PORT: '0',
                 GARAK_LEDGER: ledgerPath,
             },
         });
         proxy = child;
         await new Promise<void>((resolve, reject) => {
-            child.stdout?.on('data', (d: Buffer) => d.toString().includes('listening') && resolve());
+            child.stdout?.on('data', (d: Buffer) => {
+                const bound = /listening on 127\.0\.0\.1:(\d+)/.exec(d.toString());
+                if (bound) {
+                    proxyPort = Number(bound[1]);
+                    resolve();
+                }
+            });
             child.stderr?.on('data', (d: Buffer) => reject(new Error(`proxy: ${d.toString()}`)));
             child.on('exit', (code) => reject(new Error(`proxy exited ${code}`)));
         });
