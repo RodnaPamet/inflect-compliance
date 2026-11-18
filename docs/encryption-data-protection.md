@@ -51,6 +51,8 @@
 |---|---|---|---|
 | `DATA_ENCRYPTION_KEY` | Master key for AES-256-GCM + HMAC | `openssl rand -base64 48` | **Yes** in production. Boot exits 1 if missing, too short (<32 chars), or equal to the dev fallback. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | Decrypt fallback during master-KEK rotation | `openssl rand -base64 48` | Optional. Set ONLY during a rotation; remove once the rotation job reports zero remaining v1 rows under the previous key. |
+| `LOOKUP_HASH_KEY` | Material for the HMAC lookup hashes (`hashForLookup`: `emailHash`, `emailAtLinkTimeHash`) | Set to the CURRENT `DATA_ENCRYPTION_KEY` value | Optional; unset falls back to the master key's material, so upgrading moves no hash. Required before a master-KEK rotation: a lookup hash is an index with no previous-key fallback, so rotating it broke every email sign-in (#5071). A production boot with `DATA_ENCRYPTION_KEY_PREVIOUS` set and this unset refuses to start. |
+| `DERIVED_SUBKEY_KEY` | Material for the HKDF subkeys that are not encryption keys (`deriveSubkey`: the audit sampling seeds, the assistant's answer seal, the MCP exchanged-token signing key) | Set to the CURRENT `DATA_ENCRYPTION_KEY` value | Optional, with the same fallback and the same boot refusal mid-rotation (#5500). A sibling of `LOOKUP_HASH_KEY`, not the same setting. See [Epic B](./epic-b-encryption.md) |
 
 > [!CAUTION]
 > Losing `DATA_ENCRYPTION_KEY` means **permanent data loss** for all encrypted columns.
@@ -230,7 +232,7 @@ docker compose -f docker-compose.prod.yml exec app \
 |---|---|---|
 | `DATA_ENCRYPTION_KEY` | App-layer column encryption | Environment variable |
 | `AUTH_SECRET` | NextAuth session signing | Environment variable |
-| `JWT_SECRET` | JWT token signing | Environment variable |
+| `JWT_SECRET` | Required by the env schema; signs nothing since the legacy `token` cookie was removed | Environment variable |
 | `POSTGRES_PASSWORD` | Database authentication | Environment variable |
 | `S3_SECRET_ACCESS_KEY` | S3/R2 authentication | Environment variable |
 | `AV_WEBHOOK_SECRET` | AV scan webhook HMAC | Environment variable |
@@ -239,8 +241,8 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Key | Rotation procedure |
 |---|---|
-| `DATA_ENCRYPTION_KEY` | 1. Set `DATA_ENCRYPTION_KEY_PREVIOUS` to the outgoing key and `DATA_ENCRYPTION_KEY` to the new one, then deploy; `decryptField` falls back to the previous key, so every existing value still reads. 2. For each tenant, `POST /api/t/{slug}/admin/key-rotation`, which enqueues the `key-rotation` job: it re-wraps the tenant's DEK under the new key and re-encrypts any remaining `v1:` values. 3. Remove `DATA_ENCRYPTION_KEY_PREVIOUS` only once every tenant reports zero `v1:` values under the old key. `scripts/backfill-encryption.ts` is not a rotation tool (#5244): it only fills empty `*Encrypted` columns and skips any value already encrypted, so it re-encrypts nothing. |
-| `AUTH_SECRET` / `JWT_SECRET` | Set new value — existing sessions are invalidated |
+| `DATA_ENCRYPTION_KEY` | 0. If `LOOKUP_HASH_KEY` and `DERIVED_SUBKEY_KEY` are not set, set both to the CURRENT `DATA_ENCRYPTION_KEY` value and restart first. 1. Set `DATA_ENCRYPTION_KEY_PREVIOUS` to the outgoing key and `DATA_ENCRYPTION_KEY` to the new one, then deploy; `decryptField` falls back to the previous key, so every existing value still reads. 2. For each tenant, `POST /api/t/{slug}/admin/key-rotation`, which enqueues the `key-rotation` job: it re-wraps the tenant's DEK under the new key and re-encrypts any remaining `v1:` values, including the four tenant-scoped models' PII `*Encrypted` columns. `User` and `Account` carry no `tenantId`, so their PII columns are re-encrypted by `scripts/rotate-global-pii.ts` (dry run by default) (#5505). 3. Remove `DATA_ENCRYPTION_KEY_PREVIOUS` only once every tenant reports zero `v1:` values under the old key and the global PII script reports none. `scripts/backfill-encryption.ts` is not a rotation tool (#5244): it only fills empty `*Encrypted` columns and skips any value already encrypted, so it re-encrypts nothing. |
+| `AUTH_SECRET` | Set new value — existing sessions are invalidated |
 | `POSTGRES_PASSWORD` | Update in both Docker env and `.env.production` |
 
 ### Provider-specific secret storage
@@ -442,7 +444,7 @@ All 12 critical entity models are intercepted by `SOFT_DELETE_MODELS` in the sof
 
 1. **DATA_ENCRYPTION_KEY rotation** goes through the dual-key path in the table above: the outgoing key stays set as `DATA_ENCRYPTION_KEY_PREVIOUS` while the `key-rotation` job re-wraps each tenant's DEK and re-encrypts the remaining `v1:` values. `scripts/backfill-encryption.ts` cannot do this (#5244) and must not be used for it.
 2. During rotation, new writes use the new key and existing values still read: `decryptField` tries the primary key and falls back to `DATA_ENCRYPTION_KEY_PREVIOUS`. Removing that variable before every tenant has been swept is what makes values unreadable, not the rotation itself. `v2:` values are wrapped under the tenant DEK and are untouched by a master-key rotation.
-3. **AUTH_SECRET** and **JWT_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate
+3. **AUTH_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate. (`JWT_SECRET` is still required by the env schema but signs nothing since the legacy `token` cookie was removed.)
 
 ### Future work (non-blocking)
 

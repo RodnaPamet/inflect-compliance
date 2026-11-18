@@ -25,7 +25,9 @@ On a narrow screen the page lists the process maps but does not show the canvas:
 
 A role that cannot edit maps sees the canvas read-only: there is no palette, and no **{{ui:automation.documentBar.newProcess}}**, **{{ui:automation.documentBar.duplicate}}** or **{{ui:automation.documentBar.save}}**. **{{ui:automation.documentBar.delete}}** appears only for Owners and Admins.
 
-If your workspace uses custom roles, editing maps also needs your custom role's permission to edit processes.
+If your workspace uses custom roles, editing maps also needs your custom role's permission to edit processes, and managing rules also needs permission to manage the workspace.
+
+On an automation workflow, everyone who can edit maps can draw its steps, but only Owners and Admins can change the rules behind them. For anyone else, the rule fields in a step's panel are shown but cannot be changed.
 
 ## What it is for
 
@@ -47,11 +49,11 @@ When the window is narrow the bar wraps onto a second line, so **{{ui:automation
 
 On the left, a palette of the kinds of step you can place: process steps, decisions, risks, assets and the rest. In the middle, the canvas, with its own toolbar for selecting, connecting steps with an arrow, and adding notes, text, drawings and frames, and its own undo and redo. On the right, the inspector, which shows the properties of the step or connection you select. A side panel lists the map's saved versions.
 
-**{{ui:processes.tabRules}}.** The workspace's automation rules, with their name, the event that triggers each, the action it takes, its status, when it last fired, how many times it has run, and its priority. Click a rule to open its details. Above the list, **{{ui:processes.rules.templates}}** and **{{ui:processes.rules.addRule}}**.
+**{{ui:processes.tabRules}}.** The workspace's automation rules, with their name, the event that triggers each (**{{ui:processes.rules.triggerNotSet}}** for a rule made on a canvas whose Trigger step has no event yet), the action it takes, its status, when it last fired, how many times it has run, and its priority. Click a rule to open its details. The status filter offers draft, enabled and disabled rules; archived rules are not listed. Above the list, for Owners and Admins, **{{ui:processes.rules.templates}}** and **{{ui:processes.rules.addRule}}**.
 
 **{{ui:processes.tabAnalytics}}.** How the rules have performed: **{{ui:processes.analytics.enabledRules}}**, how many runs, **{{ui:processes.analytics.successRate}}**, **{{ui:processes.analytics.avgDuration}}**, **{{ui:processes.analytics.stuckExecutionBreaches}}** and **{{ui:processes.analytics.errorRate}}**, a chart of runs over time and the rules that fire most.
 
-**{{ui:processes.tabMonitor}}.** **{{ui:processes.monitor.recentActivity}}**, the latest rule runs, and any runs stuck past their time limit. For Owners, Admins and Editors, **{{ui:automation.manualTrigger.heading}}** below them: pick an enabled rule, then **{{ui:automation.manualTrigger.dryRun}}** checks whether its conditions match the latest event without acting, and **{{ui:automation.manualTrigger.fire}}** runs it again on that event. Each says what happened, including when there was nothing to run.
+**{{ui:processes.tabMonitor}}.** **{{ui:processes.monitor.recentActivity}}**, the latest rule runs, and any runs stuck past their time limit. For Owners, Admins and Editors only, **{{ui:automation.manualTrigger.heading}}** below them: pick an enabled rule, then **{{ui:automation.manualTrigger.dryRun}}** checks whether its conditions match the latest event without acting, and **{{ui:automation.manualTrigger.fire}}** runs it again on that event. Each says what happened, including when there was nothing to run.
 
 ## What you can do
 
@@ -63,7 +65,7 @@ An agent, or the assistant when you ask it to, can also propose a whole map from
 
 Notes, text, drawings and frames are kept with the map and come back when you open it again. The canvas has one page, and does not take images, videos or embedded web pages, because the map would not keep them.
 
-Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. If a save is already under way, **{{ui:automation.documentBar.save}}** waits for it and then saves again, so the two never trip over each other. Renaming the map saves it too. Each save keeps a version you can compare against the current map or restore from the version list. Restoring asks first, in a dialog that names the version, and keeps the history: the restored map becomes a new version.
+Your changes save on their own after a pause, and **{{ui:automation.documentBar.save}}** saves at once. If somebody else saved the map since you opened it, your save is refused with **{{ui:automation.canvas.versionConflictTitle}}**; click **{{ui:automation.canvas.versionConflictReload}}** to load their version. Your unsaved edits are lost on reload, so note anything you need to redo first. If a save is already under way, **{{ui:automation.documentBar.save}}** waits for it and then saves again, so the two never trip over each other. Renaming the map saves it too. Each save keeps a version you can compare against the current map or restore from the version list. Restoring asks first, in a dialog that names the version, and keeps the history: the restored map becomes a new version.
 
 ### Turn a map into an automation workflow
 
@@ -72,11 +74,13 @@ Use the mode button to convert the map. The palette then offers automation steps
 A rule is built from a chain of steps, read along the connections:
 
 - **Each Action or Agent step is one rule.** Saving the map creates it as a draft, named after the step, and it appears on **{{ui:processes.tabRules}}**. Select the step to rename the rule, switch it on or off, and open **{{ui:automation.autoInspector.editAction}}**, which edits what it does in the rule builder.
-- **A Trigger step sets the event** of each Action or Agent step it leads to. Connect it to the step, select it, and pick the event.
+- **A Trigger step sets the event** of each Action or Agent step it leads to. Connect it to the step, select it, and pick the event. When a rule it sets has a filter for the old event, you are asked first, **{{ui:automation.autoInspector.triggerChangeTitle}}**, because {{ui:automation.autoInspector.triggerChangeFilterRemoved}} Click **{{ui:automation.autoInspector.triggerChangeConfirm}}**, or cancel to keep both.
 - **A Condition step sets the filter** of the rule it leads to. Select it and use **{{ui:automation.autoInspector.editConditions}}**.
 - **An SLA gate sets the time limit** of the rule it leads to.
 
 A step that leads to nothing says so: connect it to an Action or Agent step first.
+
+A step inside a group belongs to that group's sub-flow. An **{{ui:automation.autoInspector.actionInvokeSubflow}}** action starts the group's highest-priority enabled rule. Moving a step out of the group, or removing the group, takes its rule out of the sub-flow when the map is saved.
 
 Each Action or Agent step shows its rule's state and how many times it has run: **{{ui:automation.stepRuleStatus.draft}}**, **{{ui:automation.stepRuleStatus.draftNeedsSetup}}**, **{{ui:automation.stepRuleStatus.enabled}}** or **{{ui:automation.stepRuleStatus.disabled}}**.
 
@@ -105,6 +109,7 @@ Click **{{ui:automation.documentBar.delete}}**. You are asked to type the map's 
 | --- | --- | --- |
 | The page was not found | The process canvas module is off | Ask an Owner to turn it on |
 | **{{ui:processes.mobileEmpty}}** | The workspace has no process maps | Open the page on a larger screen to create one |
+| **{{ui:automation.canvas.versionConflictTitle}}** | Somebody else saved the map after you opened it, so your save was refused | Click **{{ui:automation.canvas.versionConflictReload}}** |
 | **{{ui:automation.documentBar.saveFailed}}** | The latest change was not kept. The reason is shown beside it | Click **{{ui:automation.documentBar.save}}** to try again; if it fails again, reload the page to see the map as it is stored |
 | **{{ui:automation.documentBar.deleteFailed}}** | The map was not deleted. Only Owners and Admins can delete maps | Ask an Owner or Admin |
 | **{{ui:processes.rules.emptyTitle}}** | The workspace has no automation rules | Owners and Admins click **{{ui:processes.rules.addRule}}** |

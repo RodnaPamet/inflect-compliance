@@ -51,12 +51,12 @@ See [Build an audit pack](../../how-to/audits/build-an-audit-pack.md).
 
 ### Freeze the pack
 
-Click **{{ui:audits.packs.freezePack}}** and confirm. {{ui:audits.packs.freezeConfirm.desc}}
+Click **{{ui:audits.packs.freezePack}}** and confirm. {{ui:audits.packs.freezeConfirm.desc}} The button is greyed out while the pack has no items: add at least one first.
 
 ### Share it with the auditor
 
 1. On a frozen pack, click **{{ui:audits.packs.generateShareLink}}**.
-2. Choose how long the link lasts, or **{{ui:audits.packs.shareModal.noExpiry}}**, and click **{{ui:audits.packs.shareModal.submit}}**.
+2. Choose how long the link lasts, or **{{ui:audits.packs.shareModal.noExpiry}}**, and click **{{ui:audits.packs.shareModal.submit}}**. A link set to expire on a day works until the end of that day (UTC), so you can pick today.
 3. Copy the link from **{{ui:audits.packs.shareLinkGenerated}}** and send it to the auditor. {{ui:audits.packs.shareLinkOnceWarning}}
 
 The auditor opens the pack without an account. To end their access, click **{{ui:audits.packs.revokeShare}}** beside the link and confirm: {{ui:audits.packs.revokeShareModal.desc}}
@@ -94,10 +94,10 @@ Click **{{ui:audits.packs.cloneForRetest}}**. A new draft pack opens, named "Ret
 | **{{ui:audits.packs.auditorActivity.empty}}** | {{ui:audits.packs.auditorActivity.emptyDesc}} | Nothing to do |
 | **{{ui:audits.packs.addPicker.loadError}}**, in the add dialog | The records of that type could not load | Close the dialog and try again |
 | **{{ui:audits.packs.addPicker.noneOfType}}**, in the add dialog | The workspace has no record of that type | Choose another type, or create the record first |
-| **{{ui:audits.packs.refused.PACK_EMPTY}}** | You tried to freeze an empty pack | Add items, then freeze |
+| **{{ui:audits.packs.refused.PACK_EMPTY}}** | The pack was empty when it was frozen, for example because its last item was removed in another tab | Add items, then freeze |
 | **{{ui:audits.packs.refused.PACK_NOT_DRAFT}}** | Someone froze the pack while you were changing it | Reload the page. To change a frozen pack, clone it |
 | **{{ui:audits.packs.refused.ENTRY_BEING_MATERIALISED}}** | Someone else is turning the same auditor entry into a finding | Reload the page in a moment |
-| **{{ui:audits.packs.refused.ENTRY_RESOLVED_WITHOUT_FINDING}}** | The entry was resolved, but its finding was not created | Reopen the entry and try again |
+| **{{ui:audits.packs.refused.ENTRY_RESOLVED_WITHOUT_FINDING}}** | The entry was resolved, but its finding was not created | Create the finding yourself on the [{{ui:findings.title}}](findings.md) page, using what the entry says |
 | **{{ui:audits.packs.failedFreeze}}**, **{{ui:audits.packs.shareError}}** or **{{ui:audits.packs.addPicker.addError}}**, or another sentence saying why | The change was not made | Follow what the sentence says, then try again |
 
 ## Related

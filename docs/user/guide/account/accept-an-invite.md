@@ -56,6 +56,7 @@ If you sign in with Google or Microsoft using the invited email address, any inv
 ## What happens next
 
 - The workspace appears in your list of workspaces, with the role the invitation named. If it is your only workspace, signing in takes you straight to its dashboard.
+- If you were already an active member of the workspace when you accepted, for example because you were added another way while the invitation waited, you keep the role you have. The invitation is used up and changes nothing.
 - The invitation is used up. If you need it again, ask the person who invited you to send a new one.
 
 ## Empty and error states

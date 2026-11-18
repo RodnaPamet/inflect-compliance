@@ -18,6 +18,7 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar. The entry
 | Open an agent's own page | Owner, Admin, AI admin, Auditor |
 | Register an agent | Owner, Admin, AI admin |
 | Set the concurrent-run cap and the monthly token budget | Owner, Admin, AI admin |
+| Schedule the four assurance checks | Owner, Admin |
 | Choose the agent that answers questions on {{ui:agents.ask.title}} | Owner, Admin, AI admin, on the agent's own page |
 
 Editors and Readers do not see the sidebar entry, and opening the page shows **{{ui:agents.register.accessTitle}}**. Auditors get the same page with every change withheld: no **{{ui:agents.register.addAgent}}** button, and the cap and the budget shown as sentences without a form.
@@ -35,7 +36,7 @@ Use the register to answer two questions: which agents may act in this workspace
 **The notices.** Above the cards, in this order:
 
 - **Whether registration is enforced.** A warning when it is not: the register is then a record only, and suspending an agent here stops nothing. A warning naming the credentials that are bound to no agent, when registration is enforced and some are; each of them is refused. Otherwise a blue note that registration is enforced.
-- **{{ui:agents.register.assurance.heading}}.** How many registered agents have an assessed risk tier, how often a second reviewer disagreed with a sampled approval over the last 90 days, and the latest result of four scheduled agent checks, as **{{ui:controlTests.result.PASS}}**, **{{ui:controlTests.result.FAIL}}** or **{{ui:controlTests.result.INCONCLUSIVE}}**. An inconclusive check is shown as a warning rather than a failure: it could not decide. A check that has never run reads **{{ui:agents.register.assurance.checkNeverRun}}**. Retired agents are left out of the coverage line.
+- **{{ui:agents.register.assurance.heading}}.** How many registered agents have an assessed risk tier, how often a second reviewer disagreed with a sampled approval over the last 90 days, and the latest result of four scheduled agent checks, as **{{ui:controlTests.result.PASS}}**, **{{ui:controlTests.result.FAIL}}** or **{{ui:controlTests.result.INCONCLUSIVE}}**. An inconclusive check is shown as a warning rather than a failure: it could not decide. A check that is scheduled but has never run reads **{{ui:agents.register.assurance.checkNeverRun}}**, and one that no test plan runs reads **{{ui:agents.register.assurance.checkNotScheduled}}**. Retired agents are left out of the coverage line.
 - **{{ui:agents.register.concurrency.heading}}.** How many agent runs may execute at once, and how many are running now.
 - **{{ui:agents.register.budget.heading}}.** How many tokens agent runs may use in a calendar month (UTC), and how many have been used this month.
 
@@ -84,6 +85,10 @@ Click **{{ui:agents.register.addAgent}}**. The **{{ui:agents.register.new.title}
 
 Click **{{ui:agents.register.new.submit}}**. The agent joins the register as {{ui:agents.register.filterEnums.status.DRAFT}} and {{ui:agents.register.unscored}}, with an entry in the workspace's AI-system register.
 
+### Schedule the assurance checks
+
+When one of the four checks under **{{ui:agents.register.assurance.heading}}** reads **{{ui:agents.register.assurance.checkNotScheduled}}**, Owners and Admins see **{{ui:agents.register.assurance.schedule.button}}**. Clicking it changes nothing yet: the panel lists each check it would schedule and the control whose evidence it would file its result on. {{ui:agents.register.assurance.schedule.previewIntro}} Click **{{ui:agents.register.assurance.schedule.confirm}}** to create the test plans, or **{{ui:agents.register.assurance.schedule.cancel}}** to leave things as they are. Inflect chooses the control; the panel only shows its choice. If scheduling is refused, the panel says why.
+
 ### Set the concurrent-run cap
 
 Under **{{ui:agents.register.concurrency.heading}}**, type a whole number up to 1,000 and click **{{ui:agents.register.concurrency.save}}**. Leave the box empty for no cap. A cap of 0 stops new agent runs from starting without stopping the ones already running.
@@ -99,7 +104,7 @@ Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.b
 ## What happens next
 
 - A new agent cannot act until somebody scores its risk and activates it on its own page. While registration is not enforced, its status decides nothing.
-- Opening an agent leads to its own page, with the tabs {{ui:admin.agentDetail.tabOverview}}, {{ui:admin.agentDetail.tabRisk}}, {{ui:admin.agentDetail.tabPolicy}}, {{ui:admin.agentDetail.tabTools}}, {{ui:admin.agentDetail.tabSkills}}, {{ui:admin.agentDetail.tabCoverage}}, {{ui:admin.agentDetail.tabRuns}} and {{ui:admin.agentDetail.tabBreaker}}. That is where an agent is assessed, amended, activated, suspended, retired or stopped. Owners, Admins and AI admins are offered **{{ui:admin.agentDetail.amend.action}}**, **{{ui:admin.agentDetail.overview.activateAction}}**, **{{ui:admin.agentDetail.overview.suspendAction}}** and **{{ui:admin.agentDetail.overview.retireAction}}** there, and can score an agent's risk. An Auditor finds several of those tabs greyed out and is offered none of those changes.
+- Opening an agent leads to its own page, with the tabs {{ui:admin.agentDetail.tabOverview}}, {{ui:admin.agentDetail.tabRisk}}, {{ui:admin.agentDetail.tabPolicy}}, {{ui:admin.agentDetail.tabTools}}, {{ui:admin.agentDetail.tabSkills}}, {{ui:admin.agentDetail.tabBehaviour}} (where agent profiles are switched on), {{ui:admin.agentDetail.tabCoverage}}, {{ui:admin.agentDetail.tabRuns}} and {{ui:admin.agentDetail.tabBreaker}}. That is where an agent is assessed, amended, activated, suspended, retired or stopped. Owners, Admins and AI admins are offered **{{ui:admin.agentDetail.amend.action}}**, **{{ui:admin.agentDetail.overview.activateAction}}**, **{{ui:admin.agentDetail.overview.suspendAction}}** and **{{ui:admin.agentDetail.overview.retireAction}}** there, and can score an agent's risk. An Auditor finds several of those tabs greyed out and is offered none of those changes.
 - Every registration, cap change, budget change and choice of the agent that answers questions is recorded in the workspace's audit log, naming who made it.
 - A cap or a budget applies to the next run that starts. A run refused by either says which one refused it.
 
@@ -116,6 +121,7 @@ Under **{{ui:agents.register.budget.heading}}**, choose **{{ui:agents.register.b
 | A warning that the cap must be a whole number from 0 to 1,000 | The cap is not a whole number, or is above 1,000 | Correct it, or empty the box |
 | A warning that the budget would refuse every run, with **{{ui:agents.register.budget.save}}** greyed out | The budget is above 0 but below one run's ceiling | Enter 0, or at least the ceiling the warning names |
 | **{{ui:agents.register.concurrency.saveFailed}}** or **{{ui:agents.register.budget.saveFailed}}** | The change did not go through | Try again |
+| **{{ui:agents.register.assurance.schedule.failed}}** | The checks were not scheduled | Try again |
 
 The table loads the 200 newest agents. A register holding more shows only those 200, with a notice above the table saying so; narrow the list with the filters or the search to reach the rest. The **{{ui:agents.register.kpi.total}}** card still counts them all.
 

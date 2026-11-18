@@ -31,7 +31,7 @@ The line under the title says the leaver direction's current step, and the highe
 | Column | What it shows |
 | --- | --- |
 | {{ui:admin.integrations.colProvider}} | The directory the pass worked on |
-| {{ui:admin.integrations.colStatus}} | **{{ui:admin.leaverPasses.statusPassed}}**, **{{ui:admin.leaverPasses.statusPartial}}** (it made more decisions than it recorded), **{{ui:admin.leaverPasses.statusRefused}}** or **{{ui:admin.leaverPasses.statusError}}** |
+| {{ui:admin.integrations.colStatus}} | **{{ui:admin.leaverPasses.statusPassed}}**, **{{ui:admin.leaverPasses.statusPartial}}** (it made more decisions than it recorded, or there were more departures than one pass reads, so it worked on the most recent ones), **{{ui:admin.leaverPasses.statusRefused}}** or **{{ui:admin.leaverPasses.statusError}}** |
 | {{ui:admin.leaverPasses.colSync}} | **{{ui:admin.leaverPasses.syncStale}}** or **{{ui:admin.leaverPasses.syncNeverObserved}}** when the directory sync, not the pass, is why accounts were held back |
 | {{ui:admin.leaverPasses.colRefusal}} | Why a pass refused, when it did, in words, such as **{{ui:admin.leaverPasses.refusalLabel.MODE_DISABLED}}** or **{{ui:admin.leaverPasses.refusalLabel.NO_TERMINATED_WORKERS}}** |
 | {{ui:admin.leaverPasses.colDecisions}} | How many accounts it decided about |

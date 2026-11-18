@@ -18,8 +18,8 @@ Invite a colleague when they need their own access to this workspace. You choose
 4. In {{ui:admin.members.emailLabel}}, type your colleague's email address.
 5. In {{ui:admin.members.roleLabel}}, choose **{{ui:roles.ADMIN}}**, **{{ui:roles.EDITOR}}**, **{{ui:roles.AUDITOR}}** or **{{ui:roles.READER}}**. The form starts on {{ui:roles.READER}}.
 6. Click **{{ui:admin.members.sendInvite}}**.
-7. A message confirms the invite and shows the invite link. Click the link to copy it.
-8. Send the link to your colleague, for example by chat or email. Copy it before you close the message, because the page does not show it again.
+7. A message confirms the invite and shows the invite link. It also says whether your colleague was emailed the link. If the email could not be sent, for example because your installation of Inflect sends no email, the message says the invite was not emailed.
+8. If the invite was not emailed, click the link to copy it, and send it to your colleague yourself, for example by chat. Copy it before you close the message, because the page does not show it again. You can share the link this way even when it was emailed.
 
 ## What happens next
 
@@ -38,6 +38,7 @@ Invite a colleague when they need their own access to this workspace. You choose
 | --- | --- | --- |
 | **User is already a member of this tenant** | That address belongs to an active member of this workspace | There is nothing to invite. To change their access, change their role in the members list |
 | **Invalid request payload** | The email address is not valid | Correct the address and click **{{ui:admin.members.sendInvite}}** again |
+| **Too many requests. Retry after … seconds.** | The workspace has sent its 20 invites for this hour | Wait for the time the message gives, then click **{{ui:admin.members.sendInvite}}** again |
 | Your colleague sees {{ui:invite.notAvailableTitle}} when they open the link | The invite expired, was revoked or was already used, or a newer invite to the same address replaced it | Send a new invite and share the new link |
 | Your colleague signs in but cannot reach the workspace, and the invite has gone from {{ui:admin.members.pendingInvitationsTitle}} | They used the link but signed in with a different address. That uses up the invite | Ask which address they sign in with, and invite that address |
 | Your colleague signs in but cannot reach the workspace, and the invite is still listed | They signed in with a different address. Or they used an email address and password, either without the link or over 10 minutes after clicking **{{ui:invite.signInToAccept}}** | Ask them to open the link again and accept the invite, signed in with the invited address |

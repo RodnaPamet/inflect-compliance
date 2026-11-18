@@ -19,7 +19,7 @@ Ask staff to confirm they have read a published policy, then track who has. Each
 3. Under {{ui:policies.ack.rosterTitle}}, click **{{ui:policies.ack.requestAck}}**. The {{ui:policies.ack.requestTitle}} dialog opens.
 4. In {{ui:policies.ack.audienceLabel}}, choose who must acknowledge it:
     - **{{ui:policies.ack.audienceAll}}**: every active member of the workspace, you included.
-    - **{{ui:policies.ack.audienceRole}}**: then choose the {{ui:policies.ack.roleLabel}}: {{ui:policies.ack.role.OWNER}}, {{ui:policies.ack.role.ADMIN}}, {{ui:policies.ack.role.EDITOR}}, {{ui:policies.ack.role.READER}} or {{ui:policies.ack.role.AUDITOR}}. AI admins cannot be chosen by role; pick them by name instead.
+    - **{{ui:policies.ack.audienceRole}}**: then choose the {{ui:policies.ack.roleLabel}}: {{ui:policies.ack.role.OWNER}}, {{ui:policies.ack.role.ADMIN}}, {{ui:policies.ack.role.EDITOR}}, {{ui:policies.ack.role.READER}}, {{ui:policies.ack.role.AUDITOR}} or {{ui:policies.ack.role.AI_ADMIN}}.
     - **{{ui:policies.ack.audienceUsers}}**: choose each person in {{ui:policies.ack.usersLabel}}.
 5. Click **{{ui:policies.ack.requestConfirm}}**. With {{ui:policies.ack.audienceUsers}}, it stays greyed out until you choose at least one person.
 6. A message confirms how many members were asked, and they appear in the roster.

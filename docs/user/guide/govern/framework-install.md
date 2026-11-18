@@ -37,7 +37,7 @@ The heading names the framework. Below it, three steps: **{{ui:frameworks.instal
 
 1. If the framework has several packs, tick each one that applies to you and click the preview button, which names how many you ticked.
 2. Check the preview.
-3. Click the install button, which names how many controls it will create. When every control already exists but some mappings are missing, the button names how many mappings it will restore instead.
+3. Click the install button, which names how many controls it will create. When every control already exists but some mappings are missing, the button names how many mappings it will restore instead. When there is nothing to create or restore but a pack you ticked is outside your workspace's scope for the framework, for example one you took out of scope earlier, the button names how many packs it will add to scope.
 
 When it is done, **{{ui:frameworks.install.successHeading}}** shows how many **{{ui:frameworks.install.controlsCreated}}**, **{{ui:frameworks.install.tasksCreated}}** and **{{ui:frameworks.install.mappingsCreated}}**, with **{{ui:frameworks.install.viewControls}}** and **{{ui:frameworks.install.backToFramework}}**.
 
@@ -53,6 +53,7 @@ Click **{{ui:frameworks.install.back}}** on the preview.
 - A control you already have, by its code, is not created twice. Installing a pack that shares controls with one you installed earlier adds only the controls you do not have yet.
 - Installing again restores any requirement mapping a control of the pack has lost, and the policy links its template names. When that is all an install did, the page reads **{{ui:frameworks.install.restoredHeading}}**.
 - The framework counts as in use once a control is mapped to it, so you can then create audit cycles for it.
+- An install counts against your plan's limit on controls. If the controls it would create take the workspace past that limit, the whole install is refused, the message says so, and nothing is created.
 
 ## Empty and error states
 
@@ -64,7 +65,7 @@ Click **{{ui:frameworks.install.back}}** on the preview.
 | **{{ui:frameworks.install.packsEmpty}}** | The framework has no pack to install | Map your own controls to its requirements instead |
 | **{{ui:frameworks.install.choosePacksRequired}}** | No pack is ticked | Tick at least one |
 | **{{ui:frameworks.install.allInstalled}}** | You already have every control in the pack, with all its mappings | Nothing to install |
-| A notice that the plan allows a number of controls and this install would go over the limit | The pack would take the workspace past its plan's control limit. Nothing was installed | Upgrade the plan on the [billing](../admin/billing.md) page, or ask an Owner or Admin to |
+| A notice that the plan allows a number of controls and this install would go over the limit | The pack would take the workspace past its plan's control limit. Nothing was installed | Remove controls you do not need, or move to a larger plan on the [billing](../admin/billing.md) page (or ask an Owner or Admin to) |
 | **{{ui:frameworks.install.restricted}}** after you click the install button | Your role cannot install frameworks. It may have changed after you opened the page | Ask an Owner or Admin |
 | **{{ui:frameworks.install.installFailed}}**, or a reason the install was refused | Nothing was installed | Follow the reason given, then try again |
 

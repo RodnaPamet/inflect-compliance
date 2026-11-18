@@ -77,7 +77,8 @@ The page shows at most 500 people at a time. In a larger roster a notice says so
 | --- | --- | --- |
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 | **{{ui:personnel.emptyTitle}}**, with **{{ui:personnel.emptyDesc}}** | Nobody is on the roster | Connect your HR system on the {{ui:admin.integrations.title}} page. This page has no way to add a person |
-| **{{ui:personnel.emptyMatchingTitle}}** | Nobody has the statuses you chose | Remove the filter |
+| **{{ui:personnel.emptyMatchingTitle}}** | Nobody has the statuses you chose, or matches your search | Remove the filter or clear the search |
+| **{{ui:personnel.loadError}}** | The filtered or searched roster did not load | Reload the page |
 | The roster shows fewer people than your HR system holds | The HR sync has not run since they were added | Click **{{ui:admin.integrations.syncNow}}** on the HR connection, then reload this page |
 | A notice that not every person is shown | The roster holds more than 500 people | Search for the person, or filter by status |
 

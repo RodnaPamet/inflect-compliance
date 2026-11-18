@@ -42,7 +42,7 @@ A template is installed once your workspace has a control with its code.
 
 ### Install one template
 
-Click **{{ui:frameworks.templates.install}}** on its card. The control is created with its tasks and its requirement mappings, and the card changes to **{{ui:frameworks.templates.installed}}**.
+Click **{{ui:frameworks.templates.install}}** on its card. The control is created with its tasks and its requirement mappings, and linked to any of your workspace's policies that the template names, just as when you install a whole pack. The card changes to **{{ui:frameworks.templates.installed}}**.
 
 ### Install several
 
@@ -55,7 +55,8 @@ Type part of a template's code or title, or choose a category or a section. Each
 ## What happens next
 
 - An installed template becomes an ordinary control, with the status **{{ui:controls.statusLabels.NOT_STARTED}}**. Work on it on the [{{ui:controls.list.pageTitle}}](controls.md) page.
-- Installing a template whose control you already have changes nothing.
+- Installing a template whose control you already have creates no second control. It only restores any of the template's requirement mappings that control has lost.
+- New controls count against your plan's limit on controls. If an install would take the workspace past it, the whole install is refused and nothing is created, so a batch is never installed part-way because of the limit.
 
 ## Empty and error states
 
@@ -65,7 +66,7 @@ Type part of a template's code or title, or choose a category or a section. Each
 | **{{ui:frameworks.templates.loadFailed}}** | The templates could not load | Click **{{ui:frameworks.templates.retry}}** |
 | A notice that the plan allows a number of controls and this install would go over the limit | The templates would take the workspace past its plan's control limit. Nothing was installed | Install fewer templates, or upgrade the plan on the [billing](../admin/billing.md) page |
 | **{{ui:frameworks.templates.installRestricted}}** | Your role cannot install templates | Ask an Owner or Admin |
-| **{{ui:frameworks.templates.installFailed}}**, or another reason the install was refused | Some or none of the templates were installed | Reload the page to see what was added, then try again |
+| **{{ui:frameworks.templates.installFailed}}**, or another reason the install was refused | Some or none of the templates were installed. A refusal for your plan's limit on controls installs none | Reload the page to see what was added, then try again. For a plan limit, install fewer templates or move to a larger plan |
 
 ## Related
 

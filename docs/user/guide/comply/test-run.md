@@ -85,7 +85,7 @@ On a completed run, choose a draft audit pack under **{{ui:controlTests.run.snap
 
 ### Retest
 
-A completed run that failed or was inconclusive offers **{{ui:controlTests.run.retest}}**. It creates a new run of the same plan and opens it.
+A completed run that failed or was inconclusive offers **{{ui:controlTests.run.retest}}**. It creates a new run of the same plan and opens it. If the plan already has an open run, that run opens instead, and a plan that is paused or archived refuses the retest.
 
 ## What happens next
 

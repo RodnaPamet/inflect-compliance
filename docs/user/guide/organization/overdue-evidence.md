@@ -26,7 +26,7 @@ A table, one row per evidence item, the longest overdue first:
 | {{ui:org.evidence.colTenant}} | The workspace the evidence belongs to |
 | {{ui:org.evidence.colEvidence}} | The evidence item's title. Click it to open it in its workspace |
 | {{ui:org.evidence.colOverdue}} | How many days past its review date it is, such as **12 days overdue** |
-| {{ui:org.evidence.colStatus}} | **{{ui:org.evidence.statusDraft}}**, **{{ui:org.evidence.statusSubmitted}}** or **{{ui:org.evidence.statusRejected}}** |
+| {{ui:org.evidence.colStatus}} | **{{ui:org.evidence.statusDraft}}**, **{{ui:org.evidence.statusSubmitted}}**, **{{ui:org.evidence.statusNeedsReview}}** or **{{ui:org.evidence.statusRejected}}**. Most overdue evidence is **{{ui:org.evidence.statusNeedsReview}}**: approved evidence moves to it once its review date passes |
 | {{ui:org.evidence.colReviewDue}} | The review date that has passed |
 
 Approved evidence is not listed. The list is read live.
@@ -45,6 +45,7 @@ Approved evidence is not listed. The list is read live.
 | --- | --- | --- |
 | **{{ui:org.evidence.emptyTitle}}** | No unapproved evidence in any workspace is past its review date | Nothing |
 | **{{ui:org.evidence.failedLoadMore}}** | The next batch did not load | Click **{{ui:org.evidence.loadMore}}** again |
+| **{{ui:org.forbidden.title}}** | You are a Reader: the list names items inside the workspaces, which only Owners and Admins can open | Use the [{{ui:org.dashboard.title}}](portfolio-overview.md); **{{ui:org.forbidden.back}}** takes you there |
 
 ## Related
 

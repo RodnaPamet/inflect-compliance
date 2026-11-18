@@ -28,6 +28,21 @@ The ID propagates automatically to:
 
 **No manual propagation needed.** Any code running within the request/job context automatically inherits the ID via AsyncLocalStorage.
 
+**Outside a request, the ID is the process name.** The production VM's log
+agent ships a container line to Cloud Logging only when its text contains
+`requestId`, so a line without one never leaves the host. `log()` stamps
+`'unknown'` outside a request, and the worker and the scheduler build their
+loggers with `createProcessLogger` (`src/lib/observability/process-logger.ts`),
+which stamps the process name on every line (#5022). No other `pino()` call is
+allowed (`tests/unit/observability/process-logger.test.ts`). The edge
+middleware's page-load and navigation lines carry the request's id too.
+
+**A refused request is a warning.** `withApiErrorHandling` logs a 4xx at `warn`
+and only a 5xx at `error` (owner decision, 2026-11-10), so an error line means
+a server failure rather than a correct refusal. Every failure still counts in
+the request-error metric, Sentry captures 5xx only, and a denial still writes
+its `AUTHZ_DENIED` audit row.
+
 ---
 
 ## Log Field Schema
@@ -82,7 +97,24 @@ directory provider's message must pass it through
 first. Adding the key alone makes the line *look* sanitised, which is worse than
 leaving it visibly unsanitised, because nobody reads it twice.
 
-That function is shared with the leaver notification path deliberately. The rule
+The same limit is why the worker no longer logs a job's payload. A payload
+nested under one key put every redacted name out of pino's reach, and four job
+payload fields are free-form records, so no list of names could bound them.
+The worker logs `jobPayloadLogFields(payload)` instead
+(`src/lib/observability/job-payload-log.ts`, #5635): the payload's top-level
+key names, plus the values of an allowlist of opaque ids
+(`LOGGABLE_PAYLOAD_KEYS`: `tenantId`, `provider`, `connectionId`, `agentId`,
+`runId`, `ruleId`), flat at the root of the line. Adding a key there is a
+decision about what reaches centralised logs.
+
+Route labels are the third case. The page-load and navigation lines and the
+web-vitals beacon carry a route label from `normalizeVitalRoute`, and the
+public paths that carry a bearer capability in the URL — `/audit/shared/<token>`,
+`/invite/<token>`, `/invite/org/<token>` — are collapsed to their templates, so a
+share or invite token is never written to a log line or a metric attribute
+(#5430).
+
+`redactDirectoryIdentifiers` is shared with the leaver notification path deliberately. The rule
 is the same in both places, and a log is the weaker surface, not the stronger
 one: an email at least has a named recipient and a retention story.
 

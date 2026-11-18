@@ -59,10 +59,10 @@ The row goes back to undecided, and you can record a decision again. The reason 
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| Rows show {{ui:accessReviews.pending}} and there is no **{{ui:accessReviews.decidePrompt}}** list | You are not this campaign's reviewer and not an Owner or Admin, or the campaign is closed | Check the name under **{{ui:accessReviews.dlReviewer}}**. If the reviewer cannot do it, ask an Owner or Admin |
+| Rows show {{ui:accessReviews.pending}} and there is no **{{ui:accessReviews.decidePrompt}}** list | You are not this campaign's reviewer and not an Owner or Admin, your custom role does not allow recording decisions, or the campaign is closed | Check the name under **{{ui:accessReviews.dlReviewer}}**. If the reviewer cannot do it, ask an Owner or Admin |
 | A message that includes **This decision has already been recorded.** | Someone recorded a decision on this row after you opened the page | Reload the page. To change that decision, discard it and record yours |
 | A message that includes **This campaign is closed; decisions are immutable.** | The campaign was closed after you opened the page | Reload the page. Its decisions can no longer change |
-| A message that includes **Permission denied** | Your custom role does not allow recording decisions | Ask an Owner or Admin |
+| A message that includes **Permission denied** | Your custom role stopped allowing you to record decisions after you opened the page | Reload the page. Ask an Owner or Admin to record the decision |
 | {{ui:accessReviews.ownRowCannotDecide}} in a row, or a message that includes **Nobody records, changes or discards the decision on their own access** | The row is about your own access | Ask the reviewer, or another Owner or Admin, to decide it |
 | **{{ui:accessReviews.undoConfirm}}** is greyed out | The reason is shorter than 3 characters | Type a longer reason |
 | No **{{ui:accessReviews.undoVerdict}}** beside a decision | The campaign is closed and its decisions have been carried out, you are not its reviewer, or the decision is about your own access | After the close, the campaign cannot change. Ask an Owner or Admin to change the person's access on the {{ui:admin.nav.members}} page |

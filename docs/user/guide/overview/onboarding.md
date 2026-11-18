@@ -51,7 +51,7 @@ The starter risks and tasks are written in the language you are using the app in
 
 ### Leave and come back
 
-Click **{{ui:onboarding.wizard.saveExit}}** at any point. **{{ui:onboarding.banner.continue}}** on the dashboard brings you back to where you were.
+Click **{{ui:onboarding.wizard.saveExit}}** at any point. **{{ui:onboarding.banner.continue}}** on the dashboard brings you back to where you were. If your answers on the current step cannot be saved, you stay on the wizard, with the reason at the top, so nothing you entered is lost.
 
 ### Go back to a step
 
