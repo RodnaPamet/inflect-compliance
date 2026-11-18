@@ -20,6 +20,7 @@ import { Plus } from '@inflect/ui/components/ui/icons/nucleo/plus';
 import { Trash } from '@inflect/ui/components/ui/icons/nucleo/trash';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,6 +32,8 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
 import { useToast } from '@/components/ui/hooks';
 import { apiErrorMessage, validationIssueMessages } from '@/lib/api-error';
+import { useOffersAdminApiWrite } from '@/lib/auth/use-offers-admin-api-write';
+import { trustCenterComposeRefusal } from '@/lib/trust-center/compose-refusals';
 import {
     documentRowProblem,
     frameworkRowProblem,
@@ -46,6 +49,7 @@ interface TrustCenterData {
     slug: string;
     enabled: boolean;
     indexable: boolean;
+    ndaRequired?: boolean;
     displayName: string;
     tagline: string | null;
     postureSummary: string | null;
@@ -68,6 +72,7 @@ interface Draft {
     postureSummary: string;
     securityContact: string;
     indexable: boolean;
+    ndaRequired: boolean;
     publishedFrameworks: Framework[];
     publishedDocuments: Document[];
 }
@@ -88,15 +93,21 @@ function draftFromRow(row: TrustCenterData | null): Draft {
         postureSummary: row?.postureSummary ?? '',
         securityContact: row?.securityContact ?? '',
         indexable: row?.indexable ?? false,
+        ndaRequired: row?.ndaRequired ?? false,
         publishedFrameworks: row?.publishedFrameworks ?? [],
         publishedDocuments: row?.publishedDocuments ?? [],
     };
 }
 
-/** A refusal says why (a schema refusal lists each field); a server fault says only that it failed. */
-async function refusalOf(res: Response, fallback: string): Promise<string> {
+/**
+ * A refusal says why (a schema refusal lists each field, a named reason has
+ * its own sentence); a server fault says only that it failed.
+ */
+async function refusalOf(res: Response, fallback: string, named: (reason: string) => string): Promise<string> {
     if (res.status >= 500) return fallback;
     const body: unknown = await res.json().catch(() => null);
+    const reason = trustCenterComposeRefusal(body);
+    if (reason) return named(reason);
     const issues = validationIssueMessages(body);
     return issues.length > 0 ? issues.join(' ') : apiErrorMessage(body, fallback);
 }
@@ -117,6 +128,7 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
     const [postureSummary, setPostureSummary] = useState(initial?.postureSummary ?? '');
     const [securityContact, setSecurityContact] = useState(initial?.securityContact ?? '');
     const [indexable, setIndexable] = useState(initial?.indexable ?? false);
+    const [ndaRequired, setNdaRequired] = useState(initial?.ndaRequired ?? false);
     const [frameworks, setFrameworks] = useState<Framework[]>(initial?.publishedFrameworks ?? []);
     const [documents, setDocuments] = useState<Document[]>(initial?.publishedDocuments ?? []);
     const [enabled, setEnabled] = useState(initial?.enabled ?? false);
@@ -131,10 +143,14 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
     const [stored, setStored] = useState(initial !== null);
 
     const apiUrl = useCallback((path: string) => `/api/t/${tenantSlug}${path}`, [tenantSlug]);
+    const named = useCallback((reason: string) => t(`trustCenter.refusal.${reason}`), [t]);
+    // The NDA switch (#5764) is saved by `PUT /admin/trust-center`: the edge,
+    // the route's `admin.manage` and the usecase's `assertCanWrite` floor.
+    const canChangeNda = useOffersAdminApiWrite({ key: 'admin.manage', floor: 'canWrite' });
 
     const draft = useMemo(
-        () => draftOf({ displayName, tagline, postureSummary, securityContact, indexable, publishedFrameworks: frameworks, publishedDocuments: documents }),
-        [displayName, tagline, postureSummary, securityContact, indexable, frameworks, documents],
+        () => draftOf({ displayName, tagline, postureSummary, securityContact, indexable, ndaRequired, publishedFrameworks: frameworks, publishedDocuments: documents }),
+        [displayName, tagline, postureSummary, securityContact, indexable, ndaRequired, frameworks, documents],
     );
     const dirty = !stored || JSON.stringify(draft) !== savedDraft;
     const frameworkProblems = frameworks.map(frameworkRowProblem);
@@ -149,13 +165,17 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
         }
         setSaving(true);
         try {
+            // A viewer not offered the NDA switch sends no value for it, and
+            // the server keeps the stored one.
+            const { ndaRequired: nda, ...rest } = draft;
+            const body = canChangeNda ? { ...rest, ndaRequired: nda } : rest;
             const res = await fetch(apiUrl('/admin/trust-center'), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(draft),
+                body: JSON.stringify(body),
             });
             if (!res.ok) {
-                toast.error(await refusalOf(res, t('trustCenter.toastSaveFailed')));
+                toast.error(await refusalOf(res, t('trustCenter.toastSaveFailed'), named));
                 return false;
             }
             const row = (await res.json()) as TrustCenterData | null;
@@ -169,6 +189,7 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
                 setPostureSummary(stored.postureSummary);
                 setSecurityContact(stored.securityContact);
                 setIndexable(stored.indexable);
+                setNdaRequired(stored.ndaRequired);
                 setFrameworks(stored.publishedFrameworks);
                 setDocuments(stored.publishedDocuments);
                 setSavedDraft(JSON.stringify(draftOf(stored)));
@@ -185,7 +206,7 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
         } finally {
             setSaving(false);
         }
-    }, [apiUrl, draft, rowsNeedFixing, router, toast, t]);
+    }, [apiUrl, canChangeNda, draft, named, rowsNeedFixing, router, toast, t]);
 
     const setPublished = useCallback(async (next: boolean) => {
         try {
@@ -195,7 +216,7 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
                 body: JSON.stringify({ enabled: next }),
             });
             if (!res.ok) {
-                toast.error(await refusalOf(res, t('trustCenter.toastPublishFailed')));
+                toast.error(await refusalOf(res, t('trustCenter.toastPublishFailed'), named));
                 return;
             }
             setEnabled(next);
@@ -204,7 +225,7 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
         } catch {
             toast.error(t('trustCenter.toastPublishFailed'));
         }
-    }, [apiUrl, router, toast, t]);
+    }, [apiUrl, named, router, toast, t]);
 
     const publicPath = `/trust/${slug}`;
     const browserOrigin = useSyncExternalStore(noSubscribe, clientOrigin, serverOrigin);
@@ -311,6 +332,15 @@ export function TrustCenterAdminClient({ tenantSlug, initial, canPublish, public
                             {t('trustCenter.allowIndexing')}
                         </label>
                     </FormField>
+
+                    {canChangeNda && (
+                        <FormField label={t('trustCenter.ndaSection')} description={t('trustCenter.ndaRequiredDesc')}>
+                            <label className="flex items-center gap-tight text-content-default">
+                                <Switch id="trust-nda-required" checked={ndaRequired} onCheckedChange={setNdaRequired} />
+                                {t('trustCenter.ndaRequired')}
+                            </label>
+                        </FormField>
+                    )}
 
                     {dirty && stored && (
                         <p className="text-sm text-content-warning" id="trust-unsaved-note">

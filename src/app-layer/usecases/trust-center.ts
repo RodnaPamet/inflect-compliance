@@ -18,6 +18,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE } from '@/lib/trust-center/compose-refusals';
 
 export interface TrustCenterInput {
     displayName: string;
@@ -27,6 +28,12 @@ export interface TrustCenterInput {
     indexable?: boolean;
     publishedFrameworks?: Array<{ key: string; statusLabel: string; badge?: string }>;
     publishedDocuments?: Array<{ label: string; url: string }>;
+    /**
+     * Require requesters of a gated document to accept the NDA terms (#5764).
+     * Omitted leaves the stored value as it is, so a save from a form that
+     * does not carry the switch never clears it.
+     */
+    ndaRequired?: boolean;
 }
 
 /** Keep only http(s) URLs after sanitising — drops javascript:/data: vectors. */
@@ -116,9 +123,20 @@ export async function getTrustCenter(ctx: RequestContext) {
  * Create or update the curated trust-center content. Does NOT change `enabled`
  * (publishing is a separate, OWNER-gated action). Editing while published is
  * audited so a content change to a live public page is on the record.
+ *
+ * Asserts `admin.manage`, the key its only route (`PUT /admin/trust-center`)
+ * holds, as `getTrustCenter` does: the floor was `assertCanWrite` alone, which
+ * an EDITOR passes. It also writes `ndaRequired` (#5764), the switch that
+ * makes a gated-document request accept the NDA terms and that an approval
+ * refuses without (#5613); every change to it is audited, published or not.
  */
 export async function upsertTrustCenter(ctx: RequestContext, input: TrustCenterInput) {
     assertCanWrite(ctx);
+    if (!ctx.appPermissions?.admin?.manage) {
+        throw forbidden('You do not have permission to compose the trust center.', {
+            reason: TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE,
+        });
+    }
     if (!input.displayName || !input.displayName.trim()) {
         throw badRequest('Give the trust center a display name.', { code: 'INVALID_DISPLAY_NAME' });
     }
@@ -131,12 +149,13 @@ export async function upsertTrustCenter(ctx: RequestContext, input: TrustCenterI
         indexable: Boolean(input.indexable),
         publishedFrameworks: sanitizeFrameworks(input.publishedFrameworks),
         publishedDocuments: sanitizeDocuments(input.publishedDocuments),
+        ...(typeof input.ndaRequired === 'boolean' ? { ndaRequired: input.ndaRequired } : {}),
     };
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.trustCenter.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { id: true, enabled: true },
+            select: { id: true, enabled: true, ndaRequired: true },
         });
 
         // First create mints the public slug from the tenant slug (unique).
@@ -160,6 +179,32 @@ export async function upsertTrustCenter(ctx: RequestContext, input: TrustCenterI
                 details: 'Edited trust-center content while published',
                 detailsJson: { category: 'entity_lifecycle', entityName: 'TrustCenter', operation: 'updated', summary: 'Published content edited' },
                 metadata: { slug: row.slug },
+            });
+        }
+
+        // The NDA rule decides whether a gated-document request can be
+        // approved, so turning it on or off is on the record whether or not
+        // the page is published. A first save that leaves it off changes
+        // nothing; a first save that turns it on is a change.
+        const ndaBefore = existing?.ndaRequired ?? false;
+        if (row.ndaRequired !== ndaBefore) {
+            await logEvent(db, ctx, {
+                action: row.ndaRequired ? 'TRUST_CENTER_NDA_REQUIRED' : 'TRUST_CENTER_NDA_NOT_REQUIRED',
+                entityType: 'TrustCenter',
+                entityId: row.id,
+                details: row.ndaRequired
+                    ? 'Gated-document requests must accept the NDA terms'
+                    : 'Gated-document requests no longer need to accept the NDA terms',
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'TrustCenter',
+                    operation: 'updated',
+                    changedFields: ['ndaRequired'],
+                    before: { ndaRequired: ndaBefore },
+                    after: { ndaRequired: row.ndaRequired },
+                    summary: row.ndaRequired ? 'NDA acceptance required' : 'NDA acceptance no longer required',
+                },
+                metadata: { slug: row.slug, ndaRequired: row.ndaRequired },
             });
         }
         return row;

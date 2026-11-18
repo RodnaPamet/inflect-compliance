@@ -8040,6 +8040,12 @@
       "document": "Document",
       "searchIndexing": "Search engine indexing",
       "allowIndexing": "Allow search engines to index this page",
+      "ndaSection": "Document requests",
+      "ndaRequired": "Require NDA acceptance",
+      "ndaRequiredDesc": "Requesters must accept the NDA terms, and a request that did not accept them cannot be approved.",
+      "refusal": {
+        "TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE": "Only a member who can manage administration can change the trust center."
+      },
       "save": "Save",
       "publish": "Publish…",
       "unpublish": "Unpublish",

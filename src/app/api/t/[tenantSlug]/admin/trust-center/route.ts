@@ -11,6 +11,8 @@ const UpsertSchema = z.object({
     postureSummary: z.string().max(20_000).optional().nullable(),
     securityContact: z.string().max(200).optional().nullable(),
     indexable: z.boolean().optional(),
+    // Omitted keeps the stored value (#5764).
+    ndaRequired: z.boolean().optional(),
     publishedFrameworks: z
         .array(z.object({ key: z.string().max(64), statusLabel: z.string().max(64), badge: z.string().max(64).optional() }))
         .max(50)
