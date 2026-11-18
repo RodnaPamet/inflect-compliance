@@ -7,10 +7,10 @@
 name = "inflect-rag"
 version = "1.0.0"
 requires-python = ">=3.11"
-dependencies = ["ragas==0.4.3", "anthropic==0.76.0"]
+dependencies = ["ragas==0.4.4rc1", "anthropic==0.76.0"]
 
 [project.optional-dependencies]
-test = ["pytest==9.0.2"]
+test = ["pytest==9.0.3"]
 
 [tool.setuptools]
 packages = ["inflect_rag"]
