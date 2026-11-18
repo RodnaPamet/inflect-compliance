@@ -66,9 +66,9 @@ The {{ui:evidence.colHeaders.actions}} column holds **{{ui:evidence.list.editEvi
 **The details panel.** It opens at the side of the page and shows, from top to bottom:
 
 - The status. For a file, a preview of an image or PDF and a **{{ui:evidence.detail.download}}** button or, when you cannot download it, **{{ui:evidence.detail.downloadArchived}}** or **{{ui:evidence.detail.downloadNeedsControl}}**.
-- The type, owner and category; the task, risk or asset a file was uploaded from; the next review date; and the date of the last change. Evidence imported from SharePoint has a **{{ui:evidence.detail.viewInSharePoint}}** link.
+- The type, owner and category, and the **{{ui:evidence.detail.metaDescription}}** when one was written; the task, risk or asset a file was uploaded from; the next review date; and the date of the last change. Evidence imported from SharePoint has a **{{ui:evidence.detail.viewInSharePoint}}** link.
 - The controls the evidence is used by, or **{{ui:evidence.detail.noControlsLinked}}**.
-- **{{ui:evidence.detail.descriptionLabel}}**: a note's text, or a link's address. A link opens in a new tab only when its address is safe to follow. An address starting with javascript:, data:, vbscript: or file: is shown as plain text that cannot be clicked.
+- A note's text, under **{{ui:evidence.text.contentLabel}}**, or a link's address, under **{{ui:evidence.edit.addressLabel}}**. A link opens in a new tab only when its address is safe to follow. An address starting with javascript:, data:, vbscript: or file: is shown as plain text that cannot be clicked.
 - **{{ui:evidence.detail.usedByLabel}}**, counting the controls, risks and assets it supports, and its **{{ui:evidence.detail.tagsLabel}}**.
 - **{{ui:evidence.detail.fileMetaTitle}}**: the file's name, size and type, its **{{ui:evidence.detail.fileHash}}** fingerprint with a copy button, and its retention and expiry dates. For a file, **{{ui:evidence.detail.versionsLabel}}** follows, with a download button for each earlier version when you may download the file.
 - **{{ui:evidence.detail.reviewHistoryTitle}}**: each submission, approval and rejection, who made it, when, and any reason given.
@@ -86,7 +86,7 @@ The other fields are optional, and all but the title apply to every file: **{{ui
 
 ### Add a text note or a link
 
-- **{{ui:evidence.list.createTextNote}}** opens **{{ui:evidence.text.title}}**. **{{ui:evidence.text.titleLabel}}** is required. **{{ui:evidence.text.linkControlLabel}}**, **{{ui:evidence.text.ownerLabel}}**, **{{ui:evidence.text.categoryLabel}}**, **{{ui:evidence.text.folderLabel}}** and **{{ui:evidence.text.contentLabel}}** are optional. The owner here is a name you type, not a member of the workspace. Click **{{ui:evidence.text.submit}}**. A note's text is always shown as plain text, so a web address typed into a note does not open as a link.
+- **{{ui:evidence.list.createTextNote}}** opens **{{ui:evidence.text.title}}**. **{{ui:evidence.text.titleLabel}}** is required. **{{ui:evidence.text.linkControlLabel}}**, **{{ui:evidence.text.ownerLabel}}**, **{{ui:evidence.text.categoryLabel}}**, **{{ui:evidence.text.folderLabel}}**, **{{ui:evidence.text.contentLabel}}** (the note's text) and **{{ui:evidence.formFields.descriptionLabel}}** (what the evidence shows and why it supports its controls) are optional. The owner here is a name you type, not a member of the workspace. Click **{{ui:evidence.text.submit}}**. A note's text is always shown as plain text, so a web address typed into a note does not open as a link.
 - **{{ui:evidence.list.createLink}}** opens **{{ui:evidence.linkModal.title}}**. **{{ui:evidence.linkModal.titleLabel}}** and **{{ui:evidence.linkModal.urlLabel}}** are required, and the address must be a full one, such as one starting with https://. Click **{{ui:evidence.linkModal.submit}}**. The address keeps any query string after the ? exactly as typed. Only spaces and characters such as < and > are encoded, which does not change where it points.
 
 When you save any form on this page, markup such as HTML tags is removed from the text you typed: the title, note, category, folder, owner name and any rejection reason. A note's or a link's title made of nothing but markup is refused; an uploaded file is named after the file instead.
@@ -97,10 +97,10 @@ Choose **{{ui:evidence.list.createBulkImport}}**. In **{{ui:evidence.bulkImport.
 
 ### Edit evidence or replace a file
 
-Click **{{ui:evidence.list.editEvidence}}** on a row, or the pencil in the details panel. The **{{ui:evidence.edit.title}}** form holds **{{ui:evidence.edit.titleLabel}}**, a note's **{{ui:evidence.edit.descriptionLabel}}** or a link's **{{ui:evidence.edit.addressLabel}}** (a file has neither), **{{ui:evidence.edit.tagsLabel}}** separated by commas, **{{ui:evidence.edit.ownerLabel}}**, **{{ui:evidence.edit.categoryLabel}}**, **{{ui:evidence.edit.controlsLabel}}**, **{{ui:evidence.edit.folderLabel}}** and **{{ui:evidence.edit.retentionLabel}}**. Click **{{ui:evidence.edit.save}}**.
+Click **{{ui:evidence.list.editEvidence}}** on a row, or the pencil in the details panel. The **{{ui:evidence.edit.title}}** form holds **{{ui:evidence.edit.titleLabel}}**, a note's **{{ui:evidence.text.contentLabel}}** or a link's **{{ui:evidence.edit.addressLabel}}** (a file has neither), **{{ui:evidence.edit.tagsLabel}}** separated by commas, **{{ui:evidence.edit.ownerLabel}}**, **{{ui:evidence.edit.categoryLabel}}**, **{{ui:evidence.edit.controlsLabel}}**, **{{ui:evidence.edit.folderLabel}}**, **{{ui:evidence.edit.retentionLabel}}** and **{{ui:evidence.formFields.descriptionLabel}}**. Click **{{ui:evidence.edit.save}}**.
 
 - Closing the form with unsaved changes asks **{{ui:evidence.edit.discardTitle}}**: **{{ui:evidence.edit.discardConfirmLabel}}** closes it, **{{ui:evidence.edit.discardCancelLabel}}** returns to the form.
-- Empty the description box to clear a note. A link's address cannot be cleared: **{{ui:evidence.edit.linkNeedsUrl}}** appears and the save button is greyed out. Clear the retention date to remove it.
+- Empty the **{{ui:evidence.text.contentLabel}}** box to clear a note's text. A link's address cannot be cleared: **{{ui:evidence.edit.linkNeedsUrl}}** appears and the save button is greyed out. Clear the retention date to remove it.
 - For a file, choose a new file under **{{ui:evidence.edit.replaceFileLabel}}**. It uploads at once. If you changed nothing else, the form closes; otherwise it stays open and reads **{{ui:evidence.edit.replacedKeepEditing}}**, so click **{{ui:evidence.edit.save}}** to keep the rest. The record keeps its controls, retention and review history, and the earlier file stays under {{ui:evidence.detail.versionsLabel}}.
 
 ### Review evidence

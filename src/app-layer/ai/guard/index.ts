@@ -277,6 +277,9 @@ export function assertGuardAllowed(outcome: GuardOutcome): void {
         throw forbidden(
             `ai_guard_blocked: ${outcome.direction} ${outcome.verdict} ` +
                 `[${outcome.ruleIds.join(',')}]`,
+            // A code a page can word in the reader's language (#5764); the
+            // message keeps its `ai_guard_blocked:` prefix, which callers parse.
+            { reason: 'AI_GUARD_BLOCKED' },
         );
     }
 }

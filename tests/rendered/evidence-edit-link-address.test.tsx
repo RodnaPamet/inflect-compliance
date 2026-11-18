@@ -91,7 +91,7 @@ describe('EditEvidenceModal — a link keeps its address', () => {
         mount(BASE);
         await waitFor(() => expect(body()).not.toBeNull());
         expect(screen.getByText('edit.addressLabel')).toBeInTheDocument();
-        expect(screen.queryByText('edit.descriptionLabel')).toBeNull();
+        expect(screen.queryByText('text.contentLabel')).toBeNull();
 
         fireEvent.change(body(), { target: { value: '   ' } });
         expect(save()).toBeDisabled();
@@ -101,7 +101,7 @@ describe('EditEvidenceModal — a link keeps its address', () => {
     it('a note can be cleared: the save sends content null', async () => {
         mount({ ...BASE, type: 'TEXT', content: 'Old note' });
         await waitFor(() => expect(body()).not.toBeNull());
-        expect(screen.getByText('edit.descriptionLabel')).toBeInTheDocument();
+        expect(screen.getByText('text.contentLabel')).toBeInTheDocument();
 
         fireEvent.change(body(), { target: { value: '' } });
         expect(save()).not.toBeDisabled();

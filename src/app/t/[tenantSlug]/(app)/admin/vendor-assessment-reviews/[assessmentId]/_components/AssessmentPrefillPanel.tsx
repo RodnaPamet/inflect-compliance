@@ -22,6 +22,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
+import { apiErrorMessage } from '@/lib/api-error';
 
 interface VendorDoc { id: string; type: string; title: string | null }
 interface Proposal {
@@ -42,6 +43,42 @@ interface Extraction {
 }
 
 const CONFIDENCE_VARIANT: Record<string, StatusBadgeVariant> = { high: 'success', medium: 'warning', low: 'neutral' };
+
+/**
+ * The extraction refusals the panel words in the reader's language (#5764),
+ * keyed on the server's `details.reason`: the AI feature gate, the AI rate
+ * limiter, the AI Guard and the extraction usecase's own vendor check. Any
+ * other refusal shows the server's message, as the rest of the review page
+ * does; only a refusal with neither falls back to the generic sentence.
+ */
+const EXTRACT_REFUSALS = [
+    'AI_DISABLED',
+    'AI_TURNED_OFF_FOR_WORKSPACE',
+    'AI_ROLE_REQUIRED',
+    'AI_AVAILABILITY_UNCONFIRMED',
+    'AI_PLAN_REQUIRED',
+    'AI_PLAN_UNVERIFIED',
+    'AI_DAILY_LIMIT_REACHED',
+    'AI_TOO_MANY_REQUESTS',
+    'AI_GUARD_BLOCKED',
+    'DOCUMENT_VENDOR_MISMATCH',
+] as const;
+type ExtractRefusal = (typeof EXTRACT_REFUSALS)[number];
+
+function extractRefusal(body: unknown): { reason: ExtractRefusal; resetInMinutes?: number } | null {
+    const details = (body as { error?: { details?: { reason?: unknown; resetInMinutes?: unknown } } } | null)?.error
+        ?.details;
+    const reason = details?.reason;
+    if (typeof reason !== 'string' || !(EXTRACT_REFUSALS as readonly string[]).includes(reason)) return null;
+    const minutes = details?.resetInMinutes;
+    return {
+        reason: reason as ExtractRefusal,
+        ...(typeof minutes === 'number' && Number.isFinite(minutes) ? { resetInMinutes: minutes } : {}),
+    };
+}
+
+/** Thrown for a refused request, carrying the sentence already worded. */
+class PrefillRefusal extends Error {}
 
 function isExpired(end: string | null): boolean {
     return !!end && new Date(end).getTime() < Date.now();
@@ -89,12 +126,29 @@ export function AssessmentPrefillPanel({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assessmentId }),
             });
-            if (!res.ok) throw new Error('Extraction failed');
+            if (!res.ok) {
+                const body: unknown = await res.json().catch(() => null);
+                const refusal = extractRefusal(body);
+                if (refusal?.reason === 'AI_DAILY_LIMIT_REACHED' && refusal.resetInMinutes !== undefined) {
+                    throw new PrefillRefusal(
+                        tx('prefill.refused.AI_DAILY_LIMIT_REACHED_RESET', { minutes: refusal.resetInMinutes }),
+                    );
+                }
+                throw new PrefillRefusal(
+                    refusal
+                        ? tx(`prefill.refused.${refusal.reason}`)
+                        : apiErrorMessage(body, tx('prefill.extractionFailed')),
+                );
+            }
             const { extractionId } = (await res.json()) as { extractionId: string };
             const detail = await fetch(apiUrl(`/vendor-extractions/${extractionId}`));
+            if (!detail.ok) {
+                const body: unknown = await detail.json().catch(() => null);
+                throw new PrefillRefusal(apiErrorMessage(body, tx('prefill.extractionFailed')));
+            }
             setExtraction((await detail.json()) as Extraction);
-        } catch {
-            setError(tx('prefill.extractionFailed'));
+        } catch (err) {
+            setError(err instanceof PrefillRefusal ? err.message : tx('prefill.extractionFailed'));
         } finally {
             setBusy(false);
         }
@@ -105,13 +159,16 @@ export function AssessmentPrefillPanel({
             setPendingId(proposalId);
             try {
                 const res = await fetch(apiUrl(`/vendor-proposals/${proposalId}/${action}`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-                if (!res.ok) throw new Error();
+                if (!res.ok) {
+                    const body: unknown = await res.json().catch(() => null);
+                    throw new PrefillRefusal(apiErrorMessage(body, tx('prefill.updateFailed')));
+                }
                 setExtraction((e) =>
                     e ? { ...e, proposals: e.proposals.map((p) => (p.id === proposalId ? { ...p, status: action === 'approve' ? 'ACCEPTED' : 'REJECTED' } : p)) } : e,
                 );
                 if (action === 'approve') onApplied?.();
-            } catch {
-                setError(tx('prefill.updateFailed'));
+            } catch (err) {
+                setError(err instanceof PrefillRefusal ? err.message : tx('prefill.updateFailed'));
             } finally {
                 setPendingId(null);
             }
@@ -152,7 +209,11 @@ export function AssessmentPrefillPanel({
                 </Button>
             </div>
 
-            {error && <p className="text-sm text-content-error">{error}</p>}
+            {error && (
+                <p className="text-sm text-content-error" role="alert" data-testid="prefill-error">
+                    {error}
+                </p>
+            )}
 
             {extraction && (
                 <div className="space-y-tight">

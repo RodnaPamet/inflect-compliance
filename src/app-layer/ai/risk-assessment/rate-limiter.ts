@@ -136,7 +136,8 @@ export async function checkRateLimit(tenantId: string, userId: string): Promise<
     if (tenant.count >= TENANT_DAILY_QUOTA) {
         const resetIn = Math.max(1, Math.ceil(tenant.ttlMs / 1000 / 60));
         throw rateLimited(
-            `AI assessment daily limit reached (${TENANT_DAILY_QUOTA}/day). Resets in ~${resetIn} minutes.`
+            `AI assessment daily limit reached (${TENANT_DAILY_QUOTA}/day). Resets in ~${resetIn} minutes.`,
+            { reason: 'AI_DAILY_LIMIT_REACHED', limit: TENANT_DAILY_QUOTA, resetInMinutes: resetIn },
         );
     }
 
@@ -144,7 +145,8 @@ export async function checkRateLimit(tenantId: string, userId: string): Promise<
     const user = await peek(userKey(tenantId, userId));
     if (user.count >= USER_PER_MINUTE_LIMIT) {
         throw rateLimited(
-            `Too many AI assessment requests. Please wait a moment before trying again.`
+            `Too many AI assessment requests. Please wait a moment before trying again.`,
+            { reason: 'AI_TOO_MANY_REQUESTS' },
         );
     }
 }
