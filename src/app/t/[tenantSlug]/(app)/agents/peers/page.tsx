@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { listPeerAgents } from '@/app-layer/usecases/peer-agents';
-import { peerInvitationRefusal } from '@/app-layer/usecases/peer-invitations';
+import { peerInvitationRefusal } from '@/lib/agentic/peer-invitation-rules';
 import { getTenantA2aSigningKeys } from '@/app-layer/usecases/a2a-signing-key';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';

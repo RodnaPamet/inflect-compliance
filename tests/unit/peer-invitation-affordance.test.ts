@@ -5,7 +5,8 @@
  * server refuses. An AI admin holds the register key, which opens the page, but
  * not the coarse admin tier the flow's outbound connection needs.
  */
-import { createPeerInvitation, peerInvitationRefusal, previewPeerInvitation } from '@/app-layer/usecases/peer-invitations';
+import { createPeerInvitation, previewPeerInvitation } from '@/app-layer/usecases/peer-invitations';
+import { peerInvitationRefusal } from '@/lib/agentic/peer-invitation-rules';
 import { makeRequestContext } from '../helpers/make-context';
 
 describe('peerInvitationRefusal', () => {
