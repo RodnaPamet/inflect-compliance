@@ -5,6 +5,7 @@
 import {
     formatPlanLimitMessage,
     parsePlanLimitMessage,
+    planLimitRefusalOf,
 } from '@/lib/billing/plan-limit-message';
 
 describe('plan-limit message', () => {
@@ -28,5 +29,16 @@ describe('plan-limit message', () => {
         expect(parsePlanLimitMessage('A control with code AC-1 already exists.')).toBeNull();
         // The prefix alone, without the structured body, is not parseable.
         expect(parsePlanLimitMessage('plan_limit_exceeded: control')).toBeNull();
+    });
+
+    it('reads the refusal out of an API error body, and nothing else (#5764)', () => {
+        const refusal = { plan: 'FREE', resource: 'control', limit: 10, current: 9 };
+        const message = formatPlanLimitMessage(refusal);
+        expect(planLimitRefusalOf({ error: { code: 'FORBIDDEN', message } })).toEqual(refusal);
+        expect(
+            planLimitRefusalOf({ error: { code: 'FORBIDDEN', message: 'You do not have permission to install frameworks.' } }),
+        ).toBeNull();
+        expect(planLimitRefusalOf(null)).toBeNull();
+        expect(planLimitRefusalOf('not a body')).toBeNull();
     });
 });

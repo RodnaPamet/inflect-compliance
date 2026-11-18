@@ -10126,6 +10126,7 @@
       "previewChosen": "Preview {count} selected",
       "restrictedTitle": "You cannot install frameworks",
       "restricted": "Only an Owner or Admin can install a framework pack, or a member whose custom role allows installing frameworks. Ask one of them to install it. You can still read this framework's requirements.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so this install would go over the limit. Upgrade the plan to add more controls.",
       "previewFailed": "Could not preview this pack.",
       "refused": {
         "PACK_NOT_FOUND": "This pack is no longer in the catalogue. Reload the page.",
@@ -10159,6 +10160,7 @@
       "suggestedEvidence": "Suggested Evidence",
       "installFailed": "The install did not finish. Reload the page to see what was added.",
       "installRestricted": "Only an Owner or Admin, or a member whose custom role allows installing frameworks, can install templates.",
+      "planLimitReached": "Your plan allows {limit} controls and this workspace has {current}, so this install would go over the limit. Install fewer templates, or upgrade the plan.",
       "emptyFilter": "No templates match your filters.",
       "searchPlaceholder": "Search templates…",
       "frequency": {
