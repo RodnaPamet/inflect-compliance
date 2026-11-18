@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { oversightReadsFor } from '@/app-layer/usecases/agent-oversight-settings';
 import { listPeerAgents } from '@/app-layer/usecases/peer-agents';
+import { peerInvitationRefusal } from '@/app-layer/usecases/peer-invitations';
 import { getTenantA2aSigningKeys } from '@/app-layer/usecases/a2a-signing-key';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { listVendors } from '@/app-layer/usecases/vendor';
@@ -29,6 +30,11 @@ export const dynamic = 'force-dynamic';
  * The signing key is read through the same usecase the API uses, which selects
  * the public half only. Whether the reader may ROTATE it (`admin.tenant_lifecycle`,
  * OWNER) comes back with it, so the panel offers the button only to an owner.
+ *
+ * Invite and Accept are offered only where the invitation usecase would take
+ * them (#5764): the same `peerInvitationRefusal` it throws on. The register key
+ * opens this page, but an invitation also stores an outbound connection, which
+ * needs the coarse admin tier an AI admin does not hold.
  */
 export default async function PeersPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const resolved = await params;
@@ -89,6 +95,7 @@ export default async function PeersPage({ params }: { params: Promise<{ tenantSl
             canReviewProposals={mayReadAgentActivity(ctx.appPermissions?.admin)}
             canCompose={Boolean(ctx.appPermissions?.admin?.view)}
             canSetOrphanPass={Boolean(ctx.appPermissions?.admin?.tenant_lifecycle)}
+            canInvitePeers={peerInvitationRefusal(ctx) === null}
             oversightReads={oversightReads}
             ownersUnavailable={owners === null}
             vendorsUnavailable={vendors === null}

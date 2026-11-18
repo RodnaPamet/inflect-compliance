@@ -131,18 +131,37 @@ function refuse(message: string, reason: PeerInvitationRefusal): never {
     throw badRequest(message, { reason });
 }
 
-/** A person holding the register key: an invitation is never issued or accepted by a credential. */
-function assertMayInvite(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
-        throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
-    }
-    if (ctx.apiKeyId) throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
+/**
+ * Why `ctx` may not invite a peer or accept an invitation, or `null` when it
+ * may. The ONE statement of the rule: `assertMayInvite` throws on it, and the
+ * peers page asks it to decide whether to offer Invite and Accept at all
+ * (#5764), so the page cannot offer what this refuses.
+ */
+export function peerInvitationRefusal(
+    ctx: Pick<RequestContext, 'appPermissions' | 'apiKeyId' | 'permissions'>,
+): 'NO_REGISTER_KEY' | 'NOT_A_PERSON' | 'NEEDS_ADMIN' | null {
+    if (!ctx.appPermissions?.admin?.agent_registry) return 'NO_REGISTER_KEY';
+    if (ctx.apiKeyId) return 'NOT_A_PERSON';
     // The flow also stores an outbound connection, which `upsertIntegrationConnection`
     // gates on the coarse admin tier. Asked first, so nothing is half-written.
-    if (!ctx.permissions?.canAdmin) {
-        throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
-            reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
-        });
+    // An AI admin holds the register key but not that tier.
+    if (!ctx.permissions?.canAdmin) return 'NEEDS_ADMIN';
+    return null;
+}
+
+/** A person holding the register key: an invitation is never issued or accepted by a credential. */
+function assertMayInvite(ctx: RequestContext): void {
+    switch (peerInvitationRefusal(ctx)) {
+        case null:
+            return;
+        case 'NO_REGISTER_KEY':
+            throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
+        case 'NOT_A_PERSON':
+            throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
+        case 'NEEDS_ADMIN':
+            throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
+                reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
+            });
     }
 }
 

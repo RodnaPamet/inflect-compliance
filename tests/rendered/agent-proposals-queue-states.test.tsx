@@ -336,6 +336,37 @@ describe('the review window', () => {
 
 // ─── the second approver ────────────────────────────────────────────────────
 
+// ─── a proposal read by id after it was decided (#5764) ─────────────────────
+
+describe('a proposal already decided, opened by ?proposal=<id>', () => {
+    it.each([
+        ['ACCEPTED', 'proposals.decided.ACCEPTED'],
+        ['EDITED', 'proposals.decided.EDITED'],
+        ['REJECTED', 'proposals.decided.REJECTED'],
+    ])('a %s proposal shows its decision and offers neither Approve nor Reject', (status, badgeKey) => {
+        renderQueue([row({ status })]);
+        expect(screen.getByTestId('proposal-decided-badge-p1')).toHaveTextContent(en(badgeKey));
+        expect(screen.getByTestId('proposal-decided-action-p1')).toHaveTextContent(en('proposals.decided.notice'));
+        expect(screen.queryByTestId('proposal-approve-p1')).toBeNull();
+        expect(screen.queryByTestId('proposal-reject-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-select-p1')).toBeDisabled();
+    });
+
+    it('a decided proposal whose window has since closed reads as decided, not as expired', () => {
+        renderQueue([row({ status: 'ACCEPTED', windowClosed: true })]);
+        expect(screen.getByTestId('proposal-decided-badge-p1')).toBeInTheDocument();
+        expect(screen.queryByTestId('proposal-window-closed-p1')).toBeNull();
+        expect(screen.queryByTestId('proposal-window-closed-badge-p1')).toBeNull();
+    });
+
+    it('a PENDING proposal still offers both (positive control)', () => {
+        renderQueue([row()]);
+        expect(screen.queryByTestId('proposal-decided-badge-p1')).toBeNull();
+        expect(screen.getByTestId('proposal-approve-p1')).toBeInTheDocument();
+        expect(screen.getByTestId('proposal-reject-p1')).toBeInTheDocument();
+    });
+});
+
 describe('a proposal holding one of its two approvals', () => {
     it('says so on first render, from the data', () => {
         renderQueue([row({ approvalsRecorded: 1 })]);

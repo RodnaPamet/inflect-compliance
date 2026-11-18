@@ -60,6 +60,8 @@ An update that would change nothing is marked **{{ui:agents.proposals.diff.noCha
 
 A proposal whose review window has closed shows a notice saying when it closed. It offers neither approval nor rejection, and its tick box cannot be ticked. It stays on the page until the overnight clean-up marks it expired.
 
+**One proposal on its own.** A link to a single proposal, such as the one a sample audit gives its second reviewer, opens the page with only that proposal, even after it was decided. A decided proposal is marked **{{ui:agents.proposals.decided.ACCEPTED}}**, **{{ui:agents.proposals.decided.EDITED}}** or **{{ui:agents.proposals.decided.REJECTED}}**. Where **{{ui:agents.proposals.approve}}** would be, it says: {{ui:agents.proposals.decided.notice}} It offers no **{{ui:agents.proposals.reject}}** either, and its tick box cannot be ticked.
+
 ## What you can do
 
 ### Approve a proposal

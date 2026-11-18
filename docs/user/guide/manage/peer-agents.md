@@ -15,9 +15,12 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 | Action | Roles |
 | --- | --- |
 | Open the page and register a peer | Owner, Admin, AI admin |
+| Invite a peer, or accept an invitation | Owner, Admin |
 | Generate or rotate the workspace's signing key | Owner |
 
 Everyone else sees **{{ui:agents.register.accessTitle}}** instead of the page.
+
+AI admins do not see **{{ui:agents.peers.invite.open}}** or **{{ui:agents.peers.accept.open}}**. Connecting through an invitation also sets up this workspace's connection to the other one, which only an Owner or Admin can do.
 
 ## What you see
 
@@ -52,6 +55,26 @@ Click a row to open the peer's own page.
 3. Click **{{ui:agents.peers.register.submit}}**.
 
 The peer's page opens. Read its card there and approve it before the peer can exchange anything.
+
+### Invite another workspace
+
+Owners and Admins only.
+
+1. Click **{{ui:agents.peers.invite.open}}**. The form **{{ui:agents.peers.invite.heading}}** opens above the table. {{ui:agents.peers.invite.intro}}
+2. Choose the **{{ui:agents.peers.invite.owner}}**, the supplier, the risk tier, the agent that receives the peer's tasks, and the workflows it may start.
+3. Click **{{ui:agents.peers.invite.submit}}**.
+4. Under **{{ui:agents.peers.invite.codeTitle}}**, click **{{ui:agents.peers.invite.copyCode}}** and send the code to the other workspace. {{ui:agents.peers.invite.codeNotice}} Click **{{ui:agents.peers.invite.done}}** when you have it.
+
+### Accept an invitation
+
+Owners and Admins only.
+
+1. Click **{{ui:agents.peers.accept.open}}**, and paste the code into **{{ui:agents.peers.accept.code}}**.
+2. Click **{{ui:agents.peers.accept.read}}**. **{{ui:agents.peers.accept.cardTitle}}** shows the other workspace's card. Read it.
+3. Choose who here answers for the peer, its supplier and risk tier, and the agent and workflows it may reach.
+4. Click **{{ui:agents.peers.accept.submit}}**. {{ui:agents.peers.accept.approveNotice}}
+
+The new peer's page opens. The other workspace then approves your card on their side.
 
 ### Generate or rotate the signing key
 

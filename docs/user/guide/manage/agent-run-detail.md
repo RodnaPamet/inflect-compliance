@@ -37,6 +37,7 @@ Editors and Readers see **{{ui:agents.runs.accessTitle}}** instead of the page. 
 - **{{ui:agents.runs.detail.skillsTitle}}**: each skill the run was given, with its version and a fingerprint of its text. A skill this workspace wrote is marked **{{ui:agents.runs.detail.skillTenant}}**. **{{ui:agents.runs.detail.skillsNone}}** means it was given none; **{{ui:agents.runs.detail.skillsNotRecorded}}**
 - The error the run stopped on, if it failed, in a sentence. The engine's own message is folded away under **{{ui:agents.runs.detail.error.detailLabel}}**. An error this page does not recognise is shown as the engine wrote it.
 - The run's summary, if it produced one.
+- For a run that asked a person before going on: while it waits, which proposal it waits for, the date the decision is due by, and **{{ui:agents.runs.detail.deferral.openProposal}}**. Once the proposal is decided, the member who approved or rejected it, by name, and when. Somebody who is no longer a member of this workspace is not named; the line then only says that the proposal was approved or rejected, and when.
 - **{{ui:agents.runs.detail.delegation.title}}**, when the run handed work to a specialist agent. {{ui:agents.runs.detail.delegation.body}} Each specialist is shown by the name the run gave it, with whether its answer was accepted and how many steps and tokens are its own.
 
 **The steps**, in order. Each one shows:
