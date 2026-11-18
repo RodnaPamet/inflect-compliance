@@ -20,7 +20,7 @@ Open **{{ui:nav.assets}}** under **{{ui:nav.govern}}** and click an asset's name
 | Turn a vulnerability into a risk or a finding | Owner, Admin, Editor |
 | Delete the asset | Owner, Admin |
 
-If your workspace uses custom roles, the page offers only what your role's permissions allow.
+If your workspace uses custom roles, the page offers only what your role's permissions allow. Changing the status, editing and working on vulnerabilities need permission to edit assets, and deleting needs the workspace admin permission, as on the asset list.
 
 ## What it is for
 
@@ -55,17 +55,19 @@ Choose **{{ui:assets.detail.statusActive}}** or **{{ui:assets.detail.statusRetir
 
 ### Edit the asset
 
-Click the pencil at the top of the overview. You can change every field, including the product identity and the confidentiality, integrity and availability ratings. Closing the form with unsaved changes asks **{{ui:assets.modal.editDiscardTitle}}**: **{{ui:assets.modal.editDiscardConfirmLabel}}** closes it, **{{ui:assets.modal.editDiscardCancelLabel}}** returns to the form.
+Click the pencil at the top of the overview. You can change every field, including the product identity and the confidentiality, integrity and availability ratings. Closing the form with unsaved changes asks **{{ui:assets.modal.editDiscardTitle}}**: **{{ui:assets.modal.editDiscardConfirmLabel}}** closes it, **{{ui:assets.modal.editDiscardCancelLabel}}** returns to the form. An asset whose owner has since left the workspace can still be edited; only a newly chosen owner must be an active member.
 
 ### Work through its vulnerabilities
 
 On **{{ui:assets.detail.tabs.vulnerabilities}}**, each matched vulnerability shows its CVE, severity, score and how it was matched. For each one you can:
 
 - set its status, owner and remediation due date, and add a note;
-- turn it into a risk, so it is assessed and treated on the risk register;
-- turn it into a finding, so it is tracked with your other findings.
+- turn it into a risk with **{{ui:assets.detail.vuln.convertToRisk}}**, so it is assessed and treated on the risk register;
+- turn it into a finding with **{{ui:assets.detail.vuln.convertToFinding}}**, so it is tracked with your other findings.
 
-Resolved vulnerabilities are hidden until you click **{{ui:assets.detail.vuln.showResolved}}**. **{{ui:assets.detail.vuln.seeAll}}** opens the workspace's vulnerability page filtered to this asset. Below the CVEs, **{{ui:assets.detail.vuln.scannerTitle}}** lists what your security scanners reported for the asset.
+Each conversion is made once. After it, the button is replaced by a link to what it made: the risk's reference, or **{{ui:assets.detail.vuln.viewRisk}}** when it has none, and **{{ui:assets.detail.vuln.viewFinding}}**, which opens the findings register. If that risk or finding is deleted later, the button is offered again.
+
+Resolved vulnerabilities are hidden until you click **{{ui:assets.detail.vuln.showResolved}}**. The tab shows at most 200 vulnerabilities, highest score first; when it reaches that number, a line says the asset may have more. **{{ui:assets.detail.vuln.seeAll}}** opens the workspace's vulnerability page filtered to this asset. Below the CVEs, **{{ui:assets.detail.vuln.scannerTitle}}** lists what your security scanners reported for the asset.
 
 ### Link risks, controls, tasks and evidence
 

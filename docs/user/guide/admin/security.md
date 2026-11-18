@@ -4,7 +4,7 @@ route: /t/[tenantSlug]/admin/security
 
 # {{ui:admin.security.title}}
 
-The {{ui:admin.security.title}} page holds the workspace's sign-in rules: whether members must use multi-factor authentication (MFA), and how long a sign-in may last. It also holds two rules for agents that use API keys, and it revokes sessions.
+The {{ui:admin.security.title}} page holds the workspace's sign-in rules: whether members must use multi-factor authentication (MFA), and how long a sign-in may last. It also holds two rules for agents that use API keys and the limits on how much one agent turn may do, and it revokes sessions.
 
 ## Where to find it
 
@@ -20,6 +20,7 @@ This page sets the rules for everyone. To set up MFA for your own account, click
 | Change the MFA policy and the session age | Owner, Admin |
 | Turn agent registration enforcement on or off | Owner, Admin |
 | Change the API-key rotation age | Owner, Admin |
+| Lower the agent per-turn limits | Owner, Admin |
 | Revoke your own sessions, one member's, or everyone's | Owner, Admin |
 | Revoke the sessions of one Owner or one AI admin | Owner |
 
@@ -53,6 +54,8 @@ Picking {{ui:admin.security.policy.REQUIRED.label}} shows a notice, **{{ui:admin
 
 **{{ui:admin.security.apiKeyRotation.title}}.** The age at which the daily key check raises a finding for an API key an agent could use. A badge shows where the age comes from: {{ui:admin.security.apiKeyRotation.defaultBadge}}, which is 90 days, or {{ui:admin.security.apiKeyRotation.customBadge}}. Below it you choose between the product default and **{{ui:admin.security.apiKeyRotation.useCustom}}**. The second choice opens a field for a whole number of days, from 7 to 730, with buttons to step it down and up.
 
+**{{ui:admin.security.agentTurnCaps.title}}.** Two limits on what one turn of an agent may start: **{{ui:admin.security.agentTurnCaps.delegationsPerTurn}}**, how many other agents it may hand work to, and **{{ui:admin.security.agentTurnCaps.toolCallsPerTurn}}**, how many tools it may call. Your organization sets the highest each may be, and this workspace can only lower it. Each limit has its own row, with a badge giving the value that applies and a line saying where it comes from: your organization's limit, this workspace's own, or, for a workspace that belongs to no organization, the product default of 3 delegations and 1 tool call. Below it you choose between following the organization, or the product default, and **{{ui:admin.security.agentTurnCaps.custom}}**, which opens a field bounded by the organization's limit. Each row has its own **{{ui:admin.security.agentTurnCaps.save}}**.
+
 **{{ui:admin.security.sessionMgmtTitle}}.** Two buttons, **{{ui:admin.security.signOutOthers}}** and **{{ui:admin.security.revokeAll}}**. Below them, under {{ui:admin.security.revokeSpecificLabel}}, a list of members that starts at **{{ui:admin.security.pickMemberPlaceholder}}**, and a **{{ui:admin.security.revoke}}** button.
 
 ## What you can do
@@ -81,6 +84,12 @@ Choose the product default, or **{{ui:admin.security.apiKeyRotation.useCustom}}*
 
 The age only decides when a finding is raised. No key is ever rotated, revoked or expired because of it. [Create an API key](../../how-to/set-up/create-an-api-key.md) lists which keys the daily check looks at, and what else it flags.
 
+### Lower an agent per-turn limit
+
+In the row for the limit, choose **{{ui:admin.security.agentTurnCaps.custom}}** and a number: from 0 delegations, or from 1 tool call, up to your organization's limit. Or choose to follow the organization again. Click the row's **{{ui:admin.security.agentTurnCaps.save}}**, which stays greyed out until you change something. The message **{{ui:admin.security.agentTurnCaps.saved}}** appears.
+
+The value that applies is always the lower of the organization's limit and this workspace's. If the organization later lowers its limit below what this workspace set, the workspace's setting is kept but the organization's applies, and the row says it is narrowed by your organization. Organization administrators set the organization's limits on the organization's settings page.
+
 ### Revoke sessions
 
 Each of these opens a dialog that says what will happen. Nothing is revoked until you click the dialog's button.
@@ -98,7 +107,8 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 - **Each workspace's MFA policy applies to that workspace.** Someone who belongs to more than one workspace is asked at sign-in for the code of the first workspace they joined. Another workspace whose policy asks for a code asks for its own the first time they open it, and until they enter it, its pages and the organisation pages take them to its code page. The session age is always that of the first workspace they joined, except after a sign-in through this workspace's single sign-on, which gets this workspace's.
 - **Agent registration enforcement applies at once.** Each request it refuses adds an entry to the workspace's audit log.
 - **The rotation age applies from the next daily key check.**
-- **The audit log records who did what.** Changing the MFA policy or the session age, turning agent registration enforcement on or off, changing the rotation age and every revocation of sessions each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it. The entries for the MFA policy and the session age give the old value and the new one.
+- **A per-turn limit applies to agent runs that start or resume after you save.** An agent turn that tries to call more tools than the limit allows has the extra calls refused.
+- **The audit log records who did what.** Changing the MFA policy or the session age, turning agent registration enforcement on or off, changing the rotation age or an agent per-turn limit, and every revocation of sessions, each add an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it. The entries for the MFA policy and the session age give the old value and the new one.
 
 ## Empty and error states
 
@@ -112,6 +122,8 @@ A session belongs to the person, not to the workspace. Revoking someone's sessio
 | The {{ui:admin.security.agentEnforcement.title}} card says you do not have permission to read the agent register | Your role cannot read the agent register | Ask an Owner |
 | **{{ui:admin.security.agentEnforcement.loadFailed}}**, or another message, on the {{ui:admin.security.agentEnforcement.title}} card | The card could not load | Reload the page |
 | **{{ui:admin.security.apiKeyRotation.unavailable}}** | The card could not load the rotation age | Reload the page. If the note stays, ask an Owner |
+| **{{ui:admin.security.agentTurnCaps.unavailable}}** | The card could not load the per-turn limits | Reload the page |
+| **{{ui:admin.security.agentTurnCaps.saveFailed}}**, or a message that the value cannot be above your organization's limit | The limit was not saved. A value above the organization's limit is refused | Choose a value up to the organization's limit, or follow the organization |
 | The button in the agent registration dialog stays greyed out | What you typed does not match the workspace's short name exactly | Type the name exactly as the field's label shows it |
 | **Target user is not a member of this tenant** | The person stopped being a member after the page loaded | Reload the page |
 | **Only an OWNER can revoke an OWNER's sessions.** or **Only an OWNER can revoke an AI_ADMIN's sessions.** | You picked an Owner or an AI admin, and you are not an Owner | Ask an Owner to revoke them |

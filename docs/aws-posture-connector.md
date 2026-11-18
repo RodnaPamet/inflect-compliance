@@ -23,6 +23,31 @@ If Powerpipe or the AWS CLI is absent, the connector fails safe: the connection
 test reports "CLI not available" and a collection run records an `ERROR`
 `IntegrationExecution` (no credentials are ever emitted) rather than throwing.
 
+### Collecting in the OpenShell sandbox
+
+With `SANDBOX_EXECUTION_ENABLED=1` the collector runs in an OpenShell sandbox
+instead of on the worker host (`src/app-layer/integrations/cloud-posture/`,
+shared by the AWS, Azure and GCP posture connectors). The sandbox reaches the
+cloud through a gateway **credential provider** attached by name, one per
+tenant per connection: `postureProviderName` derives
+`inflect-posture-<32 hex>` from the tenant and connection ids (#5476), so two
+tenants never share a provider. The operator provisions the provider — writing
+a provider's credential needs gateway-wide operator mTLS, which the app does
+not hold — and the product attaches it; the `VM check` workflow prints each
+connection's provider name. A sandboxed scan with no tenant-scoped provider is
+refused (`SANDBOX_PROVIDER_NOT_TENANT_SCOPED`) before the transport is touched,
+rather than attaching a shared credential and storing another account's results
+as this tenant's evidence (#5475).
+
+Because the name comes from row ids and not from the secret, rotating a
+connection's credential in the product leaves the gateway holding the previous
+one. The rotation raises one MEDIUM `POSTURE_PROVIDER_STALE` finding per
+connection (`usecases/posture-provider-staleness.ts`), assigned to the
+connection's accountable owner and naming the provider to re-provision. Nothing
+closes it automatically (owner decision, 2026-11-16): the gateway's readiness
+check says only that a credential is installed, not which one, so a person
+closes it after re-provisioning.
+
 ## Credentials — read-only only
 
 Configure the connection with **read-only** AWS access. One form is supported:
@@ -157,7 +182,7 @@ codes, so additional frameworks slot in without connector changes.
 
 - Seed a NIST CSF 2.0 framework, then add a `nistCsf` key to the control-map
   entries to crosswalk AWS checks onto CSF subcategories.
-- Additional benchmarks (CIS AWS Foundations) and clouds (Azure/GCP posture).
+- Additional benchmarks (CIS AWS Foundations).
 
 ## NOTICE / attribution
 

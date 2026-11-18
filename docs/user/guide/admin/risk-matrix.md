@@ -48,7 +48,7 @@ When the draft breaks a rule, a list of what is wrong appears, in words such as 
 3. Adjust the bands so that, between them, they cover every score from 1 to the highest score exactly once. Click **{{ui:admin.riskMatrix.band}}** to add a band covering the scores no band covers yet, and **{{ui:admin.riskMatrix.remove}}** to delete one. The last band cannot be removed.
 4. Check the preview, then click **{{ui:admin.riskMatrix.saveChanges}}**. **{{ui:admin.riskMatrix.toastSaved}}** confirms it.
 
-Nothing changes until you save. Saving applies the grid to every risk page in the workspace straight away. Existing risks keep the likelihood and impact they were given.
+Nothing changes until you save. Saving applies the grid to every risk page in the workspace straight away, and is recorded in the workspace's audit log with the new number of levels and bands. Existing risks keep the likelihood and impact they were given. From then on, a risk's likelihood and impact are each held to the grid's own number of levels when its score is worked out, so on a 6 × 6 grid the highest score is 36.
 
 If you make the grid smaller than the levels your risks already use, a warning above the form says how many risks use a likelihood or impact above the new grid, before you save. Those risks keep their levels, so they have no cell on the heat map until they are reassessed on the new scale. You can still save.
 

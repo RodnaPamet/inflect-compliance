@@ -52,7 +52,7 @@ Under {{ui:admin.notifications.inAppTitle}}, one switch per agent event: an agen
 | --- | --- |
 | {{ui:admin.notifications.colPending}} | Emails waiting to be sent, including any being tried again after a failure |
 | {{ui:admin.notifications.colSent}} | Emails handed to the mail service |
-| {{ui:admin.notifications.colFailed}} | Emails that failed three times and will not be tried again |
+| {{ui:admin.notifications.colFailed}} | Emails that failed three times, or were dropped while email was off, and will not be tried again |
 | {{ui:admin.notifications.colTotal}} | The three added together |
 
 ## What you can do
@@ -63,7 +63,7 @@ Change any setting on **{{ui:admin.notifications.tabSettings}}**, then click **{
 
 - **Sender.** Change the address only to one Inflect's mail service is allowed to send from. Any other address makes every outbox email fail, and the failures show under {{ui:admin.notifications.colFailed}}. The weekly digest and scheduled report emails fail too, and those failures are not counted here.
 - **Compliance mailbox.** Enter an address to copy every notification email, every weekly digest and every scheduled report email, attachment included, to it. The digest is copied once for each person it is sent to. Clear the field to stop.
-- **Email off.** Switch off {{ui:admin.notifications.enableToggle}}. No new outbox emails are queued while it is off. Emails already queued wait, and are sent once you switch it back on. The weekly digest is not sent, and scheduled risk reports are still produced but not emailed; neither is sent later when you switch email back on.
+- **Email off.** Switch off {{ui:admin.notifications.enableToggle}}. No new outbox emails are queued while it is off. Emails already queued are dropped the next time the outbox runs, within 10 minutes, and count under {{ui:admin.notifications.colFailed}}; switching email back on does not send them. The weekly digest is not sent, and scheduled risk reports are still produced but not emailed; neither is sent later when you switch email back on.
 - **The bell.** Switch off an agent event to stop it notifying anyone. Inflect stops creating that notification, so it never reaches the bell, its list or the unread count. It affects everyone in the workspace.
 
 If the sender name is empty or an address is not a valid email address, the save is refused and nothing is saved. The page keeps what you typed, shows **{{ui:admin.notifications.saveFailed}}** beside the button, and marks the field that was refused. Correct it and save again.

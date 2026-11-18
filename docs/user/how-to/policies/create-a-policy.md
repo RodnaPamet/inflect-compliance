@@ -42,7 +42,7 @@ The {{ui:policies.detail.tabCurrent}} tab shows the newest version until the pol
 - The policy appears on the {{ui:policies.title}} page with the status {{ui:policies.filterEnums.status.draft}}.
 - The {{ui:policies.detail.tabCurrent}} tab shows {{ui:policies.detail.guideDraftTitle}}, with **{{ui:policies.detail.gotoVersions}}** to take you to the next step.
 - A policy made from a template already has its first version, written from the template. You are its owner. If the template gives a review frequency, the policy has a review schedule and a next review date.
-- If the template lists evidence to keep, the {{ui:policies.detail.tabCurrent}} tab shows an **{{ui:policies.evidence.title}}** checklist. Link each item to the evidence that proves the policy operates.
+- If the template lists evidence to keep, the {{ui:policies.detail.tabCurrent}} tab shows an **{{ui:policies.evidence.title}}** checklist. Link each item to the evidence that proves the policy operates. Owners, Admins and Editors see the checklist on every policy, even an empty one, and can add items to it with **{{ui:policies.evidence.add}}**.
 - Creating the policy and each version is recorded on its **{{ui:policies.detail.tabActivity}}** tab and in the workspace's audit log.
 - Next, send the policy for approval. See [Publish a policy](publish-a-policy.md).
 

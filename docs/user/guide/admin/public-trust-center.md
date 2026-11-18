@@ -48,7 +48,7 @@ Visitors can read the page and follow its document links without signing in.
 
 ### Ask for a document on request
 
-A visitor clicks **{{ui:external.trustCenter.gated.request}}** beside a document and fills in **{{ui:external.trustCenter.gated.name}}**, **{{ui:external.trustCenter.gated.email}}** and, if they like, **{{ui:external.trustCenter.gated.company}}**, then clicks **{{ui:external.trustCenter.gated.submit}}**. The page says: {{ui:external.trustCenter.gated.received}} It says the same whoever asks, so it reveals nothing about how the request is decided. Nothing opens until someone in the workspace approves it.
+A visitor clicks **{{ui:external.trustCenter.gated.request}}** beside a document and fills in **{{ui:external.trustCenter.gated.name}}**, **{{ui:external.trustCenter.gated.email}}** and, if they like, **{{ui:external.trustCenter.gated.company}}**, then clicks **{{ui:external.trustCenter.gated.submit}}**. If the workspace requires visitors to accept non-disclosure terms, the form also has the box **{{ui:external.trustCenter.gated.nda}}**, and the request cannot be sent until it is ticked. The page says: {{ui:external.trustCenter.gated.received}} It says the same whoever asks, so it reveals nothing about how the request is decided. Nothing opens until someone in the workspace approves it.
 
 ### Add documents on request, and approve requests
 
@@ -62,6 +62,7 @@ To change the page itself, an Owner or Admin opens **{{ui:admin.trustCenter.titl
 ## What happens next
 
 - Unpublishing makes the address show page-not-found again. Saved content is kept for when you publish again.
+- A download link sent to a requester works once. A link opened while the file is still being scanned, or while the trust center is unpublished, does not open the file and is not used up: it works again once the scan passes or the trust center is published again, as long as it has not expired.
 - The documents are links, not copies: if a linked file moves or is deleted where it is stored, the link on the page breaks.
 
 ## Empty and error states

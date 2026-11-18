@@ -70,7 +70,7 @@ The button is not offered when the newest version is already published, when it 
 - Staff can now acknowledge the policy on its **{{ui:policies.detail.tabAcknowledgements}}** tab. To ask particular people and track who has, see [Collect policy acknowledgements](collect-policy-acknowledgements.md).
 - Publishing closes any approval request still open on the policy.
 - Each request, decision and publication is listed on the policy's **{{ui:policies.detail.tabActivity}}** tab and recorded in the workspace's audit log, naming who did it.
-- To take a policy out of use, an Owner or Admin clicks **{{ui:policies.detail.archive}}**, then **{{ui:policies.detail.archiveConfirmLabel}}**. **{{ui:policies.detail.restoreFromArchive}}** brings it back as a draft, which must be approved and published again.
+- To take a policy out of use, an Owner or Admin clicks **{{ui:policies.detail.archive}}**, then **{{ui:policies.detail.archiveConfirmLabel}}**. Archiving closes any approval request still open on the policy. **{{ui:policies.detail.restoreFromArchive}}** brings it back as a draft, which must be approved and published again.
 
 ## If something goes wrong
 

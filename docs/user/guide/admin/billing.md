@@ -34,7 +34,7 @@ Inflect runs in one of two ways, and the page shows which:
 
 | Item | What it shows |
 | --- | --- |
-| {{ui:admin.billing.plan}} | The workspace's plan: {{ui:admin.billing.planName.FREE}}, {{ui:admin.billing.planName.TRIAL}}, {{ui:admin.billing.planName.PRO}} or {{ui:admin.billing.planName.ENTERPRISE}}. With online billing, a workspace that has never bought a plan reads {{ui:admin.billing.planName.FREE}} |
+| {{ui:admin.billing.plan}} | The workspace's plan: {{ui:admin.billing.planName.FREE}}, {{ui:admin.billing.planName.TRIAL}}, {{ui:admin.billing.planName.PRO}} or {{ui:admin.billing.planName.ENTERPRISE}}. With online billing, a workspace that has never bought a plan reads {{ui:admin.billing.planName.FREE}}, and so does one whose subscription has ended |
 | {{ui:admin.billing.status}} | The subscription state: {{ui:admin.billing.statusName.ACTIVE}}, {{ui:admin.billing.statusName.TRIALING}}, {{ui:admin.billing.statusName.PAST_DUE}}, {{ui:admin.billing.statusName.CANCELED}} or {{ui:admin.billing.statusName.INCOMPLETE}} |
 | {{ui:admin.billing.renewal}} | When the current paid period ends |
 | {{ui:admin.billing.trialEnds}} | When the trial ends, and how many days are left |

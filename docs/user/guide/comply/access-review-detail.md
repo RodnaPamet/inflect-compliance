@@ -19,8 +19,12 @@ Open **{{ui:nav.tests}}** under **{{ui:nav.comply}}**, click **{{ui:controlTests
 | Discard a decision recorded by mistake | The campaign's reviewer, and Owners and Admins |
 | Change the reviewer or the due date | Owners and Admins |
 | Close the campaign and generate its evidence | Owners and Admins |
+| Prepare the reviewer packs of a registered-agent review | Owners and Admins |
+| Answer a second review of an agent decision | The campaign's reviewer, and members who can manage the agent register, unless they made that decision or own the agent |
 
 Revoking or changing the access of an Owner or an AI admin needs a closer who is an Owner, because only an Owner can make that change on the members page.
+
+If your workspace uses custom roles, the decision buttons show only when your role keeps the access-review permission to decide, and **{{ui:accessReviews.closeCampaign}}** only when it keeps the permission to close. In a review of registered agents, the agents are shown only to the campaign's reviewer and to members who can read the agent register; others see **{{ui:accessReviews.agentRestricted}}**. An agent's owner never decides that agent, its proposed narrowings or its second review: the row reads **{{ui:accessReviews.agentOwnerCannotDecide}}**.
 
 ## What it is for
 
@@ -32,7 +36,9 @@ Prove, periodically, that only the right people have access. Auditors ask for th
 
 Under the header: **{{ui:accessReviews.dlReviewer}}**, **{{ui:accessReviews.dlScope}}**, the period, **{{ui:accessReviews.dlDue}}**, and **{{ui:accessReviews.dlClosed}}** once it is closed. Owners and Admins can click **{{ui:accessReviews.changeReviewer}}** and **{{ui:accessReviews.changeDueDate}}** while it is open.
 
-**The subjects.** One row per person or account in scope. For a review of workspace members: **{{ui:accessReviews.colSubject}}**, **{{ui:accessReviews.colSnapshotRole}}** (their role when the campaign started), **{{ui:accessReviews.colLiveRole}}** (their role now), **{{ui:accessReviews.colLastSignIn}}** and **{{ui:accessReviews.colDecision}}**. For a review of directory accounts: the **{{ui:accessReviews.colAccount}}**, whether it is a **{{ui:accessReviews.directoryAdmin}}** or **{{ui:accessReviews.directoryUser}}**, whether MFA is enrolled, and its **{{ui:accessReviews.colHrContext}}**: the worker it is linked to in your HR system, or **{{ui:accessReviews.hrUnlinked}}**.
+**The subjects.** One row per person or account in scope. For a review of workspace members: **{{ui:accessReviews.colSubject}}**, **{{ui:accessReviews.colSnapshotRole}}** (their role when the campaign started), **{{ui:accessReviews.colLiveRole}}** (their role now), **{{ui:accessReviews.colLastSignIn}}** and **{{ui:accessReviews.colDecision}}**. {{ui:accessReviews.colLastSignIn}} is the most recent time the person signed in to Inflect, through any of their sessions, including sessions that have since been signed out or revoked. It is not limited to this workspace, so a person who works mostly in another workspace still shows their real last sign-in. A person who has never signed in reads **{{ui:accessReviews.never}}**. For a review of directory accounts: the **{{ui:accessReviews.colAccount}}**, whether it is a **{{ui:accessReviews.directoryAdmin}}** or **{{ui:accessReviews.directoryUser}}**, whether MFA is enrolled, and its **{{ui:accessReviews.colHrContext}}**: the worker it is linked to in your HR system, or **{{ui:accessReviews.hrUnlinked}}**.
+
+For a review of registered agents: the **{{ui:accessReviews.colAgent}}**, its **{{ui:accessReviews.colAgentOwner}}**, its **{{ui:accessReviews.colAgentGrants}}**, its **{{ui:accessReviews.colAgentPack}}** and the decision. The pack column sums up the pack the agent is decided from: how many of its grants went unused in the review window, its harness level and drift, guard flags, kills and whether its breaker tripped, and who prepared the pack. When a section of a pack hit its size limit, a warning says so, for example **{{ui:accessReviews.agentPackGrantsTruncated}}**: that section does not list everything, so do not read it as complete. Below the subjects sit **{{ui:accessReviews.agentNarrowingsTitle}}** and, once the campaign is closed, **{{ui:accessReviews.agentSampleTitle}}**.
 
 ## What you can do
 
@@ -47,6 +53,15 @@ Click **{{ui:accessReviews.decidePrompt}}** on a row and choose:
 Add a justification, then click **{{ui:accessReviews.submitDecision}}**. A justification is optional for a confirmation and recommended for anything else.
 
 Nothing changes when you decide. Every revocation and role change is carried out together when the campaign closes.
+
+### Review registered agents
+
+1. While the campaign is open and has no packs, an Owner or Admin clicks **{{ui:accessReviews.agentPreparePacks}}**. The campaign's preparing agent builds a pack for every agent but itself; its own pack is built by a second preparing agent or, when there is none, by the person who pressed the button. A large campaign is prepared in the background: the page reads **{{ui:accessReviews.agentPacksQueued}}**, then shows how many agents are done with a progress bar, and updates by itself when the packs are ready.
+2. Under **{{ui:accessReviews.agentNarrowingsTitle}}**, each pack proposes removing grants its agent held for the whole 90-day window before the campaign and never called. Click **{{ui:accessReviews.narrowingAccept}}** or **{{ui:accessReviews.narrowingReject}}**. Removing a grant takes effect at once. An agent's narrowings must all be decided before the agent can be.
+3. Decide each agent: **{{ui:accessReviews.agentConfirm}}**, **{{ui:accessReviews.agentRevoke}}** or **{{ui:accessReviews.agentModify}}**.
+4. When the campaign closes, some decisions are drawn for a second review. The campaign's reviewer, or a member who can manage the agent register, answers each with **{{ui:accessReviews.sampleConcur}}**, **{{ui:accessReviews.sampleIndeterminate}}** or a reason for dissent. Nobody answers a decision they made or an agent they own.
+
+After closing, the page shows whether the evidence file still matches the campaign's stored decisions, with its SHA-256 fingerprint.
 
 ### Discard a decision
 
@@ -75,6 +90,8 @@ A campaign with no subjects, or with any subject still undecided, cannot be clos
 | **{{ui:accessReviews.rosterEmpty}}** | Nobody was in scope when the campaign started | Start a new campaign with a wider scope |
 | **{{ui:accessReviews.truncatedTitle}}** | The scope held more subjects than one campaign can, and only part of it was taken | Split the review into several campaigns |
 | **{{ui:accessReviews.coverageUnverifiedTitle}}** | The subjects came from an application's connector, and nothing checked the list was complete | Check the application's own user list against it |
+| **{{ui:accessReviews.agentPacksPreparationFailed}}** | The background preparation of the reviewer packs stopped | Click **{{ui:accessReviews.agentPreparePacks}}** again |
+| **{{ui:accessReviews.agentPacksPreparationUnknown}}** | The page could not read whether the packs are being prepared | Reload the page in a moment |
 | **{{ui:accessReviews.submitFailed}}**, **{{ui:accessReviews.closeFailed}}**, or a reason the server gave | The decision was not recorded, or the campaign was not closed | Follow the reason given, then try again |
 
 ## Related

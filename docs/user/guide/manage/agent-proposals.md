@@ -12,6 +12,8 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 
 A waiting run on the [{{ui:agents.runs.title}}](agent-runs.md) page links here too. Older links to a separate agent-proposals page open this page.
 
+The link **{{ui:agents.sampleAudit.readTheProposal}}** on the [{{ui:admin.reviewQuality.title}}](review-quality.md) page opens this page showing that one proposal alone, even when it was approved long ago.
+
 ## Who can use it
 
 | Action | Roles |
@@ -24,7 +26,7 @@ AI admins and Auditors see the tick boxes and the buttons greyed out. Hovering a
 
 If your workspace uses custom roles, opening the queue depends on the permissions your role was given. Approving and rejecting depend on whether the built-in role your custom role is based on can make changes.
 
-Approving a **{{ui:agents.proposals.kind.PROCESS_MAP}}** also needs permission to edit process maps, because approval creates the map in your name. If your role can approve other proposals but not that, the card says so where **{{ui:agents.proposals.approve}}** would be: {{ui:agents.proposals.approveNeedsKindPermission}}
+Approving also needs the permission to make the record yourself, because approval creates or changes it in your name: to create or edit risks, controls, policies or findings, or to edit process maps, depending on the kind of proposal. Owners and Admins hold all of these; a custom role may not. When your role can approve some proposals but not this kind, the card says so where **{{ui:agents.proposals.approve}}** would be: {{ui:agents.proposals.approveNeedsKindPermission}}
 
 Some rules hold whatever your role:
 
@@ -50,6 +52,7 @@ Use the queue to check what an agent wants to change before the change exists. R
 - **When it was proposed and the date to decide it by.** If it came through an API key, the key's first characters, as the API keys page shows them. A key that can no longer be read shows as "through an API key".
 - **{{ui:agents.proposals.reject}}**.
 - **The record an update would change**, by its reference.
+- **A notice that a run is waiting**, when the run that proposed it stopped to wait for a person's decision: {{ui:agents.proposals.runWaits}} **{{ui:agents.proposals.runWaitsLink}}** opens that run.
 - **{{ui:agents.proposals.fromRun}}**, or the number of the step, a link to the run that produced the proposal, when a run did.
 - **The agent's rationale**, the reason it gave for the change, when it gave one.
 - **The content.** For a new record, **{{ui:agents.proposals.diff.createHeading}}** lists every field and its value. For an update, **{{ui:agents.proposals.diff.updateHeading}}** sets each field's {{ui:agents.proposals.diff.beforeColumn}} beside its {{ui:agents.proposals.diff.afterColumn}}, and marks the fields that stay {{ui:agents.proposals.diff.unchanged}}. The comparison is made against the record as it stands when the page loads. Each field is named in words, such as {{ui:agents.proposals.field.residualLikelihood}}.
@@ -84,7 +87,7 @@ Tick their boxes. A bar shows how many are selected. Click **{{ui:agents.proposa
 - Every approval, signature, rejection and refused attempt is recorded in the workspace's audit log, naming who made it.
 - Some approved proposals are drawn at random for a second reviewer to re-check. How often they disagree is shown on the {{ui:agents.register.title}} and in the [{{ui:agents.reports.title}}](agent-reports.md).
 - A proposal nobody decides leaves the queue overnight after its window closes. It is kept as a record that nobody agreed to it.
-- A run waiting for review can be resumed on the [{{ui:agents.runs.title}}](agent-runs.md) page once its proposals are decided.
+- A run waiting for review can be resumed on the [{{ui:agents.runs.title}}](agent-runs.md) page once its proposals are decided. A run that stopped to wait for a person's decision on one proposal carries on by itself once that proposal is approved or rejected, and is told which.
 
 ## Empty and error states
 
@@ -97,7 +100,7 @@ Tick their boxes. A bar shows how many are selected. Click **{{ui:agents.proposa
 | **You have already approved this proposal. A second approval has to come from a different person.** | Your approval is already recorded | Ask another Owner or Admin to approve it |
 | A message that the proposal needs two independent approvers and you are the registered owner of the agent | You own the agent, so you cannot be one of the two | Ask two other Owners or Admins to approve it |
 | **{{ui:agents.proposals.approveNeedsKindPermission}}** | Your role cannot approve this kind of proposal | Ask somebody who can, or reject it |
-| **{{ui:agents.proposals.refused.processMapNeedsProcessesEdit}}** | Your permission to edit process maps was removed after the page loaded | Ask somebody who can edit process maps to approve it |
+| **{{ui:agents.proposals.refused.processMapNeedsProcessesEdit}}**, or a message that approving needs permission to create or edit that kind of record | Your permission was removed after the page loaded | Ask somebody who holds it to approve it |
 | **{{ui:agents.proposals.refused.processMapUnreadable}}** | The stored process map no longer reads as a map | Reject it |
 | **{{ui:agents.proposals.processMap.canvasUnavailable}}** | The picture of a proposed map could not be loaded | Read the numbered list; it is the full proposal |
 | **{{ui:agents.proposals.refused.ownDissent}}** | The proposal came from your own dissent | Ask somebody else to decide it |

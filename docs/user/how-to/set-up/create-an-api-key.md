@@ -20,13 +20,14 @@ An API key lets another system, such as a CI pipeline, read or change your works
 7. Under {{ui:admin.apiKeys.scopesLabel}}, click each scope the key needs. Scopes are grouped by area, such as {{ui:admin.scopeGroup.controls}} and {{ui:admin.scopeGroup.evidence}}. Each area offers choices such as **Read** and **Write**, and a chosen scope shows a tick.
     - **{{ui:admin.apiKeys.fullAccess}}** gives the key read and write on every area. Prefer narrow scopes for automation.
     - Two scopes are never part of full access: **Workpaper_view** under {{ui:admin.scopeGroup.audits}} and **Agent_registry_view** under {{ui:admin.scopeGroup.admin}}. To grant either, pick scopes one by one.
+    - When the key can reach agent tools, through **{{ui:admin.apiKeys.fullAccess}}** or **Read** or **Propose** under {{ui:admin.scopeGroup.mcp}}, a box appears below the scopes: **{{ui:admin.apiKeys.requiresExchangeLabel}}**. Tick it for a key an agent uses to call tools. The agent must then trade the key for a short-lived token that names the tools it will call, and a tool call made with the key itself is refused. Other requests still accept the key. You cannot change this once the key exists.
 8. Click **{{ui:admin.apiKeys.createKey}}**. It stays greyed out until the key has a name and at least one scope.
 9. A box shows the new key under the warning **{{ui:admin.apiKeys.copyWarning}}** Click **{{ui:admin.apiKeys.copy}}**, then paste the key into the other system. The eye button, **{{ui:admin.apiKeys.showKey}}**, reveals the hidden part.
 10. Click **{{ui:admin.apiKeys.dismissKey}}**. After that, nobody can see the full key again, Owners included. Leaving the page has the same effect.
 
 The other system sends the key with every request, as a bearer token in the `Authorization` header: `Authorization: Bearer iflk_…`. The key works only in the workspace that created it.
 
-You cannot edit a key once it exists. To change its scopes, expiry or agent, create a new key and revoke the old one.
+You cannot edit a key once it exists. To change its scopes, expiry, agent or token setting, create a new key and revoke the old one.
 
 ## Revoke a key
 
@@ -42,6 +43,7 @@ To replace a key without a gap, create the new key first. Switch the other syste
 
 - The key appears in the table of active keys, with its scopes, its expiry and who created it. {{ui:admin.apiKeys.colExpires}} shows {{ui:admin.apiKeys.colNever}} for a key with no expiry.
 - {{ui:admin.apiKeys.colLastUsed}} shows when the other system last used the key.
+- A key made to call agent tools only through a short-lived token shows **{{ui:admin.apiKeys.requiresExchangeTag}}** in the {{ui:admin.apiKeys.colBinding}} column.
 - When its expiry passes, the key stops working. It moves to the list of revoked and expired keys, marked **{{ui:admin.apiKeys.expired}}**.
 - Creating or revoking a key adds an entry to the workspace's **{{ui:admin.auditLog}}**, naming who did it.
 - A key can do only what its scopes allow. A key bound to an agent also can do no more than the person who created it.

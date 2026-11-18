@@ -8,7 +8,7 @@ The {{ui:tenants.chooseWorkspace}} page lists the workspaces and organizations y
 
 ## Where to find it
 
-You arrive here after signing in, when you belong to several workspaces, or to no workspace and several organizations. **{{ui:account.backToWorkspaces}}** on your profile and account security pages also brings you here.
+You arrive here after signing in, when you belong to several workspaces, or to no workspace and several organizations. **{{ui:account.backToWorkspaces}}** on your profile and account security pages also brings you here, and so does **{{ui:errorPage.returnToDashboard}}** on a page that could not be found.
 
 ## Who can use it
 

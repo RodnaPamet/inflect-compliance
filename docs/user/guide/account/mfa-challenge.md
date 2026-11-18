@@ -26,7 +26,7 @@ If you have not set up MFA for this workspace yet, the page shows **{{ui:mfa.enr
 
 1. Open your authenticator app and find the entry for this workspace.
 2. Type the six digits. **{{ui:mfa.continueBtn}}** turns on when all six are entered; pressing Enter works too.
-3. The workspace opens at the page you were going to.
+3. The workspace opens at the page you were going to, or at its dashboard when that page is not one in Inflect.
 
 ### Set up MFA first
 

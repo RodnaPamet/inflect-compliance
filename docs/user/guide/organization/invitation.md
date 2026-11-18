@@ -16,7 +16,7 @@ Anyone with the link can open the page. Only the person it was sent to can accep
 
 ## What you see
 
-**The invitation.** The organization's name, the role offered ({{ui:orgRoles.ORG_OWNER}}, {{ui:orgRoles.ORG_ADMIN}} or {{ui:orgRoles.ORG_READER}}) and the date the link expires.
+**The invitation.** The organization's name, the role offered ({{ui:orgRoles.ORG_ADMIN}} or {{ui:orgRoles.ORG_READER}}; an invitation never offers {{ui:orgRoles.ORG_OWNER}}) and the date the link expires.
 
 **One button**, which depends on whether you are signed in:
 
@@ -28,7 +28,9 @@ Anyone with the link can open the page. Only the person it was sent to can accep
 
 ## What you can do
 
-Click **{{ui:invite.acceptInvitation}}**. You join the organization with the role offered and go to its [{{ui:org.dashboard.title}}](portfolio-overview.md). As an Admin or Owner, you are also given Admin access to every workspace in it.
+Click **{{ui:invite.acceptInvitation}}**. You join the organization with the role offered and go to its [{{ui:org.dashboard.title}}](portfolio-overview.md). As an Admin, you are also given Admin access to every workspace in it.
+
+If you already belong to the organization, accepting keeps the role you have: an invitation adds a member and never changes one. You still go to the organization. To change your role, ask an Owner or Admin to change it on the [{{ui:org.nav.members}}](members.md) page.
 
 If you are signed in with the wrong account, click **{{ui:invite.switchAccount}}**. You are signed out and brought back to the invitation; sign in with the address it was sent to. Signing in again with any other address uses up the link, and you then need a new invitation.
 
