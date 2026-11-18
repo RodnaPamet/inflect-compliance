@@ -239,6 +239,28 @@ Boundaries: TB7, and TB5 for fetching the card.
 | D | An oversized or slow card. | On `main` (2e): a 64 KiB cap that aborts the transfer and a 10-second deadline over request and body, as `wirePost` reads bodies (`src/lib/mcp/wire-transport.ts`). |
 | E | The authority that registers and pins a peer is the authority an agent then exercises. | On `main`: configuring and acting are separate keys. `admin.agent_external_tools` governs an agent's call leaving the tenant (`src/lib/permissions.ts`); approving a tenant-wide definition sits with `admin.agent_registry` (`src/app/api/t/[tenantSlug]/admin/agents/external-tools/route.ts`). On `main` (2e): the register and pin routes carry a literal `requirePermission('admin.agent_registry')`, the key the owner chose (R3, 2026-10-18), so the key for the call never configures whom it talks to. |
 
+### I0a — Connecting two workspaces by invitation
+
+Boundaries: TB7, and TB5 for the acceptance that crosses between the two
+workspaces. Two Inflect workspaces can connect in three acts instead of
+registering each other by hand (#3752, owner decisions 2026-11-11;
+`src/app-layer/usecases/peer-invitations.ts`, the only writer of
+`PeerInvitation`; the flow is described in
+[the A2A mapping](./a2a-mapping.md#connecting-two-workspaces-one-invitation)).
+Each act is the existing registration, pinning and credential usecase, so the
+controls of I0 and the pinning rules apply unchanged; this table covers what the
+invitation adds.
+
+| STRIDE | Threat | Control |
+|---|---|---|
+| S | A leaked invitation code is used by somebody other than the intended workspace. | On `main` (#3752): the code (`iflinv_…`) is single-use, expires in 7 days and is stored only as its SHA-256. The acceptance (`POST /api/a2a/:tenantSlug/invitations`) must be signed, over its exact bytes, with the Ed25519 key the acceptor's OWN card names, and is fresh for five minutes, so a code alone cannot make the inviter register a card whose key the sender lacks. |
+| S | The code redirects the acceptor to a host of the attacker's choosing. | On `main` (#3752): where the acceptor sends its acceptance comes from the inviter's card as the acceptor's person pinned it, never from the code. |
+| T | The acceptance pins the acceptor's card on the inviter's side without a person reading it. | On `main` (#3752): the acceptance registers the acceptor UNPINNED; a person on the inviter's side approves its card with the ordinary approval (pinning rule 5), and nothing flows until they do. No trust on first use on either side. |
+| E | The acceptance borrows the authority of an inviter who has since left. | On `main` (#3752): the inviter acts as the person who created the invitation, re-read when the acceptance arrives; one who is no longer an ACTIVE member, or no longer holds `admin.agent_registry` and the Admin tier, refuses it (`INVITER_NOT_AUTHORISED`). |
+| E | A connection made by invitation starts with authority neither side chose. | On `main` (#3752): the tokens bind one receiving agent and the workflows the inviter picked (only workflows that need no input are offered), and both outbound connections start with no rung stored, which reads as DISABLED. |
+| D | Repeated acceptances against an already working connection. | On `main` (#3752): a workspace already connected to the inviter (a live access token for it) refuses, at acceptance, a new invitation from it (`ALREADY_CONNECTED`) rather than risk its working token on a refused attempt. The acceptance body is capped at 8 KiB and the route takes the mutation rate limit by IP. |
+| I | A refusal tells the sender why it failed. | On `main` (#3752): every refusal answers `refused` with no reason; the reason goes to the log. |
+
 ### I1 — Arrival at the edge
 
 Boundary: TB1.

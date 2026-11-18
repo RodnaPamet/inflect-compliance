@@ -122,6 +122,9 @@
         "docs/app-layer.md": {
             "class": "authoritative"
         },
+        "docs/assistant.md": {
+            "class": "authoritative"
+        },
         "docs/attributions.md": {
             "class": "authoritative"
         },
@@ -330,6 +333,9 @@
             "class": "living"
         },
         "docs/keyboard-shortcuts.md": {
+            "class": "authoritative"
+        },
+        "docs/knowledge-store.md": {
             "class": "authoritative"
         },
         "docs/kpi-filterables.md": {

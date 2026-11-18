@@ -4,7 +4,7 @@ route: /org/[orgSlug]/audit
 
 # {{ui:org.audit.title}}
 
-The organization's {{ui:org.audit.title}} is the record of what happened at the organization level: who joined or left it, whose role changed, the Admin access those changes gave or took away in its workspaces, invitations, deleted workspaces, settings, the threat level, maturity, initiatives and refused requests. Entries are added in order and chained to one another, so none can be changed or removed afterwards without it showing.
+The organization's {{ui:org.audit.title}} is the record of what happened at the organization level: who joined or left it, whose role changed, the Admin access those changes gave or took away in its workspaces, invitations, deleted workspaces, settings and per-turn limits, the threat level, maturity, initiatives and refused requests. Entries are added in order and chained to one another, so none can be changed or removed afterwards without it showing.
 
 It is separate from each workspace's own [{{ui:admin.auditLog}}](../admin/audit-log.md).
 
@@ -42,9 +42,10 @@ The actions the log records:
 | --- | --- |
 | **{{ui:org.audit.actionMemberAdded}}**, **{{ui:org.audit.actionMemberRemoved}}**, **{{ui:org.audit.actionRoleChanged}}** | Someone joined or left the organization, or their organization role changed ([{{ui:org.nav.members}}](members.md)) |
 | **{{ui:org.audit.actionProvisioned}}**, **{{ui:org.audit.actionDeprovisioned}}** | Those changes gave or took away Admin access in the workspaces |
-| **{{ui:org.audit.actionInviteCreated}}**, **{{ui:org.audit.actionInviteRedeemed}}**, **{{ui:org.audit.actionInviteRevoked}}** | An invitation was sent, accepted or revoked |
+| **{{ui:org.audit.actionInviteCreated}}**, **{{ui:org.audit.actionInviteRedeemed}}**, **{{ui:org.audit.actionInviteRevoked}}** | An invitation was sent, accepted or revoked. When someone who already belonged to the organization accepts one, they keep their role, and the summary gives the role they have |
 | **{{ui:org.audit.actionWorkspaceDeleted}}** | A workspace was deleted ([{{ui:org.nav.allTenants}}](workspaces.md)). This entry outlasts the workspace |
 | **{{ui:org.audit.actionAgentSwitchesChanged}}** | The agent features on [{{ui:org.nav.settings}}](settings.md) were turned on or off |
+| **{{ui:org.audit.actionAgentTurnCapsChanged}}** | A per-turn limit on [{{ui:org.nav.settings}}](settings.md) was changed. The summary gives each limit before and after |
 | **{{ui:org.audit.actionThreatLevelSet}}**, **{{ui:org.audit.actionMaturityRated}}** | The threat level or a maturity rating was set on the [{{ui:org.dashboard.title}}](portfolio-overview.md) |
 | **{{ui:org.audit.actionInitiativeCreated}}**, **{{ui:org.audit.actionInitiativeStatusChanged}}** | A security initiative was created, or its status changed |
 | **{{ui:org.audit.actionAccessRefused}}** | Someone tried something their organization role does not allow |

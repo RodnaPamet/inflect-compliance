@@ -37,7 +37,7 @@ Use the dashboard to see at a glance how far the workspace is from audit-ready, 
 
 - On the right, a radar chart draws one spoke per area, and a list gives each area's count of healthy items out of its total, and its level, such as **L3**. An area the workspace does not use yet reads **{{ui:dashboard.hero.ladderNoEstate}}** and is left off the chart.
 - The headline is the name of the overall level, for example **{{ui:dashboard.hero.ladder.defined}}**, followed by the number and **{{ui:dashboard.hero.levelOfSuffix}}**. A line below names the area that sets it.
-- A short written summary follows, with a list of next steps, and a last bullet that names the next weakest area. Depending on how your Inflect installation is set up, the summary is written by an AI model or by fixed rules.
+- A short written summary follows, with a list of next steps, and a last bullet that names the next weakest area. Depending on how your Inflect installation is set up, the summary is written by an AI model or by fixed rules. A workspace whose **{{ui:admin.aiResidency.title}}** setting is **{{ui:admin.aiResidency.localLabel}}** always gets the summary written by fixed rules (see [{{ui:admin.nav.aiFeatures}}](../admin/ai-features.md)).
 
 | Area | Healthy items, out of |
 | --- | --- |

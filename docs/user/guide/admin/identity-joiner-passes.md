@@ -29,13 +29,13 @@ Anyone else who opens the page sees **{{ui:admin.joinerPasses.forbidden}}**
 | Column | What it shows |
 | --- | --- |
 | {{ui:admin.integrations.colProvider}} | The directory the pass worked on |
-| {{ui:admin.integrations.colStatus}} | How the pass ended: **{{ui:admin.joinerPasses.statusLabel.PASSED}}**, **{{ui:admin.joinerPasses.statusLabel.PARTIAL}}**, **{{ui:admin.joinerPasses.statusLabel.NOT_APPLICABLE}}** or **{{ui:admin.joinerPasses.statusLabel.ERROR}}** |
+| {{ui:admin.integrations.colStatus}} | How the pass ended: **{{ui:admin.joinerPasses.statusLabel.PASSED}}**, **{{ui:admin.joinerPasses.statusLabel.PARTIAL}}** (at automatic, it created fewer accounts than it planned), **{{ui:admin.joinerPasses.statusLabel.NOT_APPLICABLE}}** (it refused, or every account it planned was held back before any was created) or **{{ui:admin.joinerPasses.statusLabel.ERROR}}** |
 | {{ui:admin.joinerPasses.colMode}} | The step it ran at: **{{ui:admin.writeLadder.mode.DRY_RUN}}** or **{{ui:admin.writeLadder.mode.AUTOMATIC}}** |
 | {{ui:admin.joinerPasses.colStarters}} | How many new starters HR reported |
 | {{ui:admin.joinerPasses.colWouldCreate}} | How many accounts it would create, and how many it did |
 | {{ui:admin.joinerPasses.colRan}} | When it ran |
 
-**{{ui:admin.joinerPasses.decisionsTitle}}.** Click a pass to see one row per starter below the table. If the pass refused, its reason is above them in words, such as **{{ui:admin.joinerPasses.refusalLabel.NO_STARTERS}}** or **{{ui:admin.joinerPasses.refusalLabel.NO_DEPARTMENT_MAP}}**.
+**{{ui:admin.joinerPasses.decisionsTitle}}.** Click a pass to see one row per starter below the table. If the pass refused, its reason is above them in words, such as **{{ui:admin.joinerPasses.refusalLabel.NO_STARTERS}}** or **{{ui:admin.joinerPasses.refusalLabel.NO_DEPARTMENT_MAP}}**. A pass that refused creates no account, even at **{{ui:admin.writeLadder.mode.AUTOMATIC}}**: its rows show what it would have done.
 
 | Column | What it shows |
 | --- | --- |

@@ -54,15 +54,15 @@ Choose a status from the picker in the header. The assessment also suggests a st
 
 ### Edit the risk
 
-Click the pencil at the top of the overview to change the title, description, category, threat, vulnerability, likelihood, impact, owner and dates.
+Click the pencil at the top of the overview to open **{{ui:risks.edit.title}}**. It changes the **{{ui:risks.edit.titleLabel}}**, **{{ui:risks.edit.descriptionLabel}}**, **{{ui:risks.edit.category}}**, **{{ui:risks.edit.treatmentOwner}}**, **{{ui:risks.edit.owner}}**, **{{ui:risks.edit.treatment}}**, **{{ui:risks.edit.nextReview}}** date and **{{ui:risks.edit.treatmentNotes}}**. The review date cannot be in the past; clear the field to remove the date, and the risk keeps no review date once you save. Likelihood and impact are rated on **{{ui:risks.detail.tabAssessment}}**.
 
 ### Assess the risk
 
 On **{{ui:risks.detail.tabAssessment}}**, work down the steps:
 
-1. Rate **{{ui:risks.assessment.likelihood}}** and **{{ui:risks.assessment.impact}}** before controls.
+1. Rate **{{ui:risks.assessment.likelihood}}** and **{{ui:risks.assessment.impact}}** before controls. Each runs over the levels of your workspace's risk matrix, so a workspace with a six-level matrix rates from 1 to 6. The score saved is the score the page shows: likelihood × impact on those levels.
 2. Rate them after controls. The page suggests a residual score from the controls linked to the risk, which you can accept or set yourself.
-3. Choose a treatment decision, and fill in the treatment plan: who does what, by when.
+3. Choose a treatment decision, and fill in the treatment plan: who does what, by when. **{{ui:panels.treatment.create}}** is offered whenever the risk has no open plan, so a risk whose last plan was completed can be given a new one. The completed plan stays on the card as history.
 4. Set how often the risk is reviewed.
 
 Each step saves on its own.

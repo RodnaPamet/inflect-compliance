@@ -295,7 +295,14 @@ const GOVERNED: Readonly<Record<string, Format>> = {
         // and `modal-inference.md`. Two textual inserts, +6/-0 against main.
         // The previous digest was first recomputed over main's file and
         // matched, so the additions are the only change.
-        keyOrderSha: '34e5f437ef4664a904c4544381d38596eaeaf56ae05d9b595b1a60448977dff3',
+        //
+        // Moved 2026-11-18 by two sorted ADDITIONS, the docs sync's two new
+        // developer docs: docs/assistant.md, after `docs/app-layer.md`
+        // ('ap' < 'as'), and docs/knowledge-store.md, after
+        // `docs/keyboard-shortcuts.md` ('ke' < 'kn'). Two textual inserts,
+        // +6/-0 against main; the previous digest was recomputed over main's
+        // file first and matched.
+        keyOrderSha: '4774bd42cb20e315ca4c2bbc0e366613f9dc0a0df0fce474fe5dabf28064bf46',
     },
     // NO keyOrderSha for the two catalogues, deliberately. They gain keys on
     // essentially every i18n PR — #3289 added eighteen while this guard was in

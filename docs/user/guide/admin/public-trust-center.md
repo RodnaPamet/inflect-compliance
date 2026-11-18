@@ -64,6 +64,7 @@ To change the page itself, an Owner or Admin opens **{{ui:admin.trustCenter.titl
 ## What happens next
 
 - Unpublishing makes the address show page-not-found again. Saved content is kept for when you publish again.
+- A download link sent to a requester works once. A link opened while the file is still being scanned, or while the trust center is unpublished, does not open the file and is not used up: it works again once the scan passes or the trust center is published again, as long as it has not expired.
 - The documents are links, not copies: if a linked file moves or is deleted where it is stored, the link on the page breaks.
 
 ## Empty and error states

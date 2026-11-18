@@ -14,7 +14,9 @@ Three **free / public** signal families, each per vendor, each toggleable on
 the `VendorMonitor` row:
 
 1. **Attestation expiry** — the parsed SOC 2 / ISO cert period (`auditPeriodEnd`
-   from the vendor-doc extraction). When the earliest-expiring dated report
+   from the vendor-doc extraction). Expiry is judged by the LATEST report of
+   each type, read newest first with failed extractions skipped, so a renewed
+   report replaces the lapsed one (#5137). When the earliest-expiring of those
    lapses, the vendor's signed assessment no longer reflects a current
    attestation: the monitor sets `Vendor.nextReviewAt = now` (stale → overdue),
    records `ATTESTATION_EXPIRED` + `REASSESSMENT_TRIGGERED`, and — if findings

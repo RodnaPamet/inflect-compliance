@@ -50,13 +50,13 @@ The message joins **{{ui:external.auditShare.returnChannel.submittedTitle}}** on
 
 - The team sees each message on the pack's page and answers it there. A raised finding, once accepted, becomes a finding in the workspace with a remediation task. See [Share an audit pack](../../how-to/audits/share-an-audit-pack.md).
 - Each message is recorded in the workspace's audit log.
-- When the link expires or is revoked, it stops opening the pack.
+- When the link expires or is revoked, or the team deletes the pack, the link stops opening the pack and accepts no more messages.
 
 ## Empty and error states
 
 | What the auditor sees | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:external.auditShare.accessDenied}}**, with **{{ui:external.auditShare.invalidOrExpired}}** or a reason | The link is wrong, has expired or was revoked | Ask the team for a new link |
+| **{{ui:external.auditShare.accessDenied}}**, with **{{ui:external.auditShare.invalidOrExpired}}** or a reason | The link is wrong, has expired or was revoked, or the pack was deleted | Ask the team for a new link |
 | **{{ui:external.auditShare.returnChannel.submittedEmpty}}** | No message has been sent from this browser in this visit | Nothing; it fills as you send messages |
 | The reason the message was refused, such as an expired link or too many messages in a short time | The message was not sent | Follow the reason given; for an expired link, ask for a new one |
 | **{{ui:external.auditShare.returnChannel.submitError}}** | The message was not sent, and the server gave no reason | Try again |

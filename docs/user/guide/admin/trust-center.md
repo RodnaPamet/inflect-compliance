@@ -95,6 +95,7 @@ When an approved requester's link has expired, been used, or been lost, click **
 
 - Publishing and unpublishing are each recorded in the workspace's audit log, and so is saving changes to a published page. Turning **{{ui:admin.trustCenter.ndaRequired}}** on or off is recorded whether or not the page is published. Approving, denying, issuing a new link and removing a document are recorded too.
 - When the requester opens the link, the request shows when the document was downloaded, and the link stops working.
+- A link opened while the file is still being scanned, or while the page is unpublished, does not open the file and is not used up; it works once the scan passes or the page is published again, until it expires.
 
 ## Empty and error states
 
@@ -105,6 +106,8 @@ When an approved requester's link has expired, been used, or been lost, click **
 | The reason the server gave, or **{{ui:admin.trustCenter.toastSaveFailed}}** | The content was not saved | Fix what it names and save again |
 | **{{ui:admin.trustCenter.refusal.TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE}}** | Your role changed while the page was open, and it can no longer save the trust center | Ask an Owner or Admin |
 | The reason the server gave, or **{{ui:admin.trustCenter.toastPublishFailed}}** | The page was not published or unpublished | Try again |
+| **{{ui:admin.trustCenter.gated.approveFailed}}**, or the reason the server gave | No link was issued. A request whose visitor did not accept the non-disclosure terms the trust center requires is refused, and so is a request that was denied or changed while you were looking | Reload the page. For a request without the non-disclosure terms, ask the visitor to request the document again from the public page |
+| **{{ui:admin.trustCenter.gated.addFailed}}**, or the reason the server gave | The document was not added | Check the file and try again |
 | **{{ui:admin.trustCenter.gated.denyFailed}}** or **{{ui:admin.trustCenter.gated.removeFailed}}**, or the reason the server gave | The request was not denied, or the document not removed | Reload the page and try again |
 | **{{ui:admin.trustCenter.gated.emptyDocuments}}** | No document is offered on request | Add one, if you want visitors to ask for it |
 | **{{ui:admin.trustCenter.gated.needLabelAndFile}}** | The name or the file is missing | Fill in both |

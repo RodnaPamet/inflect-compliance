@@ -24,7 +24,7 @@ Security-awareness training is a control in most frameworks, and auditors ask fo
 
 ## What you see
 
-Under the title, a line counts the assignments. Then a table:
+Under the title, a line counts the assignments the page shows. Then a table:
 
 | Column | What it shows |
 | --- | --- |
@@ -36,7 +36,7 @@ Under the title, a line counts the assignments. Then a table:
 
 The table is grouped by status, with the most recently assigned first within each.
 
-The page shows at most 500 assignments at a time. When there are more, a notice says so. Use the search or the status filter to reach any assignment past the first 500.
+The page shows at most 500 assignments: the first 500 in that order. When there are more, a notice says so, and the count under the title is of the 500 shown. The search and the status filter look only through those 500, so an assignment past them cannot be found on this page, whatever the notice suggests.
 
 ## What you can do
 
@@ -53,7 +53,7 @@ Nothing on this page creates a course, assigns one or records a completion.
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 | **{{ui:training.emptyTitle}}** | No training has been assigned in this workspace. {{ui:training.emptyDesc}} | Ask whoever assigns your training to do it through Inflect's API |
 | **{{ui:training.emptyMatchingTitle}}** | No assignment matches the search or the status filter | Clear the search or the filter |
-| A notice that not every assignment is shown | There are more than 500 assignments | Search for the assignment, or filter by status |
+| A notice that not every assignment is shown | There are more than 500 assignments, and only the first 500 are on the page | Searching and filtering narrow those 500 only, and Inflect lists no more than 500 anywhere. Check the rest in the system that assigns your training |
 
 ## Related
 
