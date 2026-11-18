@@ -84,6 +84,7 @@ const calls = (method: string, re: RegExp) =>
 
 const TENANT = {
     userId: 'u-1', tenantId: 't-1', tenantSlug: 'acme', tenantName: 'Acme', role: 'OWNER' as const,
+    membershipRole: 'OWNER' as const,
     permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: true, canExport: true },
     appPermissions: getPermissionsForRole('OWNER'),
     modules: { processCanvas: false },
@@ -100,7 +101,12 @@ const REQUEST = {
     createdAt: '2026-10-30T00:00:00.000Z', document: { label: 'SOC 2 Type II' },
 };
 
-function mount(initial = SAVED, extra: Route[] = [], publicOrigin: string | null = 'https://grc.acme.test') {
+function mount(
+    initial: typeof SAVED & { ndaRequired?: boolean } = SAVED,
+    extra: Route[] = [],
+    publicOrigin: string | null = 'https://grc.acme.test',
+    tenant: typeof TENANT | Record<string, unknown> = TENANT,
+) {
     routes = [
         ...extra,
         on('GET', /\/admin\/trust-center\/documents$/, { body: { documents: [] } }),
@@ -108,7 +114,7 @@ function mount(initial = SAVED, extra: Route[] = [], publicOrigin: string | null
     ];
     return render(
         <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}>
-            <TenantProvider value={TENANT}>
+            <TenantProvider value={tenant as typeof TENANT}>
                 <TooltipProvider>
                     <TrustCenterAdminClient tenantSlug="acme" initial={initial} canPublish publicOrigin={publicOrigin} />
                 </TooltipProvider>
@@ -285,5 +291,67 @@ describe('requests and documents', () => {
         } finally {
             jest.useRealTimers();
         }
+    });
+});
+
+/**
+ * #5764 item 7 — nothing in the product set `ndaRequired`, so the public form's
+ * NDA checkbox and the approval's NDA refusal (#5613) were unreachable. The
+ * compose form now carries the switch, saved by the same PUT, and offers it
+ * only to a viewer that PUT would accept.
+ */
+describe('Require NDA acceptance', () => {
+    const sent = () => JSON.parse(String((calls('PUT', /\/admin\/trust-center$/)[0][1] as RequestInit).body));
+
+    it('says what the switch does, and saves it on', async () => {
+        mount(SAVED, [on('PUT', /\/admin\/trust-center$/, { body: { ...SAVED, ndaRequired: true } })]);
+        const sw = byId('trust-nda-required');
+        expect(sw).toHaveAttribute('role', 'switch');
+        expect(sw).toHaveAttribute('aria-checked', 'false');
+        expect(document.body).toHaveTextContent(T.ndaRequired);
+        expect(document.body).toHaveTextContent(T.ndaRequiredDesc);
+
+        fireEvent.click(sw);
+        expect(byId('trust-unsaved-note')).toHaveTextContent(T.unsavedDraft);
+        await act(async () => { fireEvent.click(byId('trust-save')); });
+
+        expect(sent().ndaRequired).toBe(true);
+        expect(byId('trust-nda-required')).toHaveAttribute('aria-checked', 'true');
+        expect(document.getElementById('trust-unsaved-note')).toBeNull();
+    });
+
+    it('shows a stored NDA as on, and saves it off', async () => {
+        mount({ ...SAVED, ndaRequired: true }, [on('PUT', /\/admin\/trust-center$/, { body: { ...SAVED, ndaRequired: false } })]);
+        expect(byId('trust-nda-required')).toHaveAttribute('aria-checked', 'true');
+        fireEvent.click(byId('trust-nda-required'));
+        await act(async () => { fireEvent.click(byId('trust-save')); });
+        expect(sent().ndaRequired).toBe(false);
+    });
+
+    it.each([
+        ['an editor membership, which the admin API refuses at the edge', { membershipRole: 'EDITOR', role: 'EDITOR', appPermissions: getPermissionsForRole('EDITOR') }],
+        ['a reader-based custom role holding admin.manage, which the usecase floor refuses', {
+            membershipRole: 'ADMIN',
+            role: 'READER',
+            permissions: { canRead: true, canWrite: false, canAdmin: false, canAudit: false, canExport: false },
+            appPermissions: getPermissionsForRole('ADMIN'),
+        }],
+    ])('is not offered to %s, and a save then leaves the stored value alone', async (_label, over) => {
+        mount({ ...SAVED, ndaRequired: true }, [on('PUT', /\/admin\/trust-center$/, { body: SAVED })], 'https://grc.acme.test', { ...TENANT, ...over });
+        expect(document.getElementById('trust-nda-required')).toBeNull();
+        expect(document.body).not.toHaveTextContent(T.ndaRequiredDesc);
+        await act(async () => { fireEvent.click(byId('trust-save')); });
+        expect(sent()).not.toHaveProperty('ndaRequired');
+    });
+
+    it("says the server's named refusal in the page's own words", async () => {
+        mount(SAVED, [
+            on('PUT', /\/admin\/trust-center$/, {
+                status: 403,
+                body: { error: { code: 'FORBIDDEN', message: 'You do not have permission to compose the trust center.', details: { reason: 'TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE' } } },
+            }),
+        ]);
+        await act(async () => { fireEvent.click(byId('trust-save')); });
+        expect(said(toastError)).toEqual([T.refusal.TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE]);
     });
 });

@@ -48,11 +48,13 @@ Visitors can read the page and follow its document links without signing in.
 
 ### Ask for a document on request
 
-A visitor clicks **{{ui:external.trustCenter.gated.request}}** beside a document and fills in **{{ui:external.trustCenter.gated.name}}**, **{{ui:external.trustCenter.gated.email}}** and, if they like, **{{ui:external.trustCenter.gated.company}}**, then clicks **{{ui:external.trustCenter.gated.submit}}**. If the workspace requires visitors to accept non-disclosure terms, the form also has the box **{{ui:external.trustCenter.gated.nda}}**, and the request cannot be sent until it is ticked. The page says: {{ui:external.trustCenter.gated.received}} It says the same whoever asks, so it reveals nothing about how the request is decided. Nothing opens until someone in the workspace approves it.
+A visitor clicks **{{ui:external.trustCenter.gated.request}}** beside a document and fills in **{{ui:external.trustCenter.gated.name}}**, **{{ui:external.trustCenter.gated.email}}** and, if they like, **{{ui:external.trustCenter.gated.company}}**, then clicks **{{ui:external.trustCenter.gated.submit}}**. If the workspace requires NDA acceptance, the form also asks them to tick **{{ui:external.trustCenter.gated.nda}}**, and **{{ui:external.trustCenter.gated.submit}}** stays greyed out until they do. The page says: {{ui:external.trustCenter.gated.received}} It says the same whoever asks, so it reveals nothing about how the request is decided. Nothing opens until someone in the workspace approves it.
 
 ### Add documents on request, and approve requests
 
 On the **{{ui:admin.trustCenter.title}}** settings, under **{{ui:admin.trustCenter.gated.title}}**, an Owner or Admin types **{{ui:admin.trustCenter.gated.labelField}}**, chooses the file and clicks **{{ui:admin.trustCenter.gated.upload}}**. The file is stored as an evidence record and scanned; it can be downloaded only once the scan passes. The trust center has to be saved once before documents can be added.
+
+To make visitors accept the non-disclosure terms before they ask, an Owner or Admin turns on **{{ui:admin.trustCenter.ndaRequired}}** on the same settings and saves. {{ui:admin.trustCenter.ndaRequiredDesc}}
 
 Requests appear under **{{ui:admin.trustCenter.gated.requestsTitle}}**, newest first, with who asked, for which document, and **{{ui:admin.trustCenter.gated.ndaAccepted}}** when they accepted the non-disclosure terms. Click **{{ui:admin.trustCenter.gated.approve}}** to create a download link. The link is shown once, with **{{ui:admin.trustCenter.gated.copyLink}}** and **{{ui:admin.trustCenter.gated.emailLink}}**: send it to the requester yourself. It works once and expires in 7 days, and the request then shows when it was downloaded or when the link expires.
 

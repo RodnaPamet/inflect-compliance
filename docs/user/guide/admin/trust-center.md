@@ -41,6 +41,7 @@ Under the title, a badge reads **{{ui:admin.trustCenter.statusPublic}}** or **{{
 | {{ui:admin.trustCenter.frameworksToShow}} | Each framework's name and the status you choose to state, such as "Type II — current". {{ui:admin.trustCenter.frameworksDesc}} |
 | {{ui:admin.trustCenter.publishedDocuments}} | Each document's label and its web address. {{ui:admin.trustCenter.publishedDocumentsDesc}} |
 | {{ui:admin.trustCenter.searchIndexing}} | A checkbox, **{{ui:admin.trustCenter.allowIndexing}}**. Off by default |
+| {{ui:admin.trustCenter.ndaSection}} | A switch, **{{ui:admin.trustCenter.ndaRequired}}**. Off by default. {{ui:admin.trustCenter.ndaRequiredDesc}} |
 
 **{{ui:admin.trustCenter.publicPreview}}.** Beside the form, the page as visitors would see it, drawn from what is in the form now: {{ui:admin.trustCenter.previewDraftNote}}
 
@@ -58,6 +59,12 @@ Fill in the fields. Click **{{ui:admin.trustCenter.framework}}** or **{{ui:admin
 
 A row left wholly empty is simply not published. A row filled in halfway is marked in red (**{{ui:admin.trustCenter.rowIncompleteFramework}}** or **{{ui:admin.trustCenter.rowIncompleteDocument}}**), and so is a document address that is not a full web address (**{{ui:admin.trustCenter.rowBadUrl}}**). **{{ui:admin.trustCenter.save}}** stays greyed out until each one is fixed or removed.
 
+### Require NDA acceptance
+
+Turn on **{{ui:admin.trustCenter.ndaRequired}}** and click **{{ui:admin.trustCenter.save}}**. From then on, a visitor asking for a document on request must tick **{{ui:external.trustCenter.gated.nda}}** before they can send the request, and accepted requests show **{{ui:admin.trustCenter.gated.ndaAccepted}}** in the list.
+
+A request made before you turned it on, without accepting the terms, cannot be approved: **{{ui:admin.trustCenter.gated.approve}}** is refused and the reason is shown. Ask that visitor to request the document again from the public page. Turn the switch off and save to stop asking.
+
 ### Publish the page
 
 Click **{{ui:admin.trustCenter.publish}}**. A dialog, **{{ui:admin.trustCenter.confirmTitle}}**, gives the address and reminds you that anyone can open it with no sign-in. If you have unsaved edits, it adds: {{ui:admin.trustCenter.confirmSavesFirst}} Click **{{ui:admin.trustCenter.confirmLabel}}**. Your edits are saved, then the page is published, so what goes public is what you see; if the save is refused, nothing is published and the reason is shown. The badge turns to **{{ui:admin.trustCenter.statusPublic}}**.
@@ -74,7 +81,7 @@ Click **{{ui:admin.trustCenter.gated.remove}}** beside it. It leaves the list at
 
 ### Approve a request
 
-Click **{{ui:admin.trustCenter.gated.approve}}** on a waiting request. A box appears with the download link, which is shown only this once: copy it with **{{ui:admin.trustCenter.gated.copyLink}}**, or click **{{ui:admin.trustCenter.gated.emailLink}}** to open an email to the requester with the link in it. Inflect does not send it for you. The link works once and expires after 7 days. Click **{{ui:admin.trustCenter.gated.dismissLink}}** when it is sent.
+Click **{{ui:admin.trustCenter.gated.approve}}** on a waiting request. If NDA acceptance is required and the request did not accept the terms, the approval is refused with the reason, and no link is issued. Otherwise a box appears with the download link, which is shown only this once: copy it with **{{ui:admin.trustCenter.gated.copyLink}}**, or click **{{ui:admin.trustCenter.gated.emailLink}}** to open an email to the requester with the link in it. Inflect does not send it for you. The link works once and expires after 7 days. Click **{{ui:admin.trustCenter.gated.dismissLink}}** when it is sent.
 
 ### Deny a request
 
@@ -86,7 +93,7 @@ When an approved requester's link has expired, been used, or been lost, click **
 
 ## What happens next
 
-- Saving, publishing and unpublishing are each recorded in the workspace's audit log, and so are approving, denying, issuing a new link and removing a document.
+- Publishing and unpublishing are each recorded in the workspace's audit log, and so is saving changes to a published page. Turning **{{ui:admin.trustCenter.ndaRequired}}** on or off is recorded whether or not the page is published. Approving, denying, issuing a new link and removing a document are recorded too.
 - When the requester opens the link, the request shows when the document was downloaded, and the link stops working.
 - A link opened while the file is still being scanned, or while the page is unpublished, does not open the file and is not used up; it works once the scan passes or the page is published again, until it expires.
 
@@ -97,6 +104,7 @@ When an approved requester's link has expired, been used, or been lost, click **
 | **{{ui:admin.forbidden.title}}** | Your role cannot use the admin pages | Ask an Owner or Admin |
 | A row marked in red | That framework or document is filled in halfway, or its address is not a full web address | Complete the row, or remove it |
 | The reason the server gave, or **{{ui:admin.trustCenter.toastSaveFailed}}** | The content was not saved | Fix what it names and save again |
+| **{{ui:admin.trustCenter.refusal.TRUST_CENTER_COMPOSE_NEEDS_ADMIN_MANAGE}}** | Your role changed while the page was open, and it can no longer save the trust center | Ask an Owner or Admin |
 | The reason the server gave, or **{{ui:admin.trustCenter.toastPublishFailed}}** | The page was not published or unpublished | Try again |
 | **{{ui:admin.trustCenter.gated.approveFailed}}**, or the reason the server gave | No link was issued. A request whose visitor did not accept the non-disclosure terms the trust center requires is refused, and so is a request that was denied or changed while you were looking | Reload the page. For a request without the non-disclosure terms, ask the visitor to request the document again from the public page |
 | **{{ui:admin.trustCenter.gated.addFailed}}**, or the reason the server gave | The document was not added | Check the file and try again |
