@@ -16,7 +16,8 @@
  *      leave the Total card reading as selected, and is cleared by
  *      "Clear filters"; and under a Category filter the status cards show
  *      a dash with the reason, not a count that ignores the filter;
- *   4. a bulk status change the server applied to only some controls says so;
+ *   4. a bulk status change the server applied to only some controls says so,
+ *      and so does a bulk delete that left controls with kept records;
  *   5. a second owner can be picked in the Owner filter;
  *   6. a custom control's stored theme category reads as its label.
  */
@@ -72,9 +73,26 @@ const mockToast = {
     warning: jest.fn(),
     info: jest.fn(),
 };
+// The bulk delete's undo window, collapsed: the real hook commits after five
+// seconds on a timer; this one commits at once, through the same callbacks
+// (`action`, then `onCommit` with its result, or `onError`).
+const mockTriggerUndo = jest.fn(
+    (input: {
+        action: () => Promise<unknown>;
+        onCommit?: (result: unknown) => void;
+        onError?: (error: unknown) => void;
+    }) => {
+        void input.action().then(
+            (result) => input.onCommit?.(result),
+            (error) => input.onError?.(error),
+        );
+        return 'undo-toast';
+    },
+);
 jest.mock('@/components/ui/hooks', () => ({
     ...jest.requireActual('@/components/ui/hooks'),
     useToast: () => mockToast,
+    useToastWithUndo: () => mockTriggerUndo,
 }));
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -119,6 +137,8 @@ const KPI = { total: 2, implemented: 0, inProgress: 2, notStarted: 0 };
 let listRows: ControlRow[] = ALL_ROWS;
 /** What the bulk status POST returns. */
 let bulkStatusResponse: unknown = { results: [], updated: 0 };
+/** What the bulk delete POST returns. */
+let bulkDeleteResponse: unknown = { results: [], deleted: 0 };
 
 function respond(body: unknown, status = 200): Response {
     return {
@@ -143,6 +163,7 @@ function installFetch() {
             return respond({ rows, truncated: false, kpiCounts: KPI });
         }
         if (p === '/api/t/acme/controls/bulk/status') return respond(bulkStatusResponse);
+        if (p === '/api/t/acme/controls/bulk/delete') return respond(bulkDeleteResponse);
         if (p.endsWith('/controls/health-verdicts')) return respond({ verdicts: [] });
         if (p.endsWith('/dashboard/trends')) return respond({ dataPoints: [] });
         // Member lookups, activity feeds, evidence lists — empty.
@@ -280,6 +301,8 @@ async function openBulkActions(): Promise<HTMLElement> {
 beforeEach(() => {
     listRows = ALL_ROWS;
     bulkStatusResponse = { results: [], updated: 0 };
+    bulkDeleteResponse = { results: [], deleted: 0 };
+    mockTriggerUndo.mockClear();
     mockNav.router.push.mockReset();
     mockNav.router.replace.mockReset();
     for (const fn of Object.values(mockToast)) fn.mockReset();
@@ -602,6 +625,74 @@ describe('Controls list — bulk status reports what the server skipped', () => 
         await applyBulkStatus();
         await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith(C.bulk.applied));
         expect(mockToast.warning).not.toHaveBeenCalled();
+    });
+});
+
+describe('Controls list — bulk delete reports the controls the server kept (#5763)', () => {
+    async function applyBulkDelete() {
+        await screen.findByText(CUSTOM.name);
+        await selectEveryRow();
+        fireEvent.click(
+            within(await openBulkActions()).getByRole('option', { name: C.bulk.delete }),
+        );
+        const apply = await waitFor(() => {
+            const el = document.getElementById('bulk-apply-btn') as HTMLButtonElement | null;
+            expect(el).not.toBeNull();
+            expect(el).not.toBeDisabled();
+            return el as HTMLButtonElement;
+        });
+        await act(async () => {
+            fireEvent.click(apply);
+        });
+        // The POST went out — so a missing toast below is the page's doing.
+        await waitFor(() =>
+            expect(
+                (global.fetch as jest.Mock).mock.calls.some(([u]) =>
+                    String(u).endsWith('/controls/bulk/delete'),
+                ),
+            ).toBe(true),
+        );
+    }
+
+    it('a control with a test plan: a warning that it was not deleted, and why', async () => {
+        bulkDeleteResponse = {
+            results: [
+                {
+                    id: CUSTOM.id,
+                    status: 'blocked',
+                    reason: 'CONTROL_HAS_KEPT_RECORDS',
+                    blockedBy: ['ControlTestPlan'],
+                },
+                { id: OTHER.id, status: 'ok' },
+            ],
+            deleted: 1,
+        };
+        mountAs('ADMIN');
+        await applyBulkDelete();
+        await waitFor(() =>
+            expect(mockToast.warning).toHaveBeenCalledWith(
+                C.bulk.deleteBlocked.replace('{blocked}', '1').replace('{total}', '2'),
+            ),
+        );
+        expect(mockToast.error).not.toHaveBeenCalled();
+    });
+
+    it('everything deleted: no warning (the one above is the response, not the page)', async () => {
+        bulkDeleteResponse = {
+            results: [
+                { id: CUSTOM.id, status: 'ok' },
+                { id: OTHER.id, status: 'ok' },
+            ],
+            deleted: 2,
+        };
+        mountAs('ADMIN');
+        await applyBulkDelete();
+        await waitFor(() => expect(mockTriggerUndo).toHaveBeenCalled());
+        await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        });
+        expect(mockToast.warning).not.toHaveBeenCalled();
+        expect(mockToast.error).not.toHaveBeenCalled();
     });
 });
 
