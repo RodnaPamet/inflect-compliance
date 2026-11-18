@@ -56,7 +56,7 @@ Each tool shows:
 - **{{ui:agents.externalTools.blocked}}**, when the definition changed in a way that stops agents calling it;
 - for a tool the server says changes things, **{{ui:agents.externalTools.priorStateLabel}}** (see below).
 
-When the server offers tools whose names cannot be accepted, a line says how many were left out and why.
+Above the list, a line says how many tools the server advertises, such as "This server advertises 12 tools." When the server offers tools whose names cannot be accepted, a line says how many were left out and why. When only part of the server's catalogue could be read, a warning says so: a tool beyond what was read is not listed and cannot be approved.
 
 ## What you can do
 

@@ -50,8 +50,8 @@ The figures come from a snapshot that each workspace takes once a day, at 05:00 
 | {{ui:org.widgets.overdueEvidence}} | How many evidence items are past their review date, and how many fall due within 7 days |
 | {{ui:org.widgets.tenants}} | How many workspaces the organization has, and how many have a snapshot |
 | {{ui:org.widgets.tenantHealthDistribution}} | How many workspaces are healthy, at risk, in critical health or pending |
-| {{ui:org.widgets.coverageByTenant}} | One row per workspace: its health, coverage, open and critical risks and overdue evidence. Click a row to open that workspace's dashboard |
-| {{ui:org.widgets.drilldown}} | Links to {{ui:org.nav.nonPerformingControls}}, {{ui:org.nav.criticalRisks}} and {{ui:org.nav.overdueEvidence}}, with their counts |
+| {{ui:org.widgets.coverageByTenant}} | One row per workspace: its health, coverage, open and critical risks and overdue evidence. An Owner or Admin clicks a row to open that workspace's dashboard; for a Reader the rows are not links |
+| {{ui:org.widgets.drilldown}} | Links to {{ui:org.nav.nonPerformingControls}}, {{ui:org.nav.criticalRisks}} and {{ui:org.nav.overdueEvidence}}, with their counts. A Reader sees the counts only, without the links |
 | Trends | Open risks, control coverage and overdue evidence over the last 90 days |
 | {{ui:org.widgets.threatLevel}} | The organization's current threat level, from Guarded to Severe, with a headline and who set it when |
 | {{ui:org.widgets.securityMaturity}} | A radar of maturity, rated from Initial to Optimizing for each of the six NIST CSF functions |
@@ -82,7 +82,7 @@ Click **{{ui:org.dashboard.editDashboard}}**. You can then:
 - drag a widget to move it, or drag its corner to resize it;
 - click **{{ui:org.dashboard.addWidget}}** to add one;
 - click a widget's gear icon to change its title, chart type or settings, or its bin icon to remove it. The widget leaves the grid at once, and a message offers **{{ui:org.dashboard.undo}}** for 5 seconds; after that it is removed;
-- click **{{ui:org.dashboard.resetLayout}}** to discard your changes and restore the recommended layout.
+- click **{{ui:org.dashboard.resetLayout}}** and confirm to discard the current layout and restore the recommended one. This cannot be undone.
 
 Each change is saved as you make it, for everyone in the organization. Click **{{ui:org.dashboard.done}}** when you have finished.
 
@@ -90,8 +90,9 @@ Each change is saved as you make it, for everyone in the organization. Click **{
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| **{{ui:org.dashboard.onboardingTitle}}** | The organization has no workspaces yet | An owner creates one under [{{ui:org.nav.allTenants}}](workspaces.md). Its figures appear after the next daily snapshot |
-| **{{ui:org.dashboard.emptyTitle}}** | The dashboard has no widgets | An Owner or Admin clicks **{{ui:org.dashboard.editDashboard}}**, then **{{ui:org.dashboard.addWidget}}**, or resets to the recommended layout |
+| **{{ui:org.dashboard.onboardingTitle}}**, with a **{{ui:org.dashboard.manageTenants}}** button | The organization has no workspaces yet, and you are an Owner | Click **{{ui:org.dashboard.manageTenants}}** and create one under [{{ui:org.nav.allTenants}}](workspaces.md). Its figures appear after the next daily snapshot |
+| **{{ui:org.dashboard.onboardingTitleAskOwner}}** | The organization has no workspaces yet, and only an Owner can create one | Ask an Owner to create the first workspace |
+| **{{ui:org.dashboard.emptyTitle}}** | The dashboard has no widgets | An Owner or Admin clicks **{{ui:org.dashboard.editDashboard}}**, then **{{ui:org.dashboard.addWidget}}**, or resets to the recommended layout. A Reader is told to ask one |
 | **{{ui:org.widgets.notYetRated}}** | Nobody has rated maturity yet | An Owner or Admin rates it |
 | **{{ui:org.widgets.postureEmpty}}** | Nobody has set a threat level yet | An Owner or Admin updates it |
 | **{{ui:org.dashboard.failedSaveLayout}}** | A move or resize was not saved | Try again |

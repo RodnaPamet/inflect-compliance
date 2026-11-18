@@ -55,7 +55,8 @@ End-to-end architecture for periodic background monitoring and grouped notificat
 │  NotificationOutbox table (Prisma)                                      │
 │  status: PENDING → SENT | FAILED                                        │
 │  dedupeKey: unique (prevents duplicate sends)                           │
-│  processOutbox.ts picks up PENDING rows and sends via sendEmail()       │
+│  processOutbox.ts claims due PENDING rows (with a lease) and sends via  │
+│  sendEmail()                                                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,7 +116,7 @@ All templates:
 ### Template Extensibility
 
 To add a new digest category:
-1. Add enum value to `EmailNotificationType` in `schema.prisma`
+1. Add enum value to `EmailNotificationType` in `prisma/schema/enums.prisma`
 2. Add payload interface + builder in `digest-templates.ts`
 3. Add case to `buildDigestEmail()` in `digest-dispatcher.ts`
 4. Add monitor job if scanning a new entity type
@@ -125,7 +126,20 @@ To add a new digest category:
 ### Mechanism
 - **Dedupe key format**: `{tenantId}:{category}:{email}:digest:{YYYY-MM-DD}`
 - **Enforcement**: `NotificationOutbox.dedupeKey` has a unique constraint
-- **Behavior**: If the same digest was already enqueued today, Prisma throws `P2002`, which is caught and silently skipped
+- **Behavior**: The enqueue is `createMany({ skipDuplicates: true })` — `ON CONFLICT DO NOTHING` — so a digest already enqueued today is skipped without an error. It is never a caught `P2002`: inside an interactive transaction a unique violation aborts the whole transaction, so one duplicate would have rolled back every other write in it (#5061)
+
+### Sending exactly once
+
+`processOutbox` claims a row before sending it, and the claim is also a lease
+(#5110): it requires `sendAfter <= now` and moves `sendAfter` forward by
+`OUTBOX_CLAIM_LEASE_MS` (15 minutes), in the same conditional update that bumps
+`attempts`. The drain only reads rows whose `sendAfter` has passed, so a row
+mid-send is invisible to every other pass — the next scheduled tick or an admin
+pressing "Process Outbox" — and refused by every other claim. Success marks the
+row SENT; a failure puts `sendAfter` back to the value the pass read, so the row
+is due again on the next pass, and that write is conditional on the attempts
+value this pass's claim wrote, so it cannot release a lease another pass took
+after this one's expired.
 
 ### Implications
 - **Same day, same recipient, same category** → exactly one email

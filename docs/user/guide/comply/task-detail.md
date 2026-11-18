@@ -17,10 +17,11 @@ Open **{{ui:nav.tasks}}** under **{{ui:nav.comply}}** and click a task. Tasks al
 | View the task, its evidence, links, comments and activity | Every role: Owner, Admin, Editor, Reader, Auditor and AI admin |
 | Change the status, edit the task, assign it, set a reviewer, tick steps | Owner, Admin, Editor |
 | Attach evidence, add or remove links | Owner, Admin, Editor |
-| Comment, and watch or unwatch the task | Owner, Admin, Editor |
+| Comment, and remove another member from the watchers | Owner, Admin, Editor |
+| Watch or unwatch the task yourself | Every role |
 | Delete the task | Owner, Admin |
 
-If your workspace uses custom roles, the page offers only what your role's permissions allow.
+If your workspace uses custom roles, the page offers only what your role's permissions allow. Commenting needs only the permission to edit tasks, whatever the base role.
 
 ## What it is for
 
@@ -50,11 +51,11 @@ A task created from a control template carries its **{{ui:tasks.checklist.headin
 
 ### Change the status
 
-Choose a status from the picker in the header. Closing or cancelling a task asks for a short resolution note: {{ui:tasks.detail.terminalDesc}} A closed task cannot be moved to another status.
+Choose a status from the picker in the header. An older task that was marked {{ui:tasks.statusLabels.RESOLVED}} keeps showing that status in the picker; {{ui:tasks.statusLabels.RESOLVED}} is no longer offered as a choice, so close the task instead. Closing or cancelling a task asks for a short resolution note: {{ui:tasks.detail.terminalDesc}} A closed task cannot be moved to another status.
 
 ### Assign it, set a reviewer, watch it
 
-Pick a member and click **{{ui:tasks.detail.assign}}**, or **{{ui:tasks.detail.setReviewer}}** to name who signs the task off. A reviewer must be an active member whose role can sign tasks off. **{{ui:tasks.detail.watch}}** sends you its updates; **{{ui:tasks.detail.unwatch}}** stops them.
+Pick a member and click **{{ui:tasks.detail.assign}}**, or **{{ui:tasks.detail.setReviewer}}** to name who signs the task off. A reviewer must be an active member whose role can sign tasks off. **{{ui:tasks.detail.watch}}** sends you its updates; **{{ui:tasks.detail.unwatch}}** stops them. **{{ui:tasks.detail.removeWatcher}}**, the cross beside a watcher's name, takes them off the list, with a few seconds to click **{{ui:tasks.detail.undo}}**. Anyone can remove themselves; removing someone else needs a role that can edit tasks.
 
 ### Edit the task
 
@@ -70,7 +71,7 @@ On **{{ui:tasks.detail.tabEvidence}}**, upload a file or give a link. Removing e
 
 ### Link it to other records
 
-On **{{ui:tasks.detail.tabLinks}}**, click **{{ui:tasks.detail.addLink}}**, choose what to link and click **{{ui:tasks.detail.link}}**. Remove a link with **{{ui:tasks.detail.removeLink}}**, with a few seconds to undo.
+On **{{ui:tasks.detail.tabLinks}}**, click **{{ui:tasks.detail.addLink}}**. Choose the kind of record ({{ui:tasks.linkEntity.CONTROL}}, {{ui:tasks.linkEntity.RISK}}, {{ui:tasks.linkEntity.ASSET}}, {{ui:tasks.linkEntity.EVIDENCE}}, {{ui:tasks.linkEntity.POLICY}}, {{ui:tasks.linkEntity.VENDOR}}, {{ui:tasks.linkEntity.AUDIT_PACK}} or {{ui:tasks.linkEntity.INCIDENT}}), the record, and how it relates ({{ui:tasks.linkRelation.RELATES_TO}}, {{ui:tasks.linkRelation.CAUSED_BY}}, {{ui:tasks.linkRelation.MITIGATED_BY}} or {{ui:tasks.linkRelation.EVIDENCE_FOR}}), then click **{{ui:tasks.detail.link}}**. Remove a link with **{{ui:tasks.detail.removeLink}}**, with a few seconds to undo.
 
 ### Comment
 

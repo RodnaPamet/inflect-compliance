@@ -15,14 +15,20 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 | Action | Roles |
 | --- | --- |
 | Open the page | Owner, Admin, AI admin |
+| Answer a retrospective sample audit | Owner, Admin, except for an approval they signed themselves |
 
-Everyone else sees **{{ui:agents.reviewQuality.accessTitle}}** instead of the page. The page only reads; it changes nothing.
+Everyone else sees **{{ui:agents.reviewQuality.accessTitle}}** instead of the page. An AI admin reads the sample-audit queue but is not offered **{{ui:agents.sampleAudit.answer}}**; the row says so instead. Apart from answering a sample audit, the page only reads.
 
 ## What you see
 
 **The period.** A line giving the window it covers, such as the last 30 days, and how many proposals were decided, approved and rejected in it. Under it: {{ui:admin.reviewQuality.upperTailNote}}
 
 **{{ui:admin.reviewQuality.unobservableTitle}}.** Shown first, on purpose: {{ui:admin.reviewQuality.unobservable.DIFF_EXPANSION}}
+
+**{{ui:agents.sampleAudit.title}}.** {{ui:agents.sampleAudit.intro}} This section is shown even when no proposal was decided in the period, because a drawn audit stays open until somebody answers it.
+
+- **The disagreement rate**, over every approval ever drawn rather than over the period above: the share of answers that disagreed with the approval, always beside how many were answered and how many were drawn, and a line counting the answers that agreed, disagreed or could not tell and the audits still waiting. A "could not tell" answer counts in the rate and lowers it; an audit still waiting counts in neither. When nothing has been drawn, or nothing drawn has been answered, the rate is not reported and the sentence says which.
+- **The queue**, one row per drawn approval still waiting for an answer: the kind of proposal, the agent, when it was approved and when it was drawn, who was asked to answer it, or **{{ui:agents.sampleAudit.notAssigned}}**, and the link **{{ui:agents.sampleAudit.readTheProposal}}**, which opens the proposal on the agent proposals page. Anyone who may answer can answer any row; the name only says whose it is.
 
 **{{ui:admin.reviewQuality.signalsTitle}}.** Each pattern that crossed its threshold, with who or which agent it is about, what was observed, the threshold and how many decisions it rests on. An agent is named and linked to its page; a reviewer is named. A member or agent removed since is said to be removed:
 
@@ -40,13 +46,24 @@ Everyone else sees **{{ui:agents.reviewQuality.accessTitle}}** instead of the pa
 
 ## What you can do
 
-Read it, and act elsewhere: talk to a reviewer whose decisions are implausibly fast, or tighten an agent's policy card from the agent's page. The agent proposals queue lists only proposals still waiting, so it cannot show a reviewer's past decisions. A fast decision is reported as fast, never as unread; the page cannot tell whether anyone looked.
+### Answer a sample audit
+
+Read the approval through **{{ui:agents.sampleAudit.readTheProposal}}**, then click **{{ui:agents.sampleAudit.answer}}** on its row. Choose **{{ui:agents.sampleAudit.outcome.CONCURRED}}**, **{{ui:agents.sampleAudit.outcome.DISSENTED}}** or **{{ui:agents.sampleAudit.outcome.INDETERMINATE}}**. When you disagree, tick every reason that applies under **{{ui:agents.sampleAudit.codesLabel}}**, such as **{{ui:agents.sampleAudit.code.SHOULD_HAVE_BEEN_REJECTED}}** or **{{ui:agents.sampleAudit.code.OUTSIDE_AGENT_REMIT}}**. Click **{{ui:agents.sampleAudit.submit}}**. The row leaves the queue and the answer counts in the disagreement rate. An answer cannot be changed.
+
+You cannot answer an approval you signed, including as the first of two approvers: the row shows **{{ui:agents.sampleAudit.refusal.SELF_REVIEW}}** instead of the button.
+
+### Act on the figures
+
+Read them, and act elsewhere: talk to a reviewer whose decisions are implausibly fast, or tighten an agent's policy card from the agent's page. The agent proposals queue lists only proposals still waiting, so it cannot show a reviewer's past decisions. A fast decision is reported as fast, never as unread; the page cannot tell whether anyone looked.
 
 ## Empty and error states
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | {{ui:admin.reviewQuality.empty}} | No proposal was decided in the window | Nothing to do |
+| {{ui:agents.sampleAudit.empty}} | Every drawn approval has been answered, or none has been drawn | Nothing to do |
+| **{{ui:agents.sampleAudit.answerFailed}}** | The answer was not saved; a reason from the server is shown when there is one | Try again |
+| {{ui:agents.sampleAudit.refusal.ALREADY_ANSWERED}} | Somebody answered the audit while you had the page open | Nothing to do |
 | {{ui:admin.reviewQuality.signalsNone}} | Nothing looked wrong | Nothing to do |
 | A note that only the most recent decisions were read | There were more decisions than the page reads, so every figure covers the latest ones | Read the figures as covering only the most recent decisions |
 | **{{ui:agents.reviewQuality.accessTitle}}** | Your role cannot read agent oversight | Ask an Owner or Admin |

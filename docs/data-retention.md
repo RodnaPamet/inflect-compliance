@@ -473,6 +473,20 @@ regulation may force) · **Mechanism** · **Owner** · **Cleanup wiring** ·
 | `daily-evidence-expiry` (daily 06:00 UTC) | `runDailyEvidenceExpiryNotifications` (`jobs/dailyEvidenceExpiry.ts`); reminder generation also in `runEvidenceRetentionNotifications` (`jobs/retention-notifications.ts`) | N-day-before (30/7/1) reminder tasks for expiring evidence, gated by `Tenant.reminderDaysBefore` (default 14). | Evidence only |
 | `data-lifecycle` (daily 03:00 UTC) | `purgeSoftDeletedOlderThan` (90-day grace, 13 `SOFT_DELETE_MODELS`) · `purgeExpiredEvidenceOlderThan` (hard-delete archived evidence > 365 days) · `runRetentionSweep` (cross-model `retentionUntil` sweep over the 2 `RETENTION_MODELS` that have a writer — `Asset`; `Evidence` is skipped by that loop and handled by the separate `retention-sweep` cron) — all in `jobs/data-lifecycle.ts` | The actual purge engine: hard-deletes aged soft-deletes + aged archived evidence; sweeps `retentionUntil` across the retention models. | 13 soft-delete + 2 retention models |
 
+**A soft delete that a `RESTRICT` child would block is refused, and the purge
+survives one that slipped through** (#5083, owner decision 2026-11-13). Several
+children of the soft-delete models sit behind an `ON DELETE RESTRICT` foreign
+key and are not soft-delete models themselves — a control's test runs, test
+plans and exceptions, a risk's treatment plans — so the 90-day hard delete would
+raise SQLSTATE 23503. `deleteControl`, `deleteRisk`, `bulkDeleteRisk` and
+`bulkDeleteVendor` refuse with a 409 naming what blocks and how many
+(`src/lib/soft-delete-blockers.ts`); nothing cascades the child, because those
+children are evidence. The blocker map is re-derived from the schema under
+Prisma's own default-`Restrict` rule by
+`tests/guardrails/soft-delete-blockers-match-the-schema.test.ts`. A row that is
+still held down when `data-lifecycle` reaches it is skipped with a warning and
+counted, instead of aborting the purge for every tenant (#5509).
+
 ### Legacy access snapshots — a tenant setting, 90 days by default
 
 `data-lifecycle` also runs `purgeLegacyAccessSnapshotsOlderThan`

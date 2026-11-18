@@ -41,13 +41,15 @@ When the latest reading is red and the indicator is linked to a risk, **{{ui:ris
 
 Fill in at least a name, set the thresholds and the direction, and click **{{ui:risks.kri.create}}**. **{{ui:risks.kri.directionLabel}}** says which way is bad: **{{ui:risks.kri.dirHigherWorse}}** for most figures, **{{ui:risks.kri.dirLowerWorse}}** for figures like patch coverage.
 
+The thresholds and the target accept a decimal comma as well as a decimal point. An empty box means no threshold. Anything else that is not a number is refused with **{{ui:risks.kri.thresholdNotNumber}}**, and nothing is saved. The **{{ui:risks.kri.ownerLabel}}** must be an active member of the workspace, and the **{{ui:risks.kri.riskLabel}}** must be a risk on the register that has not been deleted.
+
 ### Record a reading
 
 On an indicator's card, type the value under **{{ui:risks.kri.recordReading}}** and click **{{ui:risks.kri.add}}**. A value that is not a number is refused with **{{ui:risks.kri.readingNotNumber}}**. The reading is coloured against the thresholds. If it is worse than the previous one and the indicator is linked to a risk, a remediation task may be created for that risk; a message tells you when it is.
 
 ### Edit, deactivate or delete an indicator
 
-Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.kri.activate}}**) and **{{ui:risks.kri.delete}}** at the bottom of its card. Deleting an indicator removes all its readings and cannot be undone. If an edit or a deletion is refused, the reason appears in its dialog and the dialog stays open.
+Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.kri.activate}}**) and **{{ui:risks.kri.delete}}** at the bottom of its card. **{{ui:risks.kri.edit}}** changes every field, including the risk the indicator watches: pick another risk, or clear the field to unlink it. The edit dialog keeps its own copy of the fields, so an indicator you were part-way through creating is left as it was. Deleting an indicator removes all its readings and cannot be undone. If an edit or a deletion is refused, the reason appears in its dialog and the dialog stays open.
 
 ## Empty and error states
 
@@ -56,6 +58,7 @@ Use **{{ui:risks.kri.edit}}**, **{{ui:risks.kri.deactivate}}** (or **{{ui:risks.
 | **{{ui:risks.kri.empty}}** | The workspace has no indicators | Owners, Admins and Editors create one |
 | **{{ui:risks.kri.loadError}}** | The indicators could not load | Reload the page |
 | **{{ui:risks.kri.saveError}}** | The last change could not be saved | Try again |
+| **{{ui:risks.kri.thresholdNotNumber}}** | A threshold or the target is not a number | Correct the figure, or empty the box for no threshold |
 | **{{ui:risks.kri.writeRestricted}}** | Your role cannot change indicators | Ask an Owner, Admin or Editor |
 
 ## Related

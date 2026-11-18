@@ -57,6 +57,8 @@ Use the page to choose the standards your organisation works to and to track how
 - **{{ui:frameworks.list.installed}}** means at least one of the requirements coverage counts has a mapped control. Coverage is rounded to a whole percent, except that a framework with any mapped requirement never reads 0%: a large framework with only a few mapped requirements reads <1%. Neither figure says whether the controls work; evidence and tests show that.
 - **{{ui:frameworks.list.requirements}}** is the number of requirements coverage is worked out from: the current requirements of the packs your workspace chose. It is the figure the framework's **{{ui:frameworks.detail.coverageTab}}** tab gives as its total. When coverage cannot be worked out, it shows every requirement Inflect holds for the framework instead.
 
+The list includes AI governance frameworks beside the security standards, among them the FINOS AI Governance Framework. Its requirements are FINOS's mitigations, such as MI-1, and its catalogue of AI risks is offered separately, as templates when you create a risk on the [{{ui:risks.title}}](risks.md).
+
 Frameworks Inflect no longer offers are not listed. A workspace that installed one keeps its controls and mappings.
 
 ## What you can do

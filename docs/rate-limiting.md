@@ -280,8 +280,9 @@ For the auth tier, the same shape applies under
 `component: 'rate-limit'` from `src/lib/observability/edge-logger.ts`.
 
 For the mutation tier, the in-handler limiter logs at `debug` for
-allowed and `warn` for blocked; same `component: 'rate-limit-middleware'`
-namespace.
+allowed and `warn` for blocked, under `component: 'rate-limit-middleware'`.
+Its lines carry the scope and whether a user id was present, and leave
+the client IP out, as the read and auth tiers do (#5306).
 
 ## Adding a new tier
 

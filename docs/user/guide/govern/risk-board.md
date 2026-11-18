@@ -49,6 +49,7 @@ The board reads the same figures as the dashboard. When someone runs a new simul
 | **{{ui:riskManager.board.bestValueEmpty}}** | No control has a cost, an effectiveness and a linked risk with a money estimate | Price your most important controls |
 | **{{ui:riskManager.board.bestValueError}}** | The best-value controls could not load | Click **{{ui:riskManager.board.retry}}** |
 | **{{ui:riskManager.board.loadErrorTitle}}** | The board's figures could not load | Click **{{ui:riskManager.board.retry}}** |
+| A warning at the top naming the sections that could not be computed, and **{{ui:riskManager.board.sectionUnavailable}}** on those cards | Part of the board failed to load. Those cards show this message in place of a figure, so a failure is never read as "nothing to show" | Click **{{ui:riskManager.board.retry}}** in the warning, or reload the page later |
 
 ## Related
 
