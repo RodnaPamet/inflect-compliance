@@ -53,7 +53,8 @@ export interface RunDeferral {
     parkedAt: string;
     deadline: string | null;
     decidedAt: string | null;
-    decidedByUserId: string | null;
+    /** Who decided, by name, or null when the server could not name them (#5764). */
+    decidedBy: string | null;
 }
 
 export interface RunHeader {
@@ -510,7 +511,8 @@ export function AgentRunDetailClient({
                 )}
                 {/* A DEFERRED CALL (Step 2f). Waiting: the proposal's kind, its
                     deadline (the wait's one clock) and a link to it, where a
-                    person decides it. Decided: who and when. */}
+                    person decides it. Decided: who (by name, never an id;
+                    unnamed when the server could not name them) and when. */}
                 {deferral && waitsOnProposal ? (
                     <InlineNotice variant="warning" data-testid="run-deferral-waiting">
                         {t('runs.detail.deferral.waiting', {
@@ -527,12 +529,18 @@ export function AgentRunDetailClient({
                     </InlineNotice>
                 ) : deferral && deferral.decidedAt ? (
                     <p className="text-sm text-content-muted" data-testid="run-deferral-decided">
-                        {t(deferral.decision === 'REJECTED'
-                            ? 'runs.detail.deferral.decidedRejected'
-                            : 'runs.detail.deferral.decidedApproved', {
-                            who: deferral.decidedByUserId ?? '',
-                            when: formatDateTime(deferral.decidedAt),
-                        })}
+                        {deferral.decidedBy
+                            ? t(deferral.decision === 'REJECTED'
+                                ? 'runs.detail.deferral.decidedRejected'
+                                : 'runs.detail.deferral.decidedApproved', {
+                                who: deferral.decidedBy,
+                                when: formatDateTime(deferral.decidedAt),
+                            })
+                            : t(deferral.decision === 'REJECTED'
+                                ? 'runs.detail.deferral.decidedRejectedUnnamed'
+                                : 'runs.detail.deferral.decidedApprovedUnnamed', {
+                                when: formatDateTime(deferral.decidedAt),
+                            })}
                     </p>
                 ) : null}
                 {/* `!== null`, not truthiness: a run a directly fired rule

@@ -26,24 +26,39 @@ export interface RunDeferralView {
     /** The proposal's own window: the one clock the wait has. */
     readonly deadline: string | null;
     readonly decidedAt: string | null;
-    readonly decidedByUserId: string | null;
+    /**
+     * Who decided, by display name, or null when they are not a member of this
+     * workspace (#5764). Never the raw user id: the page shows this to a reader.
+     */
+    readonly decidedBy: string | null;
 }
 
 /**
  * The run's latest deferral, for the run page (Step 2f): a parked run shows
  * as waiting for a decision, with the proposal's kind, its deadline and a link
- * to it; a decided one names who decided and when. Null for a run that never
+ * to it; a decided one names who decided (by name) and when. Null for a run that never
  * deferred. Read under the run page's own gate, as the run is.
  */
 export async function readRunDeferralView(ctx: RequestContext, runId: string): Promise<RunDeferralView | null> {
     assertCanRead(ctx);
     const deferral = await readLatestDeferral(ctx, runId);
     if (!deferral) return null;
-    const proposal = await runInTenantContext(ctx, (db) =>
-        db.agentProposal.findFirst({
-            where: { id: deferral.proposalId, tenantId: ctx.tenantId },
-            select: { kind: true, expiresAt: true },
-        }),
+    const decidedByUserId = deferral.decidedByUserId;
+    const [proposal, decider] = await runInTenantContext(ctx, (db) =>
+        Promise.all([
+            db.agentProposal.findFirst({
+                where: { id: deferral.proposalId, tenantId: ctx.tenantId },
+                select: { kind: true, expiresAt: true },
+            }),
+            // The decider's name, as the run's starter is named
+            // (`readWorkflowRunProvenance`): only a member of THIS workspace.
+            decidedByUserId
+                ? db.tenantMembership.findFirst({
+                      where: { tenantId: ctx.tenantId, userId: decidedByUserId },
+                      select: { user: { select: { name: true, email: true } } },
+                  })
+                : null,
+        ]),
     );
     return {
         status: deferral.status,
@@ -55,7 +70,7 @@ export async function readRunDeferralView(ctx: RequestContext, runId: string): P
         parkedAt: deferral.parkedAt.toISOString(),
         deadline: proposal?.expiresAt ? proposal.expiresAt.toISOString() : null,
         decidedAt: deferral.decidedAt ? deferral.decidedAt.toISOString() : null,
-        decidedByUserId: deferral.decidedByUserId,
+        decidedBy: decider?.user ? decider.user.name || decider.user.email : null,
     };
 }
 

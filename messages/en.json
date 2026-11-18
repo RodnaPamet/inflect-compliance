@@ -11961,6 +11961,13 @@
         "closed": "Review window closed",
         "closedNotice": "This proposal's review window closed on {date}, so it can no longer be approved or rejected. It leaves this queue when the overnight clean-up marks it expired, and is kept as the record that nobody decided it in time."
       },
+      "decided": {
+        "ACCEPTED": "Approved",
+        "EDITED": "Approved with edits",
+        "REJECTED": "Rejected",
+        "other": "Decided",
+        "notice": "This proposal has already been decided, so it can no longer be approved or rejected."
+      },
       "truncated": "Showing the {shown} most recent pending proposals. More are waiting and are not listed here; the oldest appear as these are decided.",
       "kind": {
         "RISK": "Risk",
@@ -12137,8 +12144,10 @@
           "deadline": "The decision is due by {deadline}; after that the run stops.",
           "openProposal": "Open the proposal",
           "checkpoint": "Deferred to a person",
-          "decidedApproved": "A person ({who}) approved the proposal this run waited on, {when}.",
-          "decidedRejected": "A person ({who}) rejected the proposal this run waited on, {when}."
+          "decidedApproved": "{who} approved the proposal this run waited on, {when}.",
+          "decidedApprovedUnnamed": "The proposal this run waited on was approved, {when}.",
+          "decidedRejected": "{who} rejected the proposal this run waited on, {when}.",
+          "decidedRejectedUnnamed": "The proposal this run waited on was rejected, {when}."
         },
         "metaStatus": "Status",
         "metaDriver": "Engine",
@@ -13783,8 +13792,7 @@
           "AGENT_NOT_READY": "A Test run runs as this agent, so the agent must be active and risk-assessed first.",
           "TRIGGER_NOT_ALLOWED": "This version does not allow Test runs. Write a version that allows them.",
           "FLOW_NOT_RUNNABLE": "This version carries a drawn flow, and no engine runs a drawn flow yet. Write a version without a flow to try it.",
-          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it.",
-          "SUBAGENTS_NOT_RUNNABLE": "This version defines sub-agents, and the Tool Runner engine does not run them in this build. It is refused rather than run without them."
+          "NO_READ_TOOL": "A Test run is read-only, so it is offered no propose tool, and this version names only propose tools. Write a version that names a read tool to try it."
         },
         "engine": {
           "STATIC": "built-in engine",
@@ -17609,8 +17617,6 @@
       "UNRUNNABLE": "This version cannot run: its stored content no longer matches the hash its approval pinned, or this build cannot read it.",
       "refused": {
         "PROFILE_FLOW_NOT_RUNNABLE": "Version {version} carries a drawn flow, and no engine performs a drawn flow yet, so a run of it is refused. This is the message an engine would be handed once one does.",
-        "PROFILE_DEFERRALS_NOT_RUNNABLE": "Version {version} waits for a person on some of its calls, and no engine in this build parks a run on a deferred call, so a run of it is refused rather than run without the wait. This is the message an engine would be handed.",
-        "PROFILE_SUBAGENTS_NOT_RUNNABLE": "Version {version} defines sub-agents, and no engine in this build runs them, so a run of it is refused rather than run without them. This is the message an engine would be handed.",
         "PROFILE_ENGINE_CANNOT_RUN_PROFILES": "No engine in this build runs version {version}, so a run of it is refused. This is the message an engine would be handed."
       },
       "runAs": {

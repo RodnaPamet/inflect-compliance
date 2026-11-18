@@ -91,7 +91,7 @@ const WAITING: RunDeferral = {
     parkedAt: '2026-11-13T10:01:00.000Z',
     deadline: '2026-11-20T10:01:00.000Z',
     decidedAt: null,
-    decidedByUserId: null,
+    decidedBy: null,
 };
 
 function step(seq: number, kind: string, status: string): RunStepRow {
@@ -140,17 +140,34 @@ describe('the run page', () => {
         expect(screen.queryByText(DEF.checkpoint)).toBeNull();
     });
 
-    it('a decided deferral names who decided', () => {
+    it('a decided deferral names who decided, by name', () => {
         render(
             <AgentRunDetailClient
                 tenantSlug="acme"
                 run={{ ...RUN, status: 'COMPLETED' }}
                 steps={STEPS}
-                deferral={{ ...WAITING, status: 'RESUMED', decision: 'REJECTED', decidedAt: '2026-11-13T11:00:00.000Z', decidedByUserId: 'user-9' }}
+                deferral={{ ...WAITING, status: 'RESUMED', decision: 'REJECTED', decidedAt: '2026-11-13T11:00:00.000Z', decidedBy: 'Dana Decider' }}
             />,
         );
-        expect(screen.getByTestId('run-deferral-decided').textContent).toContain('user-9');
+        const decided = screen.getByTestId('run-deferral-decided').textContent ?? '';
+        expect(decided.startsWith('Dana Decider rejected the proposal this run waited on')).toBe(true);
         expect(screen.queryByTestId('run-deferral-waiting')).toBeNull();
+    });
+
+    // #5764: the line used to print the raw user id. A decider the server
+    // could not name reads neutrally, with no empty "()" and no id.
+    it('a decider the server could not name reads neutrally', () => {
+        render(
+            <AgentRunDetailClient
+                tenantSlug="acme"
+                run={{ ...RUN, status: 'COMPLETED' }}
+                steps={STEPS}
+                deferral={{ ...WAITING, status: 'RESUMED', decision: 'ACCEPTED', decidedAt: '2026-11-13T11:00:00.000Z', decidedBy: null }}
+            />,
+        );
+        const decided = screen.getByTestId('run-deferral-decided').textContent ?? '';
+        expect(decided.startsWith(DEF.decidedApprovedUnnamed.replace(', {when}.', ''))).toBe(true);
+        expect(decided).not.toContain('(');
     });
 });
 

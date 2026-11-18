@@ -196,9 +196,30 @@ function guardRuleText(
  * closed window outranks a recorded signature: nothing can complete the
  * proposal now. Read from the row's data, so a reload shows what a click did.
  */
+/**
+ * A proposal that is no longer PENDING (#5764). The queue reads PENDING only,
+ * but `?proposal=<id>` reads one proposal by id in any reviewable status, so a
+ * reviewer sent to an approval they are auditing gets it as it was decided.
+ * Approve and Reject on it could only be refused ("no longer pending").
+ */
+function isDecided(p: Pick<ProposalRow, 'status'>): boolean {
+    return p.status !== 'PENDING';
+}
+
+/** The badge a decided proposal wears, by its stored status. */
+const DECIDED_BADGE: Record<string, { variant: 'success' | 'neutral'; key: string }> = {
+    ACCEPTED: { variant: 'success', key: 'proposals.decided.ACCEPTED' },
+    EDITED: { variant: 'success', key: 'proposals.decided.EDITED' },
+    REJECTED: { variant: 'neutral', key: 'proposals.decided.REJECTED' },
+};
+
 function decisionBadgeFor(
-    p: Pick<ProposalRow, 'windowClosed' | 'approvalsRecorded'>,
-): { variant: 'warning' | 'info'; key: string; testid: string } | null {
+    p: Pick<ProposalRow, 'status' | 'windowClosed' | 'approvalsRecorded'>,
+): { variant: 'warning' | 'info' | 'success' | 'neutral'; key: string; testid: string } | null {
+    if (isDecided(p)) {
+        const badge = DECIDED_BADGE[p.status] ?? { variant: 'neutral' as const, key: 'proposals.decided.other' };
+        return { ...badge, testid: 'proposal-decided-badge' };
+    }
     if (p.windowClosed) {
         return { variant: 'warning', key: 'proposals.window.closed', testid: 'proposal-window-closed-badge' };
     }
@@ -627,6 +648,7 @@ export function AgentProposalsClient({
                         const guardState = resolveProposalGuardState(p);
                         const guardBadge = GUARD_BADGE[guardState];
                         const decisionBadge = decisionBadgeFor(p);
+                        const decided = isDecided(p);
                         return (
                         <li
                             key={p.id}
@@ -649,7 +671,7 @@ export function AgentProposalsClient({
                                         size="sm"
                                         aria-label={t('proposals.bulk.selectRow')}
                                         data-testid={`proposal-select-${p.id}`}
-                                        disabled={!canOperate || p.windowClosed}
+                                        disabled={!canOperate || p.windowClosed || decided}
                                         checked={selected.has(p.id)}
                                         onCheckedChange={() => toggleSelected(p.id)}
                                     />
@@ -699,7 +721,7 @@ export function AgentProposalsClient({
                                         {t('proposals.proposedAt', {
                                             date: formatDateTime(p.createdAt),
                                         })}
-                                        {p.expiresAt && !p.windowClosed
+                                        {p.expiresAt && !p.windowClosed && !decided
                                             ? t('proposals.decideBy', {
                                                 date: formatDateTime(p.expiresAt),
                                             })
@@ -713,9 +735,11 @@ export function AgentProposalsClient({
                                   branch that has already rendered a diff body.
                                   Not rendered once the window has closed: no
                                   role can reject then, and the notice below
-                                  says why.
+                                  says why. Nor on a proposal already decided
+                                  (#5764): the server refuses it as no longer
+                                  pending.
                                 */}
-                                {!p.windowClosed && (
+                                {!p.windowClosed && !decided && (
                                     <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
                                         <Button
                                             variant="ghost"
@@ -730,7 +754,7 @@ export function AgentProposalsClient({
                                 )}
                             </div>
 
-                            {p.windowClosed && p.expiresAt && (
+                            {!decided && p.windowClosed && p.expiresAt && (
                                 // The sweep that stamps EXPIRED runs overnight,
                                 // so the row is still listed. Say what that
                                 // means before anybody clicks.
@@ -847,7 +871,14 @@ export function AgentProposalsClient({
                                 proposalId={p.id}
                                 diff={p.diff}
                                 approveAction={
-                                    p.windowClosed ? (
+                                    decided ? (
+                                        <span
+                                            data-testid={`proposal-decided-action-${p.id}`}
+                                            className="text-xs text-content-subtle"
+                                        >
+                                            {t('proposals.decided.notice')}
+                                        </span>
+                                    ) : p.windowClosed ? (
                                         <span
                                             data-testid={`proposal-window-closed-action-${p.id}`}
                                             className="text-xs text-content-subtle"

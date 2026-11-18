@@ -18,7 +18,9 @@ Open **{{ui:nav.agents}}** under **{{ui:nav.manage}}** in the sidebar, then choo
 | Invite another workspace, or accept its invitation | Owner, Admin |
 | Generate or rotate the workspace's signing key | Owner |
 
-Everyone else sees **{{ui:agents.register.accessTitle}}** instead of the page. An AI admin sees **{{ui:agents.peers.invite.open}}** and **{{ui:agents.peers.accept.open}}**, but the invitation is refused: inviting and accepting store a connection, which needs an Owner or Admin. An invitation is always created and accepted by a person, never with an API key.
+Everyone else sees **{{ui:agents.register.accessTitle}}** instead of the page. An invitation is always created and accepted by a person, never with an API key.
+
+AI admins do not see **{{ui:agents.peers.invite.open}}** or **{{ui:agents.peers.accept.open}}**. Connecting through an invitation also sets up this workspace's connection to the other one, which only an Owner or Admin can do.
 
 ## What you see
 
@@ -57,6 +59,8 @@ The peer's page opens. Read its card there and approve it before the peer can ex
 ### Connect another workspace with an invitation
 
 When the other organisation also uses Inflect, one invitation connects the two workspaces in place of registering each side by hand.
+
+Owners and Admins only.
 
 **To invite:**
 

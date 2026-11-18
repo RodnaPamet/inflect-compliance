@@ -55,6 +55,12 @@ interface Props {
     canCompose: boolean;
     /** `admin.tenant_lifecycle`, the Owner departures page's gate (#4902). */
     canSetOrphanPass?: boolean;
+    /**
+     * Whether the server would take an invitation or an acceptance: the
+     * usecase's own `peerInvitationRefusal`, asked on the server (#5764).
+     * Absent reads as no, so Invite and Accept are never offered by default.
+     */
+    canInvitePeers?: boolean;
     /** Which assurance surfaces the viewer may read (#4905). */
     oversightReads?: Readonly<{ decisions: boolean; receipts: boolean; quarantine: boolean }>;
     /** Active members, who may answer for a peer. */
@@ -119,6 +125,7 @@ function PeersInner({
     canReviewProposals,
     canCompose,
     canSetOrphanPass = false,
+    canInvitePeers = false,
     oversightReads,
     owners = [],
     vendors = [],
@@ -279,24 +286,28 @@ function PeersInner({
                     // Secondary: each form it opens carries its own submit, and
                     // the list's own content is read-only.
                     <div className="flex flex-wrap gap-compact">
-                    <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setMode('invite')}
-                        disabled={mode !== null || inviteCode !== null}
-                        data-testid="peer-invite-open"
-                    >
-                        {t('peers.invite.open')}
-                    </Button>
-                    <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setMode('accept')}
-                        disabled={mode !== null}
-                        data-testid="peer-accept-open"
-                    >
-                        {t('peers.accept.open')}
-                    </Button>
+                    {canInvitePeers && (
+                        <>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setMode('invite')}
+                                disabled={mode !== null || inviteCode !== null}
+                                data-testid="peer-invite-open"
+                            >
+                                {t('peers.invite.open')}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => setMode('accept')}
+                                disabled={mode !== null}
+                                data-testid="peer-accept-open"
+                            >
+                                {t('peers.accept.open')}
+                            </Button>
+                        </>
+                    )}
                     <Button
                         type="button"
                         variant="secondary"
@@ -322,7 +333,7 @@ function PeersInner({
                             onCancel={() => setRegistering(false)}
                         />
                     )}
-                    {mode === 'invite' && (
+                    {canInvitePeers && mode === 'invite' && (
                         <InvitePeerForm
                             choices={choices}
                             onCreated={(code) => {
@@ -333,7 +344,7 @@ function PeersInner({
                         />
                     )}
                     {inviteCode && <InvitationCodePanel code={inviteCode} onDone={() => setInviteCode(null)} />}
-                    {mode === 'accept' && (
+                    {canInvitePeers && mode === 'accept' && (
                         <AcceptInvitationForm
                             choices={choices}
                             onAccepted={(accepted) => {

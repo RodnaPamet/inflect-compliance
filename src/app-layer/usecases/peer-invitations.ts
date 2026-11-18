@@ -76,6 +76,7 @@ import { resolveTenantA2aSigningKey } from './a2a-signing-key';
 import { upsertIntegrationConnection } from './integrations';
 import { savableConnectionName } from '@/lib/text/connection-name';
 import { A2A_PEER_PROVIDER_ID } from '@/app-layer/integrations/providers/a2a-peer-provider';
+import { peerInvitationRefusal } from '@/lib/agentic/peer-invitation-rules';
 
 const RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
 
@@ -133,16 +134,23 @@ function refuse(message: string, reason: PeerInvitationRefusal): never {
 
 /** A person holding the register key: an invitation is never issued or accepted by a credential. */
 function assertMayInvite(ctx: RequestContext): void {
-    if (!ctx.appPermissions.admin.agent_registry) {
+    // The register key is checked here as well as in the rule, so this stays a
+    // gate in its own right: a view-only principal is refused before anything
+    // else is read (agent-registry-view-key.test.ts walks every caller of it).
+    if (!ctx.appPermissions?.admin?.agent_registry) {
         throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
     }
-    if (ctx.apiKeyId) throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
-    // The flow also stores an outbound connection, which `upsertIntegrationConnection`
-    // gates on the coarse admin tier. Asked first, so nothing is half-written.
-    if (!ctx.permissions?.canAdmin) {
-        throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
-            reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
-        });
+    switch (peerInvitationRefusal(ctx)) {
+        case null:
+            return;
+        case 'NO_REGISTER_KEY':
+            throw forbidden('Inviting or accepting an A2A peer requires admin.agent_registry');
+        case 'NOT_A_PERSON':
+            throw forbidden('An A2A peer invitation is created and accepted by a person, not by an API key');
+        case 'NEEDS_ADMIN':
+            throw forbidden('Connecting a peer also creates its outbound connection, which needs an owner or admin', {
+                reason: 'NEEDS_ADMIN' satisfies PeerInvitationRefusal,
+            });
     }
 }
 

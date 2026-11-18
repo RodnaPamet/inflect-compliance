@@ -29,9 +29,9 @@
  * A version's inline sub-agents (Step 2e, #4594) are covered by the same hash,
  * so every one is shown as text (`describeSubagentsForReview`: name, tools,
  * skills, turn limit and every word of its instructions) and diffed against
- * the version in force, and the history counts them. A version with
- * sub-agents on an engine that does not run them has its Test run disabled,
- * saying so, as admission refuses it (`PROFILE_SUBAGENTS_NOT_RUNNABLE`).
+ * the version in force, and the history counts them. A Test run runs on the
+ * Tool Runner, which runs sub-agents, so a version with them is not held back
+ * here (#5764).
  *
  * The four-eyes affordance is the server's (`canDecide`: a SUBMITTED version,
  * a signed-in person, never its author), and the usecase refuses the author
@@ -63,7 +63,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { describeFlowForReview } from '@/lib/agentic/agent-flow';
-import { describeSubagentsForReview, profileNamesNoReadTool, runsSubagents } from '@/lib/agentic/agent-profile';
+import { describeSubagentsForReview, profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 
@@ -175,11 +175,7 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                 : t(`testRun.reason.${state.reason}`)
             : v.flow !== null
               ? t('testRun.reason.FLOW_NOT_RUNNABLE')
-              : // A Test run is available only on the Tool Runner engine, so
-                // that is the engine whose entry is asked.
-                v.subagents.length > 0 && !runsSubagents('tool-runner')
-                ? t('testRun.reason.SUBAGENTS_NOT_RUNNABLE')
-                : !v.allowedTriggers.includes('TEST_RUN')
+              : !v.allowedTriggers.includes('TEST_RUN')
                 ? t('testRun.reason.TRIGGER_NOT_ALLOWED')
                 : // A Test run is read-only: a version naming only propose
                   // tools would be offered nothing (#5374). The start refuses

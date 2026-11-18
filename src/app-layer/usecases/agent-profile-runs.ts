@@ -51,9 +51,11 @@
  * way to perform every step a flow can draw, a `subagent` step included.
  *
  * A version carrying SUB-AGENTS (Step 2e) is compiled with them, read back
- * strictly, and its content hash covers them. Admission, resume and the
- * preview refuse it on an engine whose `runsSubagents` entry is false
- * (`PROFILE_SUBAGENTS_NOT_RUNNABLE`): never run as though it had none.
+ * strictly, and its content hash covers them. Admission and resume refuse it
+ * on an engine whose `runsSubagents` entry is false
+ * (`PROFILE_SUBAGENTS_NOT_RUNNABLE`): never run as though it had none. The
+ * preview asks admission, so it shows no run message for a version every
+ * engine refuses.
  *
  * A version naming DEFERRED TOOLS (Step 2f) is compiled with them, read back
  * strictly, and refused the same way on an engine whose `runsDeferrals` entry
@@ -506,12 +508,7 @@ export type ProfileRunPreview =
            * run — whatever `runAs` says it would be — receives the message.
            * `PROFILE_FLOW_NOT_RUNNABLE` for any flow version until Phase 5.
            */
-          readonly runRefused:
-              | 'PROFILE_FLOW_NOT_RUNNABLE'
-              | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
-              | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
-              | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
-              | null;
+          readonly runRefused: ProfileRunRefusedOnEveryEngine | null;
           /** The run message, from `runMessage`, the function the engines call. */
           readonly message: string;
           /** The run is offered the read surface only. */
@@ -564,20 +561,22 @@ export async function previewProfileRunMessage(
     };
 }
 
+/** What the preview names when admission would refuse a version on every engine. */
+export type ProfileRunRefusedOnEveryEngine = 'PROFILE_FLOW_NOT_RUNNABLE' | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
+
 /**
  * Would admission refuse this version on every engine there is? Asked through
  * `assertEngineRunsProfiles` itself, once per driver, so the panel cannot say
  * "a run receives this message" for a version admission refuses — which,
  * before Phase 5, is every version carrying a flow.
+ *
+ * Sub-agents and deferred tools are not named here (#5764): the Tool Runner
+ * runs both, so neither refuses a version on every engine. Should a brake on
+ * `RUNS_SUBAGENTS` or `RUNS_DEFERRALS` be pulled, admission still refuses such
+ * a version by name, and this answers the general
+ * `PROFILE_ENGINE_CANNOT_RUN_PROFILES`, which is then true.
  */
-function refusedOnEveryEngine(
-    profile: ProfileRunSpec,
-):
-    | 'PROFILE_FLOW_NOT_RUNNABLE'
-    | 'PROFILE_SUBAGENTS_NOT_RUNNABLE'
-    | 'PROFILE_DEFERRALS_NOT_RUNNABLE'
-    | 'PROFILE_ENGINE_CANNOT_RUN_PROFILES'
-    | null {
+export function refusedOnEveryEngine(profile: ProfileRunSpec): ProfileRunRefusedOnEveryEngine | null {
     const someEngineRuns = AGENT_DRIVERS.some((driver) => {
         try {
             assertEngineRunsProfiles(driver, profile);
@@ -589,11 +588,5 @@ function refusedOnEveryEngine(
     });
     if (someEngineRuns) return null;
     if (profile.flow) return 'PROFILE_FLOW_NOT_RUNNABLE';
-    if (profile.subagents && profile.subagents.length > 0 && !AGENT_DRIVERS.some(runsSubagents)) {
-        return 'PROFILE_SUBAGENTS_NOT_RUNNABLE';
-    }
-    if (profile.deferredToolNames && profile.deferredToolNames.length > 0 && !AGENT_DRIVERS.some(runsDeferrals)) {
-        return 'PROFILE_DEFERRALS_NOT_RUNNABLE';
-    }
     return 'PROFILE_ENGINE_CANNOT_RUN_PROFILES';
 }
