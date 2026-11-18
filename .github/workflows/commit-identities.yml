@@ -1,0 +1,50 @@
+# ───────────────────────────────────────────────────────────────
+#  Commit Identities — no email GitHub could credit to a stranger
+#
+#  GitHub credits a commit to whichever account registered its email: the
+#  author's, the committer's and every `Co-authored-by:` trailer's. A
+#  placeholder such as `x@y` is claimable by anyone, and two commits on main
+#  carrying `Co-authored-by: h0mele55 <x@y>` are why a stranger's account is
+#  listed as a contributor. Squash-merge turns every PR commit's author into a
+#  trailer, so this checks the PR's commits before they are squashed.
+#  The rule, its reasons and its limits: scripts/lib/commit-identities.js.
+#
+#  It reads git only: no install, no token, no network.
+#
+#  `merge_group:` — this job answers in the queue as well, so it can be made a
+#  required check. Under `merge_group` it checks the queue candidate's commits
+#  (`merge_group.base_sha..head_sha`), which include the squash commit's own
+#  trailers. Locked by tests/guardrails/merge-queue-trigger-coverage.test.ts.
+# ───────────────────────────────────────────────────────────────
+name: Commit Identities
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commit-identities-${{ github.ref }}
+  # A cancelled queue run counts as a failure and ejects the PR from the queue,
+  # so only superseded pull_request runs are cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  identities:
+    name: "Commit identities"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so both ends of the range are present.
+          fetch-depth: 0
+
+      - name: Check author, committer and co-author emails
+        env:
+          BASE_SHA: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}
+        run: node scripts/check-commit-identities.mjs "$BASE_SHA" "$HEAD_SHA"
