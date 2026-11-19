@@ -48,6 +48,13 @@ export type ProcessNodeShapeProps = {
     subtitle: string | null;
     parentNodeKey: string | null;
     dataJson: unknown;
+    /**
+     * The Control record a `control` node stands for, or null. Only the id:
+     * the control's name, status and test date are read live and never stored
+     * on the shape, so a renamed control never shows its old name here. Null
+     * on every other kind.
+     */
+    controlId: string | null;
 };
 
 export type ProcessNodeShape = TLBaseShape<
@@ -72,6 +79,7 @@ export const processNodeShapeProps: RecordProps<ProcessNodeShape> = {
     parentNodeKey: T.string.nullable(),
     // Opaque by contract: anything JSON-serialisable, inspected by nobody.
     dataJson: T.jsonValue,
+    controlId: T.string.nullable(),
 };
 
 /** Default geometry for a freshly created node. */

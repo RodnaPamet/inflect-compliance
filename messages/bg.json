@@ -10886,6 +10886,25 @@
         "SCHEDULE_NOT_SET": "Задайте графика му.",
         "ACTION_INCOMPLETE": "Довършете настройките на действието му."
       }
+    },
+    "controlCard": {
+      "loading": "Зареждане на контрола…",
+      "unlinked": "Изберете контрол",
+      "missing": "Контролът е премахнат",
+      "restricted": "Контрол (ограничен достъп)",
+      "unavailable": "Данните за контрола не са налични",
+      "effectiveness": "{percent}% ефективност",
+      "tested": "тестван {date}",
+      "neverTested": "не е тестван",
+      "status": {
+        "NOT_STARTED": "Не е започнат",
+        "PLANNED": "Планиран",
+        "IN_PROGRESS": "В процес",
+        "IMPLEMENTING": "Внедрява се",
+        "IMPLEMENTED": "Внедрен",
+        "NEEDS_REVIEW": "Нужен е преглед",
+        "NOT_APPLICABLE": "Неприложим"
+      }
     }
   },
   "issues": {
@@ -16081,7 +16100,8 @@
       "selectedEdgeAria": "Свойства на избраната връзка",
       "loadingControls": "Зареждане на контроли…",
       "pickControl": "Изберете контрол…",
-      "auditorsHint": "Одиторите виждат избрания контрол като щит върху връзката."
+      "auditorsHint": "Одиторите виждат избрания контрол като щит върху връзката.",
+      "openControl": "Отвори контрола"
     },
     "ruleBuilder": {
       "editTitle": "Редактиране на правило",

@@ -209,9 +209,9 @@ export async function getControlTraceability(ctx: RequestContext, controlId: str
             sideIf(seeRisks, () => ControlRiskRepository.listByControl(db, ctx.tenantId, controlId)),
             sideIf(seeAssets, () => AssetControlRepository.listByControl(db, ctx.tenantId, controlId)),
             // A control gates edges (processEdgeControl) AND/OR sits on `control`
-            // nodes (ProcessNode.linkedEntityId) — union both.
+            // nodes (processNodeControl) — union both.
             ProcessMapRepository.listMapsByControl(db, ctx, controlId),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'control', controlId),
+            ProcessMapRepository.listMapsByControlNode(db, ctx, controlId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = [
             ...edgeMaps.map((e) => ({
@@ -458,24 +458,18 @@ export async function coverageSummary(ctx: RequestContext) {
         }));
 
         // PR-D — process coverage. A control is "embedded in an operational
-        // process" when it is placed on a process-map edge (ProcessEdgeControl,
-        // real FK) OR linked from a `control` node (dataJson.linkedEntityId).
-        // This closes the loop: the canvas linkage now shows up in the same
+        // process" when it is placed on a process-map edge (ProcessEdgeControl)
+        // OR linked from a `control` node (ProcessNodeControl); both are real
+        // FKs. This closes the loop: the canvas linkage now shows up in the same
         // coverage graph as risk / asset / policy mapping, so an auditor sees
         // which controls are actually wired into how the org operates.
-        const [processEdgeControlIds, controlNodeRows] = await Promise.all([
+        const [processEdgeControlIds, processNodeControlIds] = await Promise.all([
             db.processEdgeControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
-            db.processNode.findMany({ // guardrail-allow: unbounded — bounded by the small process-node graph; JSON linkedEntityId can't be distinct-queried
-                where: { tenantId: t, nodeType: 'control' },
-                select: { dataJson: true },
-            }),
+            db.processNodeControl.findMany({ where: { tenantId: t }, select: { controlId: true }, distinct: ['controlId'] }),
         ]);
         const processControlIds = new Set<string>();
         for (const r of processEdgeControlIds) processControlIds.add(r.controlId);
-        for (const n of controlNodeRows) {
-            const linkedId = (n.dataJson as { linkedEntityId?: unknown } | null)?.linkedEntityId;
-            if (typeof linkedId === 'string' && linkedId.length > 0) processControlIds.add(linkedId);
-        }
+        for (const r of processNodeControlIds) processControlIds.add(r.controlId);
         // Count only real, tenant-owned controls (a node link could reference a
         // since-deleted control); the IN-list bounds the query.
         const controlsWithProcessCount = processControlIds.size > 0

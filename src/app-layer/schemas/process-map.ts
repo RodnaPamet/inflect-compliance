@@ -100,6 +100,13 @@ const boundedDataJson = z
     );
 
 
+/**
+ * The node kind that may link to a Control record (`ProcessNodeControl`).
+ * Here rather than in the repository so the canvas can import it: this module
+ * is zod-only and already client-reachable.
+ */
+export const CONTROL_NODE_TYPE = 'control';
+
 export const ProcessNodeInputSchema = z.object({
     nodeKey: z.string().min(1).max(128),
     nodeType: z.string().min(1).max(64),
@@ -113,6 +120,14 @@ export const ProcessNodeInputSchema = z.object({
     // (parentNodeKey === own nodeKey) is rejected explicitly.
     parentNodeKey: z.string().max(128).optional().nullable(),
     dataJson: boundedDataJson,
+    // The Control record a `control` node stands for (`ProcessNodeControl`).
+    // Three states, and they are NOT interchangeable: a string links, `null`
+    // says "unlinked" (a draft placeholder the map may be saved with), and
+    // ABSENT means the sender knows nothing of the field — a snapshot or a
+    // client from before it existed — so the repository lifts the legacy
+    // `dataJson.linkedEntityId` instead. Only a `control` node may carry one;
+    // the repository refuses it on any other kind.
+    controlId: z.string().min(1).max(64).optional().nullable(),
 });
 export type ProcessNodeInput = z.infer<typeof ProcessNodeInputSchema>;
 

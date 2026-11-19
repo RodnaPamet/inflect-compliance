@@ -69,6 +69,7 @@ describe('the declared props are known, so a new one has to be triaged', () => {
         // Pinned so that ADDING a declared prop fails here first, rather than
         // silently falling into whichever bucket the comparison defaults to.
         expect(DECLARED_NODE_PROPS).toEqual([
+            'controlId',
             'dataJson',
             'h',
             'label',
@@ -91,8 +92,12 @@ describe('the declared props are known, so a new one has to be triaged', () => {
 });
 
 describe('node props — derived from tldrawToRows', () => {
-    /** Every declared prop carrying its own sentinel. */
-    function sentinelShape(): ProcessNodeShapeRecord {
+    /**
+     * Every declared prop carrying its own sentinel. `nodeType` is a sentinel
+     * too unless a kind is named, and `controlId` is projected only for a
+     * `control` node, so the derivation below reads both kinds.
+     */
+    function sentinelShape(nodeType: string = mark('nodeType')): ProcessNodeShapeRecord {
         return {
             id: shapeIdForNodeKey(mark('nodeKey')),
             type: PROCESS_NODE_SHAPE_TYPE,
@@ -105,23 +110,32 @@ describe('node props — derived from tldrawToRows', () => {
                 w: 987654,
                 h: 876543,
                 nodeKey: mark('nodeKey'),
-                nodeType: mark('nodeType'),
+                nodeType,
                 label: mark('label'),
                 subtitle: mark('subtitle'),
                 parentNodeKey: mark('parentNodeKey'),
                 dataJson: mark('dataJson'),
+                controlId: mark('controlId'),
             },
         };
     }
 
     it('reads exactly the props the constant names', () => {
-        const rows = tldrawToRows({
-            shapes: [sentinelShape()],
-            bindings: [],
-            freeform: [],
-        });
+        const project = (nodeType?: string) =>
+            tldrawToRows({ shapes: [sentinelShape(nodeType)], bindings: [], freeform: [] });
         const stringy = DECLARED_NODE_PROPS.filter((p) => p !== 'w' && p !== 'h');
-        expect(reached(rows, stringy).sort()).toEqual([...PERSISTED_NODE_PROPS].sort());
+        // Across a control node and any other kind: `nodeType` reaches the row
+        // only as a sentinel, and `controlId` only on a control node.
+        const union = new Set([...reached(project(), stringy), ...reached(project('control'), stringy)]);
+        expect([...union].sort()).toEqual([...PERSISTED_NODE_PROPS].sort());
+    });
+
+    it('projects controlId for a control node only — any other kind omits it', () => {
+        const blob = (nodeType?: string) =>
+            JSON.stringify(tldrawToRows({ shapes: [sentinelShape(nodeType)], bindings: [], freeform: [] }));
+        expect(blob('control')).toContain(mark('controlId'));
+        expect(blob()).not.toContain(mark('controlId'));
+        expect(blob('risk')).not.toContain(mark('controlId'));
     });
 
     it('and does NOT read w or h — the whole reason the constant is narrower', () => {
@@ -177,6 +191,7 @@ describe('edge props — derived from tldrawToRows', () => {
             subtitle: null,
             parentNodeKey: null,
             dataJson: null,
+            controlId: null,
         },
     });
 

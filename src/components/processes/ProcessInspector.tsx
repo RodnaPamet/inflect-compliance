@@ -31,6 +31,7 @@
  *     as "is anything happening?"
  */
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 // NO ENGINE IMPORT. The inspector edits MEANING — node type, size, linked
@@ -533,6 +534,17 @@ function NodeLinkedEntityPicker({
                           : t("pickOne")
                 }
             />
+            {/* The control node's record, one click away. The card on the
+                canvas shows its live status; this opens the control itself. */}
+            {nodeKind === "control" && selectedId && tenantSlug ? (
+                <Link
+                    href={`/t/${tenantSlug}/controls/${encodeURIComponent(selectedId)}`}
+                    className="text-xs text-content-link hover:underline"
+                    data-testid="inspector-node-open-control"
+                >
+                    {t("openControl")}
+                </Link>
+            ) : null}
         </div>
     );
 }

@@ -10886,6 +10886,25 @@
         "SCHEDULE_NOT_SET": "Set its schedule.",
         "ACTION_INCOMPLETE": "Complete its action settings."
       }
+    },
+    "controlCard": {
+      "loading": "Loading control…",
+      "unlinked": "Pick a control",
+      "missing": "Control removed",
+      "restricted": "Control (restricted)",
+      "unavailable": "Control details unavailable",
+      "effectiveness": "{percent}% effective",
+      "tested": "tested {date}",
+      "neverTested": "never tested",
+      "status": {
+        "NOT_STARTED": "Not started",
+        "PLANNED": "Planned",
+        "IN_PROGRESS": "In progress",
+        "IMPLEMENTING": "Implementing",
+        "IMPLEMENTED": "Implemented",
+        "NEEDS_REVIEW": "Needs review",
+        "NOT_APPLICABLE": "Not applicable"
+      }
     }
   },
   "issues": {
@@ -16081,7 +16100,8 @@
       "selectedEdgeAria": "Selected edge properties",
       "loadingControls": "Loading controls…",
       "pickControl": "Pick a control…",
-      "auditorsHint": "Auditors see the chosen control as a shield pill on the connection."
+      "auditorsHint": "Auditors see the chosen control as a shield pill on the connection.",
+      "openControl": "Open control"
     },
     "ruleBuilder": {
       "editTitle": "Edit rule",

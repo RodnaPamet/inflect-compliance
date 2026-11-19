@@ -81,6 +81,7 @@ import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts'
 import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
 import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
 import { CanvasRuleStatusProvider } from '@/lib/processes/canvas-rule-status';
+import { CanvasControlFactsProvider } from '@/lib/processes/canvas-control-facts';
 import { useIsAutomationMode } from '@/lib/processes/canvas-mode-context';
 import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-review';
 import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
@@ -123,6 +124,7 @@ function toDiffSnapshot(rows: GraphRows): DiffGraphSnapshot {
             // version never carries them, so every linked step read as
             // modified even when nothing had changed.
             dataJson: withoutHydratedDisplay(n.dataJson ?? null),
+            ...(n.controlId !== undefined ? { controlId: n.controlId } : {}),
         })),
         edges: rows.edges.map((e) => ({
             edgeKey: e.edgeKey,
@@ -599,20 +601,25 @@ function Inner({
                     and the inspector. */}
                 <div className="relative min-w-0 flex-1" ref={canvasHostRef}>
                     <CheckpointReviewPanel />
-                    <TldrawProcessMap
-                        // Remounts on a conflict; see `handleConflict`.
-                        key={`${activeId ?? 'none'}:${reloadKey}`}
-                        tenantSlug={tenantSlug}
-                        mapId={activeId}
-                        drillGroupId={drill.currentGroupId}
-                        onEnterGroup={drill.enter}
-                        onEditorReady={setEditor}
-                        onStateChange={handleState}
-                        onSaveNowChange={handleSaveNowChange}
-                        focusStepKey={focusStepKey}
-                        onSaved={handleSaved}
-                        readOnly={!canEdit}
-                    />
+                    {/* Each control node's live card: the linked Control's
+                        code, name, status and last test, read by the ids on
+                        the canvas. Inside Inner because it needs the editor. */}
+                    <CanvasControlFactsProvider editor={editor} mapId={activeId ?? null}>
+                        <TldrawProcessMap
+                            // Remounts on a conflict; see `handleConflict`.
+                            key={`${activeId ?? 'none'}:${reloadKey}`}
+                            tenantSlug={tenantSlug}
+                            mapId={activeId}
+                            drillGroupId={drill.currentGroupId}
+                            onEnterGroup={drill.enter}
+                            onEditorReady={setEditor}
+                            onStateChange={handleState}
+                            onSaveNowChange={handleSaveNowChange}
+                            focusStepKey={focusStepKey}
+                            onSaved={handleSaved}
+                            readOnly={!canEdit}
+                        />
+                    </CanvasControlFactsProvider>
                 </div>
 
                 {/* A disabled fieldset disables every control inside the

@@ -63,6 +63,10 @@ import {
     awaitsAHuman,
 } from '@/lib/processes/canvas-execution-overlay';
 import { useStepRuleStatus } from '@/lib/processes/canvas-rule-status';
+// A control node's live card (#control-node-link). Safe without a provider, so
+// a node rendered bare draws its label and nothing else.
+import { useControlCard, type ControlCard } from '@/lib/processes/canvas-control-facts';
+import { CONTROL_NODE_TYPE } from '@/app-layer/schemas/process-map';
 // WHO HAS OPENED WHICH CHECKPOINT (#3472). Read unconditionally and safe
 // without a provider — `canReview` is false and `open` is a no-op — which is
 // the same design property the execution overlay states for itself and the
@@ -145,6 +149,7 @@ export class ProcessNodeShapeUtil extends ShapeUtil<ProcessNodeShape> {
             subtitle: null,
             parentNodeKey: null,
             dataJson: null,
+            controlId: null,
         };
     }
 
@@ -311,6 +316,40 @@ function GroupFoldToggle({ shape }: { shape: ProcessNodeShape }) {
     );
 }
 
+const CONTROL_CARD_TONE: Record<ControlCard['tone'], string> = {
+    success: 'text-content-success',
+    warning: 'text-content-warning',
+    neutral: 'text-content-muted',
+};
+
+/**
+ * The linked Control on a control node: `code · name`, then status,
+ * effectiveness and last test. Plain text only. Editing the link happens in the
+ * inspector, never on the canvas: a gesture on a shape has no path to the
+ * governed write.
+ */
+function ControlCardLines({ card, nodeKey }: { card: ControlCard; nodeKey: string }) {
+    return (
+        <span
+            className="flex min-w-0 flex-col"
+            data-testid={`process-node-control-${nodeKey}`}
+            data-control-state={card.state}
+            data-control-status={card.status ?? undefined}
+        >
+            <span
+                className={`truncate text-xs font-medium ${
+                    card.state === 'linked' ? 'text-content-default' : CONTROL_CARD_TONE[card.tone]
+                }`}
+            >
+                {card.title}
+            </span>
+            {card.detail ? (
+                <span className={`truncate text-xs ${CONTROL_CARD_TONE[card.tone]}`}>{card.detail}</span>
+            ) : null}
+        </span>
+    );
+}
+
 /**
  * A process node's chassis and contents.
  *
@@ -393,6 +432,11 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
         the canvas, joined by the context above.
     */
     const checkpoint = useCheckpointReview();
+    // What the linked Control currently says. `undefined` for every other kind,
+    // so the hook runs unconditionally and only a control node shows a card.
+    const controlCard = useControlCard(
+        shape.props.nodeType === CONTROL_NODE_TYPE ? shape.props.controlId : undefined,
+    );
     const canOpenCheckpoint = runAwaitsAHuman && checkpoint.canReview && agentRun !== undefined;
 
     return (
@@ -407,6 +451,9 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                 // describes: flow nodes read as solid, context nodes as
                 // annotations ON the flow rather than part of it.
                 meta.category === 'flow' ? 'bg-bg-default' : 'bg-bg-subtle',
+                // An unlinked control node is a draft placeholder: dashed, so
+                // it reads as unfinished on the map without opening it.
+                controlCard?.state === 'unlinked' ? 'border-dashed' : '',
                 // Last, so the run-state ring wins over the accent border it
                 // overlaps. `''` when there is no overlay, which `join` renders
                 // as a harmless double space.
@@ -453,6 +500,7 @@ function ProcessNodeBody({ shape }: { shape: ProcessNodeShape }) {
                     {shape.props.subtitle}
                 </span>
             ) : null}
+            {controlCard ? <ControlCardLines card={controlCard} nodeKey={shape.props.nodeKey || shape.id} /> : null}
             {ruleStatus ? (
                 <span
                     className={[

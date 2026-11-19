@@ -119,6 +119,7 @@ model Control {
   integrationExecutions        IntegrationExecution[]
   policyLinks                  PolicyControlLink[]
   processEdgeControls          ProcessEdgeControl[]
+  processNodeControls          ProcessNodeControl[]
   risks                        RiskControl[]
   tasks                        Task[]
   // Epic G-5 — control exception register. Two reverse relations:
