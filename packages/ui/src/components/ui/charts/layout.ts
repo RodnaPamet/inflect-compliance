@@ -105,14 +105,14 @@ export function getDateExtent<T extends Datum>(data: Data<T>): {
     startDate: Date;
     endDate: Date;
 } {
-    if (data.length === 0) {
+    const first = data[0];
+    if (first === undefined) {
         const now = new Date();
         return { startDate: now, endDate: now };
     }
-    let min = data[0].date;
-    let max = data[0].date;
-    for (let i = 1; i < data.length; i++) {
-        const d = data[i].date;
+    let min = first.date;
+    let max = first.date;
+    for (const { date: d } of data) {
         if (d.getTime() < min.getTime()) min = d;
         if (d.getTime() > max.getTime()) max = d;
     }
@@ -156,13 +156,14 @@ export function computeYDomain<T extends Datum>({
         }
     }
 
-    if (values.length === 0) return { minY: 0, maxY: 0 };
+    const first = values[0];
+    if (first === undefined) return { minY: 0, maxY: 0 };
 
-    let min = values[0];
-    let max = values[0];
-    for (let i = 1; i < values.length; i++) {
-        if (values[i] < min) min = values[i];
-        if (values[i] > max) max = values[i];
+    let min = first;
+    let max = first;
+    for (const v of values) {
+        if (v < min) min = v;
+        if (v > max) max = v;
     }
 
     return {
@@ -283,8 +284,9 @@ export function pickXAxisTickValues<T extends Datum>(
     data: Data<T>,
     maxTicks: number,
 ): Date[] {
-    if (data.length === 0) return [];
-    if (data.length === 1) return [data[0].date];
+    const first = data[0];
+    if (first === undefined) return [];
+    if (data.length === 1) return [first.date];
 
     const tickInterval =
         getFactors(data.length).find((f) => (data.length + 1) / f <= maxTicks) ??

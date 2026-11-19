@@ -63,7 +63,7 @@ export interface ChartLegendGradientProps {
     variant: 'gradient';
     /** The shared `HeatScale` from `useHeatScale`. */
     heatScale: HeatScale;
-    /** Optional descriptive label (e.g. "Risk score"), already translated: it is shown and announced as given. */
+    /** Optional descriptive label (e.g. "Response time"), already translated: it is shown and announced as given. */
     label?: string;
     /** Optional unit suffix on the min/max labels (e.g. "%"). */
     unit?: string;

@@ -1,8 +1,14 @@
 # `@inflect/ui`
 
-The shared, product-neutral UI package for #3046. **It is empty.** Step 1 of
-`docs/shared-ui-package-design.md`'s Roadmap creates the shell and moves no
-files; the icons arrive at step 2 and the 93 non-icon modules at step 3.
+The shared, product-neutral UI package for #3046. It holds:
+
+| Path under `src/` | What |
+|---|---|
+| `components/ui/*.tsx`, `*-variants.ts` | Primitives: `button`, `card`, `empty-state`, `error-state`, `skeleton`, `tooltip`, `typography`, and the variant tables and hit-area helper they use |
+| `components/ui/charts/` | The visx chart platform: the time-series host, area and bar renderers, axes, tooltips and hover sync, gradients, motion, layout maths and the chart contracts |
+| `components/ui/hooks/` | UI utility hooks: viewport and observers, scroll, persistence, optimistic state, keyboard-friendly input, clipboard, toasts (see its `README.md`) |
+| `components/ui/icons/` | The icon set, including the Nucleo barrel |
+| `lib/` | `cn`, `format-date`, `number-format` |
 
 Consumed by the application as an npm workspace, at HEAD, never version-pinned
 (§3). There is no build step — the package ships `.ts`/`.tsx` sources and the
@@ -10,37 +16,58 @@ consumer compiles them, because the consumer's Tailwind has to see the class
 strings anyway (§4) and a `dist/` would put a stale compiled copy beside a fresh
 source one.
 
+## Importing it
+
+Import each module by its subpath; the `exports` map in `package.json` resolves
+it to a file under `src/`:
+
+```ts
+import { cn } from '@inflect/ui/lib/cn';
+import { Button } from '@inflect/ui/components/ui/button';
+import { useMediaQuery } from '@inflect/ui/components/ui/hooks/use-media-query';
+```
+
+The package root, `src/index.ts`, exports nothing on purpose: a root barrel
+would load every module for any one of them. Its comment says why it still
+holds `export {}`.
+
 ## What may be imported from inside this package
 
-1. Itself, by relative path.
+1. Itself, by relative path or by its own `@inflect/ui/…` subpaths.
 2. The four declared `peerDependencies` — `react`, `react-dom`, `next`,
    `next-intl`. All four are singletons in a Next app, so a duplicated copy is a
    runtime fault rather than a size problem; they are peers for that reason and
    not to save bytes.
-3. Regular dependencies, once there is code that needs them. §2 of the design
-   doc lists the measured set (`class-variance-authority`, `clsx`,
-   `tailwind-merge`, `lucide-react`, `motion`, `sonner`, `vaul`, `cmdk`,
-   `@tanstack/react-table`, `react-window`, `@number-flow/react`, `date-fns`,
-   `zod`, `d3-array`, the `@visx/*` six and the `@radix-ui/react-*` eight).
-   **None is declared yet**, deliberately: `src/index.ts` imports nothing, and a
-   dependency range declared here for code that does not exist can resolve to a
-   different version than the root installed, which is the second-copy fault
-   peers exist to avoid. Each one lands with the files that import it.
+3. The packages in `dependencies` (and, for a test file, `devDependencies`).
+   `package.json` declares every package the sources import, each with the
+   root's specifier unchanged, so npm resolves it to the root's single copy
+   rather than installing a second one beside it.
+   `tests/guards/ui-package-declares-what-it-imports.test.ts` parses every file
+   under `src/` and fails on an import the manifest does not declare, an entry
+   nothing imports, a range that differs from the root's, or a nested copy in
+   the lockfile. A new import lands with its manifest entry, in this file and
+   at the root.
 4. **Nothing else.** In particular no `@/app-layer`, no `@/lib/<domain>`, and no
    `@/components/<anything outside the package>`.
 
-`tsconfig.json` is what is supposed to make clause 4 a compiler error rather
-than a regex: it resets the root's `paths` and `baseUrl`, so `@/…` does not
-resolve here. Note the limit of that today — the ROOT `tsconfig.json` includes
-`**/*.ts`, so `npm run typecheck` compiles this tree under the root's config,
-where `@/*` *does* resolve. Nothing runs `tsc -p packages/ui` yet. With an empty
-`src/index.ts` a check wired now could not fail, so it is named here and belongs
-with step 2, when there is a file for it to have an opinion about.
+## Type checking
+
+`tsconfig.json` makes clause 4 a compiler error rather than a regex: it resets
+the root's `paths` and `baseUrl`, so `@/…` does not resolve here. CI compiles
+the package through it in its own step, `npm run typecheck:ui-boundary`
+(`tsc --noEmit -p packages/ui/tsconfig.json`). The root `npm run typecheck`
+also compiles this tree, but under the root's config, where `@/*` resolves —
+which is why the separate step exists.
+
+The same file turns on `noUncheckedIndexedAccess`, which the root does not: an
+index read here has to prove the element exists, so a product that mirrors the
+package and compiles with that flag can keep it on. The guard above fails if
+the flag is removed.
 
 ## Tokens
 
 `tokens.contract.css` declares the 47 theme tokens this package's components
-will consume, each with a fallback: a neutral literal for the 45 that §4 measured,
+consume, each with a fallback: a neutral literal for the 45 that §4 measured,
 and an alias of the brand for `--accent-default` / `--accent-emphasis`, the colour
 the solid focus indicators are drawn in (a host that focuses in its brand needs
 to do nothing). The package requires tokens, does not ship them, and ships their

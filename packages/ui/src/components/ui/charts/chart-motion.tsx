@@ -454,7 +454,7 @@ interface UseChartSheenArgs {
  * `prefers-reduced-motion: reduce` → the loop never starts; the
  * gradient stays at the identity transform (the sheen band sits
  * off to one edge, effectively invisible). No resting sheen, no
- * motion — same WCAG posture as every other chart-motion hook.
+ * motion — the same WCAG stance as every other chart-motion hook.
  */
 export function useChartSheen({
     distance,

@@ -181,12 +181,14 @@ export function useTooltip<T extends Datum>({
         else visxTooltip.hideTooltip();
         return;
       }
-      if (data.length === 0) {
+      // `bisectDate(data, x0, 1)` returns an index in [1, data.length], so
+      // `d0` exists whenever `data` is non-empty; the one check covers both.
+      const index = bisectDate(data, x0, 1);
+      const d0 = data[index - 1];
+      if (d0 === undefined) {
         visxTooltip.hideTooltip();
         return;
       }
-      const index = bisectDate(data, x0, 1);
-      const d0 = data[index - 1];
       const d1 = data[index];
       let d = d0;
       if (d1?.date) {

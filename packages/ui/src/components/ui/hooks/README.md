@@ -1,34 +1,37 @@
 # UI utility hooks
 
-Epic 60's canonical home for **shared, reusable React hooks** that
-belong to the UI layer — viewport awareness, scroll behaviour,
-persistence, optimistic state, keyboard-friendly input, and other
-polish primitives that enterprise workflows benefit from.
+The package's home for **shared, reusable React hooks** that belong to
+the UI layer — viewport awareness, scroll behaviour, persistence,
+optimistic state, keyboard-friendly input, and other polish primitives
+that dense product screens benefit from.
 
 ## Where hooks live
 
 | Directory | Purpose | Example |
 |---|---|---|
-| `src/components/ui/hooks/` | Shared **UI utility** hooks. No data fetching, no server-only code. | `useLocalStorage`, `useScroll`, `useMediaQuery` |
-| `src/lib/hooks/` | Typed **domain** + data-fetching hooks (React-Query-shaped). Also the home of cross-cutting platform hooks like `useKeyboardShortcut` and `useApi`. | `useControls`, `useRisks`, `useKeyboardShortcut` |
-| Feature-local — e.g. `src/components/ui/table/use-table-pagination.tsx`, `src/components/ui/charts/use-tooltip.ts`, `src/components/ui/filter/use-filter-presets.ts` | Hooks tightly coupled to a specific primitive. Stay with the feature they serve. | — |
+| `packages/ui/src/components/ui/hooks/` (this directory) | Shared **UI utility** hooks. No data fetching, no server-only code, no product vocabulary. | `useLocalStorage`, `useScroll`, `useMediaQuery` |
+| The host application's own hooks directories | Data-fetching and **domain** hooks, and UI hooks that reach for something the package does not hold. They import from here; nothing here imports from them. | `useItems`, `useKeyboardShortcut` |
+| Feature-local — next to the primitive they serve (in this package, `charts/use-tooltip.ts` and `charts/use-heat-scale.ts`) | Hooks tightly coupled to one primitive. Stay with the feature they serve. | — |
 
 The rule: **a new UI utility hook goes here unless it's clearly
-owned by a specific feature module**. If you find yourself copying a
+owned by a specific feature module** and unless it needs something
+outside the package's boundary (see the package `README.md`, "What may
+be imported from inside this package"). If you find yourself copying a
 viewport / scroll / persistence hook into two different places, it
 belongs here.
 
-## Categories (Epic 60 scope)
+## Categories
 
 | Category | Purpose | Current inhabitants |
 |---|---|---|
 | Persistence | Browser-local state survival across reloads | `useLocalStorage` |
-| Viewport / observer | Reading / reacting to element geometry and media queries | `useInViewport`, `useIntersectionObserver`, `useResizeObserver`, `useMediaQuery`, `useResponsivePresentation` |
+| Viewport / observer | Reading / reacting to element geometry and media queries | `useInViewport`, `useIntersectionObserver`, `useResizeObserver`, `useMediaQuery`, `useIsBelowMd`, `useResponsivePresentation` |
 | Scroll | Reading / reacting to scroll position and progress | `useScroll`, `useScrollProgress` |
-| Optimistic UI | Framework-agnostic local overlay on a committed value, with rollback on failure | `useOptimisticUpdate` |
-| Submit / input / keyboard | Form-friendly keyboard behaviour: Enter-to-submit with multiline/IME safety (`useEnterSubmit`), editable-focus signal mirroring Epic 57 (`useInputFocused`), shortcut registration via the shared Epic 57 registry (`useKeyboardShortcut` shim) | `useEnterSubmit`, `useInputFocused`, `useKeyboardShortcut` |
-| Dense-table ergonomics | Table-state utilities broad enough to escape the table module | `useColumnVisibility` |
+| Optimistic UI and saving | Framework-agnostic local overlay on a committed value, with rollback on failure; debounced field autosave | `useOptimisticUpdate`, `useAutosaveFields` |
+| Submit / input / keyboard | Form-friendly keyboard behaviour: Enter-to-submit with multiline/IME safety, and an editable-focus signal for gating page-level shortcuts | `useEnterSubmit`, `useInputFocused` |
+| Lists and dense tables | Table-state and list-loading utilities broad enough to escape the table module | `useColumnVisibility`, `useCursorPagination`, `useThresholdLoadMore`, `useSsrFallback`, `useCreateQueryParam` |
 | Clipboard / copy | Clipboard writing with success/failure state | `useCopyToClipboard` |
+| Feedback | Toasts and celebration effects | `useToast`, `useCelebration` |
 
 ## Conventions
 
@@ -36,13 +39,13 @@ belongs here.
 
 - **File name:** `use-kebab-case.ts` (or `.tsx` if the hook renders JSX,
   e.g. returns a Provider component as part of its API).
-- **Default export:** none. Named exports only, so the barrel can
+- **Default export:** none. Named exports only, so a host barrel can
   tree-shake.
 - **Hook name:** `useCamelCase` matching the file slug. One primary
   hook per file. If the file exports multiple helpers, keep the hook
   first in the file.
 - **Type exports:** `UseXxxOptions`, `UseXxxResult` — pair the hook
-  name as a prefix, export both via the barrel so callers can type
+  name as a prefix, and export both so callers can type
   their handler signatures.
 
 ### SSR / client-only safety
@@ -117,35 +120,40 @@ pass in; requiring them to re-declare the shape creates drift.
 
 1. Create `use-new-thing.ts(x)` in this directory.
 2. Export the hook as a named export plus any public types.
-3. Add the export line to `./index.ts` **under the right category
-   comment**. Categories keep the barrel readable as the set grows.
+3. If the host application keeps a hooks barrel, add the export line
+   to it **under the right category comment**. Categories keep the
+   barrel readable as the set grows.
 4. If the hook needs a browser guard, follow the SSR-safety pattern
    above — see `use-local-storage.ts` and `use-media-query.ts` for
    reference implementations.
-5. Add a `tests/rendered/` render test covering the happy path, the
-   SSR/hydration boundary, and cleanup.
+5. Add a render test covering the happy path, the SSR/hydration
+   boundary, and cleanup — co-located under `__tests__/`, or in the
+   host's rendered-test suite.
+6. A package the hook imports must be declared in the package's
+   `package.json` (see the package `README.md`).
 
-`tests/guards/ui-hooks-barrel.test.ts` enforces barrel completeness —
-a hook file without a barrel export fails CI.
+In inflect-compliance, the barrel is `src/components/ui/hooks/index.ts`
+and `tests/guards/ui-hooks-barrel.test.ts` enforces its completeness —
+a hook file in this directory without a barrel export fails CI.
 
 ## Importing
 
 ```ts
-// ✅ always import from the barrel
-import { useLocalStorage, useScroll } from '@/components/ui/hooks';
-
-// ❌ avoid deep-path imports — implementation detail
-import { useLocalStorage } from '@/components/ui/hooks/use-local-storage';
+// ✅ by the package subpath — always resolves, in any host
+import { useLocalStorage } from '@inflect/ui/components/ui/hooks/use-local-storage';
+import { useScroll } from '@inflect/ui/components/ui/hooks/use-scroll';
 ```
 
-The deep path still works (file-level exports are public), but the
-barrel is the contract. Deep-path imports bypass the barrel-audit
-guard, so they stay invisible to the "what's in this module" check.
+A host may re-export these from a barrel of its own so its call
+sites import one path; inflect-compliance does
+(`@/components/ui/hooks`), and its pages import from that barrel. The
+package itself has no hooks barrel: inside the package, import a hook
+by relative path (`./use-local-storage`) or by its subpath.
 
 ## Related
 
-- `@/lib/hooks` — domain + data-fetching hooks (`useApi`, `useControls`,
-  `useRisks`, ...). Different module, different responsibility.
-- `docs/implementation-notes/2026-04-22-epic-60-hooks-foundation.md` —
-  design rationale for why this directory exists as a separate home
-  from `src/lib/hooks/`.
+- The package `README.md` — what the package holds, how it is
+  imported, and its dependency boundary.
+- `docs/implementation-notes/2026-04-22-epic-60-hooks-foundation.md`
+  (inflect-compliance) — design rationale for keeping UI utility hooks
+  apart from data-fetching hooks.

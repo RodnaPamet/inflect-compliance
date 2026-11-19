@@ -3,12 +3,12 @@
 /**
  * Epic 59 — shared chart interaction primitives.
  *
- * This file is the single place every Inflect chart surface reaches
- * for when it needs hover / focus / tooltip machinery beyond the
- * visx primitives `use-tooltip.ts` already wraps. It stays UI-pure
- * and token-backed so any chart — dashboard KPI spark, reporting
- * TimeSeriesChart, future audit funnel — renders a consistent
- * tooltip and respects the same keyboard contract.
+ * This file is the single place every chart surface reaches for
+ * when it needs hover / focus / tooltip machinery beyond the visx
+ * primitives `use-tooltip.ts` already wraps. It stays UI-pure and
+ * token-backed so any chart — a KPI sparkline, a TimeSeriesChart,
+ * a funnel — renders a consistent tooltip and respects the same
+ * keyboard contract.
  *
  * Exports:
  *
@@ -22,7 +22,7 @@
  *     any focusable element wrapping a chart; arrow keys step
  *     through data points, Home / End jump to the endpoints, and
  *     Escape clears the selection. Integrates with the shared
- *     `ChartTooltipSync` so the rest of the dashboard echoes the
+ *     `ChartTooltipSync` so the rest of the page echoes the
  *     navigation focus, not just the pointer.
  *
  *   - `<ChartTooltipContainer>` — token-backed surface matching the
@@ -75,7 +75,7 @@ export interface ChartHoverState<T extends Datum = Datum> {
  * Typical use: a KPI label above a chart echoing the hovered value:
  *
  *   const { datum } = useChartHover<MyValues>(data);
- *   const coverage = datum?.values.coverage ?? summary.coverage;
+ *   const total = datum?.values.total ?? summary.total;
  */
 export function useChartHover<T extends Datum = Datum>(
     data: Data<T>,
@@ -93,17 +93,11 @@ export function useChartHover<T extends Datum = Datum>(
             };
         }
         const target = date.getTime();
-        let foundIndex = -1;
-        for (let i = 0; i < data.length; i++) {
-            if (data[i].date.getTime() === target) {
-                foundIndex = i;
-                break;
-            }
-        }
+        const foundIndex = data.findIndex((d) => d.date.getTime() === target);
         return {
             date,
             index: foundIndex,
-            datum: foundIndex === -1 ? null : data[foundIndex],
+            datum: data[foundIndex] ?? null,
             clear: () => sync.setTooltipDate?.(null),
         };
     }, [date, data, sync]);

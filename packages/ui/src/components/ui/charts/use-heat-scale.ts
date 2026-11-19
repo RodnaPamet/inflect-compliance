@@ -8,8 +8,8 @@
  * `color-mix(in oklab, ...)` interpolation runs in CSS at render
  * time — no JS reads of computed styles, no per-frame work.
  *
- * Why this exists. R21 PR-C rebuilds both RiskHeatmap and
- * CalendarHeatmap; both need a value-to-color mapping that:
+ * Why this exists. Heatmaps — a matrix heatmap and a calendar
+ * heatmap alike — need a value-to-color mapping that:
  *   (a) reads from the R16 chart-token palette so heatmaps speak
  *       the same colour vocabulary as the rest of the chart
  *       family;
@@ -34,10 +34,8 @@
  *     </>
  *   );
  *
- * No consumer wires this in PR-A — it lands purely as foundation.
- * RiskHeatmap + CalendarHeatmap consume it in PR-C; the R21-PR-A
- * ratchet locks the API surface so PR-C can wire to it without
- * fear of drift.
+ * It carries no knowledge of what the cells measure: the caller
+ * supplies the domain and the series, and the hook returns colours.
  */
 import { useMemo } from 'react';
 
@@ -54,7 +52,7 @@ export interface HeatScaleOptions {
      * Which chart-series gradient (1..6) drives the heat ramp.
      * The R16 token palette uses 1 = warm yellow/orange, 2 = cool
      * cyan, 3 = violet, 4 = pink, 5 = green, 6 = amber.
-     * Default: 1 (brand-warm — the canonical "risk" hue).
+     * Default: 1 (brand-warm — the canonical "attention" hue).
      */
     series?: ChartSeriesIndex;
     /**
