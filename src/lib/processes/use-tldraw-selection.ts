@@ -61,6 +61,7 @@ import {
     type WiringEdge,
     type WiringNode,
 } from '@/lib/processes/canvas-rule-wiring';
+import { CONTROL_NODE_TYPE } from '@/app-layer/schemas/process-map';
 import {
     resolveSelection,
     toSelectedEdge,
@@ -166,11 +167,18 @@ export function useTldrawSelection(editor: Editor | null) {
             if (patch.label !== undefined) props.label = patch.label;
             if (patch.subtitle !== undefined) props.subtitle = patch.subtitle;
             if (patch.linkedEntityId !== undefined) {
-                // Merged into `dataJson` rather than replacing it: the column is
-                // an opaque passthrough carrying whatever else the row holds,
-                // and a whole-value write would drop every sibling key.
                 const prev = (shape.props?.dataJson ?? null) as Record<string, unknown> | null;
-                props.dataJson = { ...(prev ?? {}), linkedEntityId: patch.linkedEntityId };
+                if (shape.props?.nodeType === CONTROL_NODE_TYPE) {
+                    // A control node's link is its own prop, persisted to the
+                    // `ProcessNodeControl` table with a real foreign key — never
+                    // the JSON slot, which the server strips from a control node.
+                    props.controlId = patch.linkedEntityId;
+                } else {
+                    // Merged into `dataJson` rather than replacing it: the column
+                    // is an opaque passthrough carrying whatever else the row
+                    // holds, and a whole-value write would drop every sibling key.
+                    props.dataJson = { ...(prev ?? {}), linkedEntityId: patch.linkedEntityId };
+                }
             }
             if (Object.keys(props).length === 0) return;
 
@@ -325,6 +333,9 @@ function inspectorDataFor(editor: Editor, shape: SelectedShape): Record<string, 
         kind: nodeType,
         ruleId: ruleIdOfDataJson(dataJson),
         ...(dataJson && 'linkedEntityId' in dataJson ? { linkedEntityId: dataJson.linkedEntityId } : {}),
+        // A control node's picker reads the node's own link, under the name the
+        // inspector's picker reads for every kind.
+        ...(nodeType === CONTROL_NODE_TYPE ? { linkedEntityId: props.controlId ?? null } : {}),
     };
     if (FEEDING_KINDS.has(nodeType)) {
         data.fedRules = fedRuleIds(String(props.nodeKey ?? ''), wiringNodes(editor), wiringEdges(editor));

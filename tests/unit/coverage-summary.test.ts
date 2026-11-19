@@ -73,9 +73,9 @@ function mockDb(overrides: {
                 processEdgeControlIds.map(id => ({ controlId: id })),
             ),
         },
-        processNode: {
+        processNodeControl: {
             findMany: jest.fn().mockResolvedValue(
-                controlNodeLinkedIds.map(id => ({ dataJson: { linkedEntityId: id } })),
+                controlNodeLinkedIds.map(id => ({ controlId: id })),
             ),
         },
         asset: {

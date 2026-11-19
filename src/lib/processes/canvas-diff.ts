@@ -42,6 +42,11 @@ interface DiffNodeRow {
     posY: number;
     parentNodeKey: string | null;
     dataJson: unknown;
+    /**
+     * A control node's linked Control. Optional: a version stored before the
+     * link had its own field carries it as `dataJson.linkedEntityId` instead.
+     */
+    controlId?: string | null;
 }
 
 interface DiffEdgeRow {
@@ -75,14 +80,35 @@ export interface CanvasDiff {
 const EPSILON = 0.5;
 const posDiffers = (a: number, b: number) => Math.abs(a - b) > EPSILON;
 
+/**
+ * A node's control link and its data, read the same way from a version stored
+ * before the link had its own field (`dataJson.linkedEntityId`) and after it
+ * (`controlId`). Without this, every control node in a map read as modified
+ * between two such versions although nothing about it changed.
+ */
+function controlLinkOf(n: DiffNodeRow): { link: string | null; data: unknown } {
+    const data = n.dataJson ?? null;
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
+        return { link: n.controlId ?? null, data };
+    }
+    const { linkedEntityId, ...rest } = data as Record<string, unknown>;
+    const legacy = typeof linkedEntityId === "string" ? linkedEntityId : null;
+    return {
+        link: n.controlId !== undefined ? n.controlId ?? null : legacy,
+        data: "linkedEntityId" in data ? rest : data,
+    };
+}
+
 function classifyNode(a: DiffNodeRow, b: DiffNodeRow): DiffClass {
     const positionChanged =
         posDiffers(a.posX, b.posX) || posDiffers(a.posY, b.posY);
     const labelChanged =
         a.label !== b.label || (a.subtitle ?? null) !== (b.subtitle ?? null);
+    const ca = controlLinkOf(a);
+    const cb = controlLinkOf(b);
+    // A link change is a data change: the node now stands for another control.
     const dataChanged =
-        JSON.stringify(a.dataJson ?? null) !==
-        JSON.stringify(b.dataJson ?? null);
+        ca.link !== cb.link || JSON.stringify(ca.data) !== JSON.stringify(cb.data);
     const typeChanged = a.nodeType !== b.nodeType;
     const parentChanged = (a.parentNodeKey ?? null) !== (b.parentNodeKey ?? null);
 

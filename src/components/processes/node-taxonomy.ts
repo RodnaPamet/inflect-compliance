@@ -270,7 +270,7 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
         id: 'control',
         label: 'Control',
         description:
-            'A governance / control element. Canonically edge-mounted (R26-PR-D); the node kind remains for legacy maps.',
+            'A control that gates one step in place, linked to its Control record. Controls on a connection between two steps stay edge-mounted (R26-PR-D).',
         icon: ShieldCheck,
         accent: 'brand-secondary',
         shape: 'rect',
@@ -405,24 +405,29 @@ export const NODE_TAXONOMY: Record<ProcessNodeKind, NodeTypeMeta> = {
 /**
  * Ordered taxonomy — drives the palette's left-to-right layout.
  *
- * R26-PR-D dropped `control` from this list. Controls are now
- * canonically edge-mounted (drag onto a connection between two
- * steps), not standalone nodes hanging in space. The taxonomy
- * entry stays in `NODE_TAXONOMY` so legacy map data carrying
- * `nodeType: 'control'` still rehydrates correctly, but the
- * palette never offers it as a primary affordance. Controls are
- * attached to an edge via the inspector's Control picker (PR-D
- * retired the ephemeral on-edge "Add control" stamp), which
- * persists them to `data.controls`.
+ * `control` is back in the palette (owner decision, 2026-11-19), after
+ * R26-PR-D had dropped it. The two placements answer different questions and
+ * both stay:
  *
- * Order otherwise: flow primitives (step + decision) first; then
- * the three context kinds (risk + asset + external); then the
- * annotation last. Reading left to right, the palette communicates
- * "build the flow → layer the context → leave a note".
+ *   - a control ON A CONNECTION gates the hand-off between two steps
+ *     (`ProcessEdgeControl`, attached through the edge inspector's picker);
+ *   - a control NODE gates one step in place ("this step is gated by X"),
+ *     linked to exactly one Control record (`ProcessNodeControl`) through the
+ *     node inspector's picker, and shows that control's live status.
+ *
+ * What PR-D objected to was a control-shaped label with no link behind it. A
+ * control node now has a real foreign key, and an unlinked one is drawn dashed
+ * as an unfinished draft.
+ *
+ * Order otherwise: flow primitives (step + decision) first; then the control
+ * and the three context kinds (risk + asset + external); then the annotation
+ * last. Reading left to right, the palette communicates "build the flow →
+ * gate and layer the context → leave a note".
  */
 export const NODE_TAXONOMY_ORDER: ProcessNodeKind[] = [
     'processStep',
     'decision',
+    'control',
     'risk',
     'asset',
     'external',

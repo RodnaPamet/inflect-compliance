@@ -29,6 +29,7 @@ import { RequestContext } from '../types';
 import type { SubflowGroupItem } from '@/lib/processes/subflow-groups';
 import { staleData, badRequest } from '@/lib/errors/types';
 import { withDeleted } from '@/lib/soft-delete';
+import { CONTROL_NODE_TYPE } from '../schemas/process-map';
 import type {
     ProcessNodeInput,
     ProcessEdgeInput,
@@ -71,6 +72,8 @@ export interface ProcessMapWithGraph {
         posY: number;
         parentNodeKey: string | null;
         dataJson: unknown;
+        /** The linked Control's id (`ProcessNodeControl`), or null. */
+        controlId: string | null;
     }>;
     edges: Array<{
         edgeKey: string;
@@ -86,6 +89,56 @@ export interface ProcessMapWithGraph {
             dataJson: unknown;
         }>;
     }>;
+}
+
+/**
+ * Where each `control` node's link comes from, decided before anything is
+ * written. Pure, so the three-state contract is unit-testable without a DB.
+ *
+ *   - `controlId` a string → an EXPLICIT link. Checked strictly: a control that
+ *     is not this tenant's refuses the whole save, as edge controls do.
+ *   - `controlId` null → explicitly unlinked (a draft placeholder).
+ *   - `controlId` absent → the sender predates the field (an old snapshot being
+ *     restored, a browser tab from before the deploy). Its legacy
+ *     `dataJson.linkedEntityId` is LIFTED, best effort: kept only if it names
+ *     one of this tenant's controls, dropped otherwise — the same rule the
+ *     backfill migration applied, because nothing ever validated that string.
+ *
+ * Every `control` node's `linkedEntityId` is stripped from the `dataJson` that
+ * is written: the link has one home now, and a stale copy in the JSON would be
+ * a second source that drifts. A non-control node carrying a `controlId` is
+ * refused, not ignored.
+ */
+export function planNodeControlLinks(nodes: readonly ProcessNodeInput[]): {
+    nodes: ProcessNodeInput[];
+    explicit: Map<string, string>;
+    legacy: Map<string, string>;
+} {
+    const explicit = new Map<string, string>();
+    const legacy = new Map<string, string>();
+    const cleaned = nodes.map((n) => {
+        if (n.nodeType !== CONTROL_NODE_TYPE) {
+            if (n.controlId != null) {
+                throw badRequest(
+                    `Node ${n.nodeKey} is not a control node and cannot link to a control`,
+                );
+            }
+            return n;
+        }
+        const data =
+            n.dataJson && typeof n.dataJson === 'object' && !Array.isArray(n.dataJson)
+                ? { ...(n.dataJson as Record<string, unknown>) }
+                : null;
+        const legacyId = data?.linkedEntityId;
+        if (typeof n.controlId === 'string') {
+            explicit.set(n.nodeKey, n.controlId);
+        } else if (n.controlId === undefined && typeof legacyId === 'string' && legacyId.length > 0) {
+            legacy.set(n.nodeKey, legacyId);
+        }
+        if (data && 'linkedEntityId' in data) delete data.linkedEntityId;
+        return data ? { ...n, dataJson: data } : n;
+    });
+    return { nodes: cleaned, explicit, legacy };
 }
 
 export class ProcessMapRepository {
@@ -141,6 +194,7 @@ export class ProcessMapRepository {
                         posY: true,
                         parentNodeKey: true,
                         dataJson: true,
+                        control: { select: { controlId: true } },
                     },
                 },
                 edges: {
@@ -175,7 +229,10 @@ export class ProcessMapRepository {
             createdAt: map.createdAt,
             updatedAt: map.updatedAt,
             freeformJson: map.freeformJson ?? null,
-            nodes: map.nodes,
+            nodes: map.nodes.map(({ control, ...n }) => ({
+                ...n,
+                controlId: control?.controlId ?? null,
+            })),
             edges: map.edges,
         };
     }
@@ -420,10 +477,13 @@ export class ProcessMapRepository {
         // row id, and so the single one that did not survive.
         //
         // PAST TENSE, DELIBERATELY: #2971 moved BIA onto (`processMapId`,
-        // `processNodeKey`) as well, so TODAY NOTHING REFERENCES A ProcessNode
-        // BY ROW ID — grep the schema for a relation into `ProcessNode` and
-        // only the `ProcessMap.nodes` and `Tenant.processNodes` back-relations
-        // come back. The two changes are not redundant. This one keeps an
+        // `processNodeKey`) as well, so nothing OUTSIDE THIS SAVE references a
+        // ProcessNode by row id. One table does reference it by row id,
+        // `ProcessNodeControl`, and it is safe for the reason edge controls
+        // are: its rows are rewritten from the payload below, in this same
+        // transaction, so a redrawn node gets its link back with its new id.
+        // A new reference to a node row from anywhere else must not assume
+        // that. The two changes are not redundant. This one keeps an
         // ordinary save from churning every row; #2971 covers the case this
         // one cannot, a node genuinely deleted and recreated — the same step
         // redrawn — where no amount of upserting preserves a row id.
@@ -441,7 +501,11 @@ export class ProcessMapRepository {
         // edges), inside the same transaction. The header's note that a diff
         // buys "negligible benefit at the bounded graph sizes" was true about
         // SPEED and missed this: the benefit was never speed.
-        const incomingKeys = input.nodes.map((n) => n.nodeKey);
+        // Decide each control node's link before any write (throws on a
+        // controlId carried by a non-control node).
+        const plan = planNodeControlLinks(input.nodes);
+
+        const incomingKeys = plan.nodes.map((n) => n.nodeKey);
 
         // Nodes the payload dropped. Guarded because `notIn: []` is a condition
         // that excludes nothing — correct here, but stating the empty case
@@ -454,7 +518,8 @@ export class ProcessMapRepository {
             },
         });
 
-        for (const n of input.nodes) {
+        const nodeIdByKey = new Map<string, string>();
+        for (const n of plan.nodes) {
             const fields = {
                 nodeType: n.nodeType,
                 label: n.label,
@@ -468,7 +533,7 @@ export class ProcessMapRepository {
                         : (n.dataJson as Prisma.InputJsonValue | null) ??
                           Prisma.JsonNull,
             };
-            await db.processNode.upsert({
+            const row = await db.processNode.upsert({
                 // The map-scoped natural key. `nodeKey` is unique per map, not
                 // per tenant, so the compound is the only correct target — and
                 // it is the id the client has considered stable all along.
@@ -484,7 +549,9 @@ export class ProcessMapRepository {
                 // to move a node between maps would be describing a different
                 // node.
                 update: fields,
+                select: { id: true },
             });
+            nodeIdByKey.set(n.nodeKey, row.id);
         }
 
         // Verify every referenced controlId belongs to THIS tenant, once,
@@ -499,14 +566,18 @@ export class ProcessMapRepository {
         // Hoisted out of the loop deliberately — a per-edge lookup would be an
         // N+1, which the query-shape ratchet rejects and which would scale with
         // canvas size.
+        //
+        // Control NODES ride the same single read: their explicit links are
+        // checked as strictly as edge controls, and their legacy lifts (see
+        // `planNodeControlLinks`) are kept only when the read finds them.
+        const edgeControlIds = input.edges
+            .flatMap((e) => e.controls ?? [])
+            .map((c) => c.controlId)
+            .filter((v): v is string => typeof v === 'string' && v.length > 0);
         const referencedControlIds = Array.from(
-            new Set(
-                input.edges
-                    .flatMap((e) => e.controls ?? [])
-                    .map((c) => c.controlId)
-                    .filter((v): v is string => typeof v === 'string' && v.length > 0),
-            ),
+            new Set([...edgeControlIds, ...plan.explicit.values(), ...plan.legacy.values()]),
         );
+        let ownedControlIds = new Set<string>();
         if (referencedControlIds.length > 0) {
             // Bounded by `referencedControlIds`, which is derived from the
             // caller's own edge list. A `take:` here would silently truncate the
@@ -521,13 +592,47 @@ export class ProcessMapRepository {
                 where: { id: { in: referencedControlIds }, tenantId: ctx.tenantId },
                 select: { id: true },
             }));
-            const ownedIds = new Set(owned.map((c: { id: string }) => c.id));
-            const foreign = referencedControlIds.filter((cid) => !ownedIds.has(cid));
+            ownedControlIds = new Set(owned.map((c: { id: string }) => c.id));
+            const foreign = Array.from(new Set(edgeControlIds)).filter(
+                (cid) => !ownedControlIds.has(cid),
+            );
             if (foreign.length > 0) {
                 throw badRequest(
                     `Edge references ${foreign.length} control(s) that do not belong to this tenant`,
                 );
             }
+            const foreignNodeLinks = Array.from(new Set(plan.explicit.values())).filter(
+                (cid) => !ownedControlIds.has(cid),
+            );
+            if (foreignNodeLinks.length > 0) {
+                throw badRequest(
+                    `Node references ${foreignNodeLinks.length} control(s) that do not belong to this tenant`,
+                );
+            }
+        }
+
+        // The control-node links, rebuilt from the payload like edge controls.
+        // A node the payload dropped took its link with it (FK cascade on the
+        // node delete above); this clears the survivors' links so a node the
+        // user unlinked is unlinked.
+        const linkedControlByKey = new Map<string, string>(plan.explicit);
+        for (const [nodeKey, cid] of plan.legacy) {
+            if (ownedControlIds.has(cid)) linkedControlByKey.set(nodeKey, cid);
+        }
+        await db.processNodeControl.deleteMany({
+            where: { processMapId: id, tenantId: ctx.tenantId },
+        });
+        if (linkedControlByKey.size > 0) {
+            await db.processNodeControl.createMany({
+                data: Array.from(linkedControlByKey, ([nodeKey, controlId]) => ({
+                    tenantId: ctx.tenantId,
+                    processMapId: id,
+                    // Every key here came from `plan.nodes`, which the loop above
+                    // upserted, so the id is always present.
+                    nodeId: nodeIdByKey.get(nodeKey) as string,
+                    controlId,
+                })),
+            });
         }
 
         // Edges and their controls. Need each edge's row id back
@@ -647,7 +752,7 @@ export class ProcessMapRepository {
                 : (existing.freeformJson ?? null);
         const graphJsonPayload = {
             version: newVersion,
-            nodes: input.nodes.map((n) => ({
+            nodes: plan.nodes.map((n) => ({
                 nodeKey: n.nodeKey,
                 nodeType: n.nodeType,
                 label: n.label,
@@ -656,6 +761,12 @@ export class ProcessMapRepository {
                 posY: n.posY,
                 parentNodeKey: n.parentNodeKey ?? null,
                 dataJson: n.dataJson ?? null,
+                // What was STORED, not what was sent: a legacy lift that found
+                // no control is null here, so restoring this version later
+                // restores exactly this state.
+                ...(n.nodeType === CONTROL_NODE_TYPE
+                    ? { controlId: linkedControlByKey.get(n.nodeKey) ?? null }
+                    : {}),
             })),
             edges: input.edges.map((e) => ({
                 edgeKey: e.edgeKey,
@@ -839,19 +950,61 @@ export class ProcessMapRepository {
     }
 
     /**
+     * Reverse lookup for a control NODE: "which process maps have a control
+     * node linked to control X?" The node analogue of `listMapsByControl`
+     * (edge-mounted controls), and like it a read of a real FK table,
+     * `ProcessNodeControl`, gated by its leading `[tenantId, controlId]` index.
+     */
+    static async listMapsByControlNode(
+        db: PrismaTx,
+        ctx: RequestContext,
+        controlId: string,
+    ): Promise<
+        Array<{
+            mapId: string;
+            mapName: string;
+            mapStatus: string;
+            nodeKey: string;
+            nodeLabel: string;
+        }>
+    > {
+        // Bounded by the control nodes linking one control (a handful across a
+        // tenant's maps), the same bound as the edge lookup above.
+        const rows = await db.processNodeControl.findMany({ // guardrail-allow: unbounded
+            where: { tenantId: ctx.tenantId, controlId },
+            select: {
+                node: { select: { nodeKey: true, label: true } },
+                processMap: {
+                    select: { id: true, name: true, status: true, deletedAt: true },
+                },
+            },
+        });
+        return rows
+            .filter((r) => r.processMap.deletedAt === null)
+            .map((r) => ({
+                mapId: r.processMap.id,
+                mapName: r.processMap.name,
+                mapStatus: r.processMap.status,
+                nodeKey: r.node.nodeKey,
+                nodeLabel: r.node.label,
+            }));
+    }
+
+    /**
      * PR-D — reverse lookup for a NODE-mounted compliance link.
      * "Which process maps have a `<nodeType>` node linked to entity X?"
      * The node link lives on `ProcessNode.dataJson.linkedEntityId` with the
-     * kind on the `nodeType` column, so this is the risk/asset/control-node
-     * analogue of `listMapsByControl` (which covers EDGE-mounted controls).
+     * kind on the `nodeType` column, so this is the risk/asset-node analogue
+     * of `listMapsByControl` (which covers EDGE-mounted controls).
      *
-     * `nodeType` is one of the compliance node kinds ('control' | 'risk' |
-     * 'asset'); `entityId` is the real Control/Risk/Asset id.
+     * NOT for controls: a control node's link moved to `ProcessNodeControl`
+     * (`listMapsByControlNode`), and the parameter's type leaves `'control'`
+     * out so a control lookup cannot fall back to the JSON path.
      */
     static async listMapsByLinkedEntity(
         db: PrismaTx,
         ctx: RequestContext,
-        nodeType: 'control' | 'risk' | 'asset',
+        nodeType: 'risk' | 'asset',
         entityId: string,
     ): Promise<
         Array<{

@@ -42,6 +42,10 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // the global client: on the global client the insert's `WITH CHECK` would
     // refuse it, so a passing test there would prove nothing about isolation.
     OpenShellSandboxLease: 'tests/unit/agentic/openshell-sandbox-lease.test.ts',
+    // A control node's link to its Control: B cannot link to A's control, its
+    // RLS-bound read sees none of A's rows, and the facts read and the reverse
+    // lookup learn nothing about A's control.
+    ProcessNodeControl: 'tests/integration/process-node-control-two-tenant.test.ts',
     // #3861 — all three. The VALUE here is a path, not prose: "every dedicated
     // isolation-test file exists" resolves it with `exists()`, so a reason
     // written in this slot would fail that sibling test. What the one file

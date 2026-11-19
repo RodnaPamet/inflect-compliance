@@ -90,6 +90,7 @@ model ProcessMap {
   nodes     ProcessNode[]
   edges     ProcessEdge[]
   snapshots ProcessMapSnapshot[]
+  nodeControls ProcessNodeControl[]
 
   @@unique([id, tenantId])
   @@index([tenantId, deletedAt])
@@ -186,6 +187,8 @@ model ProcessNode {
   processMap             ProcessMap               @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
   /// Business Impact Analyses attached to this node — the BIA lives in
   /// the Internal Audit area (not the canvas); this is the link back.
+  /// The Control a `control` node stands for (one per node), if linked.
+  control                ProcessNodeControl?
 
   @@unique([processMapId, nodeKey])
   @@index([tenantId, processMapId])
@@ -229,6 +232,45 @@ model ProcessEdge {
   @@unique([processMapId, edgeKey])
   @@unique([id, tenantId])
   @@index([tenantId, processMapId])
+}
+
+/// The Control record a `control` node stands for.
+///
+/// At most one row per node (`@@unique([nodeId, tenantId])`): a control node
+/// says "this step is gated by X". It replaces the untyped
+/// `ProcessNode.dataJson.linkedEntityId`, which had no foreign key, was checked
+/// against no tenant at save, and was read as JSON.
+///
+/// Rebuilt from the save payload on every save, like `ProcessEdgeControl`:
+/// `replaceGraph` deletes the map's rows and writes one per node that carries a
+/// `controlId`, in the same transaction that upserts the nodes. So a redrawn
+/// node (a new row) gets its link back from the payload, and the composite
+/// `(nodeId, tenantId)` / `(controlId, tenantId)` keys make a cross-tenant
+/// reference unrepresentable rather than filtered.
+///
+/// Nothing about the control is copied here. The canvas reads the control's
+/// name, status and test date live, so a renamed control never shows its old
+/// name on a map.
+model ProcessNodeControl {
+  id           String   @id @default(cuid())
+  tenantId     String
+  // Denormalised from the node, so RLS scopes the table on the same column
+  // shape as its siblings and "all node controls in map X" is one indexed read.
+  processMapId String
+  nodeId       String
+  controlId    String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  control    Control     @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  // One control per node. `nodeId` is a cuid, so this is "unique per node";
+  // the composite is what Prisma needs to make the relation one-to-one.
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, controlId])
 }
 
 model ProcessEdgeControl {

@@ -337,12 +337,12 @@ export async function listMapsUsingControl(
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         // A control can gate an edge (processEdgeControl) OR sit on a `control`
-        // node (ProcessNode.dataJson.linkedEntityId). The edge-only lookup
+        // node (processNodeControl). The edge-only lookup
         // missed node-mounted controls even though they count toward coverage —
         // union both so the reverse-lookup matches the coverage signal.
         const [edges, nodes] = await Promise.all([
             ProcessMapRepository.listMapsByControl(db, ctx, controlId),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'control', controlId),
+            ProcessMapRepository.listMapsByControlNode(db, ctx, controlId),
         ]);
         return [
             ...edges.map((e) => ({

@@ -10,7 +10,7 @@
  * not-found / throw / concurrency branches.
  */
 
-import { ProcessMapRepository } from '@/app-layer/repositories/ProcessMapRepository';
+import { ProcessMapRepository, planNodeControlLinks } from '@/app-layer/repositories/ProcessMapRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 import { Prisma } from '@prisma/client';
 
@@ -37,7 +37,18 @@ function freshDb() {
             ),
             // #2967 — nodes are UPSERTED by (processMapId, nodeKey) now, not
             // delete-and-recreated, so their row ids survive a save.
-            upsert: jest.fn((..._args: any[]) => Promise.resolve({} as any)),
+            upsert: jest.fn((args: any) =>
+                Promise.resolve({ id: `row-${args?.where?.processMapId_nodeKey?.nodeKey}` } as any),
+            ),
+            findMany: jest.fn((..._args: any[]) => Promise.resolve([] as any[])),
+        },
+        processNodeControl: {
+            deleteMany: jest.fn((..._args: any[]) =>
+                Promise.resolve({ count: 0 } as any),
+            ),
+            createMany: jest.fn((..._args: any[]) =>
+                Promise.resolve({ count: 0 } as any),
+            ),
             findMany: jest.fn((..._args: any[]) => Promise.resolve([] as any[])),
         },
         processEdge: {
@@ -859,5 +870,143 @@ describe('ProcessMapRepository.listMapsByLinkedEntity', () => {
             'risk-x',
         );
         expect(out).toEqual([]);
+    });
+});
+
+describe('planNodeControlLinks — where each control node link comes from', () => {
+    const control = (over: Partial<any> = {}) => node({ nodeType: 'control', ...over });
+
+    it('an explicit controlId is the link, and any legacy JSON copy is stripped', () => {
+        const plan = planNodeControlLinks([
+            control({ nodeKey: 'a', controlId: 'ctl-1', dataJson: { linkedEntityId: 'ctl-old', size: 'lg' } }),
+        ]);
+        expect([...plan.explicit]).toEqual([['a', 'ctl-1']]);
+        expect(plan.legacy.size).toBe(0);
+        expect(plan.nodes[0].dataJson).toEqual({ size: 'lg' });
+    });
+
+    it('null means unlinked, and does NOT fall back to the legacy JSON value', () => {
+        const plan = planNodeControlLinks([
+            control({ nodeKey: 'a', controlId: null, dataJson: { linkedEntityId: 'ctl-old' } }),
+        ]);
+        expect(plan.explicit.size).toBe(0);
+        expect(plan.legacy.size).toBe(0);
+        expect(plan.nodes[0].dataJson).toEqual({});
+    });
+
+    it('an absent controlId (a sender from before the field) lifts the legacy value', () => {
+        const plan = planNodeControlLinks([
+            control({ nodeKey: 'a', dataJson: { linkedEntityId: 'ctl-old' } }),
+        ]);
+        expect(plan.explicit.size).toBe(0);
+        expect([...plan.legacy]).toEqual([['a', 'ctl-old']]);
+    });
+
+    it('refuses a link on any other kind of node', () => {
+        expect(() =>
+            planNodeControlLinks([node({ nodeType: 'risk', controlId: 'ctl-1' })]),
+        ).toThrow(/not a control node/);
+    });
+
+    it('leaves a risk or asset node’s JSON link alone', () => {
+        const plan = planNodeControlLinks([
+            node({ nodeType: 'risk', dataJson: { linkedEntityId: 'risk-1' } }),
+        ]);
+        expect(plan.nodes[0].dataJson).toEqual({ linkedEntityId: 'risk-1' });
+    });
+});
+
+describe('ProcessMapRepository.replaceGraph — control node links', () => {
+    function primeMap() {
+        db.processMap.findFirst
+            .mockResolvedValueOnce({ id: 'm1', version: 1 })
+            .mockResolvedValueOnce({
+                id: 'm1', name: 'x', description: null, status: 'DRAFT', version: 2,
+                createdAt: new Date(), updatedAt: new Date(), nodes: [], edges: [],
+            });
+        db.processMap.updateMany.mockResolvedValueOnce({ count: 1 });
+    }
+    const save = (nodes: any[]) =>
+        ProcessMapRepository.replaceGraph(db as any, ctx, 'm1', { nodes, edges: [] });
+
+    it('writes one link row per linked control node, keyed by the upserted node row', async () => {
+        primeMap();
+        db.control.findMany.mockResolvedValueOnce([{ id: 'ctl-1' }]);
+        await save([
+            node({ nodeKey: 'a', nodeType: 'control', controlId: 'ctl-1' }),
+            node({ nodeKey: 'b', nodeType: 'control', controlId: null }),
+            node({ nodeKey: 'c', nodeType: 'processStep' }),
+        ]);
+        expect(db.processNodeControl.deleteMany).toHaveBeenCalledWith({
+            where: { processMapId: 'm1', tenantId: ctx.tenantId },
+        });
+        expect(db.processNodeControl.createMany.mock.calls[0][0].data).toEqual([
+            { tenantId: ctx.tenantId, processMapId: 'm1', nodeId: 'row-a', controlId: 'ctl-1' },
+        ]);
+    });
+
+    it('clears every link when no node is linked (an unlinked node is unlinked)', async () => {
+        primeMap();
+        await save([node({ nodeKey: 'a', nodeType: 'control', controlId: null })]);
+        expect(db.processNodeControl.deleteMany).toHaveBeenCalled();
+        expect(db.processNodeControl.createMany).not.toHaveBeenCalled();
+    });
+
+    it("refuses the whole save when a node names another tenant's control", async () => {
+        primeMap();
+        db.control.findMany.mockResolvedValueOnce([]);
+        await expect(
+            save([node({ nodeKey: 'a', nodeType: 'control', controlId: 'ctl-foreign' })]),
+        ).rejects.toThrow(/Node references 1 control\(s\) that do not belong to this tenant/);
+        expect(db.processNodeControl.createMany).not.toHaveBeenCalled();
+    });
+
+    it('keeps a lifted legacy link only when it is this tenant’s control, and drops it otherwise', async () => {
+        primeMap();
+        db.control.findMany.mockResolvedValueOnce([{ id: 'ctl-mine' }]);
+        await save([
+            node({ nodeKey: 'a', nodeType: 'control', dataJson: { linkedEntityId: 'ctl-mine' } }),
+            node({ nodeKey: 'b', nodeType: 'control', dataJson: { linkedEntityId: 'ctl-gone' } }),
+        ]);
+        expect(db.processNodeControl.createMany.mock.calls[0][0].data).toEqual([
+            { tenantId: ctx.tenantId, processMapId: 'm1', nodeId: 'row-a', controlId: 'ctl-mine' },
+        ]);
+        // The snapshot records what was STORED, so restoring it restores this.
+        const snap = db.processMapSnapshot.create.mock.calls[0][0].data.graphJson;
+        expect(snap.nodes.map((n: any) => [n.nodeKey, n.controlId, n.dataJson])).toEqual([
+            ['a', 'ctl-mine', {}],
+            ['b', null, {}],
+        ]);
+    });
+
+    it('checks node and edge controls in ONE ownership read (no N+1)', async () => {
+        primeMap();
+        db.control.findMany.mockResolvedValueOnce([{ id: 'ctl-1' }, { id: 'ctl-2' }]);
+        await save([
+            node({ nodeKey: 'a', nodeType: 'control', controlId: 'ctl-1' }),
+            node({ nodeKey: 'b', nodeType: 'control', controlId: 'ctl-2' }),
+        ]);
+        expect(db.control.findMany).toHaveBeenCalledTimes(1);
+        expect(db.control.findMany.mock.calls[0][0].where).toMatchObject({
+            id: { in: ['ctl-1', 'ctl-2'] },
+            tenantId: ctx.tenantId,
+        });
+    });
+});
+
+describe('ProcessMapRepository.listMapsByControlNode', () => {
+    it('reads the FK table by (tenant, control) and drops soft-deleted maps', async () => {
+        db.processNodeControl.findMany.mockResolvedValueOnce([
+            { node: { nodeKey: 'n1', label: 'Approve' }, processMap: { id: 'm1', name: 'Live', status: 'ACTIVE', deletedAt: null } },
+            { node: { nodeKey: 'n2', label: 'Old' }, processMap: { id: 'm2', name: 'Gone', status: 'ARCHIVED', deletedAt: new Date() } },
+        ]);
+        const out = await ProcessMapRepository.listMapsByControlNode(db as any, ctx, 'ctl-1');
+        expect(db.processNodeControl.findMany.mock.calls[0][0].where).toEqual({
+            tenantId: ctx.tenantId,
+            controlId: 'ctl-1',
+        });
+        expect(out).toEqual([
+            { mapId: 'm1', mapName: 'Live', mapStatus: 'ACTIVE', nodeKey: 'n1', nodeLabel: 'Approve' },
+        ]);
     });
 });
