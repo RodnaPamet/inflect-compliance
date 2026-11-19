@@ -362,12 +362,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
             which is incidental cost rather than benefit, and the price of the
             column being one shape for every item type.
 
-        LIMITATION, and it needs a backfill to close. The read path skips any
-        value without a `v1:`/`v2:` envelope (`isEncryptedValue`), so rows
-        written before this entry keep reading correctly AND stay in plaintext.
-        The DEK rotation sweep will not fix them either: it only rewrites values
-        that already carry an envelope. Existing packs therefore remain exposed
-        until a backfill rewrites them through the extended client.
+        Rows written BEFORE this entry were plaintext, and nothing on the read
+        or rotation paths changes that: the read path passes a value without a
+        `v1:`/`v2:` envelope through (`isEncryptedValue`), and both rotation
+        sweeps select only values that already carry one. The nightly
+        `audit-pack-snapshot-encryption` job (#5455) closes them: it encrypts
+        every plaintext snapshot under its tenant's own DEK, holding the tenant
+        row against a DEK rotation for each batch, and reports the column's
+        plaintext count before and after.
     */
     AuditPackItem: ['snapshotJson'],
 
