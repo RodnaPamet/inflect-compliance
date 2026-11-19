@@ -24,7 +24,16 @@
     // the workspace is there to surface.
     "baseUrl": ".",
     "paths": {},
-    "rootDir": "src"
+    "rootDir": "src",
+    // The one place this package is STRICTER than the root, on purpose. A
+    // product that mirrors the package and compiles with
+    // `noUncheckedIndexedAccess` must not have to turn the flag off for these
+    // files, so an index read here has to prove the element exists. It is not
+    // turned on for the application: that is its own decision, and the
+    // application's errors are not this package's. `npm run
+    // typecheck:ui-boundary` compiles through this file, so a read that skips
+    // the check fails CI.
+    "noUncheckedIndexedAccess": true
   },
   // `include`/`exclude` are inherited too, and the root's `["**/*.ts", ...]`
   // resolves against the ROOT directory — inheriting it would hand this config

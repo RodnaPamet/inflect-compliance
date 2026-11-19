@@ -93,17 +93,11 @@ export function useChartHover<T extends Datum = Datum>(
             };
         }
         const target = date.getTime();
-        let foundIndex = -1;
-        for (let i = 0; i < data.length; i++) {
-            if (data[i].date.getTime() === target) {
-                foundIndex = i;
-                break;
-            }
-        }
+        const foundIndex = data.findIndex((d) => d.date.getTime() === target);
         return {
             date,
             index: foundIndex,
-            datum: foundIndex === -1 ? null : data[foundIndex],
+            datum: data[foundIndex] ?? null,
             clear: () => sync.setTooltipDate?.(null),
         };
     }, [date, data, sync]);

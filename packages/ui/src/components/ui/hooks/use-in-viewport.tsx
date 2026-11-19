@@ -46,7 +46,12 @@ export function useInViewport(
         if (!node) return;
 
         const observer = new IntersectionObserver(
-            ([entry]) => setVisible(entry.isIntersecting),
+            ([entry]) => {
+                // One node is observed, so the first entry is its entry. The
+                // browser never delivers an empty batch; if one came, it would
+                // say nothing about the node, so it changes nothing.
+                if (entry) setVisible(entry.isIntersecting);
+            },
             { root: root?.current ?? null, rootMargin },
         );
         observer.observe(node);

@@ -20,6 +20,7 @@ import {
 import {
     ChartProps,
     Datum,
+    type Series,
     type ChartContext as ChartContextType,
 } from "./types";
 import { useTooltip } from "./use-tooltip";
@@ -84,13 +85,16 @@ function DefaultEmptyState() {
 export function TimeSeriesChart<T extends Datum>(
     props: TimeSeriesChartProps<T>,
 ) {
-    const isEmpty = props.data.length === 0 || props.series.length === 0;
+    // The series the tooltip and the default tooltip content read. Taken here,
+    // where an empty `series` is already turned into the empty state, so the
+    // inner chart receives it as a value rather than re-reading `series[0]`.
+    const primarySeries = props.series[0];
 
     return (
         <ParentSize className={props.className ?? "relative"}>
             {({ width, height }) => {
                 if (width <= 0 || height <= 0) return null;
-                if (isEmpty) {
+                if (props.data.length === 0 || primarySeries === undefined) {
                     return (
                         <div
                             style={{ width, height }}
@@ -103,6 +107,7 @@ export function TimeSeriesChart<T extends Datum>(
                 return (
                     <TimeSeriesChartInner
                         {...props}
+                        primarySeries={primarySeries}
                         width={width}
                         height={height}
                     />
@@ -119,7 +124,8 @@ function TimeSeriesChartInner<T extends Datum>({
     children,
     data,
     series,
-    tooltipContent = (d) => series[0].valueAccessor(d).toString(),
+    primarySeries,
+    tooltipContent = (d) => primarySeries.valueAccessor(d).toString(),
     tooltipClassName = "",
     defaultTooltipIndex = null,
     onHoverDateChange,
@@ -128,6 +134,8 @@ function TimeSeriesChartInner<T extends Datum>({
 }: {
     width: number;
     height: number;
+    /** `series[0]`, which the outer component has already proved exists. */
+    primarySeries: Series<T>;
 } & TimeSeriesChartProps<T>) {
     const [leftAxisMargin, setLeftAxisMargin] = useState<number>();
 
@@ -199,7 +207,7 @@ function TimeSeriesChartInner<T extends Datum>({
     };
 
     const tooltipContext = useTooltip({
-        seriesId: series[0].id,
+        seriesId: primarySeries.id,
         chartContext,
         onHoverDateChange,
         defaultIndex: defaultTooltipIndex ?? undefined,
@@ -314,7 +322,7 @@ function TimeSeriesChartInner<T extends Datum>({
                         >
                             <ChartTooltipContainer className={tooltipClassName}>
                                 {tooltipContent?.(tooltipData) ??
-                                    series[0].valueAccessor(tooltipData)}
+                                    primarySeries.valueAccessor(tooltipData)}
                             </ChartTooltipContainer>
                         </TooltipWrapper>
                     )}
