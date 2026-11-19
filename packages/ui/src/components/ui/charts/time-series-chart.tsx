@@ -28,8 +28,8 @@ import { useTooltip } from "./use-tooltip";
 /**
  * Epic 59 — canonical interactive time-series chart.
  *
- * One component powers every dashboard trend panel and future
- * reporting surface. Composes the shared axis / tooltip / layout
+ * One component powers every interactive trend panel. Composes
+ * the shared axis / tooltip / layout
  * primitives so every consumer inherits the same spacing, tick
  * density, token-backed palette, and hover behaviour.
  *
@@ -48,7 +48,7 @@ import { useTooltip } from "./use-tooltip";
  *
  * No-data handling: when `data` or `series` is empty the chart
  * renders its `emptyState` instead of a silent zero-height block —
- * dashboards never show a mystery gap where a chart was supposed to
+ * a page never shows a mystery gap where a chart was supposed to
  * be.
  */
 

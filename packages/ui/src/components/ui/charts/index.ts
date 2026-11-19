@@ -3,8 +3,8 @@
  *
  * The neutral half of the chart platform: scales, axes, gradients, motion,
  * tooltips, the 3D field and the time-series chart. Every primitive here is
- * free of this repo's domain model, which is what makes the package vendorable
- * by another product (#3046).
+ * free of any product's domain model, which is what makes the package
+ * vendorable by another product (#3046).
  *
  * WHAT IS DELIBERATELY NOT HERE, and it is not an oversight:
  *
@@ -14,11 +14,12 @@
  *     turn need `button`, `button-variants`, `typography`, `card` and
  *     `card-variants`. That cluster is a batch of its own; pulling it in here
  *     would have made this one the whole of `components/ui`.
- *   LossExceedanceCurve, AleHistogram
- *     Both import `@/lib/risk-coherence` — quantitative-risk domain logic.
+  *   Charts built on an application's own domain model
+ *     A chart that imports the host's domain logic belongs to the host, not
+ *     to this package.
  *
- * `src/components/ui/charts/index.ts` re-exports this file and adds those
- * seven, so every existing `@/components/ui/charts` import still resolves.
+ * A host keeps those in its own chart barrel, which re-exports this file and
+ * adds them, so its existing chart imports resolve unchanged.
  */
 
 // ─── Primitives ────────────────────────────────────────────────────────
@@ -191,8 +192,8 @@ export {
 // ─── Shared interaction primitives (Epic 59) ─────────────────────────
 //
 // Hover + keyboard state hooks, and token-backed tooltip surface
-// components that every chart consumer should reach for so the
-// dashboard reads as one system rather than a patchwork of tooltip
+// components that every chart consumer should reach for so a page
+// of charts reads as one system rather than a patchwork of tooltip
 // implementations.
 
 export {

@@ -410,9 +410,9 @@
   "reason": "Upgraded GENERIC->MIXED by the mechanical pass (brand-as-text): areas.tsx:102 text-brand-default. Audited note: Generic visx area-series renderer driven entirely by ChartContext. No domain vocabulary, no UI copy, no storage. The `text-brand-*` defaults are NOT brand-as-text findings: they set `color` so that the SVG `fill`/`stroke` resolve via `currentColor` — a non-text paint, which the rule explicitly permits (see notes)."
  },
  "packages/ui/src/components/ui/charts/bar-field-3d.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A stub 3D cross-tab chart that is generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent) but whose head matter and prop JSDoc are written in product and compliance terms. Removable without touching the API."
+  "reason": "A stub 3D cross-tab chart, generic in shape (x/z/y data, seriesIndex, ariaLabel, FallbackComponent). Its head matter and prop JSDoc, once written in product and compliance terms, were made product-neutral for Islestone #7 without touching the API."
  },
  "packages/ui/src/components/ui/charts/bars.tsx": {
   "classification": "MIXED",
@@ -440,19 +440,19 @@
   "reason": "Genuinely generic responsive frame with loading/empty/error branches, and its user-facing copy is correctly routed through next-intl (`useTranslations('common.chart')`). What remains is compliance vocabulary in the JSDoc usage example and the head matter."
  },
  "packages/ui/src/components/ui/charts/chart-gloss.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders — no runtime coupling at all. The only coupling is the worked example chosen for the id builders' JSDoc."
+  "reason": "Pure SVG gradient-def primitives (ChartGloss, ChartSheenSweep) plus two id builders, with no runtime coupling at all. The id builders' JSDoc example, the one recorded coupling, now uses a neutral chart id (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/chart-gradient.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity); the coupling is one JSDoc worked example."
+  "reason": "Three token-backed SVG gradient defs plus an id builder. Shape is fully generic (series index 1..6, direction, opacity), and the one JSDoc worked example that carried product wording now uses a neutral chart id (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/chart-legend.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Generic series-swatch / gradient-strip legend, but it composes its gradient variant's aria-label from hardcoded English rather than next-intl, and names a GRC metric as the JSDoc example for `label`. Both are removable without changing the component's shape."
+  "reason": "Generic series-swatch / gradient-strip legend. Its gradient variant's aria-label goes through next-intl (`scaleAria` / `scaleAriaUnlabelled`), and the JSDoc example for `label` is a neutral metric (Islestone #7), so neither recorded coupling remains."
  },
  "packages/ui/src/components/ui/charts/chart-motion.tsx": {
   "classification": "GENERIC",
@@ -460,9 +460,9 @@
   "reason": "Four motion hooks (hover-pop, gradient flow, entrance spring, sheen sweep) plus a reduced-motion listener. Pure numbers, refs and RAF loops. No copy, no domain vocabulary, no storage, no domain imports."
  },
  "packages/ui/src/components/ui/charts/examples.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Sample data for the generic chart contracts, but the samples are compliance samples — and the file's own head matter asserts the opposite, which makes this the clearest removable case in the slice: swap the literals and the module is fully generic."
+  "reason": "Sample data for the generic chart contracts. The samples were compliance samples while the head matter claimed otherwise; the labels and segment ids are now neutral (Islestone #7), so the head matter is true and the module is fully generic."
  },
  "src/components/ui/charts/funnel-chart.tsx": {
   "classification": "MIXED",
@@ -475,14 +475,14 @@
   "reason": "Generic Gantt renderer (rows with start/end/seriesIndex/dependencies, token-backed chrome, dependency-chain BFS). Two removable couplings: an English aria-label default and a compliance JSDoc example."
  },
  "packages/ui/src/components/ui/charts/index.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "A re-export barrel with no runtime coupling of its own. It no longer names the two COUPLED quantitative-risk widgets, nor ChartFrame and the four charts that wrap it — shedding those is exactly what let it move (#3046). What remains is scale, axis, gradient and motion vocabulary."
+  "reason": "A re-export barrel with no runtime coupling of its own. It names no product widget or domain module: what stays in a host's own chart barrel is described in general terms (Islestone #7). What remains is scale, axis, gradient, motion and interaction vocabulary."
  },
  "packages/ui/src/components/ui/charts/interaction.tsx": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Hover/keyboard hooks and two token-backed tooltip surface components; the code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals). Coupling is confined to the head-matter prose."
+  "reason": "Hover/keyboard hooks and two token-backed tooltip surface components. The code is entirely generic (all labels and values are caller-supplied ReactNode, no English literals), and the head matter no longer names the product or its surfaces (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/layout.ts": {
   "classification": "GENERIC",
@@ -507,7 +507,7 @@
  "packages/ui/src/components/ui/charts/time-series-chart.tsx": {
   "classification": "MIXED",
   "derivation": "audited",
-  "reason": "The slice's generic interactive time-series host — context providers, scales, hover capture, tooltip wrapper. One removable coupling: its default empty state hardcodes English rather than taking it from next-intl (the `emptyState` prop lets callers override, which is exactly why this is the default-value case)."
+  "reason": "The slice's generic interactive time-series host: context providers, scales, hover capture, tooltip wrapper. Its default empty state reads its text through next-intl (#5312) and its head matter is product-neutral (Islestone #7). It stays MIXED for the mechanical pass alone: the hover dot's default `text-brand-emphasis` (`fill=\"currentColor\"`) trips brand-as-text, the same non-text fill case as areas.tsx and bars.tsx."
  },
  "packages/ui/src/components/ui/charts/tooltip-sync.tsx": {
   "classification": "GENERIC",
@@ -520,9 +520,9 @@
   "reason": "Type-only module (plus five tiny ChartState constructors) and the single most vendorable contract surface here. It used to claim domain-freedom while its JSDoc carried compliance examples; #3046 removed all three — the brand name at :117, the noun enumeration at :120 (which stated the no-domain rule by listing the very nouns it excludes, the same self-defeating shape `use-local-storage`'s docstring has), and the `\"controls\"` display-unit example at :229. No type or field was ever domain-shaped, so GENERIC."
  },
  "packages/ui/src/components/ui/charts/use-heat-scale.ts": {
-  "classification": "MIXED",
+  "classification": "GENERIC",
   "derivation": "audited",
-  "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling — the extracted helpers are unit-testable without React. Coupling is confined to the rationale comments naming the consuming domain widget and hue."
+  "reason": "Pure math hook (clamp, color-mix string builder, step values) with no runtime coupling; the extracted helpers are unit-testable without React. The rationale comments no longer name a consuming domain widget or a domain hue (Islestone #7)."
  },
  "packages/ui/src/components/ui/charts/use-tooltip.ts": {
   "classification": "GENERIC",

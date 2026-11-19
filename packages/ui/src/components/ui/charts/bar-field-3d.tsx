@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Roadmap-21 PR-F — `<BarField3D>`, the first 3D chart in IC (STUB).
+ * Roadmap-21 PR-F — `<BarField3D>`, the package's first 3D chart (STUB).
  *
  * ### Status
  *
@@ -46,9 +46,9 @@ import { Chart3D } from './chart-3d';
 import type { ChartSeriesIndex } from './chart-gradient';
 
 export interface BarField3DDatum {
-    /** Discrete X-axis category (e.g. quarter, framework). */
+    /** Discrete X-axis category (e.g. quarter, region). */
     x: string;
-    /** Discrete Z-axis category (e.g. maturity, severity). */
+    /** Discrete Z-axis category (e.g. product line, priority). */
     z: string;
     /** Bar height value. Non-negative. */
     y: number;

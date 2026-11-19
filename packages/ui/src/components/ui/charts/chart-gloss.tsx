@@ -155,8 +155,8 @@ export function ChartGloss({
  * chart-gradient.tsx. Use this so every chart spells its gloss
  * def ids the same way.
  *
- *   chartGlossId('risk-donut')        → 'risk-donut-gloss'
- *   chartGlossId('risk-donut', 3)     → 'risk-donut-gloss-3'
+ *   chartGlossId('status-donut')      → 'status-donut-gloss'
+ *   chartGlossId('status-donut', 3)   → 'status-donut-gloss-3'
  */
 export function chartGlossId(chartId: string, seriesIndex?: number): string {
     return seriesIndex === undefined
@@ -252,7 +252,7 @@ export const ChartSheenSweep = forwardRef<
 /**
  * Canonical sheen id builder — mirrors `chartGlossId`.
  *
- *   chartSheenId('risk-donut') → 'risk-donut-sheen'
+ *   chartSheenId('status-donut') → 'status-donut-sheen'
  */
 export function chartSheenId(chartId: string): string {
     return `${chartId}-sheen`;

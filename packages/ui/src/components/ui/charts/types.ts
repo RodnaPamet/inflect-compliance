@@ -269,7 +269,7 @@ export interface KpiMetric {
   delta?: number | null;
   /** Human-readable label for the delta — "vs. last quarter", etc. */
   deltaLabel?: string;
-  /** Free-form secondary line (e.g. "15 of 20 implemented"). */
+  /** Free-form secondary line (e.g. "15 of 20 done"). */
   subtitle?: string;
 }
 
