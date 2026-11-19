@@ -446,6 +446,19 @@ All 12 critical entity models are intercepted by `SOFT_DELETE_MODELS` in the sof
 2. During rotation, new writes use the new key and existing values still read: `decryptField` tries the primary key and falls back to `DATA_ENCRYPTION_KEY_PREVIOUS`. Removing that variable before every tenant has been swept is what makes values unreadable, not the rotation itself. `v2:` values are wrapped under the tenant DEK and are untouched by a master-key rotation.
 3. **AUTH_SECRET** rotation invalidates all existing sessions immediately — users must re-authenticate. (`JWT_SECRET` is still required by the env schema but signs nothing since the legacy `token` cookie was removed.)
 
+### Rows written before a column was encrypted
+
+Adding a column to `ENCRYPTED_FIELDS` encrypts every write from then on, and nothing else. Existing plaintext rows keep reading correctly because the read path passes a value with no `v1:`/`v2:` envelope through, and for the same reason they stay in plaintext: neither rotation job selects them, since both rewrite only values that already carry an envelope.
+
+`AuditPackItem.snapshotJson` is the column this applies to today. It was added in #5150, and audit packs frozen before that hold test-run notes, finding summaries and the executor's email in plaintext. The daily `audit-pack-snapshot-encryption` job (02:23 UTC, #5455) encrypts them:
+
+- **Under each tenant's own DEK** (`v2:`), the envelope the middleware writes. A tenant with no DEK gets one first, as it would on its first application write.
+- **Never across a DEK rotation.** A tenant with `previousEncryptedDek` set is skipped (`ROTATION_IN_FLIGHT`). Each batch takes `FOR SHARE` on the tenant row and checks that the key it read is still current, so a rotation that starts waits for the batch and then re-encrypts its rows with everything else (`KEY_CHANGED` stops the tenant for the night).
+- **Verified and conditional.** Each ciphertext is decrypted again before it is written, and the UPDATE only lands if the row still holds the value that was read.
+- **Counted, not assumed.** Each run logs the column's plaintext, `v2:`, `v1:`, empty and total counts before and after, and the metric `security.audit_pack_snapshot_encryption.pass` records each tenant's outcome. A run that found no plaintext is recorded as `no_plaintext`, and one over an empty table as `empty_table`, so neither reads as a pass that did work.
+
+Once the plaintext count is zero the job costs two counts over the table a night, and it closes anything a bypass path writes in plaintext later.
+
 ### Future work (non-blocking)
 
 | Item | Priority | Description |

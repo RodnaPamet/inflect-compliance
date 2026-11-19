@@ -113,6 +113,7 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'agentic-evidence-emission',
     'audit-narrative-dispatch',
     'audit-outbox-flush',
+    'audit-pack-snapshot-encryption',
     'audit-workpaper-sample-review',
     'automation-runner',
     'calendar-push-dispatch',

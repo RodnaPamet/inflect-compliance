@@ -484,6 +484,29 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: { dryRun: false },
     },
     {
+        name: 'audit-pack-snapshot-encryption',
+        pattern: '23 2 * * *',    // daily at 02:23 UTC
+        // NO tenantId: absent means "find every tenant holding a plaintext
+        // snapshot and run each". See `AuditPackSnapshotEncryptionPayload`.
+        //
+        // DAILY rather than once (owner decision, 2026-11-19, #5455): the
+        // backfill needs no operator step, and anything a bypass path writes in
+        // plaintext later is closed the next night. Once no plaintext row is
+        // left a run is two counts over the table.
+        //
+        // The minute:
+        //   - in the quiet early-UTC window, away from daytime pack exports;
+        //   - BEFORE data-lifecycle (03:00), which can purge a tenant and its
+        //     rows, so the two never touch one tenant's rows in the same minute;
+        //   - 02:23 is a minute no other entry fires in: not the hourly :00, the
+        //     reaper's :37, nor a multiple of 2, 5, 10 or 15, so none of the
+        //     frequent ticks either.
+        // Declaration order in this array is NOT execution order; only the cron
+        // pattern is.
+        description: 'Encrypt audit-pack item snapshots still stored in plaintext (written before the column was encrypted) under each tenant\'s own key, skipping a tenant whose key rotation is in flight; report the column before and after (plaintext, encrypted, empty, total) so a run that found nothing is distinguishable from one that read nothing.',
+        defaultPayload: {},
+    },
+    {
         name: 'vendor-monitoring',
         pattern: '0 2 * * *',     // daily at 02:00 UTC (after NVD sync, before the morning digest)
         description:

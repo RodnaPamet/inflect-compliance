@@ -1629,6 +1629,15 @@ executorRegistry.register('agent-harness-estate-staleness', async (payload) => {
     return runHarnessEstateStalenessJob({ tenantId: payload.tenantId });
 });
 
+// audit-pack-snapshot-encryption (#5455): encrypts the audit-pack snapshots
+// written in plaintext before #5150, under each tenant's own DEK. Writes only
+// plaintext rows, each in a batch that holds the tenant row against a DEK
+// rotation. `tenantId` named, as above.
+executorRegistry.register('audit-pack-snapshot-encryption', async (payload) => {
+    const { runAuditPackSnapshotEncryptionJob } = await import('./audit-pack-snapshot-encryption');
+    return runAuditPackSnapshotEncryptionJob({ tenantId: payload.tenantId });
+});
+
 // agent-fingerprint (Morpheus roadmap Phase 1): the nightly behaviour
 // fingerprint. Off unless the operator's two keys admit the tenant; findings,
 // and at threshold B a latch of the EXISTING breaker only with the third key.

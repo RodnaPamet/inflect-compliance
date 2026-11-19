@@ -929,6 +929,7 @@ export interface JobPayloadMap {
     'agent-owner-orphan-pass': AgentOwnerOrphanPassPayload;
     'agent-credential-hygiene': AgentCredentialHygienePayload;
     'agent-harness-estate-staleness': AgentHarnessEstateStalenessPayload;
+    'audit-pack-snapshot-encryption': AuditPackSnapshotEncryptionPayload;
     'agent-fingerprint': AgentFingerprintPayload;
     'knowledge-index': KnowledgeIndexPayload;
 }
@@ -1020,6 +1021,17 @@ export interface AgentCredentialHygienePayload {
  * Findings only: no shape of this payload writes an estate or a scan.
  */
 export interface AgentHarnessEstateStalenessPayload {
+    tenantId?: string;
+}
+
+/**
+ * audit-pack-snapshot-encryption — encrypt audit-pack snapshots written in
+ * plaintext before #5150, under each tenant's own DEK (#5455). `tenantId`
+ * absent is the scheduled sweep, which finds every tenant holding a plaintext
+ * snapshot; present runs that one tenant. No shape of this payload decrypts,
+ * deletes or rewrites a value that is already ciphertext.
+ */
+export interface AuditPackSnapshotEncryptionPayload {
     tenantId?: string;
 }
 
@@ -1435,6 +1447,15 @@ export const JOB_DEFAULTS: Record<JobName, {
         // find its own findings and open nothing — but each attempt writes an
         // execution row per tenant, and three rows for one morning would make
         // "did it run?" harder to read, not easier. Tomorrow's tick is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'audit-pack-snapshot-encryption': {
+        // ONE attempt. The work is idempotent — a row once encrypted is never
+        // selected again — so a retry minutes later would meet the same fault
+        // on the same rows. Tomorrow's tick is the retry.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

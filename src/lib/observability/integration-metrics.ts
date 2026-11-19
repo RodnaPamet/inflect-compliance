@@ -2067,3 +2067,47 @@ export function recordKnowledgeIndexRun(attrs: {
         _knowledgeIndexEmbedded.add(attrs.embedded, { source_model: attrs.sourceModel });
     }
 }
+
+// ── Audit-pack snapshot encryption backfill (#5455) ────────────────────────
+
+let _snapshotEncryptionPass: Counter | null = null;
+let _snapshotEncryptionRows: Counter | null = null;
+
+/**
+ * One tenant's nightly snapshot-encryption pass, by how it ended, and the rows
+ * it encrypted. A run that visited no tenant is recorded once, as
+ * `NO_PLAINTEXT` (the column holds rows, none in plaintext) or `EMPTY_TABLE`
+ * (the column holds no rows at all), so "nothing to do" and "nothing read" are
+ * different series. `ROTATION_IN_FLIGHT` and `KEY_CHANGED` are deferrals, not
+ * failures: the tenant is read again the next night.
+ *
+ * No tenant label: which tenant still holds plaintext is the job's log line.
+ */
+export function recordAuditPackSnapshotEncryption(attrs: {
+    outcome:
+        | 'ENCRYPTED'
+        | 'NOTHING_TO_DO'
+        | 'ROTATION_IN_FLIGHT'
+        | 'KEY_CHANGED'
+        | 'ERROR'
+        | 'NO_PLAINTEXT'
+        | 'EMPTY_TABLE';
+    encrypted: number;
+}): void {
+    if (!_snapshotEncryptionPass) {
+        _snapshotEncryptionPass = getMeter().createCounter('security.audit_pack_snapshot_encryption.pass', {
+            description: 'Audit-pack snapshot encryption passes, by outcome',
+            unit: '1',
+        });
+    }
+    _snapshotEncryptionPass.add(1, { outcome: attrs.outcome.toLowerCase() });
+    if (attrs.encrypted > 0) {
+        if (!_snapshotEncryptionRows) {
+            _snapshotEncryptionRows = getMeter().createCounter('security.audit_pack_snapshot_encryption.rows', {
+                description: 'Plaintext audit-pack snapshots encrypted under their tenant DEK',
+                unit: '1',
+            });
+        }
+        _snapshotEncryptionRows.add(attrs.encrypted);
+    }
+}
