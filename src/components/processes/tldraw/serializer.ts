@@ -33,7 +33,7 @@
  *    that guarantee the database enforces.
  */
 import {
-    CONTROL_NODE_TYPE,
+    linkFieldForNodeType,
     type ProcessEdgeInput,
     type ProcessNodeInput,
 } from '@/app-layer/schemas/process-map';
@@ -175,7 +175,23 @@ export const PERSISTED_NODE_PROPS = [
     'parentNodeKey',
     'subtitle',
     'controlId',
+    'riskId',
+    'assetId',
 ] as const;
+
+/**
+ * A linked node's own link field, as the save payload carries it.
+ *
+ * A `control`, `risk` or `asset` node always SAYS whether it is linked (a string
+ * or null), so the server never mistakes it for a pre-link client and lifts a
+ * legacy `linkedEntityId`. It sends its OWN field only: the server refuses a
+ * node carrying another kind's, and a node whose kind was changed must not carry
+ * its old link along. Any other kind sends none.
+ */
+function linkFieldOf(props: ProcessNodeShapeProps): Partial<ProcessNodeInput> {
+    const field = linkFieldForNodeType(props.nodeType);
+    return field === null ? {} : { [field]: props[field] ?? null };
+}
 
 export type PersistedNodeProp = (typeof PERSISTED_NODE_PROPS)[number];
 
@@ -234,6 +250,8 @@ export function rowsToTldraw(
                 parentNodeKey: n.parentNodeKey ?? null,
                 dataJson: n.dataJson ?? null,
                 controlId: n.controlId ?? null,
+                riskId: n.riskId ?? null,
+                assetId: n.assetId ?? null,
             },
         })),
         bindings: rows.edges.map((e) => ({
@@ -360,14 +378,7 @@ export function tldrawToRows(graph: TldrawGraph): GraphRows {
             posY: s.y,
             parentNodeKey: s.props.parentNodeKey ?? null,
             dataJson: s.props.dataJson ?? null,
-            // A control node always SAYS whether it is linked (a string or
-            // null), so the server never mistakes it for a pre-link client and
-            // lifts a legacy `linkedEntityId`. Any other kind omits the field:
-            // the server refuses a link on a non-control node, and a node whose
-            // kind was changed away from `control` must not carry one along.
-            ...(s.props.nodeType === CONTROL_NODE_TYPE
-                ? { controlId: s.props.controlId ?? null }
-                : {}),
+            ...linkFieldOf(s.props),
         })),
         edges: graph.bindings.map((b) => ({
             edgeKey: b.props.edgeKey,

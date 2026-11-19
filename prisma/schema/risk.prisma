@@ -170,6 +170,9 @@ model Risk {
   /// `RiskTreatmentPlan.(riskId, tenantId) → Risk.(id, tenantId)`
   /// FK shape so cross-tenant treatment plans are impossible at the
   /// DB level. Same denorm-tenantId Phase-2 pattern Audit uses.
+  /// Process-map nodes that stand for this risk (`ProcessNodeRisk`).
+  processNodeRisks ProcessNodeRisk[]
+
   @@unique([id, tenantId])
   // PR-B — unique within a tenant so `RSK-1` can't collide. Allows
   // `@@unique` on a nullable column (Postgres treats NULLs as

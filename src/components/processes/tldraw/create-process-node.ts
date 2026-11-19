@@ -98,6 +98,8 @@ export function createProcessNode(editor: Editor, input: CreateProcessNodeInput)
                 dataJson: null,
                 // A new control node starts unlinked; the inspector links it.
                 controlId: null,
+                riskId: null,
+                assetId: null,
             },
         },
     ]);

@@ -198,6 +198,8 @@ a `userId` but stores no contact PII).
 | `ProcessEdge` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ProcessEdgeControl` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ProcessNodeControl` | Business record | No | None today — cascade on node/map/control/tenant delete only | Indefinite while tenant active — review w/ compliance |
+| `ProcessNodeRisk` | Business record | No | None today — cascade on node/map/risk/tenant delete only | Indefinite while tenant active — review w/ compliance |
+| `ProcessNodeAsset` | Business record | No | None today — cascade on node/map/asset/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ProcessMap` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ProcessMapSnapshot` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ProcessNode` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |

@@ -32,7 +32,8 @@ jest.mock('@/app-layer/repositories/ProcessMapRepository', () => ({
         softDelete: jest.fn(),
         setCanvasMode: jest.fn(),
         setStatus: jest.fn(),
-        listMapsByLinkedEntity: jest.fn(),
+        listMapsByRiskNode: jest.fn(),
+        listMapsByAssetNode: jest.fn(),
     },
 }));
 
@@ -401,38 +402,31 @@ describe('node-link reverse lookups (PR-D)', () => {
         },
     ];
 
-    it('listMapsUsingRisk queries the repo with the risk node kind', async () => {
-        (ProcessMapRepository.listMapsByLinkedEntity as jest.Mock).mockResolvedValue(
-            ROW,
-        );
+    it('listMapsUsingRisk reads the risk-node link table', async () => {
+        (ProcessMapRepository.listMapsByRiskNode as jest.Mock).mockResolvedValue(ROW);
         const result = await listMapsUsingRisk(readerCtx, 'risk-9');
         expect(result).toEqual(ROW);
-        expect(ProcessMapRepository.listMapsByLinkedEntity).toHaveBeenCalledWith(
+        expect(ProcessMapRepository.listMapsByRiskNode).toHaveBeenCalledWith(
             mockDb,
             readerCtx,
-            'risk',
             'risk-9',
         );
     });
 
-    it('listMapsUsingAsset queries the repo with the asset node kind', async () => {
-        (ProcessMapRepository.listMapsByLinkedEntity as jest.Mock).mockResolvedValue(
-            ROW,
-        );
+    it('listMapsUsingAsset reads the asset-node link table', async () => {
+        (ProcessMapRepository.listMapsByAssetNode as jest.Mock).mockResolvedValue(ROW);
         const result = await listMapsUsingAsset(readerCtx, 'asset-2');
         expect(result).toEqual(ROW);
-        expect(ProcessMapRepository.listMapsByLinkedEntity).toHaveBeenCalledWith(
+        expect(ProcessMapRepository.listMapsByAssetNode).toHaveBeenCalledWith(
             mockDb,
             readerCtx,
-            'asset',
             'asset-2',
         );
     });
 
     it('both are read-only — a reader is allowed', async () => {
-        (ProcessMapRepository.listMapsByLinkedEntity as jest.Mock).mockResolvedValue(
-            [],
-        );
+        (ProcessMapRepository.listMapsByRiskNode as jest.Mock).mockResolvedValue([]);
+        (ProcessMapRepository.listMapsByAssetNode as jest.Mock).mockResolvedValue([]);
         await expect(listMapsUsingRisk(readerCtx, 'r')).resolves.toEqual([]);
         await expect(listMapsUsingAsset(readerCtx, 'a')).resolves.toEqual([]);
     });

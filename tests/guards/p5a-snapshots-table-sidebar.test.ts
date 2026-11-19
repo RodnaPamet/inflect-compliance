@@ -25,7 +25,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { codeOf, sqlCodeOf } from "../helpers/source-blocks";
+import { braceBlockAfter, codeOf, sqlCodeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
 /**
@@ -49,6 +49,10 @@ const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () => {
     describe("Prisma schema — ProcessMapSnapshot model", () => {
         const src = read("prisma/schema/processes.prisma");
+        // Bounded to the model's own braces: the file declares several models
+        // with a `createdAt` and a `processMap` relation of the same shape, so
+        // a whole-file needle was satisfied by its siblings.
+        const model = () => braceBlockAfter(src, "model ProcessMapSnapshot\\s*\\{");
 
         it("declares the model with the canonical column set", () => {
             // The graphJson Json column carries the full per-
@@ -56,23 +60,23 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
             // means a future schema refactor that drops one trips
             // CI before the migration even runs.
             expect(src).toMatch(/model ProcessMapSnapshot \{/);
-            expect(src).toMatch(/graphJson\s+Json/);
-            expect(src).toMatch(/version\s+Int/);
-            expect(src).toMatch(/createdAt\s+DateTime/);
-            expect(src).toMatch(/createdByUserId\s+String/);
+            expect(model()).toMatch(/graphJson\s+Json/);
+            expect(model()).toMatch(/version\s+Int/);
+            expect(model()).toMatch(/createdAt\s+DateTime/);
+            expect(model()).toMatch(/createdByUserId\s+String/);
         });
 
         it("has the (processMapId, version) unique guard", () => {
             // Guards against retry-induced duplicate snapshots —
             // the contract that `replaceGraph` writes EXACTLY one
             // row per committed version.
-            expect(src).toMatch(
+            expect(model()).toMatch(
                 /@@unique\(\[processMapId,\s*version\]\)/,
             );
         });
 
         it("cascades on parent delete via the composite FK", () => {
-            expect(src).toMatch(
+            expect(model()).toMatch(
                 /processMap\s+ProcessMap\s+@relation\(fields:\s*\[processMapId,\s*tenantId\][\s\S]{0,300}onDelete:\s*Cascade/,
             );
         });

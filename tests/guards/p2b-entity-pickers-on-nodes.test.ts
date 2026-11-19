@@ -174,18 +174,19 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
             expect(serializer).not.toMatch(/linkedEntityId/);
         });
 
-        it("the inspector write MERGES into dataJson rather than replacing it", () => {
+        it("the inspector writes a link to the node's OWN link prop, never into dataJson", () => {
             /*
-                The hazard the opaque column creates, and the only place that
-                writes into it. `props.dataJson = { linkedEntityId }` would be a
-                one-line change that silently discarded every other key the row
-                carries — and nothing would fail, because the column is opaque
-                to the serialiser by design.
+                RE-POINTED AGAIN. The link used to be merged into the opaque
+                `dataJson` column, and this asserted the merge. Control, risk and
+                asset nodes now carry their link in their own prop (`controlId` /
+                `riskId` / `assetId`), persisted to a table with a real foreign
+                key, and the server strips `linkedEntityId` from their data. So
+                the hazard is the opposite one: a write that put the link back
+                into `dataJson`, where nothing validates it.
             */
             expect(adapter).toMatch(/patch\.linkedEntityId\s*!==\s*undefined/);
-            expect(adapter).toMatch(
-                /props\.dataJson\s*=\s*\{\s*\.\.\.\(prev \?\? \{\}\),\s*linkedEntityId:\s*patch\.linkedEntityId\s*\}/,
-            );
+            expect(adapter).toMatch(/props\[linkField\]\s*=\s*patch\.linkedEntityId/);
+            expect(adapter).not.toMatch(/linkedEntityId:\s*patch\.linkedEntityId/);
         });
 
         it("and `size` is deliberately NOT applied, which is a decision not an omission", () => {

@@ -55,6 +55,10 @@ export type ProcessNodeShapeProps = {
      * on every other kind.
      */
     controlId: string | null;
+    /** The Risk a `risk` node stands for, or null. Facts are read live, as for controls. */
+    riskId: string | null;
+    /** The Asset an `asset` node stands for, or null. */
+    assetId: string | null;
 };
 
 export type ProcessNodeShape = TLBaseShape<
@@ -80,6 +84,8 @@ export const processNodeShapeProps: RecordProps<ProcessNodeShape> = {
     // Opaque by contract: anything JSON-serialisable, inspected by nobody.
     dataJson: T.jsonValue,
     controlId: T.string.nullable(),
+    riskId: T.string.nullable(),
+    assetId: T.string.nullable(),
 };
 
 /** Default geometry for a freshly created node. */

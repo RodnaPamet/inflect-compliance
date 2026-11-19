@@ -43,10 +43,13 @@ interface DiffNodeRow {
     parentNodeKey: string | null;
     dataJson: unknown;
     /**
-     * A control node's linked Control. Optional: a version stored before the
-     * link had its own field carries it as `dataJson.linkedEntityId` instead.
+     * A control, risk or asset node's linked record. Optional: a version stored
+     * before the link had its own field carries it as `dataJson.linkedEntityId`
+     * instead.
      */
     controlId?: string | null;
+    riskId?: string | null;
+    assetId?: string | null;
 }
 
 interface DiffEdgeRow {
@@ -81,20 +84,23 @@ const EPSILON = 0.5;
 const posDiffers = (a: number, b: number) => Math.abs(a - b) > EPSILON;
 
 /**
- * A node's control link and its data, read the same way from a version stored
+ * A node's record link and its data, read the same way from a version stored
  * before the link had its own field (`dataJson.linkedEntityId`) and after it
- * (`controlId`). Without this, every control node in a map read as modified
- * between two such versions although nothing about it changed.
+ * (`controlId` / `riskId` / `assetId`). Without this, every linked node in a
+ * map read as modified between two such versions although nothing about it
+ * changed.
  */
 function controlLinkOf(n: DiffNodeRow): { link: string | null; data: unknown } {
+    const field =
+        n.controlId !== undefined ? n.controlId : n.riskId !== undefined ? n.riskId : n.assetId;
     const data = n.dataJson ?? null;
     if (data === null || typeof data !== "object" || Array.isArray(data)) {
-        return { link: n.controlId ?? null, data };
+        return { link: field ?? null, data };
     }
     const { linkedEntityId, ...rest } = data as Record<string, unknown>;
     const legacy = typeof linkedEntityId === "string" ? linkedEntityId : null;
     return {
-        link: n.controlId !== undefined ? n.controlId ?? null : legacy,
+        link: field !== undefined ? field ?? null : legacy,
         data: "linkedEntityId" in data ? rest : data,
     };
 }

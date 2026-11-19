@@ -10905,6 +10905,62 @@
         "NEEDS_REVIEW": "Нужен е преглед",
         "NOT_APPLICABLE": "Неприложим"
       }
+    },
+    "riskCard": {
+      "loading": "Зареждане на риска…",
+      "unlinked": "Изберете риск",
+      "missing": "Рискът е премахнат",
+      "restricted": "Риск (ограничен достъп)",
+      "unavailable": "Данните за риска не са налични",
+      "residualScore": "{score} остатъчен (присъщ {inherent})",
+      "inherentScore": "{score} присъщ",
+      "noMitigatingControl": "няма смекчаващ контрол",
+      "noMitigationOnMap": "няма смекчаващ контрол на тази карта",
+      "mitigatedHere": "смекчен тук от {onMap} от {total} контрола",
+      "reviewOverdue": "прегледът е просрочен",
+      "status": {
+        "OPEN": "Отворен",
+        "MITIGATING": "Смекчава се",
+        "MITIGATED": "Смекчен",
+        "ACCEPTED": "Приет",
+        "CLOSED": "Затворен"
+      },
+      "treatment": {
+        "TREAT": "Третиране",
+        "TRANSFER": "Прехвърляне",
+        "TOLERATE": "Толериране",
+        "AVOID": "Избягване"
+      }
+    },
+    "assetCard": {
+      "loading": "Зареждане на актива…",
+      "unlinked": "Изберете актив",
+      "missing": "Активът е премахнат",
+      "restricted": "Актив (ограничен достъп)",
+      "unavailable": "Данните за актива не са налични",
+      "criticality": "{level} критичност",
+      "type": {
+        "INFORMATION": "Информация",
+        "SYSTEM": "Система",
+        "SERVICE": "Услуга",
+        "DATA_STORE": "Хранилище на данни",
+        "VENDOR": "Доставчик",
+        "PEOPLE_PROCESS": "Хора / процес",
+        "APPLICATION": "Приложение",
+        "INFRASTRUCTURE": "Инфраструктура",
+        "PROCESS": "Процес",
+        "OTHER": "Друго"
+      },
+      "level": {
+        "LOW": "Ниска",
+        "MEDIUM": "Средна",
+        "HIGH": "Висока",
+        "CRITICAL": "Критична"
+      },
+      "status": {
+        "ACTIVE": "Активен",
+        "RETIRED": "Изведен от употреба"
+      }
     }
   },
   "issues": {

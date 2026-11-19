@@ -326,6 +326,8 @@ model Tenant {
   processEdges                      ProcessEdge[]
   processEdgeControls               ProcessEdgeControl[]
   processNodeControls               ProcessNodeControl[]
+  processNodeRisks                  ProcessNodeRisk[]
+  processNodeAssets                 ProcessNodeAsset[]
   // Epic P5-PR-A — process map snapshots.
   processMapSnapshots               ProcessMapSnapshot[]
   // NIS2 gap-assessment (imported open-data question set).

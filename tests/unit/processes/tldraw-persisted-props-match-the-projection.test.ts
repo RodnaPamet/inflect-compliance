@@ -69,6 +69,7 @@ describe('the declared props are known, so a new one has to be triaged', () => {
         // Pinned so that ADDING a declared prop fails here first, rather than
         // silently falling into whichever bucket the comparison defaults to.
         expect(DECLARED_NODE_PROPS).toEqual([
+            'assetId',
             'controlId',
             'dataJson',
             'h',
@@ -76,6 +77,7 @@ describe('the declared props are known, so a new one has to be triaged', () => {
             'nodeKey',
             'nodeType',
             'parentNodeKey',
+            'riskId',
             'subtitle',
             'w',
         ]);
@@ -116,6 +118,8 @@ describe('node props — derived from tldrawToRows', () => {
                 parentNodeKey: mark('parentNodeKey'),
                 dataJson: mark('dataJson'),
                 controlId: mark('controlId'),
+                riskId: mark('riskId'),
+                assetId: mark('assetId'),
             },
         };
     }
@@ -124,18 +128,28 @@ describe('node props — derived from tldrawToRows', () => {
         const project = (nodeType?: string) =>
             tldrawToRows({ shapes: [sentinelShape(nodeType)], bindings: [], freeform: [] });
         const stringy = DECLARED_NODE_PROPS.filter((p) => p !== 'w' && p !== 'h');
-        // Across a control node and any other kind: `nodeType` reaches the row
-        // only as a sentinel, and `controlId` only on a control node.
-        const union = new Set([...reached(project(), stringy), ...reached(project('control'), stringy)]);
+        // Across the three linked kinds and any other: `nodeType` reaches the row
+        // only as a sentinel, and each link field only on its own kind.
+        const union = new Set(
+            [undefined, 'control', 'risk', 'asset'].flatMap((k) => reached(project(k), stringy)),
+        );
         expect([...union].sort()).toEqual([...PERSISTED_NODE_PROPS].sort());
     });
 
-    it('projects controlId for a control node only — any other kind omits it', () => {
+    it.each([
+        ['control', 'controlId'],
+        ['risk', 'riskId'],
+        ['asset', 'assetId'],
+    ])('a %s node projects %s and no other link field', (kind, field) => {
         const blob = (nodeType?: string) =>
             JSON.stringify(tldrawToRows({ shapes: [sentinelShape(nodeType)], bindings: [], freeform: [] }));
-        expect(blob('control')).toContain(mark('controlId'));
-        expect(blob()).not.toContain(mark('controlId'));
-        expect(blob('risk')).not.toContain(mark('controlId'));
+        const fields = ['controlId', 'riskId', 'assetId'];
+        expect(blob(kind)).toContain(mark(field));
+        for (const other of fields.filter((f) => f !== field)) {
+            expect(blob(kind)).not.toContain(mark(other));
+        }
+        // Any other kind sends no link field at all.
+        for (const f of fields) expect(blob('processStep')).not.toContain(mark(f));
     });
 
     it('and does NOT read w or h — the whole reason the constant is narrower', () => {
@@ -192,6 +206,8 @@ describe('edge props — derived from tldrawToRows', () => {
             parentNodeKey: null,
             dataJson: null,
             controlId: null,
+            riskId: null,
+            assetId: null,
         },
     });
 

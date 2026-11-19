@@ -91,6 +91,8 @@ model ProcessMap {
   edges     ProcessEdge[]
   snapshots ProcessMapSnapshot[]
   nodeControls ProcessNodeControl[]
+  nodeRisks    ProcessNodeRisk[]
+  nodeAssets   ProcessNodeAsset[]
 
   @@unique([id, tenantId])
   @@index([tenantId, deletedAt])
@@ -189,6 +191,10 @@ model ProcessNode {
   /// the Internal Audit area (not the canvas); this is the link back.
   /// The Control a `control` node stands for (one per node), if linked.
   control                ProcessNodeControl?
+  /// The Risk a `risk` node stands for (one per node), if linked.
+  risk                   ProcessNodeRisk?
+  /// The Asset an `asset` node stands for (one per node), if linked.
+  asset                  ProcessNodeAsset?
 
   @@unique([processMapId, nodeKey])
   @@index([tenantId, processMapId])
@@ -271,6 +277,54 @@ model ProcessNodeControl {
   @@unique([nodeId, tenantId])
   @@index([tenantId, processMapId])
   @@index([tenantId, controlId])
+}
+
+/// The Risk record a `risk` node stands for: the sibling of
+/// `ProcessNodeControl`, with the same shape and the same rules. At most one row
+/// per node, rebuilt from the save payload by `replaceGraph` in the transaction
+/// that upserts the nodes, and nothing about the risk is copied here: the
+/// canvas reads its facts live. It replaces `ProcessNode.dataJson.linkedEntityId`
+/// for `risk` nodes.
+model ProcessNodeRisk {
+  id           String   @id @default(cuid())
+  tenantId     String
+  processMapId String
+  nodeId       String
+  riskId       String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  risk       Risk        @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, riskId])
+}
+
+/// The Asset record an `asset` node stands for: the sibling of
+/// `ProcessNodeControl`, with the same shape and the same rules. At most one row
+/// per node, rebuilt from the save payload by `replaceGraph` in the transaction
+/// that upserts the nodes, and nothing about the asset is copied here: the
+/// canvas reads its facts live. It replaces `ProcessNode.dataJson.linkedEntityId`
+/// for `asset` nodes.
+model ProcessNodeAsset {
+  id           String   @id @default(cuid())
+  tenantId     String
+  processMapId String
+  nodeId       String
+  assetId      String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap  @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  node       ProcessNode @relation(fields: [nodeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  asset      Asset       @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([nodeId, tenantId])
+  @@index([tenantId, processMapId])
+  @@index([tenantId, assetId])
 }
 
 model ProcessEdgeControl {
