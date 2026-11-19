@@ -51,7 +51,8 @@ jest.mock('@/app-layer/repositories/TraceabilityRepository', () => ({
 jest.mock('@/app-layer/repositories/ProcessMapRepository', () => ({
     ProcessMapRepository: {
         listMapsByControl: jest.fn().mockResolvedValue([]),
-        listMapsByLinkedEntity: jest.fn().mockResolvedValue([]),
+        listMapsByRiskNode: jest.fn().mockResolvedValue([]),
+        listMapsByAssetNode: jest.fn().mockResolvedValue([]),
         listMapsByControlNode: jest.fn().mockResolvedValue([]),
     },
 }));

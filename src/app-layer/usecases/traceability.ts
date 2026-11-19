@@ -234,7 +234,7 @@ export async function getRiskTraceability(ctx: RequestContext, riskId: string) {
         const [controls, assets, nodeMaps] = await Promise.all([
             sideIf(seeControls, () => ControlRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
             sideIf(seeAssets, () => AssetRiskRepository.listByRisk(db, ctx.tenantId, riskId)),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'risk', riskId),
+            ProcessMapRepository.listMapsByRiskNode(db, ctx, riskId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
             mapId: n.mapId, mapName: n.mapName, mapStatus: n.mapStatus,
@@ -251,7 +251,7 @@ export async function getAssetTraceability(ctx: RequestContext, assetId: string)
         const [controls, risks, nodeMaps] = await Promise.all([
             sideIf(seeControls, () => AssetControlRepository.listByAsset(db, ctx.tenantId, assetId)),
             sideIf(seeRisks, () => AssetRiskRepository.listByAsset(db, ctx.tenantId, assetId)),
-            ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'asset', assetId),
+            ProcessMapRepository.listMapsByAssetNode(db, ctx, assetId),
         ]);
         const processMaps: TraceabilityMapPlacement[] = nodeMaps.map((n) => ({
             mapId: n.mapId, mapName: n.mapName, mapStatus: n.mapStatus,

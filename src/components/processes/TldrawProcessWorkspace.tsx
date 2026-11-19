@@ -81,7 +81,7 @@ import { useTldrawCanvasCounts } from '@/lib/processes/use-tldraw-canvas-counts'
 import { CanvasOverlayProvider } from '@/lib/processes/canvas-execution-overlay';
 import { RunModeProvider, useRunMode } from '@/lib/processes/run-mode-context';
 import { CanvasRuleStatusProvider } from '@/lib/processes/canvas-rule-status';
-import { CanvasControlFactsProvider } from '@/lib/processes/canvas-control-facts';
+import { CanvasLinkedFactsProvider } from '@/lib/processes/canvas-linked-facts';
 import { useIsAutomationMode } from '@/lib/processes/canvas-mode-context';
 import { CheckpointReviewProvider } from '@/lib/processes/canvas-checkpoint-review';
 import { CheckpointReviewPanel } from '@/components/processes/CheckpointReviewPanel';
@@ -125,6 +125,8 @@ function toDiffSnapshot(rows: GraphRows): DiffGraphSnapshot {
             // modified even when nothing had changed.
             dataJson: withoutHydratedDisplay(n.dataJson ?? null),
             ...(n.controlId !== undefined ? { controlId: n.controlId } : {}),
+            ...(n.riskId !== undefined ? { riskId: n.riskId } : {}),
+            ...(n.assetId !== undefined ? { assetId: n.assetId } : {}),
         })),
         edges: rows.edges.map((e) => ({
             edgeKey: e.edgeKey,
@@ -601,10 +603,14 @@ function Inner({
                     and the inspector. */}
                 <div className="relative min-w-0 flex-1" ref={canvasHostRef}>
                     <CheckpointReviewPanel />
-                    {/* Each control node's live card: the linked Control's
-                        code, name, status and last test, read by the ids on
-                        the canvas. Inside Inner because it needs the editor. */}
-                    <CanvasControlFactsProvider editor={editor} mapId={activeId ?? null}>
+                    {/* Each control, risk and asset node's live card, read by
+                        the ids on the canvas and re-read at each saved version.
+                        Inside Inner because it needs the editor. */}
+                    <CanvasLinkedFactsProvider
+                        editor={editor}
+                        mapId={activeId ?? null}
+                        version={version ?? null}
+                    >
                         <TldrawProcessMap
                             // Remounts on a conflict; see `handleConflict`.
                             key={`${activeId ?? 'none'}:${reloadKey}`}
@@ -619,7 +625,7 @@ function Inner({
                             onSaved={handleSaved}
                             readOnly={!canEdit}
                         />
-                    </CanvasControlFactsProvider>
+                    </CanvasLinkedFactsProvider>
                 </div>
 
                 {/* A disabled fieldset disables every control inside the

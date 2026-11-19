@@ -92,6 +92,9 @@ model Asset {
   /// single-column child `xId -> Asset(id)` leaves a cross-tenant reference
   /// REPRESENTABLE however carefully the application filters. Referencing
   /// [assetId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  /// Process-map nodes that stand for this asset (`ProcessNodeAsset`).
+  processNodeAssets ProcessNodeAsset[]
+
   @@unique([id, tenantId])
 }
 

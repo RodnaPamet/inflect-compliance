@@ -653,7 +653,14 @@ const HIGH_MULTIPLICITY = 5;
 // `.env.example` for `toContain('5434')`, which the comment above the URL also
 // satisfied. It now reads the DIRECT_DATABASE_URL line's port and compares it
 // with the port docker-compose.yml publishes, which moved to 5436. Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1126;
+//
+// 1126 -> 1122 on 2026-11-19. The process-map snapshot guard
+// (p5a-snapshots-table-sidebar) read all of processes.prisma for the
+// ProcessMapSnapshot model's columns, unique and cascade, and adding the
+// ProcessNodeRisk / ProcessNodeAsset models carrying the same `processMap`
+// relation and `createdAt` pushed its cascade needle to six places. Its
+// assertions now read the model's own braces (`braceBlockAfter`). Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1122;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
@@ -789,7 +796,9 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1126;
 // 156 -> 155 (2026-11-13): the Epic 7 chain guard's `/parentExecutionId/` over
 // rule-chain-dispatch.ts (five positions on main, nine after #5103), narrowed
 // to the execution row's lineage write — see the ambiguous baseline. Measured.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 154;
+// 154 -> 153 on 2026-11-19: the same p5a narrowing, whose `createdAt` needle
+// had sat at eight positions in processes.prisma. Measured.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 153;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

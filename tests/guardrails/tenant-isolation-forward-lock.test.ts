@@ -46,6 +46,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // RLS-bound read sees none of A's rows, and the facts read and the reverse
     // lookup learn nothing about A's control.
     ProcessNodeControl: 'tests/integration/process-node-control-two-tenant.test.ts',
+    // Risk- and asset-node links, the same four refusals, in one file.
+    ProcessNodeRisk: 'tests/integration/process-node-risk-asset-two-tenant.test.ts',
+    ProcessNodeAsset: 'tests/integration/process-node-risk-asset-two-tenant.test.ts',
     // #3861 — all three. The VALUE here is a path, not prose: "every dedicated
     // isolation-test file exists" resolves it with `exists()`, so a reason
     // written in this slot would fail that sibling test. What the one file

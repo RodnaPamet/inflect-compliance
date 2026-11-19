@@ -373,7 +373,7 @@ export async function listMapsUsingControl(
 export async function listMapsUsingRisk(ctx: RequestContext, riskId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
-        ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'risk', riskId),
+        ProcessMapRepository.listMapsByRiskNode(db, ctx, riskId),
     );
 }
 
@@ -385,7 +385,7 @@ export async function listMapsUsingRisk(ctx: RequestContext, riskId: string) {
 export async function listMapsUsingAsset(ctx: RequestContext, assetId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, (db) =>
-        ProcessMapRepository.listMapsByLinkedEntity(db, ctx, 'asset', assetId),
+        ProcessMapRepository.listMapsByAssetNode(db, ctx, assetId),
     );
 }
 

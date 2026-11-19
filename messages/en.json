@@ -10905,6 +10905,62 @@
         "NEEDS_REVIEW": "Needs review",
         "NOT_APPLICABLE": "Not applicable"
       }
+    },
+    "riskCard": {
+      "loading": "Loading risk…",
+      "unlinked": "Pick a risk",
+      "missing": "Risk removed",
+      "restricted": "Risk (restricted)",
+      "unavailable": "Risk details unavailable",
+      "residualScore": "{score} residual (inherent {inherent})",
+      "inherentScore": "{score} inherent",
+      "noMitigatingControl": "no mitigating control",
+      "noMitigationOnMap": "no mitigating control on this map",
+      "mitigatedHere": "mitigated here by {onMap} of {total} controls",
+      "reviewOverdue": "review overdue",
+      "status": {
+        "OPEN": "Open",
+        "MITIGATING": "Mitigating",
+        "MITIGATED": "Mitigated",
+        "ACCEPTED": "Accepted",
+        "CLOSED": "Closed"
+      },
+      "treatment": {
+        "TREAT": "Treat",
+        "TRANSFER": "Transfer",
+        "TOLERATE": "Tolerate",
+        "AVOID": "Avoid"
+      }
+    },
+    "assetCard": {
+      "loading": "Loading asset…",
+      "unlinked": "Pick an asset",
+      "missing": "Asset removed",
+      "restricted": "Asset (restricted)",
+      "unavailable": "Asset details unavailable",
+      "criticality": "{level} criticality",
+      "type": {
+        "INFORMATION": "Information",
+        "SYSTEM": "System",
+        "SERVICE": "Service",
+        "DATA_STORE": "Data store",
+        "VENDOR": "Vendor",
+        "PEOPLE_PROCESS": "People / process",
+        "APPLICATION": "Application",
+        "INFRASTRUCTURE": "Infrastructure",
+        "PROCESS": "Process",
+        "OTHER": "Other"
+      },
+      "level": {
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High",
+        "CRITICAL": "Critical"
+      },
+      "status": {
+        "ACTIVE": "Active",
+        "RETIRED": "Retired"
+      }
     }
   },
   "issues": {
