@@ -103,7 +103,8 @@ function specifiersOf(file: SourceFile): string[] {
     return out;
 }
 
-const isTestFile = (p: string): boolean => /\/__tests__\/|\.test\.tsx?$/.test(p);
+/** A co-located test: under a `__tests__` directory, or named `*.test.ts(x)`. */
+const isTestFile = (p: string): boolean => p.includes('/__tests__/') || /\.test\.tsx?$/.test(p);
 
 /** `@types/scope__name` -> `@scope/name`, `@types/name` -> `name`. */
 function typedPackage(typesName: string): string {
