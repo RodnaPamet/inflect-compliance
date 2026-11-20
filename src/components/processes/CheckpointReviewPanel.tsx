@@ -50,7 +50,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { Xmark } from '@inflect/ui/components/ui/icons/nucleo/xmark';
+import { Xmark } from '@inflect/ui/components/ui/icons/glyphs/xmark';
 
 import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';

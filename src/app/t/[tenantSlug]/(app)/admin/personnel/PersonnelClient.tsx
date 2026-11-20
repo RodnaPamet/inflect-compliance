@@ -19,7 +19,7 @@ import { createColumns } from '@/components/ui/table';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
-import { Users } from '@inflect/ui/components/ui/icons/nucleo/users';
+import { Users } from '@inflect/ui/components/ui/icons/glyphs/users';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { PERSONNEL_ROSTER_CAP } from '@/lib/personnel-roster';
 import { buildPersonnelFilters, EMPLOYEE_SOURCE_KEYS, EMPLOYEE_STATUS_KEYS, PERSONNEL_FILTER_KEYS } from './filter-defs';

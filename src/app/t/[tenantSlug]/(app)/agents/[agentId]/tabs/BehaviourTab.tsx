@@ -65,7 +65,7 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { describeFlowForReview } from '@/lib/agentic/agent-flow';
 import { describeSubagentsForReview, profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { BehaviourEditorSheet } from './BehaviourEditorSheet';
 import { BehaviourRejectModal } from './BehaviourRejectModal';

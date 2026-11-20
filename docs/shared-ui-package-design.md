@@ -485,7 +485,7 @@ older classifications.
 
 `git ls-files` over the same four roots returns **617**. The four extra are documentation —
 `src/components/ui/filter/GUIDE.md`, `src/components/ui/table/GUIDE.md`,
-`src/components/ui/hooks/README.md`, `packages/ui/src/components/ui/icons/nucleo/README.md` (moved with its subject at step 2b) — outside the
+`src/components/ui/hooks/README.md`, `packages/ui/src/components/ui/icons/nucleo/README.md` (moved with its subject at step 2b, and deleted with it at #5772, when the Nucleo set left the repository) — outside the
 population because the walker takes `.ts`/`.tsx` only. They are part of the shared surface in every
 sense that matters to a consumer and are the easiest thing to forget; §1 puts them in the package.
 

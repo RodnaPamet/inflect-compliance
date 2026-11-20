@@ -53,9 +53,9 @@ import {
     type VirtualizedListHandle,
 } from "@/components/ui/virtualized-list";
 
-import { Check2 } from "@inflect/ui/components/ui/icons/nucleo/check2";
-import { CheckboxCheckedFill } from "@inflect/ui/components/ui/icons/nucleo/checkbox-checked-fill";
-import { CheckboxUnchecked } from "@inflect/ui/components/ui/icons/nucleo/checkbox-unchecked";
+import { Check2 } from "@inflect/ui/components/ui/icons/glyphs/check2";
+import { CheckboxCheckedFill } from "@inflect/ui/components/ui/icons/glyphs/checkbox-checked-fill";
+import { CheckboxUnchecked } from "@inflect/ui/components/ui/icons/glyphs/checkbox-unchecked";
 import type { Icon } from "../icons/icon-type";
 import { Tooltip } from "../tooltip";
 import type { ComboboxOption } from "./index";

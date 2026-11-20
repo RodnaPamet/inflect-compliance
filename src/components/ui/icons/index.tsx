@@ -76,8 +76,8 @@ export * from "@inflect/ui/components/ui/icons/default-domains/github-enhanced";
 export * from "@inflect/ui/components/ui/icons/default-domains/google-enhanced";
 export * from "@inflect/ui/components/ui/icons/default-domains/spotify";
 
-// Nucleo icons
-export * from "@inflect/ui/components/ui/icons/nucleo";
+// Local glyph set (lucide-react under the names the product uses)
+export * from "@inflect/ui/components/ui/icons/glyphs";
 
 // Feature icons for pricing table
 export * from "./plan-feature-icons";

@@ -10,7 +10,7 @@ import { ComponentType, ReactNode, SVGProps } from "react";
  * `FilterOption` but never exported, so a page author had no name for the type
  * their icon had to satisfy — and `FilterDefInput` narrowed it to `LucideIcon`,
  * which combined with `tests/guards/no-lucide.test.ts` (no NEW lucide import
- * sites) meant a new list page could not express a filter icon at all.
+ * sites; retired in #5772) meant a new list page could not express a filter icon at all.
  *
  * The RENDERER always accepted all three: `filter-list.tsx` branches on
  * `isReactNode(filter.icon)` at three sites and element-constructs otherwise.

@@ -29,7 +29,7 @@ import { Input } from '@/components/ui/input';
 import { NumberStepper } from '@/components/ui/number-stepper';
 import { Textarea } from '@/components/ui/textarea';
 import { PROFILE_MAX_SUBAGENTS, SUBAGENT_NAME_PATTERN } from '@/lib/agentic/agent-profile';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 
 /** One sub-agent as the editor holds it: skills by `origin:name` key, as the version's own picker does. */
 export interface SubagentDraft {

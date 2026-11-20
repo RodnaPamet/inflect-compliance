@@ -25,10 +25,11 @@
  *      and pass for an item that was silently dropped, and could not tell those
  *      apart — which is the exact failure mode the fail-closed filter creates.
  *
- *   4. THE GLYPH IS NUCLEO `Robot`, NOT LUCIDE `Bot`. `SidebarNav` is on
- *      `LEGACY_LUCIDE_USERS` in `no-lucide.test.ts` as a migration TODO, so
- *      "the file already imports lucide" is an argument for the wrong family.
- *      Robot is already the glyph on both existing agent surfaces.
+ *   4. THE GLYPH IS THE SHARED `Robot`, NOT A DIRECT lucide `Bot`. Robot is
+ *      the glyph on both existing agent surfaces; since #5772 it is lucide's
+ *      `Bot` under the local name, but the sidebar must use the SAME
+ *      component those surfaces use, so a change to the agent glyph is made
+ *      once.
  *
  * `useNavSections` is a HOOK returning plain data, so these are assertions
  * about the section structure rather than about rendered DOM — which is what
@@ -102,7 +103,7 @@ jest.mock('@/components/layout/use-calendar-badge', () => ({
 }));
 
 import { useNavSections } from '@/components/layout/SidebarNav';
-import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/glyphs';
 
 const EN = require('../../messages/en.json') as { nav: Record<string, string> };
 
@@ -259,12 +260,12 @@ describe('without the agent permission the entry is ABSENT', () => {
     });
 });
 
-describe('the glyph is Nucleo Robot, not lucide Bot', () => {
+describe('the glyph is the shared Robot, not a direct lucide Bot', () => {
     it('is the same component the other agent surfaces use', () => {
         const item = manage(sections(true)).items.find((i) => i.href === '/t/acme/agents');
         // Identity, not a name: `icon.name === 'Robot'` would also be
-        // satisfied by a lucide export that happened to be called Robot, and
-        // the point of the correction is the FAMILY.
+        // satisfied by any other component that happened to be called Robot,
+        // and the point is that the sidebar shares the agent surfaces' glyph.
         expect(item?.icon).toBe(Robot);
     });
 });

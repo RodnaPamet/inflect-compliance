@@ -21,7 +21,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { useCursorPagination } from '@/components/ui/hooks';
-import { Book2 } from '@inflect/ui/components/ui/icons/nucleo/book2';
+import { Book2 } from '@inflect/ui/components/ui/icons/glyphs/book2';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import {

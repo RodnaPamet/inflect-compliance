@@ -41,7 +41,7 @@ import dynamic from 'next/dynamic';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { AsidePanel } from '@/components/ui/aside-panel';
 import { AutomationSuggestionsRail } from '@/components/automation/AutomationSuggestionsRail';
-import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 import { cardVariants } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
@@ -86,7 +86,7 @@ import type {
 } from '@/lib/dto';
 import { buildControlStatusLabels } from '../filter-defs';
 import { buildControlPatchBody } from '../_lib/control-write-values';
-import { PenWriting } from '@inflect/ui/components/ui/icons/nucleo/pen-writing';
+import { PenWriting } from '@inflect/ui/components/ui/icons/glyphs/pen-writing';
 
 // The detail status dropdown reuses the CANONICAL status vocabulary
 // (buildControlStatusLabels — the same i18n source the list badges + filter
@@ -1086,9 +1086,7 @@ export default function ControlDetailPage() {
                                     aria-label={tx('detailPage.editControl')}
                                 >
                                     {/* B2 — icon-only edit affordance,
-                                        canonical unified pattern. Nucleo is
-                                        the canonical icon family (lucide is a
-                                        closed migration allowlist). */}
+                                        canonical unified pattern. */}
                                     <PenWriting className="h-4 w-4" />
                                 </Button>
                             </Tooltip>

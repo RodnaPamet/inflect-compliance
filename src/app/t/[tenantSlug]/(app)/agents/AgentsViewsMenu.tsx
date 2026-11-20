@@ -56,7 +56,7 @@ import {
     SquareCheck,
     UserMinus,
     Workflow,
-} from '@inflect/ui/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/glyphs';
 import { ViewsMenu } from '@/components/ui/views-menu';
 
 /** Which of the agentic surfaces the reader is on. */

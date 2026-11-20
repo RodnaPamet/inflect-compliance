@@ -154,12 +154,12 @@ const MIGRATED_PAGES = [
     'risks/[riskId]/page.tsx',
     'admin/members/page.tsx',
     // MCP admin hub — token-clean from the start (semantic tokens +
-    // PageHeader/Link/Nucleo icons only; no raw color utilities, no
+    // PageHeader/Link/glyph icons only; no raw color utilities, no
     // legacy btn/badge CSS). Promoted on landing rather than parked in
     // the unmigrated tally.
     'admin/mcp/page.tsx',
     // Agent-action receipts view — token-clean from the start (semantic
-    // tokens + PageHeader/StatusBadge/Nucleo icons only; no raw color
+    // tokens + PageHeader/StatusBadge/glyph icons only; no raw color
     // utilities, no legacy btn/badge CSS). Promoted on landing.
     // Moved from admin/mcp/agent-receipts by AGENTIC UI 1/4 (#2437).
     'agents/receipts/page.tsx',
@@ -190,7 +190,7 @@ const MIGRATED_PAGES = [
     // Quarantine triage — what the agentic output guard refused, and the
     // content it was asked to write. Token-clean from the start (semantic
     // content-*/bg-*/border-* only; EntityListPage + DataTable + EmptyState +
-    // InlineNotice + Sheet + CopyText + Heading primitives, Nucleo icons, no
+    // InlineNotice + Sheet + CopyText + Heading primitives, glyph icons, no
     // legacy btn/badge/glass-card). Promoted on landing rather than parked in
     // the unmigrated tally.
     // Moved from admin/mcp/quarantine by AGENTIC UI 1/4 (#2437).
@@ -209,7 +209,7 @@ const MIGRATED_PAGES = [
     // AGENTIC UI 1/4 — the register itself, moved out of /admin and reshaped
     // into a standard list page (#2421). Token-clean: semantic
     // content-*/bg-*/border-* only; EntityListPage + DataTable + KpiFilterCard
-    // + InlineNotice + StatusBadge + EmptyState + ViewsMenu primitives, Nucleo
+    // + InlineNotice + StatusBadge + EmptyState + ViewsMenu primitives, glyph
     // icons, no legacy btn/badge/glass-card.
     //
     // It was in the UNMIGRATED tally at `admin/agents/*` (the +2 at 137) and is
@@ -552,14 +552,14 @@ describe('New page token discipline', () => {
         //   - 131 (+1): Privacy posture — admin/privacy/page.tsx, the
         //     read-only privacy & data-protection surface. Token-clean
         //     (semantic content-*/bg-*/border-* only; Card + StatusBadge +
-        //     InlineNotice + Heading primitives, Nucleo icons, no legacy
+        //     InlineNotice + Heading primitives, glyph icons, no legacy
         //     `btn`/`badge`/`glass-card`); in the unmigrated tally only
         //     because the surface is new and not yet promoted to
         //     MIGRATED_PAGES.
         //   - 133 (+2): DSAR manual register — admin/dsar-requests/page.tsx
         //     + DsarRegisterClient.tsx, the GDPR Art.15/17 rights-request
         //     log. Token-clean (semantic tokens only; ListPageShell +
-        //     DataTable + StatusBadge + InlineNotice + Nucleo icons, no
+        //     DataTable + StatusBadge + InlineNotice + glyph icons, no
         //     legacy btn/badge/glass-card); in the unmigrated tally only
         //     because the surface is new and not yet promoted to
         //     MIGRATED_PAGES.
@@ -575,7 +575,7 @@ describe('New page token discipline', () => {
         //     AgentsClient.tsx, the record of which autonomous agents may act
         //     inside the tenant. Token-clean (semantic content-*/bg-*/border-*
         //     only; EntityListPage + DataTable + StatusBadge + EmptyState +
-        //     InfoTooltip primitives, Nucleo icons, no legacy
+        //     InfoTooltip primitives, glyph icons, no legacy
         //     btn/badge/glass-card); in the unmigrated tally only because the
         //     surface is new and not yet promoted to MIGRATED_PAGES. The
         //     NewAgentModal beside them is a modal, not a page, so it is

@@ -21,7 +21,7 @@ import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { TenantSkillEditorModal, type TenantSkillEditorTarget } from './TenantSkillEditorModal';
 import { TenantSkillSheet } from './TenantSkillSheet';

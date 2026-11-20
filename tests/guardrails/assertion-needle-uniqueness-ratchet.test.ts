@@ -660,7 +660,12 @@ const HIGH_MULTIPLICITY = 5;
 // ProcessNodeRisk / ProcessNodeAsset models carrying the same `processMap`
 // relation and `createdAt` pushed its cascade needle to six places. Its
 // assertions now read the model's own braces (`braceBlockAfter`). Measured.
-const AMBIGUOUS_NEEDLE_BASELINE = 1122;
+// 1122 -> 1120 on 2026-11-20 (#5772). The Nucleo set was replaced by the
+// lucide-backed `glyphs` set, and `rq4-2-arrow-left-icon` lost the two
+// needles the old inline SVG repeated (`currentColor` three times,
+// `strokeWidth="1.5"` twice) for assertions naming the one lucide element.
+// Measured.
+const AMBIGUOUS_NEEDLE_BASELINE = 1120;
 
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied

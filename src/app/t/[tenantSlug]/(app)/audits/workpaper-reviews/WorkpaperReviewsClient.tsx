@@ -42,7 +42,7 @@ import { createColumns } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
-import { BadgeCheck } from '@inflect/ui/components/ui/icons/nucleo';
+import { BadgeCheck } from '@inflect/ui/components/ui/icons/glyphs';
 import { formatDate } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 

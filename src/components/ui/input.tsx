@@ -29,8 +29,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { AlertCircle } from "lucide-react";
 import { useTranslations } from "next-intl";
 import * as React from "react";
-import { Eye } from "@inflect/ui/components/ui/icons/nucleo/eye";
-import { EyeSlash } from "@inflect/ui/components/ui/icons/nucleo/eye-slash";
+import { Eye } from "@inflect/ui/components/ui/icons/glyphs/eye";
+import { EyeSlash } from "@inflect/ui/components/ui/icons/glyphs/eye-slash";
 
 // ─── CVA ────────────────────────────────────────────────────────────
 

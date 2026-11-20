@@ -185,7 +185,7 @@ export function ReconciliationQueueClient() {
     //
     // `filter-toolbar-coverage` exempted this page on the grounds that it could
     // not have them: `FilterDefInput.icon` demanded a `LucideIcon` and
-    // `no-lucide` forbids a new lucide import site, so the documented filter
+    // `no-lucide` (retired in #5772) forbade a new lucide import site, so the documented filter
     // API was unreachable from new code. #4109 widened that field to
     // `FilterIcon`, which already admitted a `ReactNode` — so the icons below
     // are `<AppIcon>` elements, and this page is the first production caller of

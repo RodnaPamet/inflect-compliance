@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CircleCheckFill, CircleDotted } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleCheckFill, CircleDotted } from '@inflect/ui/components/ui/icons/glyphs';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
