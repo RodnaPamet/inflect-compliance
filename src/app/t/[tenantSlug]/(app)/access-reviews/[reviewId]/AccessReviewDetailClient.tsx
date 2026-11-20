@@ -201,7 +201,12 @@ interface AgentNarrowingRow {
 }
 
 /** Agent Pay 1.4 (#5333) — a proposed withdrawal of the agent's spending authority. */
-type SpendingWithdrawalGround = 'EXPIRED_BY_WINDOW_END' | 'SUSPENDED_AFTER_KILL' | 'NEVER_REVIEWED';
+type SpendingWithdrawalGround =
+    | 'EXPIRED_BY_WINDOW_END'
+    | 'SUSPENDED_AFTER_KILL'
+    | 'NEVER_REVIEWED'
+    | 'EXPIRES_DURING_CAMPAIGN'
+    | 'NO_PAYMENT_ABILITY_CONFIRMED';
 type SpendingWithdrawalResult =
     | 'ENVELOPE_WITHDRAWN'
     | 'ENVELOPE_ALREADY_WITHDRAWN'
@@ -209,6 +214,7 @@ type SpendingWithdrawalResult =
     | 'ENVELOPE_ABSENT';
 const SPENDING_WITHDRAWAL_GROUNDS: readonly SpendingWithdrawalGround[] = [
     'EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED',
+    'EXPIRES_DURING_CAMPAIGN', 'NO_PAYMENT_ABILITY_CONFIRMED',
 ];
 const SPENDING_WITHDRAWAL_RESULTS: readonly SpendingWithdrawalResult[] = [
     'ENVELOPE_WITHDRAWN', 'ENVELOPE_ALREADY_WITHDRAWN', 'ENVELOPE_REDECLARED', 'ENVELOPE_ABSENT',
@@ -300,6 +306,8 @@ interface PackSummary {
      */
     spendingEnvelopes: number;
     spendingUnreviewed: number;
+    /** The rails of those envelopes, in the pack's order. */
+    spendingRails: SpendingRail[];
     /**
      * The sections whose read hit its cap (#5317), in the order shown. A
      * capped section is not every row, and the reviewer must not read it as
@@ -334,6 +342,10 @@ function readPackSummary(value: unknown): PackSummary {
         kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
         spendingEnvelopes: spending.filter((e) => e.status !== 'WITHDRAWN').length,
         spendingUnreviewed: spending.filter((e) => e.unreviewed === true).length,
+        spendingRails: spending
+            .filter((e) => e.status !== 'WITHDRAWN')
+            .map((e) => SPENDING_RAILS.find((r) => r === e.rail))
+            .filter((r): r is SpendingRail => r !== undefined),
         truncated: [
             ...(v.grantsTruncated === true ? (['grants'] as const) : []),
             ...(v.timeBoundedTruncated === true ? (['timeBounded'] as const) : []),
@@ -1148,7 +1160,16 @@ export function AccessReviewDetailClient({
                             </span>
                         );
                     }
+                    // Agent Pay 1.4, ground (d): a scan cannot show the agent
+                    // can no longer pay, so the reviewer says so — once per
+                    // envelope the pack describes and no withdrawal names yet.
+                    const proposedRails = new Set(
+                        spendingWithdrawals.filter((w) => w.decisionId === d.id).map((w) => w.rail),
+                    );
+                    const confirmable = readPackSummary(packByDecision.get(d.id)?.sectionsJson)
+                        .spendingRails.filter((r) => !proposedRails.has(r));
                     return (
+                        <div className="space-y-tight">
                         <select
                             className="input"
                             defaultValue=""
@@ -1165,11 +1186,22 @@ export function AccessReviewDetailClient({
                             <option value="REVOKE">{t('agentRevoke')}</option>
                             <option value="MODIFY">{t('agentModify')}</option>
                         </select>
+                        {confirmable.map((rail) => (
+                            <Button
+                                key={rail}
+                                variant="secondary"
+                                size="sm"
+                                disabled={agentBusy}
+                                data-testid={`agent-no-payment-ability-${d.id}-${rail}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals`, { decisionId: d.id, rail })}
+                            >{t('agentNoPaymentAbility', { rail: t(`withdrawalRail.${rail}`) })}</Button>
+                        ))}
+                        </div>
                     );
                 },
             },
         ]),
-        [t, packByDecision, pendingByDecision, pendingWithdrawalsByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
+        [t, packByDecision, pendingByDecision, pendingWithdrawalsByDecision, spendingWithdrawals, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
     );
 
     const agentNameOf = useCallback((decisionId: string): string => {

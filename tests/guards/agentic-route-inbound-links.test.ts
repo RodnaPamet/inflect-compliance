@@ -531,6 +531,9 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // takes authority away) and opens the owner's revocation task; the key is
     // `access_reviews.decide`, as a narrowing's.
     't/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route.ts',
+    // Ground (d): the reviewer confirms the agent can no longer pay, which
+    // opens a PENDING withdrawal decided at the route above; same key.
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/route.ts',
     // #3869 — asking the workspace a question, and reading what came back. The
     // only agentic routes NOT under `admin/`, and deliberately so: ADR 0004
     // determined by test that the answer cannot reach data the asker could not

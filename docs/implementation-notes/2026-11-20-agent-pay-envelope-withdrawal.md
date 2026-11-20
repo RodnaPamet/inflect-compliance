@@ -10,7 +10,9 @@ The owner answered the four questions the register-surfaces note left open
 1. A pack proposes WITHDRAWING an envelope on any of four grounds, and records
    which: it expires before the end of the review window; it is still
    SUSPENDED_REQUESTED after the agent's kill switch fired; it was never
-   reviewed; the harness no longer shows the agent able to pay.
+   reviewed; the harness no longer shows the agent able to pay. Answers to the
+   follow-ups: the last is confirmed by a person, never derived from a scan;
+   and "before the end of the review" includes the campaign itself.
 2. Withdraw only — never a lower limit.
 3. Accepting it under `access_reviews.decide` may write the withdrawal through
    the envelope writer, on a narrowly scoped internal path, and opens a task for
@@ -50,23 +52,34 @@ close       a pending withdrawal refuses the close (WITHDRAWALS_PENDING); the ev
 | `src/app-layer/usecases/agent-spending-authority.ts` | `withdrawSpendingAuthorityForRecertificationInTx` and `auditRecertificationWithdrawal`, the internal path |
 | `src/app-layer/usecases/access-review-agent.ts` | Writing the rows at preparation, `decideAgentSpendingWithdrawal`, the verdict and close holds, the read and the evidence rows |
 | `src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route.ts`, `route-permissions.ts` | The decide route, `access_reviews.decide` |
+| `src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/route.ts` | The reviewer's "it can no longer pay" confirmation (ground d), same key |
 | `AccessReviewDetailClient.tsx`, `messages/{en,bg}.json` | The "Proposed spending withdrawals" table beside the narrowings |
 | `src/app-layer/usecases/tenant-purge.ts`, `docs/data-retention.md` | Retained with the campaign, whole |
 
 ## Decisions
 
-- **Ground (d) is not derived.** The only stored signal is a scan that no
-  longer reports the payment capability, and Agent Pay 2.3 already found that
-  the code reader reports `[]` where it cannot see (a helper module, a value it
-  cannot resolve) — absence, not evidence. Deriving a withdrawal from it would
-  be the close-on-absence 2.3 refused. It is left for the owner to say what
-  positive evidence of "no longer able to pay" is; adding it widens the grounds
-  CHECK and the vocabulary, and appends to it.
-- **"Expires before the end of the review window" is the pack's own fact,
-  `expiredAtWindowEnd`**: lapsed by the end of the observation window, which
-  ends at the campaign's creation. It is the window the pack states, and the
-  fact was already in the hashed section. An envelope lapsing during the review
-  itself proposes nothing; that reading is the narrow one.
+- **Ground (d) is a person's statement, never a scan's** (owner answer to the
+  follow-up question, 2026-11-20). The only stored signal would be a scan that
+  no longer reports the payment capability, and Agent Pay 2.3 found that the
+  code reader reports `[]` where it cannot see — absence, not evidence. So the
+  campaign's reviewer confirms "it can no longer pay" on a rail
+  (`confirmAgentHasNoPaymentAbility`, `POST …/agent-spending-withdrawals`,
+  `access_reviews.decide`), which opens a PENDING row with the ground
+  `NO_PAYMENT_ABILITY_CONFIRMED` and `proposedByUserId`, decided like any other.
+  A CHECK makes that ground stand alone, pairs it with its confirmer, and
+  refuses the agent's owner as confirmer; `PackPlanSchema` refuses it in a plan,
+  so no agent can put it there. It is offered only for an envelope the pack
+  describes, not withdrawn when read, and with no row yet (`(packId, rail)` is
+  unique; a planned proposal is decided instead), and only before the subject's
+  verdict.
+- **"Expires before the end of the review" has two grounds** (owner answer,
+  2026-11-20: include the campaign itself). `EXPIRED_BY_WINDOW_END` is the
+  pack's fact `expiredAtWindowEnd`, lapsed by the end of the observation
+  window, which ends at the campaign's creation. `EXPIRES_DURING_CAMPAIGN` is
+  `expiresDuringCampaign`: lapsing after that but by the campaign's due date,
+  or by the read when the campaign has none or is overdue. The two never both
+  apply. The field is optional, so evidence recorded before it re-derives to
+  the same plan.
 - **"Still SUSPENDED_REQUESTED after the kill" is the status alone.** Only an
   AGENT-scope kill or an orphan containment writes it
   (`requestSpendingSuspensionInTx`), and only a re-declaration or a withdrawal

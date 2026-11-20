@@ -14487,6 +14487,7 @@
     "narrowingAccept": "Премахни правото",
     "narrowingReject": "Запази правото",
     "agentWithdrawalsFirst": "Първо решете за {count} оттегляне(ия) на правомощие за плащане",
+    "agentNoPaymentAbility": "Вече не може да плаща: {rail}",
     "colWithdrawalRail": "Правомощие за плащане",
     "withdrawalRail": {
       "AGENT_PAY_TOKEN": "Токен Mastercard Agent Pay",
@@ -14498,7 +14499,9 @@
     "withdrawalGround": {
       "EXPIRED_BY_WINDOW_END": "Изтекло е до края на периода на кампанията",
       "SUSPENDED_AFTER_KILL": "Все още чака спиране след задействане на аварийния стоп на агента",
-      "NEVER_REVIEWED": "Не е прегледано от втори човек"
+      "NEVER_REVIEWED": "Не е прегледано от втори човек",
+      "EXPIRES_DURING_CAMPAIGN": "Изтича преди края на тази кампания",
+      "NO_PAYMENT_ABILITY_CONFIRMED": "Проверяващият потвърди, че агентът вече не може да плаща"
     },
     "withdrawalAccepted": "Оттеглено",
     "withdrawalRejected": "Запазено",

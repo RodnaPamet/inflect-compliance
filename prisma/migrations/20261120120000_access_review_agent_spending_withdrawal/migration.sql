@@ -24,6 +24,7 @@ CREATE TABLE "AccessReviewAgentSpendingWithdrawal" (
     "statusAtPack" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "grounds" TEXT[],
+    "proposedByUserId" TEXT,
     "subjectOwnerUserId" TEXT NOT NULL,
     "outcome" "AgentNarrowingOutcome" NOT NULL DEFAULT 'PENDING',
     "decidedAt" TIMESTAMP(3),
@@ -69,7 +70,19 @@ ALTER TABLE "AccessReviewAgentSpendingWithdrawal" ADD CONSTRAINT "AccessReviewAg
     CHECK (
         "grounds" IS NOT NULL
         AND cardinality("grounds") >= 1
-        AND "grounds" <@ ARRAY['EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED']::TEXT[]
+        AND "grounds" <@ ARRAY['EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED',
+                               'EXPIRES_DURING_CAMPAIGN', 'NO_PAYMENT_ABILITY_CONFIRMED']::TEXT[]
+    );
+
+-- A person's confirmation that the agent cannot pay is its own proposal, and
+-- names who confirmed it: NO_PAYMENT_ABILITY_CONFIRMED stands alone, and a
+-- proposer is recorded exactly when it is the ground. A planned withdrawal has
+-- no proposer; the pack's run is its record.
+ALTER TABLE "AccessReviewAgentSpendingWithdrawal" ADD CONSTRAINT "AccessReviewAgentSpendingWithdrawal_person_ground"
+    CHECK (
+        ("proposedByUserId" IS NOT NULL) = ('NO_PAYMENT_ABILITY_CONFIRMED' = ANY("grounds"))
+        AND ("proposedByUserId" IS NULL OR "grounds" = ARRAY['NO_PAYMENT_ABILITY_CONFIRMED']::TEXT[])
+        AND ("proposedByUserId" IS NULL OR "proposedByUserId" <> "subjectOwnerUserId")
     );
 
 -- The stamp is all-or-nothing; only an ACCEPTED withdrawal executes; a task is
@@ -100,6 +113,7 @@ BEGIN
         OR NEW."statusAtPack" IS DISTINCT FROM OLD."statusAtPack"
         OR NEW."expiresAt" IS DISTINCT FROM OLD."expiresAt"
         OR NEW."grounds" IS DISTINCT FROM OLD."grounds"
+        OR NEW."proposedByUserId" IS DISTINCT FROM OLD."proposedByUserId"
         OR NEW."subjectOwnerUserId" IS DISTINCT FROM OLD."subjectOwnerUserId"
         OR NEW."createdAt" IS DISTINCT FROM OLD."createdAt"
     THEN

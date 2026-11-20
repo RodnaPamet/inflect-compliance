@@ -492,8 +492,13 @@ model AccessReviewAgentSpendingWithdrawal {
   statusAtPack       String
   expiresAt          DateTime
   /// Every ground that held: `EXPIRED_BY_WINDOW_END`, `SUSPENDED_AFTER_KILL`,
-  /// `NEVER_REVIEWED` (`SPENDING_WITHDRAWAL_GROUNDS`). At least one (CHECK).
+  /// `NEVER_REVIEWED`, `EXPIRES_DURING_CAMPAIGN` (planned from the pack), or
+  /// `NO_PAYMENT_ABILITY_CONFIRMED` alone (a person's confirmation;
+  /// `SPENDING_WITHDRAWAL_GROUNDS`). At least one (CHECK).
   grounds            String[]
+  /// Who confirmed the agent cannot pay — set exactly when the ground is
+  /// `NO_PAYMENT_ABILITY_CONFIRMED`, and never the agent's owner (CHECK).
+  proposedByUserId   String?
   /// The agent's owner when the campaign froze it. A CHECK refuses a
   /// `decidedByUserId` equal to it.
   subjectOwnerUserId String

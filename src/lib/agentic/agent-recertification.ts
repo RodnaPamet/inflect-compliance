@@ -268,6 +268,13 @@ export const SpendingAuthorityEvidenceSchema = z.object({
     expiresAt: Iso,
     /** True when the envelope had lapsed by the end of the campaign's window. */
     expiredAtWindowEnd: z.boolean(),
+    /**
+     * True when it had NOT lapsed by the window's end but lapses before the
+     * campaign does: by its due date, or by the read when the campaign has none
+     * or is overdue (owner decision, 2026-11-20). OPTIONAL with no default, so
+     * evidence recorded before this field re-derives to the same plan.
+     */
+    expiresDuringCampaign: z.boolean().optional(),
     tokenRequestor: z.string(),
     consentedByUserId: z.string(),
     declaredByUserId: z.string(),
@@ -420,9 +427,9 @@ export function narrowingsFor(subject: SubjectEvidence): NarrowingCandidate[] {
 // ── Spending-authority withdrawal (Agent Pay 1.4, owner decisions 2026-11-20) ──
 //
 // A pack may propose WITHDRAWING a declared spending envelope — never reducing
-// a limit (decision 2). Each ground is a fact the pack's own spending section
-// states, so the proposal is re-derived from the stored evidence like a grant
-// narrowing is, and records every ground that holds (decision 1):
+// a limit (decision 2). Each PLANNED ground is a fact the pack's own spending
+// section states, so the proposal is re-derived from the stored evidence like a
+// grant narrowing is, and records every ground that holds (decision 1):
 //
 //   EXPIRED_BY_WINDOW_END   the envelope had lapsed by the end of the campaign's
 //                           window (`expiredAtWindowEnd`)
@@ -431,27 +438,42 @@ export function narrowingsFor(subject: SubjectEvidence): NarrowingCandidate[] {
 //                           so nobody has resolved the suspension since
 //   NEVER_REVIEWED          the declaration now on the row was never reviewed by
 //                           a second person (`reviewedAt` is null)
+//   EXPIRES_DURING_CAMPAIGN it lapses after the window but before the campaign
+//                           ends (`expiresDuringCampaign`)
 //
-// The fourth ground the owner named — "the harness scan no longer shows the
-// agent able to pay" — is NOT derived: the scanner's code source reports no
-// capability where it cannot see (a helper module, a value it cannot resolve),
-// so an absent capability is absence, not evidence. Agent Pay 2.3 refused to
-// close a finding on the same signal for the same reason. It waits on an owner
-// decision; adding it widens the CHECK on the stored grounds.
+// The fourth ground the owner named — "the agent can no longer pay" — is NEVER
+// derived from a scan: the scanner's code source reports no capability where it
+// cannot see (a helper module, a value it cannot resolve), so an absent
+// capability is absence, not evidence (Agent Pay 2.3 refused to close a finding
+// on the same signal). A PERSON states it instead (owner decision, 2026-11-20):
+// the campaign's reviewer confirms the agent has no payment ability, which
+// opens a PENDING withdrawal with the ground NO_PAYMENT_ABILITY_CONFIRMED and
+// their user id, decided like any other (`confirmAgentHasNoPaymentAbility`).
 
-/** Why a withdrawal is proposed. Append; never repurpose a member. */
-export const SPENDING_WITHDRAWAL_GROUNDS = [
+/** The grounds a pack's plan derives from its evidence. Append; never repurpose a member. */
+export const PLANNED_SPENDING_WITHDRAWAL_GROUNDS = [
     'EXPIRED_BY_WINDOW_END',
     'SUSPENDED_AFTER_KILL',
     'NEVER_REVIEWED',
+    'EXPIRES_DURING_CAMPAIGN',
+] as const;
+
+/** The ground a person states. Never in a plan: `PackPlanSchema` refuses it. */
+export const PERSON_CONFIRMED_WITHDRAWAL_GROUND = 'NO_PAYMENT_ABILITY_CONFIRMED' as const;
+
+/** Every ground a stored withdrawal may carry (the CHECK's vocabulary). */
+export const SPENDING_WITHDRAWAL_GROUNDS = [
+    ...PLANNED_SPENDING_WITHDRAWAL_GROUNDS,
+    PERSON_CONFIRMED_WITHDRAWAL_GROUND,
 ] as const;
 export type SpendingWithdrawalGround = (typeof SPENDING_WITHDRAWAL_GROUNDS)[number];
+export type PlannedSpendingWithdrawalGround = (typeof PLANNED_SPENDING_WITHDRAWAL_GROUNDS)[number];
 
 export interface SpendingWithdrawalCandidate {
     readonly rail: string;
     /** The declaration's identity: an envelope re-declared since is a different one. */
     readonly declaredAt: string;
-    readonly grounds: SpendingWithdrawalGround[];
+    readonly grounds: PlannedSpendingWithdrawalGround[];
 }
 
 /**
@@ -465,10 +487,11 @@ export function spendingWithdrawalsFor(subject: SubjectEvidence): SpendingWithdr
     return subject.spendingAuthority
         .filter((e) => e.status !== 'WITHDRAWN')
         .map((e): SpendingWithdrawalCandidate => {
-            const grounds: SpendingWithdrawalGround[] = [];
+            const grounds: PlannedSpendingWithdrawalGround[] = [];
             if (e.expiredAtWindowEnd) grounds.push('EXPIRED_BY_WINDOW_END');
             if (e.status === 'SUSPENDED_REQUESTED') grounds.push('SUSPENDED_AFTER_KILL');
             if (e.reviewedAt === null) grounds.push('NEVER_REVIEWED');
+            if (!e.expiredAtWindowEnd && e.expiresDuringCampaign === true) grounds.push('EXPIRES_DURING_CAMPAIGN');
             return { rail: e.rail, declaredAt: e.declaredAt, grounds };
         })
         .filter((c) => c.grounds.length > 0)
@@ -496,7 +519,7 @@ export const PackPlanSchema = z.object({
         spendingWithdrawals: z.array(z.object({
             rail: z.string().min(1),
             declaredAt: Iso,
-            grounds: z.array(z.enum(SPENDING_WITHDRAWAL_GROUNDS)).min(1),
+            grounds: z.array(z.enum(PLANNED_SPENDING_WITHDRAWAL_GROUNDS)).min(1),
         })).optional(),
     })),
 });

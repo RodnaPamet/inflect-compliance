@@ -156,7 +156,7 @@ export async function readAgentRecertificationEvidence(
     return runInTenantContext(ctx, async (db) => {
         const review = await db.accessReview.findFirst({
             where: { id: accessReviewId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, scope: true, reviewerUserId: true, createdAt: true },
+            select: { id: true, scope: true, reviewerUserId: true, createdAt: true, dueAt: true },
         });
         if (!review) throw notFound('Access review not found');
         if (review.scope !== 'AGENT') throw badRequest('NOT_AN_AGENT_CAMPAIGN: only an AGENT campaign has reviewer packs');
@@ -169,6 +169,10 @@ export async function readAgentRecertificationEvidence(
         }
 
         const window = observationWindow(review.createdAt);
+        // When the campaign ends, for EXPIRES_DURING_CAMPAIGN: its due date, or
+        // this read when it has none or is already overdue.
+        const readAt = new Date();
+        const campaignEnd = review.dueAt && review.dueAt.getTime() > readAt.getTime() ? review.dueAt : readAt;
 
         // The population this read covers: one subject, or every subject but
         // the calling agent's own.
@@ -459,6 +463,8 @@ export async function readAgentRecertificationEvidence(
                 merchantScopeUnrestricted: isUnrestrictedScope(e),
                 expiresAt: e.expiresAt.toISOString(),
                 expiredAtWindowEnd: e.expiresAt.getTime() <= window.end.getTime(),
+                expiresDuringCampaign: e.expiresAt.getTime() > window.end.getTime()
+                    && e.expiresAt.getTime() <= campaignEnd.getTime(),
                 tokenRequestor: e.tokenRequestor,
                 consentedByUserId: e.consentedByUserId,
                 declaredByUserId: e.declaredByUserId,

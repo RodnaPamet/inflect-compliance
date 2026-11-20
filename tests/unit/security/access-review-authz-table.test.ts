@@ -109,6 +109,7 @@ jest.mock('@/app-layer/usecases/access-review-agent', () => ({
     readAgentPackPreparation: () => Promise.resolve(null),
     decideAgentNarrowing: () => { ran('decideAgentNarrowing'); return Promise.resolve({ outcome: 'ACCEPTED' }); },
     decideAgentSpendingWithdrawal: () => { ran('decideAgentSpendingWithdrawal'); return Promise.resolve({ outcome: 'ACCEPTED' }); },
+    confirmAgentHasNoPaymentAbility: () => { ran('confirmAgentHasNoPaymentAbility'); return Promise.resolve({ withdrawalId: 'w1' }); },
     recordAgentDecisionSampleOutcome: () => { ran('recordAgentDecisionSampleOutcome'); return Promise.resolve({ outcome: 'CONCURRED' }); },
     submitAgentDecision: () => { ran('submitAgentDecision'); return Promise.resolve({ decision: 'CONFIRM' }); },
     closeAgentAccessReview: () => { ran('closeAgentAccessReview'); return Promise.resolve({ accessReviewId: 'r1' }); },
@@ -138,6 +139,7 @@ import { GET as READ_PACKS, POST as PREPARE_PACKS } from '@/app/api/t/[tenantSlu
 import { POST as DECIDE_NARROWING } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route';
 import { POST as ANSWER_SAMPLE } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route';
 import { POST as DECIDE_WITHDRAWAL } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route';
+import { POST as CONFIRM_NO_PAYMENT } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/route';
 
 const ROLES: readonly Role[] = ['OWNER', 'ADMIN', 'EDITOR', 'AUDITOR', 'READER'] as const;
 
@@ -229,6 +231,7 @@ describe('Step 5a — every access-review route resolves to its intended key', (
         ['POST', `${T}/r1/agent-samples/d1`, 'access_reviews.decide'],
         // Agent Pay 1.4 (#5333) — a proposed spending withdrawal, decided as a narrowing is.
         ['POST', `${T}/r1/agent-spending-withdrawals/d1`, 'access_reviews.decide'],
+        ['POST', `${T}/r1/agent-spending-withdrawals`, 'access_reviews.decide'],
     ];
 
     it.each(CASES)('%s %s → %s', (method, path, key) => {
@@ -330,6 +333,7 @@ function cases(): Case[] {
         { name: 'POST /access-reviews/:id/agent-narrowings/:nid', key: 'decide', call: () => DECIDE_NARROWING(makeReq('POST', `${T}/r1/agent-narrowings/n1`, { outcome: 'ACCEPT' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', narrowingId: 'n1' }) } as never) },
         { name: 'POST /access-reviews/:id/agent-samples/:sid', key: 'decide', call: () => ANSWER_SAMPLE(makeReq('POST', `${T}/r1/agent-samples/s1`, { outcome: 'CONCURRED' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', sampleId: 's1' }) } as never) },
         { name: 'POST /access-reviews/:id/agent-spending-withdrawals/:wid', key: 'decide', call: () => DECIDE_WITHDRAWAL(makeReq('POST', `${T}/r1/agent-spending-withdrawals/w1`, { outcome: 'ACCEPT' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1', withdrawalId: 'w1' }) } as never) },
+        { name: 'POST /access-reviews/:id/agent-spending-withdrawals', key: 'decide', call: () => CONFIRM_NO_PAYMENT(makeReq('POST', `${T}/r1/agent-spending-withdrawals`, { decisionId: 'd1', rail: 'AP4M' }), { params: Promise.resolve({ tenantSlug: 'acme', reviewId: 'r1' }) } as never) },
     ];
 }
 

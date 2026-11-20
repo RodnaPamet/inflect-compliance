@@ -30,6 +30,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 import type { RequestContext } from '@/app-layer/types';
 import {
     closeAgentAccessReview,
+    confirmAgentHasNoPaymentAbility,
     createAgentAccessReview,
     decideAgentSpendingWithdrawal,
     getAgentReviewPacks,
@@ -188,12 +189,13 @@ async function seedEnvelopes(): Promise<void> {
     });
 }
 
-async function freshCampaign(): Promise<string> {
+async function freshCampaign(dueAt?: Date): Promise<string> {
     await seedEnvelopes();
     const r = await createAgentAccessReview(as(T1, 'owner'), {
         name: 'spending recertification',
         reviewerUserId: users[T1].reviewer,
         preparerAgentId: A.preparer,
+        ...(dueAt ? { dueAt: dueAt.toISOString() } : {}),
     });
     await prepareAgentReviewPacks(as(T1, 'owner'), r.accessReviewId);
     return r.accessReviewId;
@@ -288,6 +290,127 @@ describe('a pack proposes withdrawing an envelope on each ground, and records wh
         expect(read.spendingWithdrawals).toHaveLength(3);
         // No token reference reaches a reader: the row holds none.
         expect(JSON.stringify(read.spendingWithdrawals)).not.toContain(TOKEN_REFERENCE);
+    });
+});
+
+describe('(a) an envelope that lapses before the campaign ends (owner decision, 2026-11-20)', () => {
+    it('is proposed when it expires before the campaign’s due date, and not when the campaign has none', async () => {
+        // The clean agent's live envelope lapses in 90 days.
+        const due = await freshCampaign(new Date(Date.now() + 120 * DAY));
+        const proposed = await prisma.accessReviewAgentSpendingWithdrawal.findMany({
+            where: { accessReviewId: due, agentId: A.clean },
+        });
+        expect(proposed.map((w) => [w.rail, w.grounds, w.statusAtPack])).toEqual([
+            ['AGENT_PAY_TOKEN', ['EXPIRES_DURING_CAMPAIGN'], 'REVIEWED'],
+        ]);
+        // The lapsed one is still named for its lapse alone.
+        expect((await prisma.accessReviewAgentSpendingWithdrawal.findFirstOrThrow({
+            where: { accessReviewId: due, agentId: A.paying, rail: 'AGENT_PAY_TOKEN' },
+        })).grounds).toEqual(['EXPIRED_BY_WINDOW_END']);
+        await clearCampaigns();
+
+        const undated = await freshCampaign();
+        expect(await prisma.accessReviewAgentSpendingWithdrawal.count({
+            where: { accessReviewId: undated, agentId: A.clean },
+        })).toBe(0);
+    });
+});
+
+// ─── Ground (d): a person confirms the agent cannot pay ────────────────
+
+describe('the reviewer confirms an agent can no longer pay (owner decision, 2026-11-20)', () => {
+    it('opens a PENDING withdrawal naming who confirmed it, and accepting it withdraws the envelope', async () => {
+        const id = await freshCampaign();
+        const clean = await decisionFor(id, A.clean);
+        const res = await confirmAgentHasNoPaymentAbility(as(T1, 'reviewer'), id, {
+            decisionId: clean.id, rail: 'AGENT_PAY_TOKEN',
+        });
+        expect(res.grounds).toEqual(['NO_PAYMENT_ABILITY_CONFIRMED']);
+        const w = await prisma.accessReviewAgentSpendingWithdrawal.findUniqueOrThrow({ where: { id: res.withdrawalId } });
+        expect([w.agentId, w.rail, w.grounds, w.proposedByUserId, w.statusAtPack, w.outcome]).toEqual([
+            A.clean, 'AGENT_PAY_TOKEN', ['NO_PAYMENT_ABILITY_CONFIRMED'], users[T1].reviewer, 'REVIEWED', 'PENDING',
+        ]);
+        expect(w.declaredAt.getTime()).toBe((await envelopeOn(A.clean, 'AGENT_PAY_TOKEN')).declaredAt.getTime());
+        expect(await prisma.auditLog.count({
+            where: { tenantId: T1, action: 'ACCESS_REVIEW_AGENT_SPENDING_WITHDRAWAL_PROPOSED', entityId: w.id },
+        })).toBe(1);
+        // Confirming withdraws nothing by itself, and holds the verdict.
+        expect((await envelopeOn(A.clean, 'AGENT_PAY_TOKEN')).status).toBe('REVIEWED');
+        await expect(submitAgentDecision(as(T1, 'reviewer'), clean.id, { decision: 'CONFIRM' }))
+            .rejects.toThrow(/WITHDRAWALS_PENDING: 1/);
+
+        const decided = await decideAgentSpendingWithdrawal(as(T1, 'reviewer'), id, w.id, { outcome: 'ACCEPT' });
+        expect(decided.executionResult).toBe('ENVELOPE_WITHDRAWN');
+        expect((await envelopeOn(A.clean, 'AGENT_PAY_TOKEN')).status).toBe('WITHDRAWN');
+    });
+
+    it('refuses the agent’s owner with a 403 and an AUTHZ_DENIED row, and writes nothing', async () => {
+        const id = await freshCampaign();
+        const clean = await decisionFor(id, A.clean);
+        // The clean agent's owner is the tenant's OWNER — admin enough to decide anything else.
+        await expect(confirmAgentHasNoPaymentAbility(as(T1, 'owner'), id, {
+            decisionId: clean.id, rail: 'AGENT_PAY_TOKEN',
+        })).rejects.toThrow(/agent_owner_cannot_confirm_no_payment_ability/);
+        expect(await prisma.auditLog.count({
+            where: { tenantId: T1, action: 'AUTHZ_DENIED', entity: 'AccessReviewConnectedDecision', entityId: clean.id },
+        })).toBe(1);
+        expect(await prisma.accessReviewAgentSpendingWithdrawal.count({ where: { accessReviewId: id, agentId: A.clean } })).toBe(0);
+    });
+
+    it('refuses a rail the pack does not describe, a withdrawn envelope, a second proposal and a decided subject', async () => {
+        const id = await freshCampaign();
+        const clean = await decisionFor(id, A.clean);
+        const paying = await decisionFor(id, A.paying);
+        const reviewer = as(T1, 'reviewer');
+        await expect(confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: clean.id, rail: 'OTHER' }))
+            .rejects.toThrow(/ENVELOPE_NOT_IN_PACK/);
+        await expect(confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: clean.id, rail: 'AP4M' }))
+            .rejects.toThrow(/ENVELOPE_ALREADY_WITHDRAWN/);
+        // The pack already proposed this one; decide that instead.
+        await expect(confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: paying.id, rail: 'AP4M' }))
+            .rejects.toThrow(/WITHDRAWAL_ALREADY_PROPOSED/);
+        await confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: clean.id, rail: 'AGENT_PAY_TOKEN' });
+        await expect(confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: clean.id, rail: 'AGENT_PAY_TOKEN' }))
+            .rejects.toThrow(/WITHDRAWAL_ALREADY_PROPOSED/);
+
+        const preparer = await decisionFor(id, A.preparer);
+        await submitAgentDecision(reviewer, preparer.id, { decision: 'CONFIRM' });
+        await prisma.agentSpendingAuthority.create({ data: envelope(T1, A.preparer, 'OTHER') });
+        await expect(confirmAgentHasNoPaymentAbility(reviewer, id, { decisionId: preparer.id, rail: 'OTHER' }))
+            .rejects.toThrow(/SUBJECT_DECIDED/);
+        // Someone who is neither the reviewer nor an admin.
+        await expect(confirmAgentHasNoPaymentAbility(as(T2, 'reviewer'), id, { decisionId: clean.id, rail: 'AGENT_PAY_TOKEN' }))
+            .rejects.toThrow(/not found/i);
+    });
+
+    it('a CHECK pairs the ground with its confirmer, alone, and never the agent’s owner', async () => {
+        const id = await freshCampaign();
+        const pack = await prisma.accessReviewAgentPack.findFirstOrThrow({ where: { accessReviewId: id, agentId: A.clean } });
+        const probe = {
+            tenantId: T1, accessReviewId: id, decisionId: pack.decisionId, packId: pack.id, agentId: A.clean,
+            rail: 'OTHER' as const, declaredAt: new Date(), statusAtPack: 'REVIEWED', expiresAt: new Date(),
+            subjectOwnerUserId: users[T1].owner,
+        };
+        const check = /AccessReviewAgentSpendingWithdrawal_person_ground/;
+        await expect(prisma.accessReviewAgentSpendingWithdrawal.create({
+            data: { ...probe, grounds: ['NO_PAYMENT_ABILITY_CONFIRMED'] },
+        })).rejects.toThrow(check);
+        await expect(prisma.accessReviewAgentSpendingWithdrawal.create({
+            data: { ...probe, grounds: ['NEVER_REVIEWED'], proposedByUserId: users[T1].reviewer },
+        })).rejects.toThrow(check);
+        await expect(prisma.accessReviewAgentSpendingWithdrawal.create({
+            data: { ...probe, grounds: ['NEVER_REVIEWED', 'NO_PAYMENT_ABILITY_CONFIRMED'], proposedByUserId: users[T1].reviewer },
+        })).rejects.toThrow(check);
+        await expect(prisma.accessReviewAgentSpendingWithdrawal.create({
+            data: { ...probe, grounds: ['NO_PAYMENT_ABILITY_CONFIRMED'], proposedByUserId: users[T1].owner },
+        })).rejects.toThrow(check);
+        // And the confirmer is frozen with the rest of the proposal.
+        const ok = await prisma.accessReviewAgentSpendingWithdrawal.create({
+            data: { ...probe, grounds: ['NO_PAYMENT_ABILITY_CONFIRMED'], proposedByUserId: users[T1].reviewer },
+        });
+        await expect(prisma.accessReviewAgentSpendingWithdrawal.update({
+            where: { id: ok.id }, data: { proposedByUserId: users[T1].admin2 },
+        })).rejects.toThrow(/ACCESS_REVIEW_WITHDRAWAL_FROZEN/);
     });
 });
 

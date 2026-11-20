@@ -14487,6 +14487,7 @@
     "narrowingAccept": "Remove grant",
     "narrowingReject": "Keep grant",
     "agentWithdrawalsFirst": "Decide its {count} spending withdrawal(s) first",
+    "agentNoPaymentAbility": "It can no longer pay: {rail}",
     "colWithdrawalRail": "Spending authority",
     "withdrawalRail": {
       "AGENT_PAY_TOKEN": "Mastercard Agent Pay token",
@@ -14498,7 +14499,9 @@
     "withdrawalGround": {
       "EXPIRED_BY_WINDOW_END": "It had expired by the end of the campaign's window",
       "SUSPENDED_AFTER_KILL": "Still waiting to be suspended after the agent's kill switch fired",
-      "NEVER_REVIEWED": "No second person has reviewed it"
+      "NEVER_REVIEWED": "No second person has reviewed it",
+      "EXPIRES_DURING_CAMPAIGN": "It expires before this campaign ends",
+      "NO_PAYMENT_ABILITY_CONFIRMED": "The reviewer confirmed the agent can no longer pay"
     },
     "withdrawalAccepted": "Withdrawn",
     "withdrawalRejected": "Kept",

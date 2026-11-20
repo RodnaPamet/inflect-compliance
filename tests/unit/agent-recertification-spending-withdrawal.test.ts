@@ -4,6 +4,8 @@
  * and the closing evidence without moving anything filed before it.
  */
 import {
+    PackPlanSchema,
+    PLANNED_SPENDING_WITHDRAWAL_GROUNDS,
     RecertificationEvidenceSchema,
     SPENDING_WITHDRAWAL_GROUNDS,
     agentCampaignEvidenceBytes,
@@ -73,8 +75,43 @@ const evidence = (subjects: SubjectEvidence[]) => ({
 });
 
 describe('the grounds a pack proposes a withdrawal on', () => {
-    it('are the three the owner decided, and no fourth (the harness ground waits on a decision)', () => {
-        expect([...SPENDING_WITHDRAWAL_GROUNDS]).toEqual(['EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED']);
+    it('are the four a pack derives, plus the one only a person states', () => {
+        expect([...PLANNED_SPENDING_WITHDRAWAL_GROUNDS]).toEqual([
+            'EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED', 'EXPIRES_DURING_CAMPAIGN',
+        ]);
+        expect([...SPENDING_WITHDRAWAL_GROUNDS]).toEqual([
+            ...PLANNED_SPENDING_WITHDRAWAL_GROUNDS, 'NO_PAYMENT_ABILITY_CONFIRMED',
+        ]);
+    });
+
+    it('a plan may never carry the person ground: "it cannot pay" is not derived from a scan', () => {
+        const plan = {
+            accessReviewId: 'ar-1', page: 0,
+            packs: [{
+                decisionId: 'dec-1', agentId: 'ag-1', narrowings: [],
+                spendingWithdrawals: [{ rail: 'AGENT_PAY_TOKEN', declaredAt: DECLARED_AT, grounds: ['NO_PAYMENT_ABILITY_CONFIRMED'] }],
+            }],
+        };
+        expect(PackPlanSchema.safeParse(plan).success).toBe(false);
+    });
+
+    it('(a) an envelope that lapses after the window but before the campaign ends', () => {
+        expect(spendingWithdrawalsFor(subject([envelope({ expiresDuringCampaign: true })]))).toEqual([
+            { rail: 'AGENT_PAY_TOKEN', declaredAt: DECLARED_AT, grounds: ['EXPIRES_DURING_CAMPAIGN'] },
+        ]);
+    });
+
+    it('an envelope lapsed by the window’s end is named for that alone, never for both', () => {
+        expect(spendingWithdrawalsFor(subject([
+            envelope({ expiredAtWindowEnd: true, expiresDuringCampaign: true }),
+        ]))).toEqual([{ rail: 'AGENT_PAY_TOKEN', declaredAt: DECLARED_AT, grounds: ['EXPIRED_BY_WINDOW_END'] }]);
+    });
+
+    it('evidence recorded before the campaign-end field proposes exactly what it did', () => {
+        const before = envelope();
+        expect('expiresDuringCampaign' in before).toBe(false);
+        expect(spendingWithdrawalsFor(subject([before]))).toEqual([]);
+        expect(RecertificationEvidenceSchema.safeParse(evidence([subject([before])])).success).toBe(true);
     });
 
     it('a reviewed, live envelope proposes nothing', () => {

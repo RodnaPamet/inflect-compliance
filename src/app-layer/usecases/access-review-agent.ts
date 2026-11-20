@@ -59,9 +59,11 @@ import {
     MAX_AGENT_SUBJECTS,
     PACK_PAGE_SIZE,
     PACK_SUBJECT_ALL_BUT_SELF,
+    PERSON_CONFIRMED_WITHDRAWAL_GROUND,
     PackPlanSchema,
     RECERT_SAMPLE_DISSENT_CODES,
     RecertificationEvidenceSchema,
+    SpendingAuthorityEvidenceSchema,
     agentCampaignEvidenceBytes,
     buildAgentCampaignEvidence,
     fullToolNameFor,
@@ -126,6 +128,10 @@ export type AgentCampaignRefusal =
     | 'NARROWINGS_PENDING'
     | 'WITHDRAWALS_PENDING'
     | 'SUBJECTS_PENDING'
+    | 'SUBJECT_DECIDED'
+    | 'ENVELOPE_NOT_IN_PACK'
+    | 'ENVELOPE_ALREADY_WITHDRAWN'
+    | 'WITHDRAWAL_ALREADY_PROPOSED'
     | 'ALREADY_DECIDED';
 
 /** Thrown with the code in the message so a caller and a test can both read it. */
@@ -1342,7 +1348,7 @@ export async function decideAgentNarrowing(
 /** What a reader of a campaign's withdrawals is given. No token reference: the row holds none. */
 const SPENDING_WITHDRAWAL_SELECT = {
     id: true, decisionId: true, packId: true, rail: true, declaredAt: true, statusAtPack: true,
-    expiresAt: true, grounds: true, outcome: true, decidedAt: true, decidedByUserId: true,
+    expiresAt: true, grounds: true, proposedByUserId: true, outcome: true, decidedAt: true, decidedByUserId: true,
     executedAt: true, executionResult: true, ownerTaskId: true,
 } as const;
 
@@ -1448,6 +1454,133 @@ export async function decideAgentSpendingWithdrawal(
             executionResult: carried?.executionResult ?? null,
             ownerTaskId: carried?.ownerTaskId ?? null,
         };
+    });
+}
+
+export const ConfirmNoPaymentAbilitySchema = z.object({
+    decisionId: z.string().min(1),
+    rail: z.enum(SPENDING_RAILS),
+}).strict();
+
+/** The pack's stored spending section; absent on a pack prepared before it. */
+const PackSpendingSectionSchema = z.object({
+    spendingAuthority: z.array(SpendingAuthorityEvidenceSchema).optional(),
+});
+
+/**
+ * The campaign's reviewer confirms that an agent can no longer pay on one rail
+ * (Agent Pay 1.4, ground (d); owner decision of 2026-11-20). A scan cannot say
+ * that — the scanner's code source reports no capability where it cannot see —
+ * so a PERSON does, and the statement opens a PENDING withdrawal carrying the
+ * ground `NO_PAYMENT_ABILITY_CONFIRMED` and their user id. It is decided like
+ * any other withdrawal (`decideAgentSpendingWithdrawal`); confirming withdraws
+ * nothing by itself.
+ *
+ * Refused, in order: not found; not an AGENT campaign; closed; not the
+ * assigned reviewer or an admin; the agent's OWNER, frozen or current (403 and
+ * AUTHZ_DENIED); the pack not prepared; the subject already decided; the
+ * envelope not in the pack; withdrawn when the pack read it; a withdrawal of
+ * that envelope already proposed (one per pack and rail, by the unique key).
+ * The envelope is named as the PACK described it, so accepting withdraws that
+ * declaration and never one made since.
+ */
+export async function confirmAgentHasNoPaymentAbility(
+    ctx: RequestContext,
+    accessReviewId: string,
+    input: unknown,
+) {
+    assertCanRead(ctx);
+    assertAgentCampaignsAvailable('decide');
+    const parsed = ConfirmNoPaymentAbilitySchema.parse(input);
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.accessReviewConnectedDecision.findFirst({
+            where: { id: parsed.decisionId, tenantId: ctx.tenantId, accessReviewId },
+            select: {
+                id: true, decision: true, subjectAgentId: true, subjectOwnerUserId: true,
+                accessReview: { select: { id: true, scope: true, reviewerUserId: true, status: true, deletedAt: true } },
+                agentPack: { select: { id: true, sectionsJson: true } },
+            },
+        });
+        if (!row || row.accessReview.deletedAt !== null) throw notFound('Decision not found.');
+        if (row.accessReview.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'this decision is not an agent subject');
+        if (row.accessReview.status === 'CLOSED') refuse('CAMPAIGN_CLOSED', 'this campaign is closed; withdrawals are immutable');
+        if (row.accessReview.reviewerUserId !== ctx.userId && !ctx.permissions?.canAdmin) {
+            throw forbidden('Only the assigned reviewer (or a tenant admin) may confirm an agent cannot pay.');
+        }
+        if (await ownsAgent(db, ctx, row.subjectOwnerUserId, row.subjectAgentId)) {
+            await refuseOwner(ctx, 'AccessReviewConnectedDecision', row.id, 'agent_owner_cannot_confirm_no_payment_ability');
+        }
+        if (!row.agentPack || !row.subjectAgentId) refuse('PACKS_NOT_PREPARED', 'prepare the reviewer packs first');
+        if (row.decision !== null) refuse('SUBJECT_DECIDED', 'this agent has already been decided');
+        if (!row.subjectOwnerUserId) throw internal('an agent subject has no frozen owner');
+
+        const section = PackSpendingSectionSchema.safeParse(row.agentPack.sectionsJson);
+        const envelope = section.success
+            ? section.data.spendingAuthority?.find((e) => e.rail === parsed.rail)
+            : undefined;
+        if (!envelope) refuse('ENVELOPE_NOT_IN_PACK', `the pack describes no ${parsed.rail} spending authority`);
+        if (envelope.status === 'WITHDRAWN') {
+            refuse('ENVELOPE_ALREADY_WITHDRAWN', `the ${parsed.rail} spending authority was already withdrawn`);
+        }
+
+        const existing = await db.accessReviewAgentSpendingWithdrawal.findFirst({
+            where: { tenantId: ctx.tenantId, packId: row.agentPack.id, rail: parsed.rail },
+            select: { id: true },
+        });
+        if (existing) {
+            refuse('WITHDRAWAL_ALREADY_PROPOSED', 'a withdrawal of this spending authority is already proposed; decide that one');
+        }
+
+        let created: { id: string };
+        try {
+            created = await db.accessReviewAgentSpendingWithdrawal.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    accessReviewId: row.accessReview.id,
+                    decisionId: row.id,
+                    packId: row.agentPack.id,
+                    agentId: row.subjectAgentId,
+                    rail: parsed.rail,
+                    declaredAt: new Date(envelope.declaredAt),
+                    statusAtPack: envelope.status,
+                    expiresAt: new Date(envelope.expiresAt),
+                    grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND],
+                    proposedByUserId: ctx.userId,
+                    subjectOwnerUserId: row.subjectOwnerUserId,
+                },
+                select: { id: true },
+            });
+        } catch (err) {
+            // Two confirmations at once: the unique (packId, rail) keeps one.
+            if ((err as { code?: string } | null)?.code === 'P2002') {
+                refuse('WITHDRAWAL_ALREADY_PROPOSED', 'a withdrawal of this spending authority is already proposed; decide that one');
+            }
+            throw err;
+        }
+
+        if (row.accessReview.status === 'OPEN') {
+            await AccessReviewRepository.setReviewStatus(db, ctx, row.accessReview.id, 'IN_REVIEW');
+        }
+
+        // Audit last: `logEvent` writes on its own connection.
+        await logEvent(db, ctx, {
+            action: 'ACCESS_REVIEW_AGENT_SPENDING_WITHDRAWAL_PROPOSED',
+            entityType: 'AccessReviewAgentSpendingWithdrawal',
+            entityId: created.id,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AccessReviewAgentSpendingWithdrawal',
+                operation: 'create',
+                summary: `The reviewer confirmed the agent cannot pay on ${parsed.rail}; withdrawal proposed`,
+                after: {
+                    accessReviewId: row.accessReview.id,
+                    decisionId: row.id,
+                    rail: parsed.rail,
+                    grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND],
+                },
+            },
+        });
+        return { withdrawalId: created.id, grounds: [PERSON_CONFIRMED_WITHDRAWAL_GROUND] };
     });
 }
 
