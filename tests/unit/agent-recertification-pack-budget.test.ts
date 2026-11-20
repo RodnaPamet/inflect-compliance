@@ -29,7 +29,11 @@
  *     of `GRANT_EXPIRY_ARGS`;
  *   - a connection name is carried through `packConnectionName`, so at most
  *     `CONNECTION_NAME_IN_PACK` characters (the integrations route bounds the
- *     stored name by nothing).
+ *     stored name by nothing);
+ *   - spending authority is one envelope per rail (`SPENDING_RAILS`, the
+ *     row's unique), its amounts at most `Number.MAX_SAFE_INTEGER`, its token
+ *     requestor at most 80 characters (`SpendingEnvelopeSchema`) and its
+ *     merchant lists counted, at most 100 each.
  *
  * And two ASSUMPTIONS about how a character serialises, which no code holds:
  *   - a tool name is ASCII, one byte a character (MCP's naming rule for
@@ -61,6 +65,7 @@ import {
     KILLS_PER_AGENT,
     TIME_BOUNDED_PER_AGENT,
 } from '@/app-layer/usecases/agent-recertification-evidence';
+import { SPENDING_RAILS } from '@/lib/agentic/spending-authority';
 
 const ID = 25;
 const USER_ID = 32;
@@ -158,6 +163,29 @@ function worstSubject(label: string = CYRILLIC_LABEL): SubjectEvidence {
         })),
         killsTruncated: true,
         harness: { level: 'H5', previousLevel: 'H4', drift: 'FIRST_SCAN', lastSeenAt: TS },
+        spendingAuthority: SPENDING_RAILS.map((rail) => ({
+            rail,
+            status: 'SUSPENDED_REQUESTED',
+            unreviewed: false,
+            perTransactionLimitMinor: String(Number.MAX_SAFE_INTEGER),
+            periodBudgetMinor: String(Number.MAX_SAFE_INTEGER),
+            budgetPeriod: 'MONTH',
+            currency: 'EUR',
+            merchantDomainCount: 100,
+            merchantCategoryCodeCount: 100,
+            merchantScopeUnrestricted: false,
+            expiresAt: TS,
+            expiredAtWindowEnd: false,
+            // The longest platform name, two bytes a character.
+            tokenRequestor: 'Ж'.repeat(80),
+            consentedByUserId: id(USER_ID),
+            declaredByUserId: id(USER_ID),
+            declaredAt: TS,
+            reviewedByUserId: id(USER_ID),
+            reviewedAt: TS,
+            suspensionRequestedAt: TS,
+            withdrawnAt: TS,
+        })),
     };
 }
 

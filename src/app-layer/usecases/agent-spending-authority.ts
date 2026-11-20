@@ -77,7 +77,7 @@ import { mayReadAgentInventory } from '@/lib/permissions';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { assertCanRead } from '../policies/common';
-import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
+import { assertAgentGovernanceWrite, meetsAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
 import { FindingRepository } from '../repositories/FindingRepository';
 import { logEvent } from '../events/audit';
@@ -690,6 +690,109 @@ export async function listAgentSpendingAuthorities(ctx: RequestContext, agentId:
             take: SPENDING_RAILS.length,
         });
         return rows.map(toView);
+    });
+}
+
+/**
+ * Why the register page does not offer THIS viewer a review of one envelope:
+ * the usecase's own refusals, asked before the click (#5333). `null` when the
+ * review is offered.
+ */
+export type SpendingReviewWithheld =
+    | 'NOT_PERMITTED'
+    | 'AGENT_RETIRED'
+    | 'NOT_DECLARED'
+    | 'REVIEWER_NOT_A_PERSON'
+    | 'REVIEWER_IS_DECLARER'
+    | 'REVIEWER_IS_OWNER';
+
+/** One envelope as the register page shows it, with what this viewer may do to it. */
+export interface SpendingAuthorityStateRow extends SpendingAuthorityView {
+    /** Held back from activation: DECLARED, or SUSPENDED_REQUESTED with no review. */
+    unreviewed: boolean;
+    viewerMayReview: boolean;
+    reviewWithheld: SpendingReviewWithheld | null;
+    viewerMayNarrow: boolean;
+    viewerMayWithdraw: boolean;
+}
+
+/** The register page's spending-authority section, as the server decides it. */
+export interface SpendingAuthorityState {
+    agentId: string;
+    agentStatus: string;
+    envelopes: SpendingAuthorityStateRow[];
+    /** Whether a declaration (new, wider, or over a withdrawn envelope) would be taken. */
+    viewerMayDeclare: boolean;
+}
+
+/**
+ * The register page's section (#5333): the agent's envelopes, and for each the
+ * acts THIS viewer would be allowed, asked by the same rules the writers above
+ * apply — the agent-governance floor, the status each act needs, and for the
+ * review the four-eyes rule (a person, neither the declarer nor the owner, at
+ * declaration or now). So the page offers a write exactly where the server
+ * takes it and computes none of it; the writers still decide every write.
+ *
+ * Read under the register's read gate, as `listAgentSpendingAuthorities`. The
+ * route takes `admin.agent_registry` on top.
+ */
+export async function getAgentSpendingAuthorityState(
+    ctx: RequestContext,
+    agentId: string,
+): Promise<SpendingAuthorityState> {
+    assertCanRead(ctx);
+    if (!mayReadAgentInventory(ctx.appPermissions?.admin)) {
+        throw new AppError('You do not have permission to view the agent register.', 'FORBIDDEN', 403, true);
+    }
+    const mayWrite = meetsAgentGovernanceWrite(ctx, 'agent_registry');
+    const isPerson = !ctx.apiKeyId && !ctx.agentId && ctx.actorType !== 'JOB';
+
+    return runInTenantContext(ctx, async (db) => {
+        const agent = await db.registeredAgent.findFirst({
+            where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, status: true, ownerUserId: true },
+        });
+        if (!agent) throw refuse('AGENT_NOT_FOUND', 'Registered agent not found');
+        const retired = agent.status === 'RETIRED';
+        const rows = await db.agentSpendingAuthority.findMany({
+            where: { tenantId: ctx.tenantId, agentId },
+            orderBy: { rail: 'asc' },
+            take: SPENDING_RAILS.length,
+        });
+
+        // The order is `reviewAgentSpendingAuthority`'s: the floor, then
+        // `lockAgent` (retired), the status, the person, the declarer, the owner.
+        const reviewWithheld = (r: AgentSpendingAuthority): SpendingReviewWithheld | null => {
+            if (!mayWrite) return 'NOT_PERMITTED';
+            if (!isPerson) return 'REVIEWER_NOT_A_PERSON';
+            if (retired) return 'AGENT_RETIRED';
+            if (r.status !== 'DECLARED') return 'NOT_DECLARED';
+            if (r.declaredByUserId === ctx.userId) return 'REVIEWER_IS_DECLARER';
+            if (r.ownerUserIdAtDeclaration === ctx.userId || agent.ownerUserId === ctx.userId) return 'REVIEWER_IS_OWNER';
+            return null;
+        };
+
+        return {
+            agentId,
+            agentStatus: agent.status,
+            viewerMayDeclare: mayWrite && !retired,
+            envelopes: rows.map((r) => {
+                const withheld = reviewWithheld(r);
+                return {
+                    ...toView(r),
+                    // `readUnreviewedSpendingAuthority`'s predicate, row by row.
+                    unreviewed:
+                        r.status === 'DECLARED' || (r.status === 'SUSPENDED_REQUESTED' && r.reviewedAt === null),
+                    viewerMayReview: withheld === null,
+                    reviewWithheld: withheld,
+                    // `narrowAgentSpendingAuthority` locks with `lockAgent` (a
+                    // retired agent is refused) and takes DECLARED or REVIEWED.
+                    viewerMayNarrow: mayWrite && !retired && (r.status === 'DECLARED' || r.status === 'REVIEWED'),
+                    // A retired agent's envelope may still be withdrawn.
+                    viewerMayWithdraw: mayWrite && r.status !== 'WITHDRAWN',
+                };
+            }),
+        };
     });
 }
 

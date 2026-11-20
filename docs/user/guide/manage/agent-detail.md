@@ -19,6 +19,7 @@ Open [{{ui:nav.agents}}](agents.md) under **{{ui:nav.manage}}** in the sidebar a
 | **{{ui:admin.agentDetail.amend.action}}**, activate, suspend, retire, **{{ui:admin.agentDetail.interactive.use}}**, assess its risk | Owner, Admin, AI admin |
 | Edit its policy card, grant and revoke its tools | Owner, Admin, AI admin |
 | Write, approve, reject and retire versions on **{{ui:admin.agentDetail.tabBehaviour}}**, accept a new behaviour baseline | Owner, Admin, AI admin. Nobody approves or rejects a version they wrote |
+| Declare, narrow, review and withdraw its **{{ui:admin.agentDetail.spending.heading}}** | Owner, Admin, AI admin. Nobody reviews an envelope they declared, or one for an agent they own |
 | Stop it and resume it | Owner, Admin, AI admin |
 | Create a key for it under **{{ui:admin.agentDetail.connect.action}}** | Owner, Admin |
 | Propose or accept a new owner | Owner, AI admin |
@@ -39,7 +40,7 @@ When the agent, or every agent in the workspace, is stopped, a banner across the
 
 | Tab | What it holds |
 | --- | --- |
-| {{ui:admin.agentDetail.tabOverview}} | The accountable owner, declared model, supplier, EU AI Act classification, when it was registered and last scored, its live credentials and description. **{{ui:admin.agentDetail.overview.availabilityHeading}}**: activate, suspend or retire it. Below: **{{ui:admin.agentDetail.spLink.heading}}**, **{{ui:admin.agentDetail.fingerprint.heading}}** and **{{ui:admin.agentDetail.ownership.heading}}** |
+| {{ui:admin.agentDetail.tabOverview}} | The accountable owner, declared model, supplier, EU AI Act classification, when it was registered and last scored, its live credentials and description. **{{ui:admin.agentDetail.overview.availabilityHeading}}**: activate, suspend or retire it. Below: **{{ui:admin.agentDetail.spLink.heading}}**, **{{ui:admin.agentDetail.spending.heading}}**, **{{ui:admin.agentDetail.fingerprint.heading}}** and **{{ui:admin.agentDetail.ownership.heading}}** |
 | {{ui:admin.agentDetail.tabRisk}} | **{{ui:admin.agentDetail.risk.standingHeading}}**: the tier in force and when it was scored, and whether the agent has changed since. **{{ui:admin.agentDetail.risk.questionnaireHeading}}**: the questions that score it |
 | {{ui:admin.agentDetail.tabPolicy}} | The agent's policy card: the tools it may use, its maximum data scope and autonomy, its action budgets per run and per day, its escalation triggers and its approval rung. Each change adds a version |
 | {{ui:admin.agentDetail.tabTools}} | **{{ui:admin.agentDetail.tools.heading}}**: every tool the agent may call; anything absent is refused. Below, the tools the agent runtime adds on its own, each with when it appears, and the approval state of each tool's definition |
@@ -70,6 +71,17 @@ On **{{ui:admin.agentDetail.tabOverview}}**, under **{{ui:admin.agentDetail.over
 ### Stop it at once
 
 Click **{{ui:admin.agentDetail.kill.engageAction}}**, give a **{{ui:admin.agentDetail.kill.reasonLabel}}**, and confirm. {{ui:admin.agentDetail.kill.engagePrompt}} To undo it, click **{{ui:admin.agentDetail.kill.liftAction}}** and give a reason. When the stop covers the whole workspace, the button reads **{{ui:admin.agentDetail.kill.liftActionTenant}}**.
+
+### Record what it may spend
+
+On **{{ui:admin.agentDetail.tabOverview}}**, **{{ui:admin.agentDetail.spending.heading}}** records what the agent may pay for, as the cardholder consented to it: one envelope per payment rail, with a per-transaction limit, a budget per day, week or month, the merchants it may pay, an expiry, the member who consented, and the agent platform that holds the payment token with that platform's own reference for it. Inflect never holds a card number or a payment token, and refuses a value that looks like one. The platform and the card issuer enforce the limits; the envelope is what you check them against.
+
+1. Click **{{ui:admin.agentDetail.spending.declare}}**, fill in the envelope and click **{{ui:admin.agentDetail.spending.declareSave}}**. With no merchant websites and no category codes, the agent may pay any merchant, and the form says so.
+2. Another person clicks **{{ui:admin.agentDetail.spending.review}}** and confirms with **{{ui:admin.agentDetail.spending.reviewConfirm}}**. The person who declared it and the agent's owner are not offered the review, and the card says why. Until it is reviewed, the agent cannot be activated; if it is already active, a finding stays open until the envelope is reviewed or withdrawn.
+
+**{{ui:admin.agentDetail.spending.narrow}}** lowers a limit, shortens the expiry or removes merchants, and keeps the review. Anything wider is refused there: use **{{ui:admin.agentDetail.spending.redeclare}}**, which a second person reviews again. **{{ui:admin.agentDetail.spending.withdraw}}** removes the envelope from the register; ask the platform to cancel the token too.
+
+When the agent is stopped with **{{ui:admin.agentDetail.kill.engageAction}}**, each envelope reads **{{ui:admin.agentDetail.spending.status.SUSPENDED_REQUESTED}}** and a task asks the agent's owner to have the platform suspend the token. Resuming the agent does not restore the envelope: declare it again for a second person to review, or withdraw it.
 
 ### Read its behaviour fingerprint
 

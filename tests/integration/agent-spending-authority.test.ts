@@ -31,6 +31,7 @@ import { activateRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { engageKillSwitch, liftKillSwitch } from '@/app-layer/usecases/agent-kill-switch';
 import {
     declareAgentSpendingAuthority,
+    getAgentSpendingAuthorityState,
     listAgentSpendingAuthorities,
     narrowAgentSpendingAuthority,
     reviewAgentSpendingAuthority,
@@ -730,5 +731,92 @@ describe('a kill does not launder an unreviewed envelope into service', () => {
         await liftKillSwitch(ctxAs(T1, 'owner'), kill.id, { liftReason: 'drill over' });
         await activateRegisteredAgent(ctxAs(T1, 'owner'), agent.id);
         expect((await prisma.registeredAgent.findUniqueOrThrow({ where: { id: agent.id } })).status).toBe('ACTIVE');
+    });
+});
+
+describe('the register page is offered exactly the acts the writer takes (#5333)', () => {
+    it('the declarer and the owner are not offered the review, a second person is — and the review they are offered succeeds', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+
+        const asDeclarer = (await getAgentSpendingAuthorityState(ctxAs(T1, 'declarer'), agent.id)).envelopes[0];
+        expect(asDeclarer).toMatchObject({
+            status: 'DECLARED',
+            unreviewed: true,
+            viewerMayReview: false,
+            reviewWithheld: 'REVIEWER_IS_DECLARER',
+            viewerMayNarrow: true,
+            viewerMayWithdraw: true,
+        });
+        // What the page withholds, the writer refuses with the same reason.
+        expect((await refusal(reviewAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: asDeclarer.declaredAt,
+        }))).reason).toBe('REVIEWER_IS_DECLARER');
+
+        const asOwner = (await getAgentSpendingAuthorityState(ctxAs(T1, 'agentOwner'), agent.id)).envelopes[0];
+        expect(asOwner).toMatchObject({ viewerMayReview: false, reviewWithheld: 'REVIEWER_IS_OWNER' });
+        expect((await refusal(reviewAgentSpendingAuthority(ctxAs(T1, 'agentOwner'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: asOwner.declaredAt,
+        }))).reason).toBe('REVIEWER_IS_OWNER');
+
+        const asReviewer = await getAgentSpendingAuthorityState(ctxAs(T1, 'reviewer'), agent.id);
+        expect(asReviewer.viewerMayDeclare).toBe(true);
+        expect(asReviewer.envelopes[0]).toMatchObject({ viewerMayReview: true, reviewWithheld: null });
+        await reviewAgentSpendingAuthority(ctxAs(T1, 'reviewer'), agent.id, 'AGENT_PAY_TOKEN', {
+            declaredAt: asReviewer.envelopes[0].declaredAt,
+        });
+
+        const after = (await getAgentSpendingAuthorityState(ctxAs(T1, 'reviewer'), agent.id)).envelopes[0];
+        expect(after).toMatchObject({
+            status: 'REVIEWED',
+            unreviewed: false,
+            viewerMayReview: false,
+            reviewWithheld: 'NOT_DECLARED',
+        });
+    });
+
+    it('a member without the register key is offered nothing, and the writer refuses them', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        // A READER holds neither the register key nor the inventory read.
+        await expect(getAgentSpendingAuthorityState(ctxAs(T1, 'consenter'), agent.id)).rejects.toMatchObject({
+            status: 403,
+        });
+        await expect(
+            withdrawAgentSpendingAuthority(ctxAs(T1, 'consenter'), agent.id, 'AGENT_PAY_TOKEN'),
+        ).rejects.toMatchObject({ status: 403 });
+    });
+
+    it('an API key is never offered the review, whoever it acts for', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        const keyCtx = { ...ctxAs(T1, 'reviewer'), apiKeyId: 'key-of-the-reviewer' };
+        const row = (await getAgentSpendingAuthorityState(keyCtx, agent.id)).envelopes[0];
+        expect(row).toMatchObject({ viewerMayReview: false, reviewWithheld: 'REVIEWER_NOT_A_PERSON' });
+    });
+
+    it('a retired agent: nothing is declared, narrowed or reviewed, and the envelope can still be withdrawn', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await prisma.registeredAgent.update({ where: { id: agent.id }, data: { status: 'RETIRED' } });
+        const state = await getAgentSpendingAuthorityState(ctxAs(T1, 'reviewer'), agent.id);
+        expect(state.viewerMayDeclare).toBe(false);
+        expect(state.envelopes[0]).toMatchObject({
+            viewerMayReview: false,
+            reviewWithheld: 'AGENT_RETIRED',
+            viewerMayNarrow: false,
+            viewerMayWithdraw: true,
+        });
+        await withdrawAgentSpendingAuthority(ctxAs(T1, 'reviewer'), agent.id, 'AGENT_PAY_TOKEN');
+        const withdrawn = (await getAgentSpendingAuthorityState(ctxAs(T1, 'reviewer'), agent.id)).envelopes[0];
+        expect(withdrawn).toMatchObject({ status: 'WITHDRAWN', viewerMayWithdraw: false });
+    });
+
+    it('another tenant reads nothing of this agent', async () => {
+        const agent = await makeAgent(T1);
+        await declareAgentSpendingAuthority(ctxAs(T1, 'declarer'), agent.id, envelope(T1));
+        await expect(getAgentSpendingAuthorityState(ctxAs(T2, 'owner'), agent.id)).rejects.toMatchObject({
+            status: 404,
+        });
     });
 });

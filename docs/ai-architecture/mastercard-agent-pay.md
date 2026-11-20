@@ -291,23 +291,41 @@ customer's own connection, the way directory integrations are).
       section, and a narrowing may propose reducing or withdrawing the
       envelope. Accepting it writes the declaration and opens a task for the
       owner to apply the change at the token requestor, because Inflect
-      cannot apply it until Phase 4.
+      cannot apply it until Phase 4. *The pack section is built 2026-11-20
+      (#5333); the narrowing is not, and waits on the questions under
+      "Where Phase 1 stands".*
 - [x] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
       containing an orphaned agent, on an agent with spending authority
       moves the row to `SUSPENDED_REQUESTED` and opens a task naming the
       token requestor and the token reference. Lifting the kill does not
       reverse it; a person does.
-- [ ] 1.6 Retention classification in `docs/data-retention.md` (the ratchet
-      requires it) and an inventory row in the governance pack.
+- [x] 1.6 Retention classification in `docs/data-retention.md` (the ratchet
+      requires it) and an inventory row in the governance pack. *Both built;
+      the inventory row 2026-11-20 (#5333).*
 
-**Where Phase 1 stands (2026-11-12).** 1.1, 1.2, 1.3 and 1.5 are built:
+**Where Phase 1 stands (2026-11-20).** 1.1, 1.2, 1.3, 1.5 and 1.6 are built:
 `AgentSpendingAuthority` (migration `20261112090100_agent_spending_authority`),
 its one writer `src/app-layer/usecases/agent-spending-authority.ts` and the pure
-comparison in `src/lib/agentic/spending-authority.ts`. The retention row of 1.6
-is written; the governance-pack inventory row is not. 1.4 (the recertification
-pack section and the narrowing that proposes a reduction) is not built, and
-neither are the API routes and the register page section that would call the writer. See
-`docs/implementation-notes/2026-11-11-agent-spending-authority.md`.
+comparison in `src/lib/agentic/spending-authority.ts`
+(`docs/implementation-notes/2026-11-11-agent-spending-authority.md`). Since
+2026-11-20 (#5333) the writer has its routes, under `admin.agent_registry`
+(`/api/t/:slug/admin/agents/:agentId/spending-authority`, `…/:rail` and
+`…/:rail/review`), and the agent's register page has a **Spending authority**
+card on its overview, which offers each act only where the writer would take it
+(`getAgentSpendingAuthorityState`). The governance pack's agent inventory
+reports each agent's rails and review standing, with two counts. An AGENT
+campaign's reviewer pack carries a spending-authority section, in the hashed
+sections, so the campaign's evidence covers it (3.3).
+
+What is not built is the half of 1.4 that changes an envelope from a campaign:
+a narrowing that proposes reducing or withdrawing it. It needs decisions this
+document does not make (`docs/implementation-notes/2026-11-20-agent-pay-register-surfaces.md`):
+on what evidence a pack proposes it, since no spend is observed before Phase 4;
+what a "reduction" is, when the pack is prepared by an agent and the plan is
+re-derived from stored rows; and whether accepting it under
+`access_reviews.decide` may write an envelope whose writer otherwise takes
+`admin.agent_registry`. Until then a reviewer narrows or withdraws on the
+register page.
 
 **Prompt.**
 ```text
@@ -396,10 +414,10 @@ agentic IAM rule that a later break is a finding.
 **Where Phase 2 stands (2026-11-12).** 2.1, 2.2, 2.3 and 2.5 are built; 2.4
 waits for Web Bot Auth Phase 3's verifier. `/4` widens what the ingest
 accepts, so the scanner DPIA carries an amendment for it, which the owner
-signed on 2026-11-12; the scanner ships `/4` once that pull request merges. Phase 3 is not started: 3.1 needs
-a CHECK widening on `AgenticEvidenceArtefact.kind` and the per-agent emitter
-path, 3.2 a governance-pack report, and 3.3 the recertification pack section
-of 1.4. See
+signed on 2026-11-12; the scanner ships `/4` once that pull request merges. Of Phase 3, only 3.3 is built
+(2026-11-20, with the pack section of 1.4): 3.1 needs a CHECK widening on
+`AgenticEvidenceArtefact.kind` and the per-agent emitter path, and 3.2 a
+governance-pack report of its own beyond Phase 1.6's inventory row. See
 `docs/implementation-notes/2026-11-12-agent-pay-discover.md`.
 
 **Prompt.**
@@ -444,8 +462,10 @@ code counts only against an agent; closes on positive evidence only), G6
       by rail, with each envelope's last review and any open finding.
       "None" is reported as a count of zero with its basis, never as a clean
       bill when the scan behind it was incomplete.
-- [ ] 3.3 The recertification evidence hash covers the spending-authority
-      section, so an auditor can recompute it from stored rows.
+- [x] 3.3 The recertification evidence hash covers the spending-authority
+      section, so an auditor can recompute it from stored rows. *Built
+      2026-11-20 (#5333): the section is in the pack's `sectionsJson`, whose
+      `contentHash` the campaign's closing evidence carries.*
 
 **Hardening.** The per-agent evidence rules, zero is never complete
 (invariant 5 of the recertification section), G11.

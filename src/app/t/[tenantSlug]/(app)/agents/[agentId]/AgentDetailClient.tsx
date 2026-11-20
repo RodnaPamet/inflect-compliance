@@ -7,6 +7,7 @@ import { MetaStrip, type MetaItem } from '@/components/ui/meta-strip';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { ServicePrincipalLinkCard } from './tabs/ServicePrincipalLinkCard';
 import { OwnershipTransferCard } from './tabs/OwnershipTransferCard';
+import { SpendingAuthorityCard } from './tabs/SpendingAuthorityCard';
 import { OverviewTab } from './tabs/OverviewTab';
 import { RiskAssessmentTab } from './tabs/RiskAssessmentTab';
 import { PolicyCardTab } from './tabs/PolicyCardTab';
@@ -444,6 +445,18 @@ export function AgentDetailClient({
                     {/* The register key, which the link route takes for its
                         read and its confirm alike (#3807). */}
                     {perms.canReadRegistry && <ServicePrincipalLinkCard {...props} />}
+                    {/* The register key, which the spending-authority routes take
+                        for every act and the read (Agent Pay Phase 1, #5333).
+                        Writes are offered by the server's own answer for this
+                        viewer, ANDed with the page's edge-aware register gate. */}
+                    {perms.canReadRegistry && (
+                        <SpendingAuthorityCard
+                            {...props}
+                            onChanged={refresh}
+                            canManageRegistry={perms.canManageRegistry}
+                            people={owners}
+                        />
+                    )}
                     {/* The breaker's read key, which the fingerprint route
                         takes for its read and its acceptance (Morpheus 1.3). */}
                     {perms.canReadRegistry && (
