@@ -287,7 +287,13 @@ const BUDGETS_KB: Record<string, number> = {
     // in `lib/nav/canonical-parents.ts`), which points at a webpack chunk
     // regroup (the #4200 shape) rather than new route code, but that is an
     // inference, not a measurement. 664 is measured + ~4, the convention.
-    'risks': 664,
+    // Raised 664 → 668 by the Agent Pay register surfaces (#5782, owner
+    // decision 2026-11-20). The merge-queue build of #5782 on main 13f45e7e0
+    // (#5780, the lucide icon set, already merged) measured risks/[riskId]/page
+    // at 664.2 KB. NOT ATTRIBUTED, by the owner's choice: this page's source
+    // graph reaches none of #5782's changed modules, which again points at a
+    // webpack chunk regroup rather than new route code. 668 is measured + ~4.
+    'risks': 668,
     // Raised 645 → 650 in the i18n-kept-primitives PR (#3004): that route had
     // grown to 643.8 KB on main (ff71f42ed), and localising the shared
     // primitives (useTranslations + key lookups in ~20 components, all on this
