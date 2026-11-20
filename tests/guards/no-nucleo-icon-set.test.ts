@@ -68,9 +68,16 @@ describe('no Nucleo icon set in the public tree (#5772)', () => {
             if (!isText(rel)) return false;
             const abs = path.join(REPO_ROOT, rel);
             // A path can be absent (deleted, not yet committed) or not a
-            // regular file (a submodule, a symlinked directory).
-            if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return false;
-            return NUCLEO_NOTICE.test(fs.readFileSync(abs, 'utf8'));
+            // regular file (a submodule, a symlinked directory). One read, and
+            // its failure is the answer: checking first and reading after is a
+            // race (CodeQL js/file-system-race).
+            let text: string;
+            try {
+                text = fs.readFileSync(abs, 'utf8');
+            } catch {
+                return false;
+            }
+            return NUCLEO_NOTICE.test(text);
         });
         expect(offenders).toEqual([]);
     });
