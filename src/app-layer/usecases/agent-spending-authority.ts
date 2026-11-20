@@ -79,6 +79,7 @@ import { logger } from '@/lib/observability/logger';
 import { assertCanRead } from '../policies/common';
 import { assertAgentGovernanceWrite, meetsAgentGovernanceWrite } from '../policies/agent-governance.policies';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import { FindingRepository } from '../repositories/FindingRepository';
 import { logEvent } from '../events/audit';
 import { buildTenantSystemJobContext } from '../context-system';
@@ -675,6 +676,178 @@ export async function withdrawAgentSpendingAuthority(
         await closeWidenedOnActiveFinding(db, ctx, row, 'Closed: the spending authority was withdrawn');
         return toView(row);
     });
+}
+
+// ─── Reached by an access review's accepted withdrawal (1.4) ──────────
+
+/** What accepting a recertification withdrawal did to the envelope. */
+export type RecertificationWithdrawalResult =
+    /** It was in force and is now WITHDRAWN. */
+    | 'ENVELOPE_WITHDRAWN'
+    /** Somebody withdrew it on the register first. */
+    | 'ENVELOPE_ALREADY_WITHDRAWN'
+    /** It was declared again since the pack: a different declaration, left alone. */
+    | 'ENVELOPE_REDECLARED'
+    /** No envelope on that rail any more. */
+    | 'ENVELOPE_ABSENT';
+
+export interface RecertificationWithdrawal {
+    readonly executionResult: RecertificationWithdrawalResult;
+    /** The envelope row, when there is one. */
+    readonly authorityId: string | null;
+    /** Its status before this act, when there is one. */
+    readonly priorStatus: AgentSpendingAuthority['status'] | null;
+    /** The owner's revocation task, opened when the envelope ends withdrawn. */
+    readonly ownerTaskId: string | null;
+    readonly ownerTaskKey: string | null;
+}
+
+/**
+ * Inside an access review's transaction: carry out an ACCEPTED spending
+ * withdrawal (Agent Pay 1.4, owner decision 3 of 2026-11-20).
+ *
+ * The narrowly scoped internal path the owner allowed. It has NO permission
+ * check of its own, as the retirement cascade's effects have none: its one
+ * caller, `decideAgentSpendingWithdrawal`, is reached under
+ * `access_reviews.decide` and has already held the campaign's rules — the
+ * assigned reviewer or an admin, never the agent's owner (frozen or current),
+ * the campaign open, the brake off. And it can only TAKE AUTHORITY AWAY: it
+ * moves one declaration to WITHDRAWN, the one move the public writer gives to
+ * a single person, and nothing else. The public writer's
+ * `admin.agent_registry` gate is unchanged.
+ *
+ * It withdraws only the declaration the pack described: the row on that rail
+ * whose `declaredAt` is the one the pack read. A re-declaration since is a
+ * different declaration, which a second person may have reviewed after the
+ * pack was prepared, and is left alone (`ENVELOPE_REDECLARED`) — as a grant
+ * re-issued after a pack is not the one a narrowing deletes. A narrowing in
+ * place keeps `declaredAt`, so a narrowed envelope is still the one described.
+ *
+ * When the envelope ends withdrawn — by this act, or by somebody on the
+ * register before it — a task asks the agent's CURRENT owner to revoke the
+ * token at its requestor, because Inflect cannot before Phase 4. Written in
+ * the same transaction, as the reviewer: accepting and the follow-up stand or
+ * fall together. An owner who is not an active member leaves it unassigned
+ * rather than unopened. Audit rows are the caller's to write last, through
+ * `auditRecertificationWithdrawal`.
+ */
+export async function withdrawSpendingAuthorityForRecertificationInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    req: {
+        readonly agentId: string;
+        readonly rail: AgentSpendingRail;
+        readonly declaredAt: Date;
+        readonly accessReviewId: string;
+        readonly accessReviewName: string;
+    },
+    now: Date = new Date(),
+): Promise<RecertificationWithdrawal> {
+    // Not `lockAgent`: a retired agent's envelope may still be withdrawn.
+    const agent = await RegisteredAgentRepository.lockLifecycleStateForShare(db, ctx, req.agentId);
+    const prior = await findRow(db, ctx, req.agentId, req.rail);
+    const none = { authorityId: prior?.id ?? null, priorStatus: prior?.status ?? null, ownerTaskId: null, ownerTaskKey: null };
+    if (!prior) return { executionResult: 'ENVELOPE_ABSENT', ...none };
+    if (prior.declaredAt.getTime() !== req.declaredAt.getTime()) return { executionResult: 'ENVELOPE_REDECLARED', ...none };
+
+    let executionResult: RecertificationWithdrawalResult = 'ENVELOPE_ALREADY_WITHDRAWN';
+    if (prior.status !== 'WITHDRAWN') {
+        // A compare-and-swap on the declaration as read: a re-declaration or a
+        // review committed while this waited on the row lock makes it write
+        // nothing, and the reviewer is told to look again.
+        const moved = await db.agentSpendingAuthority.updateMany({
+            where: { id: prior.id, tenantId: ctx.tenantId, status: prior.status, declaredAt: prior.declaredAt },
+            data: { status: 'WITHDRAWN', withdrawnAt: now, withdrawnByUserId: ctx.userId },
+        });
+        if (moved.count !== 1) {
+            throw refuse('DECLARATION_CHANGED', 'The spending authority changed while this was being decided; read the campaign again.');
+        }
+        await closeWidenedOnActiveFinding(
+            db,
+            ctx,
+            prior,
+            `Closed: the spending authority was withdrawn by access review ${req.accessReviewId}`,
+        );
+        executionResult = 'ENVELOPE_WITHDRAWN';
+    }
+
+    const ownerUserId = agent?.ownerUserId ?? null;
+    const ownerIsMember = ownerUserId
+        ? (await db.tenantMembership.findFirst({
+            where: { tenantId: ctx.tenantId, userId: ownerUserId, status: 'ACTIVE' },
+            select: { id: true },
+        })) !== null
+        : false;
+    const agentName = agent?.name ?? req.agentId;
+    const task = await TaskRepository.create(db, ctx, {
+        source: 'MANUAL',
+        type: 'TASK',
+        title: sanitizePlainText(`Revoke the payment token of agent "${agentName}" at ${prior.tokenRequestor}`).slice(0, 250),
+        description: sanitizePlainText(
+            `The access review "${req.accessReviewName}" withdrew the spending authority the registered agent ` +
+            `"${agentName}" held on the ${prior.rail} rail. Inflect cannot revoke the token itself. Ask ` +
+            `${prior.tokenRequestor}, the agent platform that holds it, to revoke the token with reference ` +
+            `${prior.tokenReference}, and record here when it is done. A new spending authority is declared on ` +
+            'the register and reviewed by a second person.',
+        ),
+        priority: 'P1',
+        assigneeUserId: ownerIsMember ? ownerUserId : null,
+        metadataJson: {
+            kind: 'AGENT_SPENDING_WITHDRAWAL',
+            agentId: req.agentId,
+            spendingAuthorityId: prior.id,
+            rail: prior.rail,
+            accessReviewId: req.accessReviewId,
+        },
+    });
+    return {
+        executionResult,
+        authorityId: prior.id,
+        priorStatus: prior.status,
+        ownerTaskId: task.id,
+        ownerTaskKey: task.key,
+    };
+}
+
+/**
+ * The audit rows of a recertification withdrawal, written LAST by the caller:
+ * `logEvent` writes on its own connection, so a row written before an effect
+ * that then threw would narrate a rollback. The token reference is in no row.
+ */
+export async function auditRecertificationWithdrawal(
+    db: PrismaTx,
+    ctx: RequestContext,
+    w: RecertificationWithdrawal,
+    via: { readonly accessReviewId: string; readonly withdrawalId: string },
+): Promise<void> {
+    if (w.executionResult === 'ENVELOPE_WITHDRAWN' && w.authorityId) {
+        await logEvent(db, ctx, {
+            action: 'SPENDING_AUTHORITY_WITHDRAWN',
+            entityType: 'AgentSpendingAuthority',
+            entityId: w.authorityId,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'AgentSpendingAuthority',
+                fromStatus: w.priorStatus ?? undefined,
+                toStatus: 'WITHDRAWN',
+                reason: `withdrawal accepted in access review ${via.accessReviewId}`,
+                after: {
+                    via: 'access_review_spending_withdrawal',
+                    accessReviewId: via.accessReviewId,
+                    withdrawalId: via.withdrawalId,
+                },
+            },
+        });
+    }
+    if (w.ownerTaskId) {
+        await logEvent(db, ctx, {
+            action: 'TASK_CREATED',
+            entityType: 'Task',
+            entityId: w.ownerTaskId,
+            details: `Created task ${w.ownerTaskKey ?? w.ownerTaskId}: revoke a withdrawn payment token at its requestor`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Task', operation: 'created', summary: 'TASK_CREATED' },
+        });
+    }
 }
 
 /** Read an agent's envelopes, under the register's read gate. */

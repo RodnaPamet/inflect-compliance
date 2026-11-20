@@ -525,6 +525,12 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     't/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route.ts',
     't/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route.ts',
+    // Agent Pay 1.4 (#5333; owner decisions 2026-11-20) — decide a pack's
+    // proposed withdrawal of an agent's spending envelope, on the same detail
+    // page beside the narrowings. An ACCEPT withdraws the envelope (it only
+    // takes authority away) and opens the owner's revocation task; the key is
+    // `access_reviews.decide`, as a narrowing's.
+    't/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route.ts',
     // #3869 — asking the workspace a question, and reading what came back. The
     // only agentic routes NOT under `admin/`, and deliberately so: ADR 0004
     // determined by test that the answer cannot reach data the asker could not

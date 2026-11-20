@@ -65,6 +65,7 @@ const GOVERNED_SCHEMA_FILES = [
  */
 const REGISTER_DATA_UNDER_A_ROOT = [
     'AccessReviewAgentPack', 'AccessReviewAgentNarrowing', 'AccessReviewDecisionSampleAudit',
+    'AccessReviewAgentSpendingWithdrawal',
 ];
 
 const modelNames = new Set(parseSchemaModels().map((m) => m.name));

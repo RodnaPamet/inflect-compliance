@@ -157,6 +157,7 @@ describe('tenant purge — a retained model is never cascaded away by a purged o
             expect.arrayContaining([
                 'AccessReviewAgentNarrowing',
                 'AccessReviewAgentPack',
+                'AccessReviewAgentSpendingWithdrawal',
                 'AccessReviewConnectedDecision',
                 'AccessReviewDecision',
                 'AccessReviewDecisionSampleAudit',

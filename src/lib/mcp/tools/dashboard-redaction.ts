@@ -212,6 +212,8 @@ export const ACTIVITY_DOMAIN_ENTITIES = {
         // (CLAUDE.md, "Agent recertification"). The reviewer half depends on
         // the campaign, which a row cannot tell; the register half is applied.
         'AccessReviewAgentPack', 'AccessReviewAgentNarrowing', 'AccessReviewDecisionSampleAudit',
+        // Agent Pay 1.4 (#5333): their proposed spending withdrawals, read the same way.
+        'AccessReviewAgentSpendingWithdrawal',
     ],
     // Runs and proposals are read by `mayReadAgentActivity` (`/agent-runs`,
     // `/agent-proposals`), not the inventory predicate.

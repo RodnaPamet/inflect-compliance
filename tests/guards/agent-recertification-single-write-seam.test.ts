@@ -14,11 +14,14 @@
  *
  *   2. The campaign file can REMOVE authority and cannot ADD it. Its Prisma
  *      writes are an exact list of tables, none of which is the register, a
- *      grant or a card; it reaches the grant table only through
- *      `RegisteredAgentToolRepository.revokeGrant`, whose body is one
- *      `deleteMany`; and it imports none of the usecases that grant, raise a
- *      card or edit the register. Deleting a grant is the only effect a
- *      campaign has on an agent.
+ *      grant, a card or a spending envelope; it reaches the grant table only
+ *      through `RegisteredAgentToolRepository.revokeGrant`, whose body is one
+ *      `deleteMany`; it reaches the spending envelope only through
+ *      `withdrawSpendingAuthorityForRecertificationInTx` (Agent Pay 1.4, owner
+ *      decision 3 of 2026-11-20), whose one envelope write moves it to
+ *      WITHDRAWN; and it imports none of the usecases that grant, raise a card,
+ *      edit the register or declare an envelope. Deleting a grant and
+ *      withdrawing an envelope are the only effects a campaign has on an agent.
  *
  *   3. Pack preparation reads only. The pack workflow declares a READ step on a
  *      catalogued read tool and a SYNTHESIS step, and nothing else — no PROPOSE
@@ -33,7 +36,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 
 import { repoFiles, repoRelative } from '../helpers/repo-files';
-import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, callExpressionOf, codeOf, functionBodyOf } from '../helpers/source-blocks';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { MCP_READ_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import {
@@ -44,11 +47,14 @@ import {
 const CAMPAIGN = 'src/app-layer/usecases/access-review-agent.ts';
 const EVIDENCE_READ = 'src/app-layer/usecases/agent-recertification-evidence.ts';
 const GRANT_REPOSITORY = 'src/app-layer/repositories/RegisteredAgentToolRepository.ts';
+const ENVELOPE_WRITER = 'src/app-layer/usecases/agent-spending-authority.ts';
 
 /** Prisma delegate → its table. Each is written by `CAMPAIGN` alone. */
 const SEAMS = {
     accessReviewAgentPack: 'AccessReviewAgentPack',
     accessReviewAgentNarrowing: 'AccessReviewAgentNarrowing',
+    // Agent Pay 1.4 (#5333): the proposed spending withdrawals, the narrowing's sibling.
+    accessReviewAgentSpendingWithdrawal: 'AccessReviewAgentSpendingWithdrawal',
     accessReviewDecisionSampleAudit: 'AccessReviewDecisionSampleAudit',
 } as const;
 type Delegate = keyof typeof SEAMS;
@@ -140,12 +146,17 @@ describe('a campaign can delete a grant and cannot add authority', () => {
 
     it('writes exactly these tables — none of them the register, a grant or a card', () => {
         // A new entry here is a new effect of closing or deciding a campaign.
-        // If it is `registeredAgent`, `registeredAgentTool` or
-        // `agentPolicyCardVersion`, it is the effect this guard exists to stop.
+        // If it is `registeredAgent`, `registeredAgentTool`,
+        // `agentPolicyCardVersion` or `agentSpendingAuthority`, it is the
+        // effect this guard exists to stop. `accessReviewAgentSpendingWithdrawal`
+        // joined deliberately (Agent Pay 1.4): it is the campaign's own record
+        // of a proposed withdrawal, and the envelope itself is written by its
+        // writer, below.
         expect(delegateWrites(campaign)).toEqual([
             'accessReview',
             'accessReviewAgentNarrowing',
             'accessReviewAgentPack',
+            'accessReviewAgentSpendingWithdrawal',
             'accessReviewConnectedDecision',
             'accessReviewDecisionSampleAudit',
             'evidence',
@@ -163,6 +174,32 @@ describe('a campaign can delete a grant and cannot add authority', () => {
         expect(body).not.toMatch(/\.registeredAgentTool\s*\.\s*(?:create|createMany|update|updateMany|upsert)\s*\(/);
     });
 
+    it('reaches the spending envelope only through the recertification withdrawal, which only withdraws', () => {
+        // What the campaign takes from the envelope writer: the one internal
+        // path and its audit, nothing that declares, widens or reviews.
+        const fromWriter = [...campaign.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]\.\/agent-spending-authority['"]/g)]
+            .flatMap((m) => m[1].split(','))
+            .map((n) => n.replace(/^\s*type\s+/, '').trim())
+            .filter(Boolean)
+            .sort();
+        expect(fromWriter).toEqual([
+            'RecertificationWithdrawal',
+            'auditRecertificationWithdrawal',
+            'withdrawSpendingAuthorityForRecertificationInTx',
+        ]);
+        const writer = readFileSync(path.join(ROOT, ENVELOPE_WRITER), 'utf8');
+        const body = functionBodyOf(writer, 'withdrawSpendingAuthorityForRecertificationInTx');
+        // One envelope write, a conditional updateMany, and it sets WITHDRAWN.
+        const envelopeWrites = [...body.matchAll(/\.agentSpendingAuthority\s*\.\s*(\w+)\s*\(/g)].map((m) => m[1]);
+        expect(envelopeWrites.filter((v) => v !== 'findUnique' && v !== 'findFirst')).toEqual(['updateMany']);
+        expect(callExpressionOf(body, 'db.agentSpendingAuthority.updateMany')).toMatch(/data:\s*\{\s*status:\s*'WITHDRAWN'/);
+        expect(body).not.toMatch(/status:\s*'(?:DECLARED|REVIEWED|SUSPENDED_REQUESTED)'/);
+        // Nothing else that grants or edits authority: the envelope, the
+        // widened finding's close and the owner's task.
+        expect(delegateWrites(body)).toEqual(['agentSpendingAuthority']);
+        expect(staticCalls(body, 'TaskRepository')).toEqual(['create']);
+    });
+
     it('imports none of the usecases that grant, raise a card or edit the register', () => {
         const imports = [...campaign.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]);
         const authority = imports.filter((p) =>
@@ -170,6 +207,7 @@ describe('a campaign can delete a grant and cannot add authority', () => {
         );
         expect(authority).toEqual([]);
         expect(campaign).not.toMatch(/\b(?:grantAgentTool|grantRegisteredAgentTool|raiseAgentPolicyCard|createPolicyCardVersion|updateRegisteredAgent)\b/);
+        expect(campaign).not.toMatch(/\b(?:declareAgentSpendingAuthority|narrowAgentSpendingAuthority|reviewAgentSpendingAuthority|withdrawAgentSpendingAuthority)\b/);
     });
 });
 

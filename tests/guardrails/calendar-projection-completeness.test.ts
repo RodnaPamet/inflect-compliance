@@ -61,6 +61,8 @@ const isDeadlineName = (n: string) =>
 const EXCLUSIONS: Record<string, string> = {
     'AgentSpendingAuthority.expiresAt':
         'The end of an agent\'s declared spending envelope (Agent Pay Phase 1). Excluded for the reason `AgentProposal.expiresAt` and `LegacyIdentityAlias.expiresAt` are: lapsing IS the designed outcome. An expired envelope authorises nothing, so the agent fails closed, and the remedy is a new declaration that a second person reviews against the facts of the day. A reminder to renew before the date would turn a deliberate bound on spending authority into a prompt to re-approve it, which is the rubber-stamping the four-eyes review exists to prevent. The expiry is shown on the agent\'s register page, where the declaration is made and reviewed.',
+    'AccessReviewAgentSpendingWithdrawal.expiresAt':
+        'A frozen COPY of `AgentSpendingAuthority.expiresAt`, as the envelope stood when an AGENT campaign\'s reviewer pack was prepared (Agent Pay 1.4). It is a fact recorded about the past on a one-way row, not a date anyone works toward, and the live expiry it copies is itself excluded above for the reason given there. Projecting the copy would put the same envelope on the calendar once per campaign that ever read it.',
     'PeerInvitation.expiresAt':
         'The lifetime of a single-use A2A invitation code (#3752), a credential lifetime like `TenantApiKey.expiresAt`. An invitation nobody accepted is meant to lapse; the remedy is a new invitation, not a reminder to hurry the other workspace. Shown on the invitation itself.',
     'LegacyIdentityAlias.expiresAt':

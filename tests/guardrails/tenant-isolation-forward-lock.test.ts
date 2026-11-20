@@ -92,6 +92,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AccessReviewConnectedDecision: "tests/integration/access-review-rls.test.ts",
     AccessReviewAgentPack: "tests/integration/access-review-agent-campaign.test.ts",
     AccessReviewAgentNarrowing: "tests/integration/access-review-agent-campaign.test.ts",
+    AccessReviewAgentSpendingWithdrawal: "tests/integration/access-review-agent-spending-withdrawal.test.ts",
     AccessReviewDecisionSampleAudit: "tests/integration/access-review-agent-campaign.test.ts",
     ControlException: "tests/integration/control-exception-rls.test.ts",
     InboundQuestionnaire: "tests/integration/wave-features-rls.test.ts",

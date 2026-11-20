@@ -2240,6 +2240,17 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'refuses the agent\'s owner.',
     },
     {
+        path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-spending-withdrawals\\/[^/]+$`),
+        methods: ['POST'],
+        permission: 'access_reviews.decide',
+        note:
+            'Accepting or rejecting a proposed withdrawal of an agent\'s spending ' +
+            'authority (Agent Pay 1.4, owner decision 3 of 2026-11-20). Accepting ' +
+            'only takes authority away, so it does not also need ' +
+            'admin.agent_registry; decideAgentSpendingWithdrawal keeps the ' +
+            'assigned-reviewer-or-admin rule and refuses the agent\'s owner.',
+    },
+    {
         path: new RegExp(`^${T}\\/access-reviews\\/[^/]+\\/agent-samples\\/[^/]+$`),
         methods: ['POST'],
         permission: 'access_reviews.decide',

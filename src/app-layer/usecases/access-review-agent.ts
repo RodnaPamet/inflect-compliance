@@ -27,14 +27,18 @@
  *     frozen owner as `decidedByUserId` for any writer.
  *   - Decisions are one-way stamps: written only where nothing is stamped yet,
  *     and a trigger refuses any change to a stamped row.
- *   - The only change a campaign makes to an agent's authority is deleting a
- *     grant an accepted narrowing names. Nothing here creates a grant, writes a
- *     card version or edits a register row — `tests/guards/agent-recertification-single-write-seam.test.ts`.
+ *   - A campaign only takes authority away, in two ways: deleting a grant an
+ *     accepted narrowing names, and withdrawing a spending envelope an accepted
+ *     withdrawal names (Agent Pay 1.4, through the envelope writer's narrowly
+ *     scoped `withdrawSpendingAuthorityForRecertificationInTx`). Nothing here
+ *     creates a grant, writes a card version, edits a register row or declares
+ *     or widens an envelope — `tests/guards/agent-recertification-single-write-seam.test.ts`.
  *   - Zero is never complete: `subjectCount > 0 && decided === subjectCount`.
  *
  * @module app-layer/usecases/access-review-agent
  */
 import { Readable } from 'node:stream';
+import type { AgentSpendingRail } from '@prisma/client';
 import { z } from 'zod';
 
 import type { RequestContext } from '../types';
@@ -85,11 +89,17 @@ import { DateField, refinePeriodOrder } from '../schemas/access-review.schemas';
 import { remediationDescription } from './access-review-connected';
 import { startWorkflowRun } from './workflow-runs';
 import { assertAgentCampaignsAvailable } from './access-review-scope-gate';
+import {
+    auditRecertificationWithdrawal,
+    withdrawSpendingAuthorityForRecertificationInTx,
+    type RecertificationWithdrawal,
+} from './agent-spending-authority';
 import { assertReviewerIsActiveMember } from './access-review-reviewer';
 import { buildTenantSystemJobContext } from '../context-system';
 import { enqueue } from '../jobs/queue';
 import { findTenantJob } from '../jobs/tenant-job-lookup';
 import { recordAgentRecertPackPreparation } from '@/lib/observability/integration-metrics';
+import { SPENDING_RAILS } from '@/lib/agentic/spending-authority';
 
 // ── Refusals ─────────────────────────────────────────────────────────────
 
@@ -114,6 +124,7 @@ export type AgentCampaignRefusal =
     | 'PACK_RUN_FAILED'
     | 'PACK_PLAN_MISMATCH'
     | 'NARROWINGS_PENDING'
+    | 'WITHDRAWALS_PENDING'
     | 'SUBJECTS_PENDING'
     | 'ALREADY_DECIDED';
 
@@ -382,6 +393,8 @@ export interface PreparePacksResult {
     readonly accessReviewId: string;
     readonly packs: number;
     readonly narrowings: number;
+    /** Spending-authority withdrawals proposed (Agent Pay 1.4). */
+    readonly spendingWithdrawals: number;
     readonly runIds: readonly string[];
 }
 
@@ -727,6 +740,44 @@ export async function prepareAgentReviewPacks(
             ? await db.accessReviewAgentNarrowing.createMany({ data: narrowingRows })
             : { count: 0 };
 
+        // Agent Pay 1.4 — the spending withdrawals each plan proposes. The
+        // plan names the envelope by rail and declaration; the status and lapse
+        // the pack read come from the same run's evidence, which `checkedPlan`
+        // already held the plan to.
+        const envelopeOf = new Map<string, { status: string; expiresAt: string }>();
+        for (const { evidence } of prepared) {
+            for (const x of evidence.subjects) {
+                for (const e of x.spendingAuthority ?? []) {
+                    envelopeOf.set(`${x.decisionId}|${e.rail}|${e.declaredAt}`, { status: e.status, expiresAt: e.expiresAt });
+                }
+            }
+        }
+        const withdrawalRows = prepared.flatMap(({ plan }) =>
+            plan.packs.flatMap((p) => (p.spendingWithdrawals ?? []).map((w) => {
+                const env = envelopeOf.get(`${p.decisionId}|${w.rail}|${w.declaredAt}`);
+                if (!env) throw internal('a planned withdrawal names an envelope its evidence does not hold');
+                return {
+                    tenantId: ctx.tenantId,
+                    accessReviewId,
+                    decisionId: p.decisionId,
+                    packId: packByDecision.get(p.decisionId)!.id,
+                    agentId: p.agentId,
+                    rail: w.rail as AgentSpendingRail,
+                    declaredAt: new Date(w.declaredAt),
+                    statusAtPack: env.status,
+                    expiresAt: new Date(env.expiresAt),
+                    grounds: [...w.grounds],
+                    subjectOwnerUserId: ownerByDecision.get(p.decisionId) ?? '',
+                };
+            })),
+        );
+        if (withdrawalRows.some((w) => w.subjectOwnerUserId === '')) {
+            throw internal('an agent subject has no frozen owner');
+        }
+        const withdrawn = withdrawalRows.length
+            ? await db.accessReviewAgentSpendingWithdrawal.createMany({ data: withdrawalRows })
+            : { count: 0 };
+
         await logEvent(db, ctx, {
             action: 'ACCESS_REVIEW_AGENT_PACKS_PREPARED',
             entityType: 'AccessReview',
@@ -735,10 +786,12 @@ export async function prepareAgentReviewPacks(
                 category: 'entity_lifecycle',
                 entityName: 'AccessReviewAgentPack',
                 operation: 'create',
-                summary: `Prepared ${packs.length} reviewer pack(s) and ${narrowed.count} narrowing(s) in ${runIds.length} agent run(s)`,
+                summary: `Prepared ${packs.length} reviewer pack(s), ${narrowed.count} narrowing(s) and `
+                    + `${withdrawn.count} spending withdrawal(s) in ${runIds.length} agent run(s)`,
                 after: {
                     packs: packs.length,
                     narrowings: narrowed.count,
+                    spendingWithdrawals: withdrawn.count,
                     runIds,
                     preparerAgentId,
                     crossPreparerAgentId,
@@ -748,7 +801,7 @@ export async function prepareAgentReviewPacks(
             },
         });
 
-        return { accessReviewId, packs: packs.length, narrowings: narrowed.count, runIds };
+        return { accessReviewId, packs: packs.length, narrowings: narrowed.count, spendingWithdrawals: withdrawn.count, runIds };
     });
 }
 
@@ -1027,6 +1080,12 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
             orderBy: [{ decisionId: 'asc' }, { toolName: 'asc' }],
             take: MAX_AGENT_SUBJECTS * 50,
         });
+        const spendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.findMany({
+            where: { tenantId: ctx.tenantId, accessReviewId },
+            select: SPENDING_WITHDRAWAL_SELECT,
+            orderBy: [{ decisionId: 'asc' }, { rail: 'asc' }],
+            take: MAX_AGENT_SUBJECTS * SPENDING_RAILS.length,
+        });
         const samples = await db.accessReviewDecisionSampleAudit.findMany({
             where: { tenantId: ctx.tenantId, accessReviewId },
             select: {
@@ -1056,7 +1115,7 @@ export async function getAgentReviewPacks(ctx: RequestContext, accessReviewId: s
                 matches: storedSha256 === recomputedSha256,
             };
         }
-        return { accessReviewId, packs, narrowings, samples, evidence };
+        return { accessReviewId, packs, narrowings, spendingWithdrawals, samples, evidence };
     });
 }
 
@@ -1090,8 +1149,8 @@ export const SubmitAgentDecisionSchema = z.object({
  *
  * Refused, in order: not found; not an AGENT campaign; closed; not the
  * assigned reviewer or an admin; the agent's OWNER (frozen or current — 403 and
- * AUTHZ_DENIED); the pack not prepared; a narrowing still pending; already
- * decided. The reviewer decides the narrowings first and certifies what
+ * AUTHZ_DENIED); the pack not prepared; a narrowing still pending; a spending
+ * withdrawal still pending; already decided. The reviewer decides the narrowings first and certifies what
  * remains, so a subject verdict is never recorded beside an open question
  * about the same agent's grants.
  */
@@ -1127,6 +1186,12 @@ export async function submitAgentDecision(
             where: { tenantId: ctx.tenantId, decisionId, outcome: 'PENDING' },
         });
         if (pending > 0) refuse('NARROWINGS_PENDING', `${pending} narrowing(s) of this agent are still undecided`);
+        const pendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.count({
+            where: { tenantId: ctx.tenantId, decisionId, outcome: 'PENDING' },
+        });
+        if (pendingWithdrawals > 0) {
+            refuse('WITHDRAWALS_PENDING', `${pendingWithdrawals} spending withdrawal(s) of this agent are still undecided`);
+        }
 
         const res = await db.accessReviewConnectedDecision.updateMany({
             where: { id: decisionId, tenantId: ctx.tenantId, decision: null },
@@ -1272,6 +1337,120 @@ export async function decideAgentNarrowing(
     });
 }
 
+// ── Spending-authority withdrawals (Agent Pay 1.4) ───────────────────────
+
+/** What a reader of a campaign's withdrawals is given. No token reference: the row holds none. */
+const SPENDING_WITHDRAWAL_SELECT = {
+    id: true, decisionId: true, packId: true, rail: true, declaredAt: true, statusAtPack: true,
+    expiresAt: true, grounds: true, outcome: true, decidedAt: true, decidedByUserId: true,
+    executedAt: true, executionResult: true, ownerTaskId: true,
+} as const;
+
+export const DecideSpendingWithdrawalSchema = z.object({ outcome: z.enum(['ACCEPT', 'REJECT']) });
+
+/**
+ * Accept or reject one proposed withdrawal of an agent's spending envelope
+ * (Agent Pay 1.4, owner decisions of 2026-11-20).
+ *
+ * The narrowing's rules, in its order: not found; not an AGENT campaign;
+ * closed; not the assigned reviewer or an admin; the agent's OWNER, frozen or
+ * current (403 and AUTHZ_DENIED); already decided (the conditional claim).
+ *
+ * Accepting WITHDRAWS the declaration the pack described, in the same
+ * transaction, through the envelope writer's one internal path — and opens a
+ * task for the agent's owner to revoke the token at its requestor (decision
+ * 3). It is accepted under `access_reviews.decide`, not the register's
+ * `admin.agent_registry`, for the reason a narrowing is: it only takes
+ * authority away. Rejecting changes nothing on the register.
+ */
+export async function decideAgentSpendingWithdrawal(
+    ctx: RequestContext,
+    accessReviewId: string,
+    withdrawalId: string,
+    input: unknown,
+    now: Date = new Date(),
+) {
+    assertCanRead(ctx);
+    assertAgentCampaignsAvailable('decide');
+    const parsed = DecideSpendingWithdrawalSchema.parse(input);
+    return runInTenantContext(ctx, async (db) => {
+        const w = await db.accessReviewAgentSpendingWithdrawal.findFirst({
+            where: { id: withdrawalId, tenantId: ctx.tenantId, accessReviewId },
+            select: {
+                id: true, outcome: true, agentId: true, rail: true, declaredAt: true, grounds: true,
+                decisionId: true, subjectOwnerUserId: true,
+                accessReview: { select: { id: true, name: true, scope: true, reviewerUserId: true, status: true, deletedAt: true } },
+            },
+        });
+        if (!w || w.accessReview.deletedAt !== null) throw notFound('Withdrawal not found.');
+        if (w.accessReview.scope !== 'AGENT') refuse('NOT_AN_AGENT_CAMPAIGN', 'this withdrawal is not in an agent campaign');
+        if (w.accessReview.status === 'CLOSED') refuse('CAMPAIGN_CLOSED', 'this campaign is closed; withdrawals are immutable');
+        if (w.accessReview.reviewerUserId !== ctx.userId && !ctx.permissions?.canAdmin) {
+            throw forbidden('Only the assigned reviewer (or a tenant admin) may decide a spending withdrawal.');
+        }
+        if (await ownsAgent(db, ctx, w.subjectOwnerUserId, w.agentId)) {
+            await refuseOwner(ctx, 'AccessReviewAgentSpendingWithdrawal', withdrawalId, 'agent_owner_cannot_decide');
+        }
+
+        const outcome = parsed.outcome === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
+        const claim = await db.accessReviewAgentSpendingWithdrawal.updateMany({
+            where: { id: withdrawalId, tenantId: ctx.tenantId, outcome: 'PENDING' },
+            data: { outcome, decidedAt: now, decidedByUserId: ctx.userId },
+        });
+        if (claim.count === 0) refuse('ALREADY_DECIDED', 'this withdrawal has already been decided');
+
+        let carried: RecertificationWithdrawal | null = null;
+        if (outcome === 'ACCEPTED') {
+            carried = await withdrawSpendingAuthorityForRecertificationInTx(db, ctx, {
+                agentId: w.agentId,
+                rail: w.rail,
+                declaredAt: w.declaredAt,
+                accessReviewId: w.accessReview.id,
+                accessReviewName: w.accessReview.name,
+            }, now);
+            await db.accessReviewAgentSpendingWithdrawal.updateMany({
+                where: { id: withdrawalId, tenantId: ctx.tenantId, executedAt: null },
+                data: { executedAt: now, executionResult: carried.executionResult, ownerTaskId: carried.ownerTaskId },
+            });
+        }
+
+        if (w.accessReview.status === 'OPEN') {
+            await AccessReviewRepository.setReviewStatus(db, ctx, w.accessReview.id, 'IN_REVIEW');
+        }
+
+        // Audit last: `logEvent` writes on its own connection.
+        if (carried) {
+            await auditRecertificationWithdrawal(db, ctx, carried, { accessReviewId: w.accessReview.id, withdrawalId });
+        }
+        await logEvent(db, ctx, {
+            action: 'ACCESS_REVIEW_AGENT_SPENDING_WITHDRAWAL_DECIDED',
+            entityType: 'AccessReviewAgentSpendingWithdrawal',
+            entityId: withdrawalId,
+            detailsJson: {
+                category: 'access',
+                entityName: 'AccessReviewAgentSpendingWithdrawal',
+                operation: 'decide',
+                summary: `Withdrawal of the ${w.rail} spending authority ${outcome}`,
+                after: {
+                    accessReviewId: w.accessReview.id,
+                    decisionId: w.decisionId,
+                    rail: w.rail,
+                    grounds: w.grounds,
+                    outcome,
+                    executionResult: carried?.executionResult ?? null,
+                    ownerTaskId: carried?.ownerTaskId ?? null,
+                },
+            },
+        });
+        return {
+            withdrawalId,
+            outcome,
+            executionResult: carried?.executionResult ?? null,
+            ownerTaskId: carried?.ownerTaskId ?? null,
+        };
+    });
+}
+
 // ── Close ────────────────────────────────────────────────────────────────
 
 /**
@@ -1387,6 +1566,15 @@ async function evidenceRowsOf(
         },
         take: MAX_AGENT_SUBJECTS * 50,
     });
+    const spendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.findMany({
+        where: { tenantId: ctx.tenantId, accessReviewId },
+        select: {
+            id: true, decisionId: true, rail: true, declaredAt: true, statusAtPack: true, expiresAt: true,
+            grounds: true, outcome: true, decidedAt: true, decidedByUserId: true, executedAt: true,
+            executionResult: true, ownerTaskId: true,
+        },
+        take: MAX_AGENT_SUBJECTS * SPENDING_RAILS.length,
+    });
     const samples = await db.accessReviewDecisionSampleAudit.findMany({
         where: { tenantId: ctx.tenantId, accessReviewId },
         select: { decisionId: true, samplingEpoch: true },
@@ -1409,6 +1597,7 @@ async function evidenceRowsOf(
             })),
             packs,
             narrowings,
+            spendingWithdrawals,
             samples,
             obligations: AGENT_RECERT_EVIDENCE_OBLIGATIONS.map((o) => ({
                 familyUrn: o.familyUrn,
@@ -1505,6 +1694,10 @@ export async function closeAgentAccessReview(
             where: { tenantId: ctx.tenantId, accessReviewId, outcome: 'PENDING' },
         });
         if (pendingNarrowings > 0) refuse('NARROWINGS_PENDING', `${pendingNarrowings} narrowing(s) are undecided`);
+        const pendingWithdrawals = await db.accessReviewAgentSpendingWithdrawal.count({
+            where: { tenantId: ctx.tenantId, accessReviewId, outcome: 'PENDING' },
+        });
+        if (pendingWithdrawals > 0) refuse('WITHDRAWALS_PENDING', `${pendingWithdrawals} spending withdrawal(s) are undecided`);
 
         // The claim, before any side effect: two concurrent closes both pass
         // the reads above, and only one matches a not-CLOSED row.

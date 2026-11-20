@@ -106,6 +106,9 @@ export const TENANT_PURGE_RETAINED: ReadonlySet<string> = new Set([
     'AccessReview',
     'AccessReviewAgentNarrowing',
     'AccessReviewAgentPack',
+    // Agent Pay 1.4 (#5333): a campaign's spending withdrawals, retained with
+    // the campaign, decision and pack they cascade from — the campaign WHOLE.
+    'AccessReviewAgentSpendingWithdrawal',
     'AccessReviewConnectedDecision',
     'AccessReviewDecision',
     'AccessReviewDecisionSampleAudit',

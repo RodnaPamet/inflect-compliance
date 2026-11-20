@@ -292,8 +292,10 @@ customer's own connection, the way directory integrations are).
       envelope. Accepting it writes the declaration and opens a task for the
       owner to apply the change at the token requestor, because Inflect
       cannot apply it until Phase 4. *The pack section is built 2026-11-20
-      (#5333); the narrowing is not, and waits on the questions under
-      "Where Phase 1 stands".*
+      (#5333), and so is the withdrawal, on three of the four grounds the
+      owner decided that day (below). The fourth, "the harness scan no longer
+      shows the agent able to pay", waits on an owner decision, so the box
+      stays open.*
 - [x] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
       containing an orphaned agent, on an agent with spending authority
       moves the row to `SUSPENDED_REQUESTED` and opens a task naming the
@@ -317,15 +319,31 @@ reports each agent's rails and review standing, with two counts. An AGENT
 campaign's reviewer pack carries a spending-authority section, in the hashed
 sections, so the campaign's evidence covers it (3.3).
 
-What is not built is the half of 1.4 that changes an envelope from a campaign:
-a narrowing that proposes reducing or withdrawing it. It needs decisions this
-document does not make (`docs/implementation-notes/2026-11-20-agent-pay-register-surfaces.md`):
-on what evidence a pack proposes it, since no spend is observed before Phase 4;
-what a "reduction" is, when the pack is prepared by an agent and the plan is
-re-derived from stored rows; and whether accepting it under
-`access_reviews.decide` may write an envelope whose writer otherwise takes
-`admin.agent_registry`. Until then a reviewer narrows or withdraws on the
-register page.
+The half of 1.4 that changes an envelope from a campaign is built too
+(2026-11-20, #5333), on the owner's decisions of that day
+(`docs/implementation-notes/2026-11-20-agent-pay-envelope-withdrawal.md`). A pack
+proposes WITHDRAWING an envelope, never reducing a limit, and records each
+ground that holds: it had lapsed by the end of the campaign's window
+(`EXPIRED_BY_WINDOW_END`), it is still SUSPENDED_REQUESTED after a kill
+(`SUSPENDED_AFTER_KILL`), or no second person ever reviewed the declaration on
+the row (`NEVER_REVIEWED`). The proposal is a row of
+`AccessReviewAgentSpendingWithdrawal` (migration
+`20261120120000_access_review_agent_spending_withdrawal`), a sibling of the
+grant narrowing with the same one-way triggers. Accepting it under
+`access_reviews.decide` withdraws the declaration the pack described through
+the envelope writer's one internal path
+(`withdrawSpendingAuthorityForRecertificationInTx`; the public writer keeps
+`admin.agent_registry`) and opens a task for the agent's owner to revoke the
+token at its requestor. A pending withdrawal holds the subject's verdict and
+the close; the agent's owner may not decide one.
+
+Not built: the fourth ground the owner named, "the harness scan no longer shows
+the agent able to pay". The only stored signal is the absence of a payment
+capability in a scan, and 2.3 already found that absence is not evidence (the
+reader reports `[]` where it cannot see). It needs an owner decision on what
+counts as positive evidence of "no longer able to pay"; until then a reviewer
+withdraws such an envelope on the register page, and reduces any envelope
+there.
 
 **Prompt.**
 ```text

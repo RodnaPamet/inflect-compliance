@@ -14486,6 +14486,30 @@
     "narrowingRejected": "Kept",
     "narrowingAccept": "Remove grant",
     "narrowingReject": "Keep grant",
+    "agentWithdrawalsFirst": "Decide its {count} spending withdrawal(s) first",
+    "colWithdrawalRail": "Spending authority",
+    "withdrawalRail": {
+      "AGENT_PAY_TOKEN": "Mastercard Agent Pay token",
+      "AP4M": "Agent Pay for Machines",
+      "OTHER": "Other payment rail"
+    },
+    "withdrawalDeclared": "Declared {date}",
+    "colWithdrawalGrounds": "Why",
+    "withdrawalGround": {
+      "EXPIRED_BY_WINDOW_END": "It had expired by the end of the campaign's window",
+      "SUSPENDED_AFTER_KILL": "Still waiting to be suspended after the agent's kill switch fired",
+      "NEVER_REVIEWED": "No second person has reviewed it"
+    },
+    "withdrawalAccepted": "Withdrawn",
+    "withdrawalRejected": "Kept",
+    "withdrawalAccept": "Withdraw",
+    "withdrawalReject": "Keep",
+    "withdrawalResult": {
+      "ENVELOPE_WITHDRAWN": "Withdrawn on the register. The agent's owner has a task to cancel the token with the agent platform.",
+      "ENVELOPE_ALREADY_WITHDRAWN": "It had already been withdrawn on the register. The agent's owner has a task to cancel the token with the agent platform.",
+      "ENVELOPE_REDECLARED": "It was declared again after the pack was prepared, so it was left as it is.",
+      "ENVELOPE_ABSENT": "It is no longer on the register."
+    },
     "colSampleDecision": "Decision",
     "colSampleOutcome": "Second review",
     "sampleOutcome": {
@@ -14516,6 +14540,8 @@
     "agentEvidenceMismatch": "The evidence file does NOT match the campaign's stored rows. Recomputed SHA-256:",
     "agentNarrowingsTitle": "Proposed narrowings",
     "agentNarrowingsHint": "Each pack proposes removing the grants its agent held for the whole window and never called. Removing a grant takes effect immediately; nothing here can add one.",
+    "agentWithdrawalsTitle": "Proposed spending withdrawals",
+    "agentWithdrawalsHint": "Each pack proposes withdrawing a spending authority that had expired by the end of the window, is still waiting to be suspended after a kill switch, or that no second person has reviewed. Withdrawing takes effect on the register immediately, and the agent's owner gets a task to cancel the token with the agent platform. Nothing here can add or raise a spending authority.",
     "agentSampleTitle": "Second review",
     "agentSampleHint": "These decisions were drawn at close for a second person, who neither made the decision nor owns the agent.",
     "fieldPreparer": "Preparing agent",

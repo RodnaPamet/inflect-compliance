@@ -401,6 +401,7 @@ model AccessReviewAgentPack {
   preparerCampaign AccessReview              @relation("AgentPackCampaignPreparer", fields: [accessReviewId, campaignPreparerAgentId], references: [id, preparerAgentId], onDelete: Cascade, onUpdate: Restrict)
   decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   narrowings   AccessReviewAgentNarrowing[]
+  spendingWithdrawals AccessReviewAgentSpendingWithdrawal[]
 
   /// One pack per subject, ever — preparation is one-shot. Composite because
   /// Prisma types a composite relation as 1:1 only over its exact field list;
@@ -454,6 +455,69 @@ model AccessReviewAgentNarrowing {
   pack         AccessReviewAgentPack         @relation(fields: [packId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([packId, grantId])
+  @@index([tenantId, accessReviewId, outcome])
+  @@index([tenantId, decisionId])
+}
+
+/// One spending-authority withdrawal a pack proposed (Agent Pay Phase 1.4,
+/// #5333; owner decisions of 2026-11-20).
+///
+/// The sibling of `AccessReviewAgentNarrowing` for the agent's declared
+/// spending envelope rather than a grant: a pack proposes WITHDRAWING an
+/// envelope — never reducing a limit — on the grounds its own spending
+/// section states, and a person accepts or rejects it. Accepting writes the
+/// withdrawal through the envelope's own writer
+/// (`withdrawSpendingAuthorityForRecertificationInTx`) and opens a task for the
+/// agent's owner to revoke the token at its requestor, which Inflect cannot do
+/// before Phase 4. The same one-way triggers as the narrowing: the proposal is
+/// frozen, the outcome leaves PENDING once, the execution is stamped once;
+/// `app_user` has no DELETE.
+///
+/// The envelope is named by `(agentId, rail, declaredAt)`: one row per agent
+/// per rail, re-declared in place, so `declaredAt` is what tells the
+/// declaration the pack described from a later one. No FK to it, as `agentId`
+/// has none: the record outlives the envelope.
+model AccessReviewAgentSpendingWithdrawal {
+  id                 String                @id @default(cuid())
+  tenantId           String
+  accessReviewId     String
+  decisionId         String
+  packId             String
+  /// No FK — see the header of this section.
+  agentId            String
+  rail               AgentSpendingRail
+  /// The declaration the pack described. A re-declaration since is not it.
+  declaredAt         DateTime
+  /// The envelope's status and lapse when the pack was prepared.
+  statusAtPack       String
+  expiresAt          DateTime
+  /// Every ground that held: `EXPIRED_BY_WINDOW_END`, `SUSPENDED_AFTER_KILL`,
+  /// `NEVER_REVIEWED` (`SPENDING_WITHDRAWAL_GROUNDS`). At least one (CHECK).
+  grounds            String[]
+  /// The agent's owner when the campaign froze it. A CHECK refuses a
+  /// `decidedByUserId` equal to it.
+  subjectOwnerUserId String
+  outcome            AgentNarrowingOutcome @default(PENDING)
+  decidedAt          DateTime?
+  decidedByUserId    String?
+  /// Set once, when an ACCEPTED withdrawal was carried out.
+  executedAt         DateTime?
+  /// `ENVELOPE_WITHDRAWN`, `ENVELOPE_ALREADY_WITHDRAWN`,
+  /// `ENVELOPE_REDECLARED` (re-declared since the pack; left alone) or
+  /// `ENVELOPE_ABSENT`.
+  executionResult    String?
+  /// The task asking the agent's owner to revoke the token at its requestor.
+  /// Only when the envelope ends withdrawn (CHECK). No FK: the record outlives
+  /// the task.
+  ownerTaskId        String?
+  createdAt          DateTime              @default(now())
+
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accessReview AccessReview                  @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  decision     AccessReviewConnectedDecision @relation(fields: [decisionId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  pack         AccessReviewAgentPack         @relation(fields: [packId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([packId, rail])
   @@index([tenantId, accessReviewId, outcome])
   @@index([tenantId, decisionId])
 }
