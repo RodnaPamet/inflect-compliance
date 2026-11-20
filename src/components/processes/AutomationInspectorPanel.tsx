@@ -30,13 +30,14 @@
  * Enabling an incomplete rule is refused by the server, which also says what
  * is missing (`readiness`); the panel lists it, so the reason is on the step.
  */
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSWRConfig } from 'swr';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -46,6 +47,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { eventOptionsByDomain } from '@/lib/automation/event-labels';
 import { useToast } from '@/components/ui/hooks';
 import { apiErrorMessage } from '@/lib/api-error';
+import { agentCanvasHref, agentIdOfInvokeRule } from '@/lib/processes/agent-view/agent-canvas-link';
 import { RuleBuilderModal, type RuleBuilderModalProps } from './RuleBuilderModal';
 
 /**
@@ -117,6 +119,14 @@ export interface AutomationInspectorPanelProps {
      * panel shows the rule and offers nothing to change. Defaults to FALSE.
      */
     canManageRules?: boolean;
+    /**
+     * May an Agent step link to the agent it invokes, drawn on the agent view
+     * (Phase 2.3 of `docs/ai-architecture/langflow.md`)? The view asks the
+     * agent register's read before it draws anything, so the link is offered
+     * only to a viewer who holds it. The keyboard's way to the same place a
+     * double-click on the step reaches. Defaults to FALSE.
+     */
+    canOpenAgentCanvas?: boolean;
 }
 
 export function AutomationInspectorPanel({
@@ -125,6 +135,7 @@ export function AutomationInspectorPanel({
     unsavedOwners = 0,
     tenantSlug,
     canManageRules = false,
+    canOpenAgentCanvas = false,
 }: AutomationInspectorPanelProps) {
     const t = useTranslations('automation.autoInspector');
     const toast = useToast();
@@ -254,6 +265,8 @@ export function AutomationInspectorPanel({
         if (row) setBuilderRule(row);
     };
     const readiness = rule?.readiness ?? [];
+    // The agent this step's rule invokes, read from the rule as stored.
+    const invokedAgentId = kind === 'agent' && canOpenAgentCanvas ? agentIdOfInvokeRule(rule) : null;
 
     return (
         <div className="space-y-default" data-testid="automation-inspector">
@@ -365,6 +378,16 @@ export function AutomationInspectorPanel({
                         </Button>
                     </div>
                 </FormField>
+            )}
+
+            {invokedAgentId !== null && (
+                <Link
+                    href={agentCanvasHref(tenantSlug, invokedAgentId)}
+                    data-testid="automation-inspector-open-agent"
+                    className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+                >
+                    {t('openAgentOnCanvas')}
+                </Link>
             )}
 
             {kind === 'condition' && (

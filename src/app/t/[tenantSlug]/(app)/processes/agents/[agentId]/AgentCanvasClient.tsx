@@ -7,6 +7,11 @@
  * the Elements tab lists every node with its badges and, where it has one, the
  * reason it is narrowed — readable without a pointer, and what a screen reader
  * gets. Neither tab can change anything.
+ *
+ * With a `diff` (Phase 2.4: the approver's comparison of the version under
+ * review against the version in force), both tabs draw the diff's graph, and
+ * the changes are listed in words above them, so a reviewer reads what the
+ * approval would change without having to find it on the drawing.
  */
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -21,6 +26,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { useAgentViewNodeText } from '@/components/processes/agent-view/agent-view-text';
 import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
 import { buildAgentViewGraph } from '@/lib/processes/agent-view/agent-canvas-graph';
+import type { AgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff';
 
 /** tldraw needs `window`; the editor loads in the browser only, inside this segment. */
 const AgentCanvasView = dynamic(
@@ -33,16 +39,22 @@ type TabKey = 'canvas' | 'elements';
 export function AgentCanvasClient({
     tenantSlug,
     projection,
+    diff = null,
+    compareUnavailable = false,
 }: {
     tenantSlug: string;
     projection: AgentCanvasProjection;
+    /** The approver's diff, when the page was asked to compare two versions. */
+    diff?: AgentViewDiff | null;
+    /** A comparison was asked for and there is none to draw: said, not hidden. */
+    compareUnavailable?: boolean;
 }) {
     const t = useTranslations('agentCanvas');
     const tAdmin = useTranslations('admin');
     const tAgents = useTranslations('agents');
     const textFor = useAgentViewNodeText();
     const [tab, setTab] = useState<TabKey>('canvas');
-    const graph = useMemo(() => buildAgentViewGraph(projection), [projection]);
+    const graph = useMemo(() => diff?.graph ?? buildAgentViewGraph(projection), [diff, projection]);
     const profile = projection.profile;
 
     return (
@@ -93,7 +105,40 @@ export function AgentCanvasClient({
                         {t(`profileAbsent.${profile.state}`)}
                     </InlineNotice>
                 )}
-                {profile.state === 'SHOWN' && !profile.inForce && (
+                {compareUnavailable && (
+                    <InlineNotice variant="warning" data-testid="agent-canvas-diff-unavailable">
+                        {t('diff.unavailable')}
+                    </InlineNotice>
+                )}
+                {diff !== null && (
+                    <div className="space-y-tight" data-testid="agent-canvas-diff">
+                        <p className="text-sm font-medium text-content-emphasis">
+                            {t('diff.heading', { from: diff.from.version, to: diff.to.version })}
+                        </p>
+                        {diff.changes.length === 0 ? (
+                            <p className="text-sm text-content-muted" data-testid="agent-canvas-diff-none">
+                                {t('diff.none')}
+                            </p>
+                        ) : (
+                            <ul className="space-y-tight text-sm" data-testid="agent-canvas-diff-list">
+                                {diff.changes.map((c) => (
+                                    <li
+                                        key={`${c.aspect}:${c.change}:${c.nodeId}:${c.name ?? ''}`}
+                                        data-testid={`agent-canvas-diff-${c.aspect}-${c.change}${c.name ? `-${c.name}` : ''}`}
+                                        data-change={c.change}
+                                    >
+                                        {t(`diff.item.${c.aspect}.${c.change}`, {
+                                            name: c.name ?? '',
+                                            from: c.from ?? '',
+                                            to: c.to ?? '',
+                                        })}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                )}
+                {diff === null && profile.state === 'SHOWN' && !profile.inForce && (
                     <InlineNotice variant="warning" data-testid="agent-canvas-version-not-in-force">
                         {t('versionNotInForce', { version: profile.version, status: profile.status })}
                     </InlineNotice>
@@ -105,7 +150,7 @@ export function AgentCanvasClient({
                         className="h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border-default"
                         data-testid="agent-canvas-surface"
                     >
-                        <AgentCanvasView projection={projection} />
+                        <AgentCanvasView projection={projection} diff={diff} />
                     </div>
                 )}
 
@@ -113,15 +158,20 @@ export function AgentCanvasClient({
                     <ul className="space-y-tight" data-testid="agent-canvas-elements">
                         {graph.nodes.map((n) => {
                             const text = textFor(n);
+                            const change = diff?.changeOf[n.id];
                             return (
                                 <li
                                     key={n.id}
                                     data-testid={`agent-canvas-element-${n.id}`}
                                     data-kind={n.kind}
+                                    data-change={change ?? 'none'}
                                     className="rounded-md border border-border-subtle px-3 py-2"
                                 >
                                     <span className="text-xs uppercase text-content-subtle">{t(`kind.${n.kind}`)}</span>{' '}
                                     <span className="font-medium text-content-emphasis">{n.label}</span>
+                                    {change !== undefined && (
+                                        <span className="block text-xs text-content-emphasis">{t(`diff.mark.${change}`)}</span>
+                                    )}
                                     {text.badges.length > 0 && (
                                         <span className="block text-xs text-content-muted">{text.badges.join(' · ')}</span>
                                     )}

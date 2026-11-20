@@ -8,7 +8,7 @@ This page draws one registered agent on the process canvas: the agent at the cen
 
 ## Where to find it
 
-Open an agent from [{{ui:nav.agents}}](agents.md) and click **{{ui:agentCanvas.openOnCanvas}}** beside the header's buttons. The button is shown only where the workspace has the process canvas; without it this page reports that it was not found. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:agents.register.breadcrumb}}** › the agent's name › **{{ui:agentCanvas.tabCanvas}}**.
+Open an agent from [{{ui:nav.agents}}](agents.md) and click **{{ui:agentCanvas.openOnCanvas}}** beside the header's buttons. On the agent's **{{ui:admin.agentDetail.tabBehaviour}}** tab, **{{ui:agents.behaviour.canvas.open}}** opens the version in force, or the version open for review, and a reviewer of a submitted version is offered **{{ui:agents.behaviour.canvas.compare}}**. On a [process map](processes.md), double-click an Agent step, or select it and click **{{ui:automation.autoInspector.openAgentOnCanvas}}**. These links are shown only where the workspace has the process canvas; without it this page reports that it was not found. The breadcrumb reads **{{ui:admin.crumb.dashboard}}** › **{{ui:agents.register.breadcrumb}}** › the agent's name › **{{ui:agentCanvas.tabCanvas}}**.
 
 ## Who can use it
 
@@ -39,6 +39,10 @@ Use it to see at a glance what an agent is: how much authority it holds, which t
 
 The badges say what each element is. The agent's box carries its status, its autonomy, its policy card version, its circuit breaker state, any stop in force, and, when it is unscored, **{{ui:agentCanvas.badge.unscored}}**. A tool reads **{{ui:agentCanvas.badge.read}}** or **{{ui:agentCanvas.badge.propose}}**, and **{{ui:agentCanvas.badge.offered}}**, **{{ui:agentCanvas.badge.narrowed}}**, **{{ui:agentCanvas.badge.notInProfile}}** or **{{ui:agentCanvas.badge.notProbed}}**. A tool that is narrowed away says why, for example: {{ui:agentCanvas.reason.AUTONOMY}}
 
+### Comparing two versions
+
+Opened with **{{ui:agents.behaviour.canvas.compare}}**, the page draws the version under review against the version in force. A heading names both versions, and the changes are listed in words above the drawing, for example *Tool added*, *Trigger removed* or *Model tier changed*: each tool, skill and trigger the version adds or removes, and its model tier, effort, turn limit and output when they change. On the drawing and in **{{ui:agentCanvas.tabElements}}**, each changed element is marked **{{ui:agentCanvas.diff.mark.added}}**, **{{ui:agentCanvas.diff.mark.removed}}** or **{{ui:agentCanvas.diff.mark.changed}}**. What the version removes is still drawn, so you see it go. {{ui:agentCanvas.diff.none}} appears when the version changes none of these; read the instructions on the **{{ui:admin.agentDetail.tabBehaviour}}** tab, where the text changes are shown.
+
 **{{ui:agentCanvas.instructions}}**, folded away below, holds every word of the drawn version's instructions, when the behaviour is shown.
 
 ## What you can do
@@ -52,6 +56,7 @@ Read it. To change the agent, go back to its page. To change its written behavio
 | **{{ui:agentCanvas.forbiddenTitle}}** | Your role cannot open the agent register | Ask an Owner or Admin |
 | The page was not found | The workspace does not have the process canvas, or the agent does not exist | Open the agent from the register |
 | {{ui:agentCanvas.profileAbsent.NONE}} | Only the register entry can be drawn | Write the agent's first version on its {{ui:admin.agentDetail.tabBehaviour}} tab |
+| {{ui:agentCanvas.diff.unavailable}} | You cannot read the agent's written behaviour, or the link names a version this agent does not have | Ask an Owner, Admin or AI admin, or open the comparison again from the {{ui:admin.agentDetail.tabBehaviour}} tab |
 
 ## Related
 

@@ -205,10 +205,14 @@ describe("Epic P6-PR-A — sub-flow drill-down", () => {
 
         it("double-clicking a group node enters the drill", () => {
             // On the CANVAS, which is where the gesture can hit-test — the
-            // event carries no shape. Gated to `nodeType === 'group'`, because
-            // double-clicking a step is how tldraw starts label editing.
-            expect(canvas).toMatch(/nodeType !== ['"]group['"]/);
-            expect(canvas).toMatch(/onEnterGroupRef\.current\?\./);
+            // event carries no shape. What a hit drills to is decided by
+            // `drillTargetOf` in the host: a group enters its sub-flow, an
+            // agent step (Phase 2.3) opens the agent it invokes, and every
+            // other step drills nowhere.
+            const host = read("src/components/processes/tldraw/drill-scope-host.ts");
+            expect(host).toMatch(/nodeType === ['"]group['"]/);
+            expect(canvas).toMatch(/drillTargetOf\(hit\)/);
+            expect(canvas).toMatch(/onEnterGroupRef\.current\?\.\(target\.nodeKey\)/);
         });
 
         it("mounts the breadcrumb with the canonical trail builder", () => {

@@ -93,6 +93,8 @@ import {
     placementForClick,
 } from '@/components/processes/tldraw/create-process-node';
 import { useTldrawSelection } from '@/lib/processes/use-tldraw-selection';
+import { agentCanvasHref, agentIdOfInvokeRule } from '@/lib/processes/agent-view/agent-canvas-link';
+import { CACHE_KEYS } from '@/lib/swr-keys';
 
 /**
  * `GraphRows` → `DiffGraphSnapshot`.
@@ -188,6 +190,15 @@ export interface TldrawProcessWorkspaceProps {
     canManageRules?: boolean;
     /** A step to select once the map loads: the Rules tab's "Open on canvas". */
     focusStepKey?: string | null;
+    /**
+     * Go to an agent on the agent view (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`): the drill-down from an agent step,
+     * and the inspector's link. Given only where the viewer may read the agent
+     * register, which the agent view asks before it draws anything; absent, an
+     * agent step drills nowhere and the inspector offers no link. The page owns
+     * the router, so the workspace mounts without one.
+     */
+    onOpenAgentCanvas?: (href: string) => void;
 }
 
 export function TldrawProcessWorkspace(props: TldrawProcessWorkspaceProps) {
@@ -265,6 +276,7 @@ function Inner({
     canManageRules = false,
     canDelete,
     focusStepKey = null,
+    onOpenAgentCanvas,
 }: TldrawProcessWorkspaceProps) {
     const toast = useToast();
     // "Attach to evidence" is an evidence upload; offered only to a viewer the
@@ -337,6 +349,34 @@ function Inner({
         autosaveStatus === 'error';
     useUnsavedChangesWarning(hasUnsavedWork);
     useUnsavedNavigationGuard(hasUnsavedWork, t('unsavedLeaveConfirm'));
+
+    /**
+     * Drill from an agent step into the agent it invokes (Phase 2.3).
+     *
+     * The step names its RULE, and the agent is read from the rule as the
+     * server holds it, so the step cannot point the drill anywhere the rule
+     * does not. The navigation is the router's, which the unsaved-work click
+     * guard above cannot see, so the same question is asked here first.
+     */
+    const handleOpenAgent = useCallback(
+        async (ruleId: string) => {
+            if (!onOpenAgentCanvas) return;
+            let agentId: string | null = null;
+            try {
+                const res = await fetch(`/api/t/${tenantSlug}${CACHE_KEYS.automation.rules.detail(ruleId)}`);
+                if (res.ok) agentId = agentIdOfInvokeRule(await res.json());
+            } catch {
+                agentId = null;
+            }
+            if (agentId === null) {
+                toast.error(t('openAgentFailed'));
+                return;
+            }
+            if (hasUnsavedWork && !window.confirm(t('unsavedLeaveConfirm'))) return;
+            onOpenAgentCanvas(agentCanvasHref(tenantSlug, agentId));
+        },
+        [onOpenAgentCanvas, tenantSlug, toast, t, hasUnsavedWork],
+    );
 
     const handleState = useCallback(
         (s: {
@@ -618,6 +658,13 @@ function Inner({
                             mapId={activeId}
                             drillGroupId={drill.currentGroupId}
                             onEnterGroup={drill.enter}
+                            onOpenAgent={
+                                onOpenAgentCanvas
+                                    ? (ruleId) => {
+                                          void handleOpenAgent(ruleId);
+                                      }
+                                    : undefined
+                            }
                             onEditorReady={setEditor}
                             onStateChange={handleState}
                             onSaveNowChange={handleSaveNowChange}
@@ -644,6 +691,7 @@ function Inner({
                         onUpdate={selection.onUpdate}
                         onEdgeUpdate={selection.onEdgeUpdate}
                         canManageRules={canManageRules}
+                        canOpenAgentCanvas={onOpenAgentCanvas !== undefined}
                         {...(activeId ? { mapId: activeId } : {})}
                     />
                 </fieldset>

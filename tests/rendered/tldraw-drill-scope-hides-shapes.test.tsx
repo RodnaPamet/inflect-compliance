@@ -184,9 +184,9 @@ describe('the enter gesture', () => {
         expect(entered).toEqual(['grp']);
     });
 
-    it('double-clicking a STEP does not — that is label editing', async () => {
-        // Stealing double-click on a step would break renaming, which is the
-        // gesture tldraw assigns to it.
+    it('double-clicking a STEP does not', async () => {
+        // A process step drills nowhere: it is renamed in the inspector, never
+        // on the canvas, so a double-click on it is left to the editor.
         const { editor } = await mount(null);
         await act(async () => {
             editor.inputs.currentPagePoint.x = 110;
@@ -211,6 +211,74 @@ describe('the enter gesture', () => {
                 } as never);
             }
         });
+        expect(entered).toEqual([]);
+    });
+});
+
+/**
+ * Phase 2.3 (docs/ai-architecture/langflow.md): an AGENT step drills out of the
+ * map, into the agent it invokes. The step names its rule; the host resolves
+ * the agent from the rule as stored, so what the canvas hands up is the rule id.
+ */
+describe('the drill into an agent step', () => {
+    const AGENT_ROWS: GraphRows = {
+        nodes: [
+            node('agent-a', 'agent', null, 0, { ruleId: 'rule-1' }),
+            // Never saved: no rule yet, so nothing to drill into.
+            node('agent-b', 'agent', null, 400, null),
+        ],
+        edges: [],
+    };
+    const opened: string[] = [];
+
+    async function mountAgents(withHandler: boolean) {
+        opened.length = 0;
+        entered.length = 0;
+        let editor: Editor | undefined;
+        render(
+            <div style={{ width: 900, height: 600 }}>
+                <TldrawProcessCanvas
+                    rows={AGENT_ROWS}
+                    onEnterGroup={(k) => entered.push(k)}
+                    onOpenAgent={withHandler ? (ruleId) => opened.push(ruleId) : undefined}
+                    onEditorReady={(e) => (editor = e)}
+                />
+            </div>,
+        );
+        await act(async () => {});
+        if (!editor) throw new Error('the host did not finish mounting');
+        return editor;
+    }
+
+    const doubleClickAt = async (editor: Editor, x: number) => {
+        await act(async () => {
+            editor.inputs.currentPagePoint.x = x;
+            editor.inputs.currentPagePoint.y = 10;
+            editor.emit('event', {
+                type: 'click', name: 'double_click', phase: 'up',
+                button: 0, point: { x, y: 10 }, pointerId: 0,
+            } as never);
+        });
+    };
+
+    it('double-clicking an agent step asks to open the agent its rule invokes', async () => {
+        const editor = await mountAgents(true);
+        await doubleClickAt(editor, 10);
+        expect(opened).toEqual(['rule-1']);
+        // It is not a group: nothing is entered on the map.
+        expect(entered).toEqual([]);
+    });
+
+    it('an agent step with no rule yet drills nowhere', async () => {
+        const editor = await mountAgents(true);
+        await doubleClickAt(editor, 410);
+        expect(opened).toEqual([]);
+    });
+
+    it('without a handler (a viewer who may not read the register) nothing happens', async () => {
+        const editor = await mountAgents(false);
+        await doubleClickAt(editor, 10);
+        expect(opened).toEqual([]);
         expect(entered).toEqual([]);
     });
 });

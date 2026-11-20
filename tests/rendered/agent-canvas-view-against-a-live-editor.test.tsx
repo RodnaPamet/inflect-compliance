@@ -24,6 +24,7 @@ import { AgentCanvasView } from '@/components/processes/agent-view/AgentCanvasVi
 import { AGENT_VIEW_NODE_SHAPE_TYPE } from '@/components/processes/agent-view/AgentViewNodeShapeUtil';
 import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
 import { buildAgentViewGraph } from '@/lib/processes/agent-view/agent-canvas-graph';
+import { buildAgentViewDiff, type AgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff';
 
 const PROJECTION: AgentCanvasProjection = {
     agent: { id: 'a1', name: 'Posture agent', status: 'ACTIVE', autonomyLevel: 2, riskTier: 'LOW', effectiveCeiling: 2 },
@@ -69,12 +70,12 @@ const PROJECTION: AgentCanvasProjection = {
     usedIn: [],
 };
 
-async function mount(): Promise<Editor> {
+async function mount(diff: AgentViewDiff | null = null, projection: AgentCanvasProjection = PROJECTION): Promise<Editor> {
     let editor: Editor | undefined;
     await act(async () => {
         render(
             <div style={{ width: 800, height: 600 }}>
-                <AgentCanvasView projection={PROJECTION} onEditorReady={(e) => (editor = e)} />
+                <AgentCanvasView projection={projection} diff={diff} onEditorReady={(e) => (editor = e)} />
             </div>,
         );
     });
@@ -118,5 +119,40 @@ describe('the agent view on a live editor', () => {
             editor.createShapes([{ id: createShapeId('intruder'), type: 'geo', x: 0, y: 0 }]);
         });
         expect(shapes(editor)).toHaveLength(before);
+    });
+});
+
+describe('the approver\'s diff on a live editor (Phase 2.4)', () => {
+    if (PROJECTION.profile.state !== 'SHOWN') throw new Error('fixture');
+    const UNDER_REVIEW: AgentCanvasProjection = {
+        ...PROJECTION,
+        profile: {
+            ...PROJECTION.profile,
+            version: 2,
+            status: 'SUBMITTED',
+            inForce: false,
+            modelTier: 'deep',
+            allowedTriggers: ['TEST_RUN'],
+            tools: [{ name: 'get_compliance_posture', offered: true }],
+        },
+    };
+
+    it('draws the version under review with what it removed, each change marked on its node', async () => {
+        const diff = buildAgentViewDiff(PROJECTION, UNDER_REVIEW);
+        if (!diff) throw new Error('expected a diff');
+        const editor = await mount(diff, UNDER_REVIEW);
+        expect(shapes(editor).filter((s) => s.type === AGENT_VIEW_NODE_SHAPE_TYPE)).toHaveLength(diff.graph.nodes.length);
+        // The trigger the version removed is on the canvas, marked, with its change named first.
+        const removed = editor.getShape(createShapeId('trigger:ASK')) as unknown as Shape;
+        expect(removed.props.change).toBe('removed');
+        expect((removed.props.badges as string[])[0]).toBe('diff.mark.removed');
+        expect((editor.getShape(createShapeId('trigger:TEST_RUN')) as unknown as Shape).props.change).toBe('added');
+        expect((editor.getShape(createShapeId('hub')) as unknown as Shape).props.change).toBe('changed');
+        // Unchanged: no mark, and its badges untouched.
+        const same = editor.getShape(createShapeId('tool:get_compliance_posture')) as unknown as Shape;
+        expect(same.props.change).toBe('');
+        expect(same.props.badges as string[]).not.toContain('diff.mark.removed');
+        // A diff is drawn read-only, like the view.
+        expect(editor.getInstanceState().isReadonly).toBe(true);
     });
 });
