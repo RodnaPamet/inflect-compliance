@@ -44,8 +44,8 @@ import {
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@inflect/ui/lib/cn';
 
-import { ChevronLeft } from '@inflect/ui/components/ui/icons/nucleo/chevron-left';
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
+import { ChevronLeft } from '@inflect/ui/components/ui/icons/glyphs/chevron-left';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 import { cardVariants } from '@/components/ui/card';
 import { Sheet } from '@/components/ui/sheet';
 import { useLocalStorage } from '@/components/ui/hooks';
@@ -79,7 +79,7 @@ export interface AsidePanelProps {
     /**
      * Optional icon node shown beside the title and in the spine.
      * A node (not an icon component) so callers pass the repo's own
-     * `<AppIcon>` / Nucleo icons without this primitive coupling to
+     * `<AppIcon>` / local glyph icons without this primitive coupling to
      * one icon family.
      */
     icon?: ReactNode;

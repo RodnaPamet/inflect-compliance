@@ -12,7 +12,7 @@
  * Prisma `FindingStatus` members.
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
-import { CircleHalfDottedCheck } from '@inflect/ui/components/ui/icons/nucleo';
+import { CircleHalfDottedCheck } from '@inflect/ui/components/ui/icons/glyphs';
 
 /** Surface-namespace resolver (`useTranslations('findings')`). */
 type T = (key: string, values?: Record<string, unknown>) => string;

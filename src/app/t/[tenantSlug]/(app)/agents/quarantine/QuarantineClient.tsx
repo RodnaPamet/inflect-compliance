@@ -73,7 +73,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Sheet } from '@/components/ui/sheet';
 import { CopyText } from '@/components/ui/copy-text';
-import { ShieldSlash } from '@inflect/ui/components/ui/icons/nucleo';
+import { ShieldSlash } from '@inflect/ui/components/ui/icons/glyphs';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { extractMutationError } from '@/lib/mutations';

@@ -82,7 +82,7 @@ describe('shared-UI coupling classification (#3047)', () => {
         const missing = POPULATION.filter((f) => !mapped.has(f));
         const stale = [...mapped].filter((f) => !POPULATION.includes(f)).sort();
         expect({ missing, stale }).toEqual({ missing: [], stale: [] });
-        expect(POPULATION.length).toBeGreaterThan(600);
+        expect(POPULATION.length).toBeGreaterThan(450); // 600 until #5772 deleted the Nucleo set; see shared-ui-couplings.ts
     });
 
     it('records a classification and a reason for every entry', () => {
@@ -99,12 +99,12 @@ describe('shared-UI coupling classification (#3047)', () => {
         // bare colon — and both passed it.
         //
         // Why NOT "ends in terminal punctuation": measured over all 613
-        // strings, that rule flags 319. Most are legitimate — the ~240 nucleo
-        // icons share the complete-but-unpunctuated reason "Pure presentational
-        // SVG icon: no copy, no storage key, no brand-as-text, no domain
-        // import". A rule that flags half the population is noise, and noise
-        // gets a blanket allowlist, which is a gate narrow enough to always
-        // pass.
+        // strings, that rule flags 319. Most are legitimate — the ~240 Nucleo
+        // icons (removed at #5772, so the figures are of that tree) shared the
+        // complete-but-unpunctuated reason "Pure presentational SVG icon: no
+        // copy, no storage key, no brand-as-text, no domain import". A rule
+        // that flags half the population is noise, and noise gets a blanket
+        // allowlist, which is a gate narrow enough to always pass.
         //
         // So the rule is INTRINSIC instead: a string cut at an arbitrary
         // offset leaves evidence in its own grammar. An opened `code span`,
@@ -303,8 +303,10 @@ describe('shared-UI coupling classification (#3047)', () => {
         // Repointed at #3046 step 2b — this file moved into the package. The
         // `existsSync` guard below would have made the control SKIP rather than
         // fail, so a stale path here costs the assertion its teeth silently.
+        // Repointed again at #5772, when the Nucleo set was replaced by the
+        // lucide-backed `glyphs` set.
         const icon =
-            'packages/ui/src/components/ui/icons/nucleo/shield-check.tsx';
+            'packages/ui/src/components/ui/icons/glyphs/shield-check.tsx';
         if (fs.existsSync(path.join(ROOT, icon))) {
             expect(mechanical(icon)).toEqual([]);
         }

@@ -19,7 +19,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';

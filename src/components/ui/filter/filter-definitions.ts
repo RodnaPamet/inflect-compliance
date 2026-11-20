@@ -58,7 +58,8 @@ export interface FilterDefInput {
    *
    * `FilterIcon`, not `LucideIcon` (#3358). This field used to narrow to a
    * Lucide component, which made the documented API unreachable from new code:
-   * `tests/guards/no-lucide.test.ts` fails any NEW `lucide-react` import site,
+   * the no-lucide guard (retired in #5772) failed any NEW
+   * `lucide-react` import site,
    * so a new list page could satisfy neither the type nor the guard, and both
    * ways out were laundering.
    *

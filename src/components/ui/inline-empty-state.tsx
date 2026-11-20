@@ -36,12 +36,10 @@ import { cn } from "@inflect/ui/lib/cn";
 import { type ComponentType, type ReactNode, type SVGProps } from "react";
 
 /**
- * Icon component shape — accepts both lucide-react icons (the
- * legacy import path being migrated away) and the canonical Nucleo
- * icon family. Both expose the same `className` + `aria-hidden`
+ * Icon component shape — accepts both lucide-react icons and the
+ * local glyph set (`@inflect/ui/components/ui/icons/glyphs`). Both expose the same `className` + `aria-hidden`
  * surface, so the structural type is sufficient and the primitive
- * stays family-agnostic. Avoids importing lucide-react here so this
- * primitive doesn't extend the legacy-icons allowlist (R2-PR8 ratchet).
+ * stays family-agnostic.
  */
 type EmptyStateIcon = ComponentType<SVGProps<SVGSVGElement>>;
 

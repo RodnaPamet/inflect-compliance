@@ -14,7 +14,7 @@ import {
     TriangleWarning,
     UserArrowRight,
     Users,
-} from '@inflect/ui/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/glyphs';
 import { useOrgContext, useOrgHref, useOrgPermissions } from '@/lib/org-context-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -50,7 +50,7 @@ import { NavSection } from './nav-section';
 interface OrgNavItemDef {
     href: string;
     label: string;
-    /** Lucide OR Nucleo — see the `NavGlyph` note on `NavItemProps.icon`. */
+    /** A lucide component or a local glyph — see the `NavGlyph` note on `NavItemProps.icon`. */
     icon: NavGlyph;
     requiresDrillDown?: boolean;
     requiresManageMembers?: boolean;
@@ -245,9 +245,8 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                             Direction is not carried by the icon — it is
                             `aria-hidden`; the button's `aria-label`
                             (expand/collapse) and `aria-pressed` carry the state
-                            for assistive tech. Nucleo ships no matched
-                            close/open pair, and inventing a mirrored one would
-                            diverge from the sibling surface for no gain. */}
+                            for assistive tech. One glyph keeps this in step
+                            with the sibling surface. */}
                         <Menu3 className="h-4 w-4 shrink-0" aria-hidden="true" />
                         {!collapsed && <span className="flex-1 text-left">{tOrg('nav.collapse')}</span>}
                     </button>

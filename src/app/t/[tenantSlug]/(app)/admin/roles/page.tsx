@@ -56,7 +56,7 @@ import {
 } from 'lucide-react';
 import type { Role } from '@prisma/client';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';

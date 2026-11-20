@@ -20,9 +20,9 @@
  *
  *   1. `CHEVRON_COLUMN_WIDTH` constant exists alongside the other
  *      column-width constants.
- *   2. `ChevronRight` is imported from the Nucleo icon family
- *      (NOT lucide — the table primitive stays inside the
- *      curated icon set).
+ *   2. `ChevronRight` is imported from the local glyph set
+ *      (NOT lucide-react directly — the table primitive stays
+ *      inside the curated set and its 18px default).
  *   3. The chevron column has id `__row-chevron`, enableHiding +
  *      enableSorting are false, the cell is `aria-hidden` +
  *      `pointer-events-none`.
@@ -50,13 +50,12 @@ describe('DataTable row chevron-right affordance (v2-PR-12 follow-through)', () 
         expect(TABLE_SRC).toMatch(/CHEVRON_COLUMN_WIDTH\s*=\s*\d+/);
     });
 
-    it('imports ChevronRight from the Nucleo icon family (not lucide)', () => {
-        // The table primitive stays inside the curated Nucleo icon
-        // set — lucide is allowlisted across the sidebar/topbar
-        // chrome but DataTable consumers expect a stable icon
-        // footprint.
+    it('imports ChevronRight from the local glyph set (not lucide-react directly)', () => {
+        // The table primitive stays inside the curated glyph set
+        // (lucide-react under local names since #5772) — DataTable
+        // consumers expect a stable icon footprint.
         expect(TABLE_SRC).toMatch(
-            /import\s*\{\s*ChevronRight\s*\}\s*from\s*['"]@inflect\/ui\/components\/ui\/icons\/nucleo\/chevron-right['"]/,
+            /import\s*\{\s*ChevronRight\s*\}\s*from\s*['"]@inflect\/ui\/components\/ui\/icons\/glyphs\/chevron-right['"]/,
         );
         expect(TABLE_SRC).not.toMatch(
             /import\s*\{[^}]*\bChevronRight\b[^}]*\}\s*from\s*['"]lucide-react['"]/,
@@ -125,7 +124,7 @@ describe('DataTable row chevron-right affordance (v2-PR-12 follow-through)', () 
         expect(slice).toMatch(/transition-opacity/);
     });
 
-    it('uses Nucleo ChevronRight at 16×16 inside the cell', () => {
+    it('uses the glyph ChevronRight at 16×16 inside the cell', () => {
         const idIdx = TABLE_SRC.indexOf("id: '__row-chevron'");
         const fallbackIdx =
             idIdx === -1 ? TABLE_SRC.indexOf('id: "__row-chevron"') : idIdx;

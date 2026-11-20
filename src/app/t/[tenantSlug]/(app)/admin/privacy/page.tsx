@@ -7,7 +7,7 @@ import {
     Sitemap,
     DatabaseKey,
     UserFocus,
-} from '@inflect/ui/components/ui/icons/nucleo';
+} from '@inflect/ui/components/ui/icons/glyphs';
 
 import { getPrivacyPosture } from '@/app-layer/usecases/privacy-posture';
 import { Card } from '@/components/ui/card';

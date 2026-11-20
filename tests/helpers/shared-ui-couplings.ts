@@ -39,15 +39,19 @@ const APP_ROOTS = [
  *
  * ─── Why the package half is DERIVED and not typed out again ──────────
  *
- * Two guards carry a >600 floor on this population
+ * Two guards carry a >450 floor on this population
  * (`ui-core-classification.test.ts` and `shared-ui-coupling-ratchet.test.ts`),
  * though only ONE of them can fire on a shrink: in the classification guard the
- * `toBeGreaterThan(600)` sits immediately after
+ * `toBeGreaterThan(450)` sits immediately after
  * `expect({missing, stale}).toEqual(...)` in the same `it`, so a root removal
  * fails on 569 stale map entries and the floor line never executes. Stricter,
  * not weaker — but the count of independent floor detectors is one, measured by
  * removing a root and reading which assertion reddened in each guard. The live
- * count is 613, and the margin is therefore 13 files. The floor exists to catch a denominator that
+ * count was 613 when this landed (margin 13 files). #5772 deleted the Nucleo
+ * set (270 files) and added the 106-file `glyphs` set, taking the live count to
+ * 462, so the floor moved from 600 to 450 in that diff, keeping a margin of
+ * the same size. A floor is lowered only by a diff that DELETES files from
+ * these roots, never by one that moves them out. The floor exists to catch a denominator that
  * shrinks while the assertion stays green, which is exactly what a file move
  * out of these roots would do — so §5.1 requires the roots to learn the
  * destination BEFORE anything moves, in its own commit, verified by the count

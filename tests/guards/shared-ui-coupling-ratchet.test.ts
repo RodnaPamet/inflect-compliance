@@ -204,7 +204,7 @@ describe('shared-UI coupling ratchet (#3048)', () => {
         // nothing, which is the shape a broken detector shares with a clean
         // repo. The population and at least one hit per kind are asserted so
         // the ceilings are known to be measuring something.
-        expect(sharedUiPopulation(ROOT).length).toBeGreaterThan(600);
+        expect(sharedUiPopulation(ROOT).length).toBeGreaterThan(450); // 600 until #5772 deleted the Nucleo set; see shared-ui-couplings.ts
         for (const kind of Object.keys(CEILINGS) as CouplingKind[]) {
             expect(live[kind]).toBeGreaterThan(0);
         }

@@ -34,11 +34,10 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslations } from 'next-intl';
-// Nucleo, the canonical family. The tool-row icons are gone rather than
-// substituted: Nucleo has no scissors or file-warning, and the rows already
+// The tool-row icons are gone: the rows already
 // SAY "unavailable" and "partial result" — an icon beside that text was
 // decoration carrying no information the label did not.
-import { ArrowRight, TriangleWarning } from '@inflect/ui/components/ui/icons/nucleo';
+import { ArrowRight, TriangleWarning } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { Button } from '@/components/ui/button';
 import { Sheet } from '@/components/ui/sheet';

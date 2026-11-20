@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgeCheck, TriangleWarning } from '@inflect/ui/components/ui/icons/nucleo';
+import { BadgeCheck, TriangleWarning } from '@inflect/ui/components/ui/icons/glyphs';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 /**

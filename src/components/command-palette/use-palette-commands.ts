@@ -58,18 +58,18 @@ import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 
-import { Robot } from '@inflect/ui/components/ui/icons/nucleo';
+import { Robot } from '@inflect/ui/components/ui/icons/glyphs';
 import { useAssistantOpen } from '@/components/assistant/assistant-open-context';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';
 
 /**
- * Either icon family. Nucleo components are plain
+ * A lucide component or a local glyph. The local glyphs
+ * (`@inflect/ui/components/ui/icons/glyphs`) are plain
  * `(props: SVGProps<SVGSVGElement>) => Element` functions and are NOT
  * assignable to lucide's `ForwardRefExoticComponent`; the agentic entries use
- * Nucleo `Robot`, which is the canonical family and already the glyph on every
- * agent surface. See the identical widening on `NavItemProps.icon`.
+ * `Robot`, already the glyph on every agent surface. See the identical widening on `NavItemProps.icon`.
  */
 export type PaletteGlyph = LucideIcon | ComponentType<SVGProps<SVGSVGElement>>;
 

@@ -15,9 +15,8 @@
  * unchanged — only the display copy is localized.
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
-// FilterDefInput.icon is typed `LucideIcon` (the filter platform hasn't
-// migrated to Nucleo), so filter-defs use lucide-react — same as every other
-// *filter-defs.ts. This file is allowlisted in tests/guards/no-lucide.test.ts.
+// filter-defs use lucide-react directly — same as every other
+// *filter-defs.ts.
 import { CircleDot, ShieldAlert, ScanLine } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('securityTesting')`). */

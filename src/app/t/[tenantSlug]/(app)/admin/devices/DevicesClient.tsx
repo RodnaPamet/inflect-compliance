@@ -16,7 +16,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TruncationBanner } from '@/components/ui/TruncationBanner';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { DEVICE_LIST_CAP } from '@/lib/device-list';
-import { Desktop } from '@inflect/ui/components/ui/icons/nucleo/desktop';
+import { Desktop } from '@inflect/ui/components/ui/icons/glyphs/desktop';
 import { buildDeviceFilters, DEVICE_FILTER_KEYS } from './filter-defs';
 
 export interface DeviceRow {

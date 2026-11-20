@@ -7,7 +7,7 @@ The shared, product-neutral UI package for #3046. It holds:
 | `components/ui/*.tsx`, `*-variants.ts` | Primitives: `button`, `card`, `empty-state`, `error-state`, `skeleton`, `tooltip`, `typography`, and the variant tables and hit-area helper they use |
 | `components/ui/charts/` | The visx chart platform: the time-series host, area and bar renderers, axes, tooltips and hover sync, gradients, motion, layout maths and the chart contracts |
 | `components/ui/hooks/` | UI utility hooks: viewport and observers, scroll, persistence, optimistic state, keyboard-friendly input, clipboard, toasts (see its `README.md`) |
-| `components/ui/icons/` | The icon set, including the Nucleo barrel |
+| `components/ui/icons/` | The icon set, including the `glyphs` barrel (lucide-react under the product's local names) |
 | `lib/` | `cn`, `format-date`, `number-format` |
 
 Consumed by the application as an npm workspace, at HEAD, never version-pinned

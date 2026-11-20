@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeft } from '@inflect/ui/components/ui/icons/nucleo/arrow-left';
+import { ArrowLeft } from '@inflect/ui/components/ui/icons/glyphs/arrow-left';
 
 /**
  * The way back into the app from the standalone account pages

@@ -25,7 +25,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { celebrationDedupe, scopedMilestone } from '@/lib/celebrations';
 import { Package, MessageSquare } from 'lucide-react';
-import { Xmark } from '@inflect/ui/components/ui/icons/nucleo';
+import { Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SharePointExportButton } from './SharePointExportButton';
 import { Heading } from '@/components/ui/typography';

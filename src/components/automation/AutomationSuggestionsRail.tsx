@@ -17,7 +17,7 @@ import { useTenantApiUrl, useCurrentUserId, useTenantContext } from '@/lib/tenan
 import { apiErrorMessage } from '@/lib/api-error';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { Button } from '@/components/ui/button';
-import { Sparkle3 } from '@inflect/ui/components/ui/icons/nucleo/sparkle3';
+import { Sparkle3 } from '@inflect/ui/components/ui/icons/glyphs/sparkle3';
 
 interface RuleSuggestion {
     id: string;

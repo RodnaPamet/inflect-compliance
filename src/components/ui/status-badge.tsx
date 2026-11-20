@@ -2,10 +2,10 @@
 
 import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
-import { CircleCheck } from "@inflect/ui/components/ui/icons/nucleo/circle-check";
-import { CircleHalfDottedCheck } from "@inflect/ui/components/ui/icons/nucleo/circle-half-dotted-check";
-import { CircleInfo } from "@inflect/ui/components/ui/icons/nucleo/circle-info";
-import { CircleWarning } from "@inflect/ui/components/ui/icons/nucleo/circle-warning";
+import { CircleCheck } from "@inflect/ui/components/ui/icons/glyphs/circle-check";
+import { CircleHalfDottedCheck } from "@inflect/ui/components/ui/icons/glyphs/circle-half-dotted-check";
+import { CircleInfo } from "@inflect/ui/components/ui/icons/glyphs/circle-info";
+import { CircleWarning } from "@inflect/ui/components/ui/icons/glyphs/circle-warning";
 import type { Icon } from "./icons/icon-type";
 import { DynamicTooltipWrapper } from "./tooltip";
 
