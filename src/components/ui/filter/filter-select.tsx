@@ -227,8 +227,18 @@ export function FilterSelect({
   // Only the TOP-LEVEL search is the content query. When a filter category
   // is selected the input narrows that filter's options and must NOT touch
   // the table query — so guard on `selectedFilterKey`.
+  //
+  // Report a value only when it differs from the last one reported (seeded
+  // with the value the input mounted with). The effect also runs on mount and
+  // whenever the box is restored to the committed query (close, back from a
+  // category), and reporting those unchanged values made the toolbar write
+  // the URL 250 ms later — a `router.replace` that cancelled any navigation
+  // the person had started in the meantime.
+  const reportedSearchRef = useRef(search);
   useEffect(() => {
-    if (!selectedFilterKey) onSearchChange?.(search);
+    if (selectedFilterKey || search === reportedSearchRef.current) return;
+    reportedSearchRef.current = search;
+    onSearchChange?.(search);
   }, [search, selectedFilterKey]);
 
   useEffect(() => {

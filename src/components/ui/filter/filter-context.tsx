@@ -269,6 +269,9 @@ export function useFilterContext(
 
   const setSearch = useCallback(
     (q: string) => {
+      // An unchanged query writes nothing: a no-op `router.replace` still
+      // cancels a navigation in flight, and still drops `cursor`.
+      if (q === searchRef.current) return;
       setSearchRaw(q);
       searchRef.current = q;
       pushToUrl(stateRef.current, q);
