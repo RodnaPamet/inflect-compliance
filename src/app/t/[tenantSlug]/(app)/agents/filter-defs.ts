@@ -20,9 +20,8 @@
  * Enum VALUES + KEYS unchanged.
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
-// FilterDefInput.icon is typed `LucideIcon`; a new filter-defs file has no
-// Nucleo option until the filter platform migrates. Allowlisted in
-// tests/guards/no-lucide.test.ts (same precedent as every other *filter-defs.ts).
+// filter-defs files take their icons from lucide-react directly (same as
+// every other *filter-defs.ts).
 import { Activity, Database, Gauge } from 'lucide-react';
 
 /** Surface-namespace resolver (`useTranslations('agents')`). */

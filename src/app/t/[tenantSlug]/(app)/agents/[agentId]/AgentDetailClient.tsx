@@ -504,6 +504,10 @@ export function AgentDetailClient({
                 <BehaviourTab
                     {...props}
                     retired={agent.status === 'RETIRED'}
+                    // The same link the header carries, or null without the
+                    // process-canvas module: the tab asks for a version on it
+                    // (Phase 2.3) and imports nothing from the canvas.
+                    canvasHref={canvasHref}
                     // A started Test run is shown where the agent's runs are,
                     // re-read so it is listed (Step 2c).
                     onOpenRuns={() => {

@@ -22,6 +22,7 @@ On a narrow screen the page lists the process maps but does not show the canvas:
 | Create, edit, enable, disable, reorder and archive automation rules | Owner, Admin |
 | Cancel a stuck rule run, and test a rule from **{{ui:processes.tabMonitor}}** | Owner, Admin, Editor |
 | Approve or reject a run waiting at a human checkpoint | Owner, Admin |
+| Open the agent an Agent step starts, on the canvas | Owner, Admin, AI admin, Auditor |
 
 A role that cannot edit maps sees the canvas read-only: there is no palette, and no **{{ui:automation.documentBar.newProcess}}**, **{{ui:automation.documentBar.duplicate}}** or **{{ui:automation.documentBar.save}}**. **{{ui:automation.documentBar.delete}}** appears only for Owners and Admins.
 
@@ -79,6 +80,8 @@ A rule is built from a chain of steps, read along the connections:
 - **An SLA gate sets the time limit** of the rule it leads to.
 
 A step that leads to nothing says so: connect it to an Action or Agent step first.
+
+To see the agent an Agent step starts, double-click the step, or select it and click **{{ui:automation.autoInspector.openAgentOnCanvas}}**. The agent opens [on the canvas](agent-canvas.md). A role that cannot open the agent register gets neither. Before the step's rule names an agent there is no link, and a double-click says: {{ui:automation.canvas.openAgentFailed}}
 
 A step inside a group belongs to that group's sub-flow. An **{{ui:automation.autoInspector.actionInvokeSubflow}}** action starts the group's highest-priority enabled rule. Moving a step out of the group, or removing the group, takes its rule out of the sub-flow when the map is saved.
 

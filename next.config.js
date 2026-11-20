@@ -262,9 +262,10 @@ const defaultOptions = {
         // initial chunks (faster time-to-interactive on chart/list pages).
         optimizePackageImports: [
             'lucide-react',
-            // Nucleo icon barrel — `index.ts` re-exports ~hundreds of
-            // single-icon modules via `export *`. Listing it here lets Next
-            // rewrite `import { X } from '@inflect/ui/components/ui/icons/nucleo'`
+            // Local glyph barrel — `index.ts` re-exports one small module per
+            // glyph (each a lucide-react icon under the product's local name,
+            // #5772) via `export *`. Listing it here lets Next
+            // rewrite `import { X } from '@inflect/ui/components/ui/icons/glyphs'`
             // to the specific icon module, so an unused icon never lands in
             // a page chunk. The icon-import-discipline guard keeps every
             // consumer on the named-import form this optimization needs.
@@ -273,7 +274,7 @@ const defaultOptions = {
             // workspace package, so the specifier is the package subpath rather
             // than the `@/` alias. The guard asserts this file names it, which is
             // what stops the entry silently pointing at a path nothing imports.
-            '@inflect/ui/components/ui/icons/nucleo',
+            '@inflect/ui/components/ui/icons/glyphs',
             '@tanstack/react-query',
             // Charting — visx submodules + motion load eagerly via the
             // chart components on dashboard / risks / assets / etc.

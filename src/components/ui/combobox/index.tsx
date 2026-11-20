@@ -63,12 +63,12 @@ import {
 import { AnimatedSizeContainer } from "../animated-size-container";
 import { Button, ButtonProps } from "../button";
 import { useMediaQuery } from "@inflect/ui/components/ui/hooks/use-media-query";
-import { Check2 } from "@inflect/ui/components/ui/icons/nucleo/check2";
-import { CheckboxCheckedFill } from "@inflect/ui/components/ui/icons/nucleo/checkbox-checked-fill";
-import { CheckboxUnchecked } from "@inflect/ui/components/ui/icons/nucleo/checkbox-unchecked";
+import { Check2 } from "@inflect/ui/components/ui/icons/glyphs/check2";
+import { CheckboxCheckedFill } from "@inflect/ui/components/ui/icons/glyphs/checkbox-checked-fill";
+import { CheckboxUnchecked } from "@inflect/ui/components/ui/icons/glyphs/checkbox-unchecked";
 import type { Icon } from "../icons/icon-type";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
-import { Plus } from "@inflect/ui/components/ui/icons/nucleo/plus";
+import { Plus } from "@inflect/ui/components/ui/icons/glyphs/plus";
 import { Popover, PopoverProps } from "../popover";
 import { ScrollContainer } from "../scroll-container";
 import { Tooltip } from "../tooltip";

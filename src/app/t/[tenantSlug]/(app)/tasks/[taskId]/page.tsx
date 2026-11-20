@@ -13,7 +13,7 @@ import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useEntityListIds } from '@/lib/hooks/use-entity-list-ids';
 import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
 import { Button } from '@/components/ui/button';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { LinkedVendorsPanel } from '@/components/LinkedVendorsPanel';
 import {
@@ -53,7 +53,7 @@ import {
     parseTaskChecklist,
     parseTaskTemplateGuidance,
 } from '@/components/controls-shared/TaskChecklistPanel';
-import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
+import { Pen2, Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 import { IconAction } from '@/components/ui/icon-action';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@inflect/ui/lib/cn';

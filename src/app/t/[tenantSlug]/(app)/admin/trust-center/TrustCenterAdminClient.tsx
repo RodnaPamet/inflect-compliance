@@ -16,8 +16,8 @@
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo/plus';
-import { Trash } from '@inflect/ui/components/ui/icons/nucleo/trash';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs/plus';
+import { Trash } from '@inflect/ui/components/ui/icons/glyphs/trash';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';

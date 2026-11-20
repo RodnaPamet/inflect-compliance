@@ -36,11 +36,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
-// Nucleo is the canonical icon family — `tests/guards/no-lucide.test.ts`
-// treats a new lucide import site as a regression and says so: "Migrate the
-// icon to Nucleo ... Adding to LEGACY_LUCIDE_USERS requires a written reason
-// AND confirmation that no Nucleo equivalent exists." Both of these have one.
-import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/nucleo';
+import { Sparkle3, Xmark } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { Button } from '@/components/ui/button';
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';

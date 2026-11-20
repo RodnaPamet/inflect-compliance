@@ -31,7 +31,7 @@ import {
   UsersSettings,
   Versions2,
   Webhook,
-} from "@inflect/ui/components/ui/icons/nucleo";
+} from "@inflect/ui/components/ui/icons/glyphs";
 import { Slack } from "@inflect/ui/components/ui/icons/slack";
 
 export const PLAN_FEATURE_ICONS = {

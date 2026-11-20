@@ -20,11 +20,19 @@
  * workflow's step order is solid where the engine walks it and DASHED where it
  * is advisory, which is the canvas's one visual statement about order.
  *
+ * ═══ THE APPROVER'S DIFF (Phase 2.4) ═══
+ *
+ * Given a `diff`, the canvas draws the diff's graph instead: the version under
+ * review plus what it removed, each changed node bordered and its change named
+ * as its first badge. Same editor, same read-only mount, same layout engine;
+ * the comparison itself is the pure `buildAgentViewDiff`.
+ *
  * The tldraw watermark is left exactly where tldraw puts it (licence, 3.x).
  */
 import 'tldraw/tldraw.css';
 
 import { useCallback, useMemo } from 'react';
+import { useTranslations } from 'next-intl';
 import { createShapeId, type Editor, type TLComponents, Tldraw } from 'tldraw';
 
 import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
@@ -34,6 +42,7 @@ import {
     buildAgentViewGraph,
     layoutAgentViewGraph,
 } from '@/lib/processes/agent-view/agent-canvas-graph';
+import type { AgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff';
 
 import { AGENT_VIEW_NODE_SHAPE_TYPE, AgentViewNodeShapeUtil } from './AgentViewNodeShapeUtil';
 import { useAgentViewNodeText } from './agent-view-text';
@@ -46,13 +55,19 @@ const COMPONENTS: TLComponents = { Toolbar: null, StylePanel: null, PageMenu: nu
 
 export interface AgentCanvasViewProps {
     projection: AgentCanvasProjection;
+    /**
+     * The approver's diff of this projection's version against another
+     * (`buildAgentViewDiff`). When given, its graph is drawn, marked.
+     */
+    diff?: AgentViewDiff | null;
     /** Test seam: the mounted editor. */
     onEditorReady?: (editor: Editor) => void;
 }
 
-export function AgentCanvasView({ projection, onEditorReady }: AgentCanvasViewProps) {
+export function AgentCanvasView({ projection, diff = null, onEditorReady }: AgentCanvasViewProps) {
     const textFor = useAgentViewNodeText();
-    const graph = useMemo(() => buildAgentViewGraph(projection), [projection]);
+    const t = useTranslations('agentCanvas');
+    const graph = useMemo(() => diff?.graph ?? buildAgentViewGraph(projection), [diff, projection]);
     const positions = useMemo(() => layoutAgentViewGraph(graph), [graph]);
 
     const handleMount = useCallback(
@@ -61,12 +76,21 @@ export function AgentCanvasView({ projection, onEditorReady }: AgentCanvasViewPr
             editor.createShapes(
                 graph.nodes.map((n) => {
                     const text = textFor(n);
+                    const change = diff?.changeOf[n.id] ?? '';
                     return {
                         id: createShapeId(n.id),
                         type: AGENT_VIEW_NODE_SHAPE_TYPE,
                         x: at(n.id).x,
                         y: at(n.id).y,
-                        props: { w: AGENT_VIEW_NODE_W, h: AGENT_VIEW_NODE_H, kind: n.kind, label: n.label, ...text },
+                        props: {
+                            w: AGENT_VIEW_NODE_W,
+                            h: AGENT_VIEW_NODE_H,
+                            kind: n.kind,
+                            label: n.label,
+                            ...text,
+                            badges: change === '' ? text.badges : [t(`diff.mark.${change}`), ...text.badges],
+                            change,
+                        },
                     };
                 }),
             );
@@ -95,7 +119,7 @@ export function AgentCanvasView({ projection, onEditorReady }: AgentCanvasViewPr
             editor.zoomToFit();
             onEditorReady?.(editor);
         },
-        [graph, positions, textFor, onEditorReady],
+        [graph, positions, textFor, diff, t, onEditorReady],
     );
 
     return (

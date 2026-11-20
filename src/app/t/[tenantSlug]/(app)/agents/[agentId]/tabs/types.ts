@@ -160,4 +160,12 @@ export interface BehaviourTabProps extends AgentTabProps {
      * agent's runs are. Optional so a caller that predates it still renders.
      */
     onOpenRuns?: () => void;
+    /**
+     * Where this agent opens on the process canvas, or null where the tenant
+     * does not have the process-canvas module (Phase 2.3 of
+     * `docs/ai-architecture/langflow.md`). The tab asks for one version on it,
+     * or for the approver's diff of two (2.4); it is a plain link, so the tab
+     * imports nothing from the canvas.
+     */
+    canvasHref?: string | null;
 }

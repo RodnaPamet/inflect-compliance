@@ -22,9 +22,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { LoadingSpinner } from '@inflect/ui/components/ui/icons/loading-spinner';
-import { Folder5 } from '@inflect/ui/components/ui/icons/nucleo/folder5';
-import { FileContent } from '@inflect/ui/components/ui/icons/nucleo/file-content';
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
+import { Folder5 } from '@inflect/ui/components/ui/icons/glyphs/folder5';
+import { FileContent } from '@inflect/ui/components/ui/icons/glyphs/file-content';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { formatDate } from '@inflect/ui/lib/format-date';
 

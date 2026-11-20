@@ -97,9 +97,11 @@ describe('vendored files carry no compliance vocabulary', () => {
 
     it('every file of the mirrored package, packages/ui', () => {
         // One case for the whole package rather than one per file: it holds
-        // several hundred icons, and the findings list names each line anyway.
-        // The floor keeps it from passing on an empty population.
-        expect(MIRRORED.length).toBeGreaterThan(300);
+        // a few hundred files, and the findings list names each line anyway.
+        // The floor keeps it from passing on an empty population. It was 300
+        // until #5772 deleted the Nucleo set (271 files, 105 glyphs back),
+        // which left 231; the floor moved down with it, keeping a margin.
+        expect(MIRRORED.length).toBeGreaterThan(200);
         expect(MIRRORED.flatMap(hits)).toEqual([]);
     });
 

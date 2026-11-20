@@ -79,6 +79,8 @@ const ROWS: GraphRows = {
 /** What the container was handed — the scope, and the way to change it. */
 let seenDrillGroupId: string | null | undefined;
 let enterGroup: ((nodeKey: string) => void) | undefined;
+/** Phase 2.3: what the container was handed for an agent step's drill. */
+let openAgent: ((ruleId: string) => void) | undefined;
 
 jest.mock('@/components/processes/TldrawProcessMap', () => {
     const { useEffect } = jest.requireActual<typeof import('react')>('react');
@@ -93,6 +95,7 @@ jest.mock('@/components/processes/TldrawProcessMap', () => {
             onStateChange,
             drillGroupId,
             onEnterGroup,
+            onOpenAgent,
         }: {
             onEditorReady?: (e: Editor) => void;
             onStateChange?: (s: {
@@ -101,9 +104,11 @@ jest.mock('@/components/processes/TldrawProcessMap', () => {
             }) => void;
             drillGroupId?: string | null;
             onEnterGroup?: (nodeKey: string) => void;
+            onOpenAgent?: (ruleId: string) => void;
         }) => {
             seenDrillGroupId = drillGroupId;
             enterGroup = onEnterGroup;
+            openAgent = onOpenAgent;
             useEffect(() => {
                 onStateChange?.({ version: 1, autosaveStatus: 'idle' });
             }, [onStateChange]);
@@ -145,9 +150,10 @@ const PROCESSES = [{
     nodeCount: 3, edgeCount: 0, canvasMode: 'DOCUMENT' as const,
 }];
 
-async function mount() {
+async function mount(onOpenAgentCanvas?: (href: string) => void) {
     seenDrillGroupId = undefined;
     enterGroup = undefined;
+    openAgent = undefined;
     await act(async () => {
         render(
             // The provider is REQUIRED for the Escape assertion, and its
@@ -165,6 +171,7 @@ async function mount() {
                         onProcessesChange={() => {}}
                         canEdit
                         canDelete
+                        onOpenAgentCanvas={onOpenAgentCanvas}
                     />
                 </TenantProvider>
             </KeyboardShortcutProvider>,
@@ -311,5 +318,44 @@ describe('the crumb depths are the stack depths', () => {
                 b.getAttribute('data-depth'),
             ),
         ).toEqual(['0', '1']);
+    });
+});
+
+describe('drilling into an agent step (Phase 2.3, docs/ai-architecture/langflow.md)', () => {
+    const fetchMock = jest.fn();
+    const realFetch = (global as unknown as { fetch: unknown }).fetch;
+    beforeEach(() => {
+        fetchMock.mockReset();
+        // tldraw fetches its own translations through the same global.
+        fetchMock.mockResolvedValue({ ok: false, json: async () => ({}) });
+        (global as unknown as { fetch: unknown }).fetch = fetchMock;
+    });
+    afterEach(() => {
+        (global as unknown as { fetch: unknown }).fetch = realFetch;
+    });
+
+    it('reads the agent from the step\'s rule as stored, and goes to it on the agent view', async () => {
+        const go = jest.fn();
+        await mount(go);
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: async () => ({ id: 'rule-1', actionType: 'INVOKE_AGENT', actionConfigJson: { agentId: 'agent-7' } }),
+        });
+        await act(async () => openAgent!('rule-1'));
+        expect(fetchMock).toHaveBeenCalledWith('/api/t/acme/automation/rules/rule-1');
+        expect(go).toHaveBeenCalledWith('/t/acme/processes/agents/agent-7');
+    });
+
+    it('a rule that invokes no agent goes nowhere', async () => {
+        const go = jest.fn();
+        await mount(go);
+        fetchMock.mockResolvedValue({ ok: true, json: async () => ({ id: 'rule-1', actionType: 'WEBHOOK', actionConfigJson: {} }) });
+        await act(async () => openAgent!('rule-1'));
+        expect(go).not.toHaveBeenCalled();
+    });
+
+    it('a viewer who may not read the agent register is handed no agent drill at all', async () => {
+        await mount(undefined);
+        expect(openAgent).toBeUndefined();
     });
 });

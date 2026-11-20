@@ -228,3 +228,32 @@ describe('changing the trigger of a rule with a filter (#5309 item 20)', () => {
         expect(puts()).toHaveLength(0);
     });
 });
+
+describe('an Agent step links to the agent it invokes (Phase 2.3, docs/ai-architecture/langflow.md)', () => {
+    const AGENT_RULE = { ...RULE, actionType: 'INVOKE_AGENT', actionConfigJson: { agentId: 'agent-7' } };
+
+    it('opens the agent on the agent view, read from the step\'s rule', () => {
+        serve(AGENT_RULE);
+        render(<AutomationInspectorPanel kind="agent" ruleIds={['r1']} tenantSlug="acme" canOpenAgentCanvas />);
+        expect(screen.getByTestId('automation-inspector-open-agent')).toHaveAttribute(
+            'href',
+            '/t/acme/processes/agents/agent-7',
+        );
+    });
+
+    it('offers no link to a viewer who may not read the agent register', () => {
+        serve(AGENT_RULE);
+        render(<AutomationInspectorPanel kind="agent" ruleIds={['r1']} tenantSlug="acme" />);
+        expect(screen.queryByTestId('automation-inspector-open-agent')).toBeNull();
+    });
+
+    it('offers no link when the rule invokes no agent yet, or the step is not an Agent step', () => {
+        serve({ ...AGENT_RULE, actionConfigJson: {} });
+        const { unmount } = render(<AutomationInspectorPanel kind="agent" ruleIds={['r1']} tenantSlug="acme" canOpenAgentCanvas />);
+        expect(screen.queryByTestId('automation-inspector-open-agent')).toBeNull();
+        unmount();
+        serve(AGENT_RULE);
+        render(<AutomationInspectorPanel kind="action" ruleIds={['r1']} tenantSlug="acme" canOpenAgentCanvas />);
+        expect(screen.queryByTestId('automation-inspector-open-agent')).toBeNull();
+    });
+});

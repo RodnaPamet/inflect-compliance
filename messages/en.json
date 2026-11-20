@@ -14052,6 +14052,11 @@
         "skillsEmpty": "This version mounts no skills.",
         "maxTurnsHint": "From 1 to this version's own limit, {max}.",
         "remove": "Remove"
+      },
+      "canvas": {
+        "open": "Open on canvas",
+        "compare": "See the changes on canvas",
+        "compareIntro": "Version {to} drawn against version {from}, in force: each tool, skill and trigger it adds or removes, and the model settings it changes."
       }
     },
     "oversightAccess": {
@@ -16424,7 +16429,8 @@
         "TRIGGER_NOT_SET": "Choose its trigger event: connect a Trigger step and pick the event.",
         "SCHEDULE_NOT_SET": "Set its schedule in the rule builder.",
         "ACTION_INCOMPLETE": "Complete its action: use Edit action."
-      }
+      },
+      "openAgentOnCanvas": "Open the agent on canvas"
     },
     "diff": {
       "title": "Diff v{x} vs v{y}",
@@ -16673,7 +16679,8 @@
       "versionConflictTitle": "Someone else saved this map. Reload to see the latest version.",
       "versionConflictLostOnReloadAtVersion": "Server version is now v{version}; your edits will be lost on reload.",
       "versionConflictLostOnReload": "Your edits will be lost on reload.",
-      "versionConflictReload": "Reload"
+      "versionConflictReload": "Reload",
+      "openAgentFailed": "This step’s agent could not be found. Open the step’s rule to choose one."
     },
     "canvasPalette": {
       "dialogAria": "Canvas command palette",
@@ -17718,7 +17725,43 @@
       "TEST_RUN_READ_ONLY": "Not offered: this version can run only as a Test run, which gets no propose tools.",
       "EXTERNAL_NOT_PROBED": "Not checked: a run offers an external server’s tool only after a live check of that server’s catalogue, which this view does not make."
     },
-    "editFlow": "Edit the flow"
+    "editFlow": "Edit the flow",
+    "diff": {
+      "heading": "Changes from version {from} to version {to}",
+      "none": "This version adds or removes no tool, skill or trigger, and changes no model setting or output.",
+      "unavailable": "These two versions cannot be compared here: you need to be able to read this agent’s profile, and both versions must be this agent’s.",
+      "mark": {
+        "added": "Added in this version",
+        "removed": "Removed in this version",
+        "changed": "Changed in this version"
+      },
+      "item": {
+        "trigger": {
+          "added": "Trigger added: {name}",
+          "removed": "Trigger removed: {name}"
+        },
+        "tool": {
+          "added": "Tool added: {name}",
+          "removed": "Tool removed: {name}"
+        },
+        "skill": {
+          "added": "Skill added: {name}",
+          "removed": "Skill removed: {name}"
+        },
+        "modelTier": {
+          "changed": "Model tier changed: {from} → {to}"
+        },
+        "effort": {
+          "changed": "Effort changed: {from} → {to}"
+        },
+        "maxTurns": {
+          "changed": "Turn limit changed: {from} → {to}"
+        },
+        "outputKind": {
+          "changed": "Output changed: {from} → {to}"
+        }
+      }
+    }
   },
   "agentFlow": {
     "forbiddenTitle": "You cannot edit this agent’s flow",

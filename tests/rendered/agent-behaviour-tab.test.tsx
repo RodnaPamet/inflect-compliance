@@ -174,7 +174,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: () => void } = {}) {
+function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: () => void; canvasHref?: string | null } = {}) {
     const mutate = jest.fn().mockResolvedValue(undefined);
     swr.mockReturnValue({ data, error: undefined, isLoading: false, mutate });
     render(
@@ -183,6 +183,7 @@ function renderTab(data: ProfileView, props: { retired?: boolean; onOpenRuns?: (
             agentId="agent-1"
             retired={props.retired ?? false}
             onOpenRuns={props.onOpenRuns}
+            canvasHref={props.canvasHref}
         />,
     );
     return { mutate };
@@ -939,5 +940,41 @@ describe('sub-agents (Step 2e, #4594)', () => {
         fireEvent.click(screen.getByTestId('behaviour-write'));
         await screen.findByTestId('behaviour-editor');
         expect(screen.queryByTestId('behaviour-subagents')).toBeNull();
+    });
+});
+
+describe('the process canvas (Phases 2.3 and 2.4, docs/ai-architecture/langflow.md)', () => {
+    const CANVAS = '/t/acme/processes/agents/agent-1';
+
+    it('without the process-canvas module there is no canvas link anywhere on the tab', () => {
+        renderTab(view([SUBMITTED(), version()]), { canvasHref: null });
+        expect(screen.queryByTestId('behaviour-in-force-canvas')).toBeNull();
+        expect(screen.queryByTestId('behaviour-open-canvas')).toBeNull();
+        expect(screen.queryByTestId('behaviour-review-canvas-diff')).toBeNull();
+    });
+
+    it('the version in force opens on the canvas as itself', () => {
+        renderTab(view([version()]), { canvasHref: CANVAS });
+        const link = within(screen.getByTestId('behaviour-in-force')).getByTestId('behaviour-in-force-canvas');
+        expect(link).toHaveAttribute('href', `${CANVAS}?version=ver-1`);
+        expect(link.textContent).toBe(copy('canvas.open'));
+    });
+
+    it('a reviewer is offered the submitted version\'s changes from the version in force, drawn on the canvas', () => {
+        renderTab(view([SUBMITTED(), version()]), { canvasHref: CANVAS });
+        const open = screen.getByTestId('behaviour-open');
+        expect(within(open).getByTestId('behaviour-review-canvas-diff')).toHaveAttribute(
+            'href',
+            `${CANVAS}?version=ver-2&compare=ver-1`,
+        );
+        expect(within(open).getByTestId('behaviour-open-canvas')).toHaveAttribute('href', `${CANVAS}?version=ver-2`);
+    });
+
+    it('the author of the submission can open it on the canvas, and is not offered the review', () => {
+        renderTab(view([SUBMITTED({ canDecide: false, author: { label: 'Avery Author', isViewer: true } }), version()]), {
+            canvasHref: CANVAS,
+        });
+        expect(screen.queryByTestId('behaviour-review-canvas-diff')).toBeNull();
+        expect(screen.getByTestId('behaviour-open-canvas')).toHaveAttribute('href', `${CANVAS}?version=ver-2`);
     });
 });

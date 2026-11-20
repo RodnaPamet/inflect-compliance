@@ -1,8 +1,8 @@
 /**
  * Icon-import discipline.
  *
- * The Nucleo icon barrel (`@/components/ui/icons/nucleo`) re-exports
- * hundreds of single-icon modules via `export *`. That tree-shakes ONLY
+ * The local glyph barrel (`@inflect/ui/components/ui/icons/glyphs`) re-exports
+ * one small module per glyph via `export *`. That tree-shakes ONLY
  * when consumers use NAMED imports (`import { Bell } from …`) — a wildcard
  * (`import * as Icons from …`) or default import forces the whole barrel
  * into the page chunk. `next.config.js` lists the barrel in
@@ -21,7 +21,7 @@ import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
-const NUCLEO = '@inflect/ui/components/ui/icons/nucleo';
+const GLYPHS = '@inflect/ui/components/ui/icons/glyphs';
 
 function tsxFiles(dir: string, out: string[] = []): string[] {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -43,19 +43,19 @@ describe('icon import discipline', () => {
         expect(files.length).toBeGreaterThan(100);
     });
 
-    it('no wildcard or default import from the Nucleo barrel', () => {
+    it('no wildcard or default import from the glyph barrel', () => {
         const offenders: string[] = [];
-        // `import * as X from '…/nucleo'`  OR  `import X from '…/nucleo'`
+        // `import * as X from '…/glyphs'`  OR  `import X from '…/glyphs'`
         // (a default import — the barrel has no default export, but a
         // mistaken one would also defeat tree-shaking). Named imports
         // `import { … }` and type-only imports are fine.
         // Slashes need no escaping inside a RegExp built from a string
-        // (only regex *literals* treat `/` specially), so embed NUCLEO as-is.
-        const wildcard = new RegExp(`import\\s+\\*\\s+as\\s+\\w+\\s+from\\s+['"]${NUCLEO}`);
-        const def = new RegExp(`import\\s+\\w+\\s+from\\s+['"]${NUCLEO}`);
+        // (only regex *literals* treat `/` specially), so embed GLYPHS as-is.
+        const wildcard = new RegExp(`import\\s+\\*\\s+as\\s+\\w+\\s+from\\s+['"]${GLYPHS}`);
+        const def = new RegExp(`import\\s+\\w+\\s+from\\s+['"]${GLYPHS}`);
         for (const abs of files) {
             const src = codeOf(fs.readFileSync(abs, 'utf8'));
-            if (!src.includes(NUCLEO)) continue;
+            if (!src.includes(GLYPHS)) continue;
             for (const line of src.split('\n')) {
                 const t = line.trim();
                 if (t.startsWith('//') || t.startsWith('*')) continue;
@@ -68,6 +68,6 @@ describe('icon import discipline', () => {
     });
 
     it('the barrel is registered in optimizePackageImports', () => {
-        expect(codeOf(fs.readFileSync(path.join(ROOT, 'next.config.js'), 'utf8'))).toContain(NUCLEO);
+        expect(codeOf(fs.readFileSync(path.join(ROOT, 'next.config.js'), 'utf8'))).toContain(GLYPHS);
     });
 });

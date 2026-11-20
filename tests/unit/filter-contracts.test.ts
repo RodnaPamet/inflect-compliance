@@ -371,7 +371,7 @@ describe('typedOptionsFromEnum', () => {
 // `FilterDefInput.icon` used to narrow to `LucideIcon` while `Filter.icon` was
 // already the wider `FilterIcon` and `filter-list.tsx` already drew all three
 // forms (it branches on `isReactNode` at three sites). Combined with
-// `tests/guards/no-lucide.test.ts`, which fails any NEW `lucide-react` import
+// `tests/guards/no-lucide.test.ts` (retired in #5772), which failed any NEW `lucide-react` import
 // site, that made the documented builder unreachable from new code: a new list
 // page could satisfy neither the type nor the guard.
 //

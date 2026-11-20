@@ -47,8 +47,8 @@ import {
     type KeyboardEvent,
     type ReactNode,
 } from 'react';
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
-import { ChevronLeft } from '@inflect/ui/components/ui/icons/nucleo/chevron-left';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
+import { ChevronLeft } from '@inflect/ui/components/ui/icons/glyphs/chevron-left';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@inflect/ui/lib/cn';
 

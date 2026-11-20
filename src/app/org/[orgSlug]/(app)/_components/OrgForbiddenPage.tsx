@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { ShieldSlash } from '@inflect/ui/components/ui/icons/nucleo';
+import { ShieldSlash } from '@inflect/ui/components/ui/icons/glyphs';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { Heading } from '@/components/ui/typography';
 

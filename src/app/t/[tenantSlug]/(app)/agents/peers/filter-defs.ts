@@ -8,9 +8,8 @@
  * i18n guard can bind and check (`tests/guards/i18n-keys-resolve.test.ts`).
  */
 import { createTypedFilterDefs, optionsFromEnum } from '@/components/ui/filter/filter-definitions';
-// FilterDefInput.icon is typed `LucideIcon`; a new filter-defs file has no
-// Nucleo option until the filter platform migrates. Allowlisted in
-// tests/guards/no-lucide.test.ts (same precedent as every other *filter-defs.ts).
+// filter-defs files take their icons from lucide-react directly (same as
+// every other *filter-defs.ts).
 import { Activity } from 'lucide-react';
 
 export const PEER_STATUS_KEYS = ['ACTIVE', 'SUSPENDED', 'RETIRED'] as const;

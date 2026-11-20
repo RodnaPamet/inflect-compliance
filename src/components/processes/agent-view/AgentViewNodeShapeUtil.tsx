@@ -41,6 +41,12 @@ export type AgentViewNodeShapeProps = {
     badges: string[];
     /** The translated narrowing or refusal, or null when nothing narrows the node. */
     reason: string | null;
+    /**
+     * The approver's diff (Phase 2.4): 'added' | 'removed' | 'changed', or ''
+     * when the node is unchanged or the view is not a diff. Its words arrive
+     * translated as the first badge; this drives the border and the test hook.
+     */
+    change: string;
 };
 
 export type AgentViewNodeShape = TLBaseShape<typeof AGENT_VIEW_NODE_SHAPE_TYPE, AgentViewNodeShapeProps>;
@@ -52,6 +58,14 @@ export const agentViewNodeShapeProps: RecordProps<AgentViewNodeShape> = {
     label: T.string,
     badges: T.arrayOf(T.string),
     reason: T.string.nullable(),
+    change: T.string,
+};
+
+/** The diff's border, which wins over the accent and the narrowing tone. */
+const CHANGE_BORDER: Record<string, string> = {
+    added: 'border-2 border-[color:var(--content-success)]',
+    removed: 'border-2 border-dashed border-[color:var(--content-error)] opacity-70',
+    changed: 'border-2 border-[color:var(--content-warning)]',
 };
 
 function metaFor(kind: string) {
@@ -69,8 +83,10 @@ export function AgentViewNodeBody({ shape }: { shape: AgentViewNodeShape }) {
             data-testid={`agent-view-node-${shape.id}`}
             data-kind={shape.props.kind}
             data-narrowed={narrowed ? 'true' : 'false'}
+            data-change={shape.props.change || 'none'}
             className={`flex flex-col gap-0.5 overflow-hidden rounded-md border bg-bg-default px-3 py-2 text-left ${
-                narrowed ? 'border-[color:var(--content-warning)] opacity-80' : NODE_ACCENT_BORDER[meta.accent]
+                CHANGE_BORDER[shape.props.change] ??
+                (narrowed ? 'border-[color:var(--content-warning)] opacity-80' : NODE_ACCENT_BORDER[meta.accent])
             }`}
             style={{ width: shape.props.w, height: shape.props.h, pointerEvents: 'all' }}
         >
@@ -100,7 +116,7 @@ export class AgentViewNodeShapeUtil extends ShapeUtil<AgentViewNodeShape> {
     static override props = agentViewNodeShapeProps;
 
     override getDefaultProps(): AgentViewNodeShapeProps {
-        return { w: 220, h: 80, kind: 'tool', label: '', badges: [], reason: null };
+        return { w: 220, h: 80, kind: 'tool', label: '', badges: [], reason: null, change: '' };
     }
 
     override getGeometry(shape: AgentViewNodeShape): Rectangle2d {

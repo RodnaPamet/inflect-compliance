@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { Sparkles, Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Grid3x3, Gauge, Bell, ScrollText, Globe, Laptop, GraduationCap, ClipboardList, ClipboardCheck, Lock } from 'lucide-react';
-import { Cube, Robot } from '@inflect/ui/components/ui/icons/nucleo';
+import { Cube, Robot } from '@inflect/ui/components/ui/icons/glyphs';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';

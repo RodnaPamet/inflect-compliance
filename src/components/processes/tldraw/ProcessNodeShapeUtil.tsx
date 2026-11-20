@@ -53,7 +53,7 @@ import {
     useMaybeEditor,
 } from 'tldraw';
 
-import { ChevronRight } from '@inflect/ui/components/ui/icons/nucleo/chevron-right';
+import { ChevronRight } from '@inflect/ui/components/ui/icons/glyphs/chevron-right';
 
 import { isCollapsedFromDataJson } from './drill-scope-host';
 import {

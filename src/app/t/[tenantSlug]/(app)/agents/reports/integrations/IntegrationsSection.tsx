@@ -20,7 +20,7 @@
  */
 import { useMemo, type ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
-import { ArrowUpRight } from '@inflect/ui/components/ui/icons/nucleo/arrow-up-right';
+import { ArrowUpRight } from '@inflect/ui/components/ui/icons/glyphs/arrow-up-right';
 
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';

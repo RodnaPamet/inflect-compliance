@@ -84,6 +84,8 @@ export interface TldrawProcessMapProps {
     drillGroupId?: string | null;
     /** A group was entered on the canvas; the owner pushes it on the stack. */
     onEnterGroup?: (nodeKey: string) => void;
+    /** An agent step was drilled into; the owner opens the agent it invokes. */
+    onOpenAgent?: (ruleId: string) => void;
     /**
      * Reports the state the document BAR needs: the concurrency token for its
      * version pill, and the autosave status for its saved-state indicator.
@@ -216,6 +218,7 @@ export function TldrawProcessMap({
     onStateChange,
     drillGroupId = null,
     onEnterGroup,
+    onOpenAgent,
     onSaveNowChange,
     focusStepKey = null,
 }: TldrawProcessMapProps) {
@@ -413,6 +416,7 @@ export function TldrawProcessMap({
                 drillGroupId={drillGroupId}
                 focusNodeKey={focusStepKey}
                 onEnterGroup={onEnterGroup}
+                onOpenAgent={onOpenAgent}
                 onEditorReady={(e) => {
                     setEditor(e);
                     onEditorReady?.(e);

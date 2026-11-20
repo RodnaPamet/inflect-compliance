@@ -33,6 +33,12 @@
  * Tool Runner, which runs sub-agents, so a version with them is not held back
  * here (#5764).
  *
+ * Where the tenant has the process-canvas module, the version in force and the
+ * open version each carry "Open on canvas", and a reviewer of a submitted
+ * version is offered its changes from the version in force drawn on the canvas
+ * (Phases 2.3 and 2.4 of `docs/ai-architecture/langflow.md`). Both are plain
+ * links into the processes segment: this tab imports nothing from the canvas.
+ *
  * The four-eyes affordance is the server's (`canDecide`: a SUBMITTED version,
  * a signed-in person, never its author), and the usecase refuses the author
  * again if a request is crafted by hand. Approve sends the hash on screen, so
@@ -46,10 +52,11 @@
  * which a read-only run is never offered (#5374). The server refuses each of
  * these again.
  */
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { useToast } from '@/components/ui/hooks';
@@ -64,8 +71,9 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { describeFlowForReview } from '@/lib/agentic/agent-flow';
 import { describeSubagentsForReview, profileNamesNoReadTool } from '@/lib/agentic/agent-profile';
+import { withAgentCanvasVersions } from '@/lib/processes/agent-view/agent-canvas-link';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
+import { Plus } from '@inflect/ui/components/ui/icons/glyphs';
 
 import { BehaviourEditorSheet } from './BehaviourEditorSheet';
 import { BehaviourRejectModal } from './BehaviourRejectModal';
@@ -86,7 +94,7 @@ const STATUS_VARIANT: Record<ProfileVersionStatus, StatusBadgeVariant> = {
     RETIRED: 'warning',
 };
 
-export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: BehaviourTabProps) {
+export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns, canvasHref = null }: BehaviourTabProps) {
     const t = useTranslations('agents.behaviour');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
@@ -165,6 +173,23 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
     const open = data.versions.find((v) => v.status === 'DRAFT' || v.status === 'SUBMITTED') ?? null;
     const who = (p: ProfilePerson) => (p.isViewer ? t('you') : p.label ?? t('unknownMember'));
 
+    /**
+     * One version on the process canvas, or the approver's diff of two
+     * (Phases 2.3 and 2.4 of `docs/ai-architecture/langflow.md`). A plain link
+     * into the processes segment, and none at all without the module, whose
+     * pages answer 404 there.
+     */
+    const canvasLink = (testId: string, label: string, versions: { version: string; compare?: string }) =>
+        canvasHref === null ? null : (
+            <Link
+                href={withAgentCanvasVersions(canvasHref, versions)}
+                data-testid={testId}
+                className={buttonVariants({ variant: 'secondary', size: 'sm' })}
+            >
+                {label}
+            </Link>
+        );
+
     const testRun = (v: ProfileVersionView) => {
         // Why the button is disabled, or null when it can start. The version's
         // own triggers decide last, so the engine and the agent are named first.
@@ -242,6 +267,7 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                             })}
                         </p>
                         <VersionBody v={inForce} />
+                        {canvasLink('behaviour-in-force-canvas', t('canvas.open'), { version: inForce.id })}
                         {testRun(inForce)}
                         {/*
                           * RETIRE THE VERSION IN FORCE (#5714). The open card above
@@ -339,9 +365,21 @@ export function BehaviourTab({ agentId, refreshToken, retired, onOpenRuns }: Beh
                                     />
                                 </>
                             ) : null}
+                            {canvasHref !== null ? (
+                                <div className="space-y-tight">
+                                    <p className="text-xs text-content-muted">
+                                        {t('canvas.compareIntro', { from: inForce.version, to: open.version })}
+                                    </p>
+                                    {canvasLink('behaviour-review-canvas-diff', t('canvas.compare'), {
+                                        version: open.id,
+                                        compare: inForce.id,
+                                    })}
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
                     <VersionBody v={open} />
+                    {canvasLink('behaviour-open-canvas', t('canvas.open'), { version: open.id })}
                     {open.status === 'SUBMITTED' && open.canDecide ? (
                         <p className="text-xs text-content-muted">
                             {open.flow !== null

@@ -125,8 +125,7 @@ describe('Toast vocabulary discipline (Roadmap-2 PR-9)', () => {
 
     it('every primitive in the allowlist actually imports sonner', () => {
         // Defensive: a stale allowlist entry would hide a future
-        // direct import slipping through silently. Mirror of the
-        // no-lucide ratchet's stale-entry check.
+        // direct import slipping through silently.
         const stale: string[] = [];
         for (const rel of SONNER_PRIMITIVE_FILES) {
             const abs = path.join(ROOT, rel);

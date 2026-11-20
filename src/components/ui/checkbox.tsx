@@ -21,8 +21,8 @@ import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
 import { cn } from "@inflect/ui/lib/cn";
 import { cva, type VariantProps } from "class-variance-authority";
 import { forwardRef } from "react";
-import { Check2 } from "@inflect/ui/components/ui/icons/nucleo/check2";
-import { Minus } from "@inflect/ui/components/ui/icons/nucleo/minus";
+import { Check2 } from "@inflect/ui/components/ui/icons/glyphs/check2";
+import { Minus } from "@inflect/ui/components/ui/icons/glyphs/minus";
 
 export const checkboxVariants = cva(
     [

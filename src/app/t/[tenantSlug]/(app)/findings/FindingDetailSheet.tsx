@@ -42,7 +42,7 @@ import { parseYMD, startOfUtcDay, toYMD } from '@/components/ui/date-picker/date
 import { textLinkVariants } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks';
 import { formatDate } from '@inflect/ui/lib/format-date';
-import { Pen2 } from '@inflect/ui/components/ui/icons/nucleo';
+import { Pen2 } from '@inflect/ui/components/ui/icons/glyphs';
 import { extractMutationError } from '@/lib/mutations';
 
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;

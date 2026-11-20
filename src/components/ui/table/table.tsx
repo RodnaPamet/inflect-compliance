@@ -51,7 +51,7 @@ import { Checkbox } from "../checkbox";
 import { ErrorState } from "../error-state";
 import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
 import { SortOrder } from "@inflect/ui/components/ui/icons/sort-order";
-import { ChevronRight } from "@inflect/ui/components/ui/icons/nucleo/chevron-right";
+import { ChevronRight } from "@inflect/ui/components/ui/icons/glyphs/chevron-right";
 import { Tooltip } from "../tooltip";
 import { SelectionToolbar } from "./selection-toolbar";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
