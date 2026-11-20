@@ -259,6 +259,13 @@ interface PackSummary {
     breakerTripped: boolean;
     kills: number;
     /**
+     * Spending envelopes the agent holds (not withdrawn) and how many of them
+     * nobody but the declarer has reviewed (Agent Pay Phase 1.4, #5333). Zero
+     * for a pack filed before the section, which could not tell.
+     */
+    spendingEnvelopes: number;
+    spendingUnreviewed: number;
+    /**
      * The sections whose read hit its cap (#5317), in the order shown. A
      * capped section is not every row, and the reviewer must not read it as
      * if it were. A pack filed before a flag existed carries no key, which
@@ -279,6 +286,9 @@ function readPackSummary(value: unknown): PackSummary {
     const harness = v.harness && typeof v.harness === 'object' ? (v.harness as Record<string, unknown>) : {};
     const flags = v.guardFlags && typeof v.guardFlags === 'object' ? Object.values(v.guardFlags as Record<string, unknown>) : [];
     const breaker = v.breaker && typeof v.breaker === 'object' ? (v.breaker as Record<string, unknown>) : null;
+    const spending = Array.isArray(v.spendingAuthority)
+        ? (v.spendingAuthority as Array<Record<string, unknown>>).filter((e) => e && typeof e === 'object')
+        : [];
     return {
         grants: grants.length,
         unusedGrants: grants.filter((g) => g.lastCalledAt === null && g.heldForWholeWindow === true).length,
@@ -287,6 +297,8 @@ function readPackSummary(value: unknown): PackSummary {
         guardFlags: flags.reduce<number>((n, x) => n + (typeof x === 'number' ? x : 0), 0),
         breakerTripped: breaker?.trippedInWindow === true,
         kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
+        spendingEnvelopes: spending.filter((e) => e.status !== 'WITHDRAWN').length,
+        spendingUnreviewed: spending.filter((e) => e.unreviewed === true).length,
         truncated: [
             ...(v.grantsTruncated === true ? (['grants'] as const) : []),
             ...(v.timeBoundedTruncated === true ? (['timeBounded'] as const) : []),
@@ -1014,6 +1026,19 @@ export function AccessReviewDetailClient({
                                 {sum.breakerTripped ? ` · ${t('agentPackBreakerTripped')}` : ''}
                                 {sum.kills > 0 ? ` · ${t('agentPackKills', { count: sum.kills })}` : ''}
                             </div>
+                            {/* Agent Pay 1.4 (#5333) — the agent can spend
+                                money; an unreviewed envelope is said loudly. */}
+                            {sum.spendingEnvelopes > 0 ? (
+                                <div
+                                    className={sum.spendingUnreviewed > 0 ? 'text-content-warning' : 'text-content-muted'}
+                                    data-testid={`agent-pack-spending-${row.original.id}`}
+                                >
+                                    {t('agentPackSpending', { count: sum.spendingEnvelopes })}
+                                    {sum.spendingUnreviewed > 0
+                                        ? ` · ${t('agentPackSpendingUnreviewed', { count: sum.spendingUnreviewed })}`
+                                        : ''}
+                                </div>
+                            ) : null}
                             {/* #5317 — a capped section is not the whole
                                 list; say so beside the figures it bounds. */}
                             {sum.truncated.length > 0 ? (

@@ -484,6 +484,13 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 1.55;
 // "Save & accept", shown while that row is edited (its Accept toggle was
 // demoted for #4689). The page's Edit and Link work triggers are secondary.
 // Net change: zero.
+// 2026-11-20 — #5333 spending authority card: 173 stays, PAID FOR. The
+// envelope dialog on an agent's page declares or narrows from its LAST action,
+// which `modal-action-order` requires to be primary. It is bought by the policy
+// page's next-review-date inline Save, an xs field-level edit beside its own
+// Cancel: a row-action-sized commit, not the page's primary action (the R7-PR1
+// rule). The card's Declare, Review, Narrow and Declare again are secondary
+// and Withdraw is destructive. Net change: zero.
 const MAX_PRIMARY_COUNT = 173;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));

@@ -287,6 +287,11 @@ const AGENTIC_API_ROUTES: readonly string[] = [
     // read and made by an operator holding admin.agent_registry, and no page
     // drives it yet.
     't/[tenantSlug]/admin/agents/[agentId]/service-principal-link/route.ts',
+    // #5333 (Agent Pay Phase 1) — an agent's declared spending authority, read
+    // and changed from the Spending authority card on the agent's overview.
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/[rail]/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/spending-authority/[rail]/review/route.ts',
     // #4629 — "Use for Ask" on the agent's page designates or clears the agent
     // that answers questions on Ask, under the register key.
     't/[tenantSlug]/admin/agents/[agentId]/interactive/route.ts',

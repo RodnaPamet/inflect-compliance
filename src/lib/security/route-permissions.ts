@@ -778,6 +778,18 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             "agent's own — the condition for an UNATTENDED disable of that " +
             'principal when the owner-orphan pass contains the agent.',
     },
+    // Agent Pay Phase 1 (#5333). The same key as the catch-all below, stated on
+    // its own because the issue names it: spending authority is a privilege on
+    // the register, and its four-eyes rule (the reviewer is neither the
+    // declarer nor the owner) is held by the writer and a CHECK, not a key.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/spending-authority(\\/[^/]+(\\/review)?)?$`),
+        permission: 'admin.agent_registry',
+        note:
+            "Read, declare, narrow, review and withdraw an agent's declared " +
+            'spending authority: the envelope a cardholder consented to, which a ' +
+            'second person reviews before the agent may go into service.',
+    },
 
     // Agent profiles (Step 1a of docs/claude-agent-sdk-design.md, #4143). The
     // same key as the catch-all below, stated on its own because which key it

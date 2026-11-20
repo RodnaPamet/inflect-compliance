@@ -55,7 +55,7 @@ export const USE_WINDOW_DAYS = 90;
  *
  * The worst agent, every section at its cap (the caps are in
  * `agent-recertification-evidence.ts`) and every row at its largest, seals at
- * 112,969 bytes (#5317, measured by
+ * 115,595 bytes (#5317 and #5333, measured by
  * `tests/unit/agent-recertification-pack-budget.test.ts`, which states what
  * "largest" assumes of a character's bytes):
  *
@@ -66,10 +66,11 @@ export const USE_WINDOW_DAYS = 90;
  *                                                  CONNECTION_NAME_IN_PACK, two bytes a character)
  *   card versions       50 × ~243 B   ≈  12.2 KB
  *   kill engagements    25 × ~184 B   ≈   4.6 KB   (KILLS_PER_AGENT)
+ *   spending authority   3 × ~870 B   ≈   2.6 KB   (one per rail, #5333; merchants counted)
  *   everything else                   ≈   2.4 KB
  *
- * Two such agents seal at 225,378 bytes: inside the budget the test holds a
- * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929), by 10,551. Three
+ * Two such agents seal at 230,630 bytes: inside the budget the test holds a
+ * page to, `MAX_CONTEXT_BYTES` less 10% headroom (235,929), by 5,299. Three
  * are over the cap itself. So a page is TWO agents. It was one while an agent
  * could carry 200 grants with 200-character names (~178 KB of grants and
  * narrowings on its own), and twenty before #5317, which fit only while no
@@ -230,6 +231,45 @@ export const TimeBoundedGrantSchema = z.object({
     expiredOnTime: z.boolean().nullable(),
 });
 
+/**
+ * One rail of the agent's declared spending authority, as the pack carries it
+ * (Agent Pay Phase 1.4, #5333). Read as it stands when the pack is prepared,
+ * as the breaker is: an envelope is a standing privilege, not an event in the
+ * window.
+ *
+ * What a reviewer needs to judge the privilege, and no more. The merchant
+ * scope is COUNTED, not listed, and the token reference is left out: it is an
+ * identifier at a third party, and this section reaches the model that
+ * prepares the pack. Amounts are minor-unit decimal strings, as the register
+ * reports them, because JSON has no bigint.
+ */
+export const SpendingAuthorityEvidenceSchema = z.object({
+    rail: z.string().min(1),
+    /** DECLARED | REVIEWED | SUSPENDED_REQUESTED | WITHDRAWN */
+    status: z.string().min(1),
+    /** Held back from activation: DECLARED, or SUSPENDED_REQUESTED with no review. */
+    unreviewed: z.boolean(),
+    perTransactionLimitMinor: z.string(),
+    periodBudgetMinor: z.string(),
+    budgetPeriod: z.string(),
+    currency: z.string(),
+    merchantDomainCount: z.number().int().min(0),
+    merchantCategoryCodeCount: z.number().int().min(0),
+    /** Both lists empty: any merchant, the widest scope there is. */
+    merchantScopeUnrestricted: z.boolean(),
+    expiresAt: Iso,
+    /** True when the envelope had lapsed by the end of the campaign's window. */
+    expiredAtWindowEnd: z.boolean(),
+    tokenRequestor: z.string(),
+    consentedByUserId: z.string(),
+    declaredByUserId: z.string(),
+    declaredAt: Iso,
+    reviewedByUserId: z.string().nullable(),
+    reviewedAt: NullableIso,
+    suspensionRequestedAt: NullableIso,
+    withdrawnAt: NullableIso,
+});
+
 export const SubjectEvidenceSchema = z.object({
     decisionId: z.string().min(1),
     agentId: z.string().min(1),
@@ -302,6 +342,16 @@ export const SubjectEvidenceSchema = z.object({
         drift: z.string(),
         lastSeenAt: NullableIso,
     }),
+    /**
+     * The agent's spending authority, one entry per rail it has ever declared,
+     * withdrawn ones included (Agent Pay Phase 1.4, #5333). `[]` is "the
+     * register records none".
+     *
+     * OPTIONAL, and with no default, for the reason `timeBoundedTruncated`
+     * gives: a pack filed before it must re-parse to the sections it was hashed
+     * over. Absent means the pack predates the section, never "none".
+     */
+    spendingAuthority: z.array(SpendingAuthorityEvidenceSchema).optional(),
 });
 
 export const RecertificationEvidenceSchema = z.object({
@@ -314,6 +364,7 @@ export const RecertificationEvidenceSchema = z.object({
 });
 
 export type GrantEvidence = z.infer<typeof GrantEvidenceSchema>;
+export type SpendingAuthorityEvidence = z.infer<typeof SpendingAuthorityEvidenceSchema>;
 export type SubjectEvidence = z.infer<typeof SubjectEvidenceSchema>;
 export type RecertificationEvidence = z.infer<typeof RecertificationEvidenceSchema>;
 

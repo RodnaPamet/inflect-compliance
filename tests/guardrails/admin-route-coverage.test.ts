@@ -170,6 +170,12 @@ const ADMIN_ONLY_ROUTES = [
     // agent's own (#3671) — the register's key, `admin.agent_registry`: the
     // condition for an unattended disable of that principal.
     'admin/agents/[agentId]/service-principal-link/route.ts',
+    // An agent's declared spending authority (Agent Pay Phase 1, #5333) — the
+    // register's key, `admin.agent_registry`: read, declare, narrow, withdraw,
+    // and the second person's review (four eyes held by the writer and a CHECK).
+    'admin/agents/[agentId]/spending-authority/route.ts',
+    'admin/agents/[agentId]/spending-authority/[rail]/route.ts',
+    'admin/agents/[agentId]/spending-authority/[rail]/review/route.ts',
     // Which agent answers on Ask (#4629) — the register's key,
     // `admin.agent_registry` (owner decision, 2026-10-30): designating the
     // agent that reads the workspace for every person who asks is register

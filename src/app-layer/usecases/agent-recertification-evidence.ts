@@ -24,6 +24,9 @@
  *   breaker trips                            AgentCircuitBreaker
  *   kill engagements                         AgentKillSwitch, per agent, capped and flagged (#5317)
  *   harness level and drift                  DiscoveredAgent + AgentHarnessScanItem
+ *   spending authority (Agent Pay 1.4)       AgentSpendingAuthority, one row per rail, as it
+ *                                            stands at preparation; merchants counted, the
+ *                                            token reference left out (#5333)
  *
  * The window is the 90 days before the campaign was CREATED — not before the
  * read — so every page of one campaign, read at any time, reads the same
@@ -58,8 +61,10 @@ import {
     packConnectionName,
     packToolName,
     type RecertificationEvidence,
+    type SpendingAuthorityEvidence,
     type SubjectEvidence,
 } from '@/lib/agentic/agent-recertification';
+import { isUnrestrictedScope, SPENDING_RAILS } from '@/lib/agentic/spending-authority';
 import { GRANT_EXPIRY_ARGS } from './external-write-reconcile';
 import { assertCanRead } from '../policies/common';
 import type { RequestContext } from '../types';
@@ -420,6 +425,52 @@ export async function readAgentRecertificationEvidence(
             })
             : [];
 
+        // ── Spending authority (Agent Pay Phase 1.4, #5333) ──────────────
+        //
+        // As it stands when the pack is prepared, as the breaker is: an
+        // envelope is a standing privilege, not an event in the window. One row
+        // per agent per rail (the unique), so this cap reads every one.
+        const envelopes = await db.agentSpendingAuthority.findMany({
+            where: { tenantId: ctx.tenantId, agentId: { in: agentIds } },
+            orderBy: [{ agentId: 'asc' }, { rail: 'asc' }],
+            take: agentIds.length * SPENDING_RAILS.length,
+            select: {
+                agentId: true, rail: true, status: true,
+                perTransactionLimitMinor: true, periodBudgetMinor: true, budgetPeriod: true, currency: true,
+                merchantDomains: true, merchantCategoryCodes: true, expiresAt: true,
+                tokenRequestor: true, consentedByUserId: true,
+                declaredByUserId: true, declaredAt: true, reviewedByUserId: true, reviewedAt: true,
+                suspensionRequestedAt: true, withdrawnAt: true,
+            },
+        });
+        const spendingByAgent = new Map<string, SpendingAuthorityEvidence[]>();
+        for (const e of envelopes) {
+            const list = spendingByAgent.get(e.agentId) ?? [];
+            list.push({
+                rail: e.rail,
+                status: e.status,
+                unreviewed: e.status === 'DECLARED' || (e.status === 'SUSPENDED_REQUESTED' && e.reviewedAt === null),
+                perTransactionLimitMinor: e.perTransactionLimitMinor.toString(),
+                periodBudgetMinor: e.periodBudgetMinor.toString(),
+                budgetPeriod: e.budgetPeriod,
+                currency: e.currency,
+                merchantDomainCount: e.merchantDomains.length,
+                merchantCategoryCodeCount: e.merchantCategoryCodes.length,
+                merchantScopeUnrestricted: isUnrestrictedScope(e),
+                expiresAt: e.expiresAt.toISOString(),
+                expiredAtWindowEnd: e.expiresAt.getTime() <= window.end.getTime(),
+                tokenRequestor: e.tokenRequestor,
+                consentedByUserId: e.consentedByUserId,
+                declaredByUserId: e.declaredByUserId,
+                declaredAt: e.declaredAt.toISOString(),
+                reviewedByUserId: e.reviewedByUserId,
+                reviewedAt: iso(e.reviewedAt),
+                suspensionRequestedAt: iso(e.suspensionRequestedAt),
+                withdrawnAt: iso(e.withdrawnAt),
+            });
+            spendingByAgent.set(e.agentId, list);
+        }
+
         // ── Assemble, in memory ──────────────────────────────────────────
         const out: SubjectEvidence[] = rows.map((s) => {
             const agentId = s.subjectAgentId;
@@ -543,6 +594,7 @@ export async function readAgentRecertificationEvidence(
                 // kill in force, if any, then the most recently lifted.
                 killsTruncated: killsByAgent.get(agentId)?.truncated ?? false,
                 harness: { level, previousLevel, drift, lastSeenAt: iso(mine[0]?.lastSeenAt) },
+                spendingAuthority: spendingByAgent.get(agentId) ?? [],
             };
         });
 

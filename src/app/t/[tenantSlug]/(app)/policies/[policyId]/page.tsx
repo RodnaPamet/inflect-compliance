@@ -979,7 +979,10 @@ export default function PolicyDetailPage() {
                                     />
                                 </div>
                                 <Button variant="secondary" size="xs" onClick={() => setEditingReview(false)}>{t('detail.cancel')}</Button>
-                                <Button variant="primary" size="xs" onClick={saveReview} disabled={savingReview}>
+                                {/* Secondary (#5333): a field-level inline edit beside its
+                                    Cancel, which is a row-action-sized save, not the page's
+                                    primary action (the R7-PR1 rule). */}
+                                <Button variant="secondary" size="xs" onClick={saveReview} disabled={savingReview}>
                                     {savingReview ? '…' : t('detail.save')}
                                 </Button>
                             </div>

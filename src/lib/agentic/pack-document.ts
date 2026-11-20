@@ -420,6 +420,8 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
             assessmentState: string;
             killState: string;
             policyCardVersion: number | null;
+            /** Absent from a pack built before Agent Pay Phase 1.6, which reads as none recorded. */
+            spendingAuthority?: { rail: string; status: string; unreviewed: boolean }[];
         }[];
         legacyPlaceholderPresent: boolean;
     };
@@ -450,6 +452,18 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
                 ` · Policy card: ${a.policyCardVersion === null ? 'NONE' : `v${a.policyCardVersion}`}` +
                 ` · ${a.killState}`,
         );
+        // Agent Pay Phase 1.6 (#5333). Only an agent with an envelope gets the
+        // line: the count `inventory.agents_with_spending_authority` says how
+        // many, and this says which, on which rail, and whether anybody but the
+        // declarer has reviewed it.
+        const spending = a.spendingAuthority ?? [];
+        if (spending.length > 0) {
+            invLines.push(
+                `    Spending authority: ${spending
+                    .map((e) => `${e.rail} ${e.status}${e.unreviewed ? ' (UNREVIEWED)' : ''}`)
+                    .join(', ')}`,
+            );
+        }
     }
     if (inv.agents.length > DOCUMENT_ROW_CAP) {
         invLines.push(`  … and ${inv.agents.length - DOCUMENT_ROW_CAP} more, not enumerated here.`);
