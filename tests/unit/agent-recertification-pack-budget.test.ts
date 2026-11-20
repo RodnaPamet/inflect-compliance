@@ -175,14 +175,18 @@ function worstSubject(label: string = CYRILLIC_LABEL): SubjectEvidence {
             merchantCategoryCodeCount: 100,
             merchantScopeUnrestricted: false,
             expiresAt: TS,
-            expiredAtWindowEnd: false,
+            // Lapsed, suspension-requested and never reviewed: every ground at
+            // once, so every rail plans a withdrawal carrying all three
+            // (Agent Pay 1.4). Two fewer user ids in the evidence than a
+            // reviewed envelope, and the plan's withdrawal far outweighs them.
+            expiredAtWindowEnd: true,
             // The longest platform name, two bytes a character.
             tokenRequestor: 'Ж'.repeat(80),
             consentedByUserId: id(USER_ID),
             declaredByUserId: id(USER_ID),
             declaredAt: TS,
-            reviewedByUserId: id(USER_ID),
-            reviewedAt: TS,
+            reviewedByUserId: null,
+            reviewedAt: null,
             suspensionRequestedAt: TS,
             withdrawnAt: TS,
         })),
@@ -271,6 +275,12 @@ describe('the worst page of recertification evidence fits its run’s context (#
         const row = worstSubject().timeBoundedGrants[0];
         expect(Array.from(row.connectionName)).toHaveLength(CONNECTION_NAME_IN_PACK);
         expect(row.connectionNameTruncated).toBe(true);
+    });
+
+    it('the worst subject plans a withdrawal of every rail, on every ground (Agent Pay 1.4)', () => {
+        const plan = planAgentReviewPacks(page([worstSubject()]));
+        expect(plan.packs[0].spendingWithdrawals).toHaveLength(SPENDING_RAILS.length);
+        for (const w of plan.packs[0].spendingWithdrawals!) expect(w.grounds).toHaveLength(3);
     });
 
     it('a full page whose labels are four bytes a character still seals under the cap itself', () => {

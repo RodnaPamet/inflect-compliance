@@ -116,6 +116,7 @@ function agentReview(over: Record<string, unknown> = {}) {
 interface PacksPayload {
     packs: unknown[];
     narrowings: unknown[];
+    spendingWithdrawals?: unknown[];
     samples: unknown[];
     evidence: unknown;
     preparation?: unknown;
@@ -149,6 +150,18 @@ function narrowing(id: string, decisionId: string, outcome = 'PENDING') {
         grantedByUserId: 'usr_admin', grantedAt: '2026-01-01T00:00:00.000Z',
         basis: 'NO_RECORDED_CALL_IN_WINDOW', outcome,
         decidedAt: null, decidedByUserId: null, executedAt: null, executionResult: null,
+    };
+}
+
+/** Agent Pay 1.4 (#5333) — a proposed withdrawal of an agent's spending authority. */
+function withdrawal(id: string, decisionId: string, outcome = 'PENDING', executionResult: string | null = null) {
+    return {
+        id, decisionId, packId: `pk-${decisionId}`, rail: 'AP4M', declaredAt: '2026-10-01T00:00:00.000Z',
+        statusAtPack: 'DECLARED', expiresAt: '2027-01-01T00:00:00.000Z', grounds: ['NEVER_REVIEWED', 'EXPIRED_BY_WINDOW_END'],
+        outcome, decidedAt: outcome === 'PENDING' ? null : '2026-11-20T00:00:00.000Z',
+        decidedByUserId: outcome === 'PENDING' ? null : 'usr_reviewer',
+        executedAt: executionResult ? '2026-11-20T00:00:00.000Z' : null, executionResult,
+        ownerTaskId: executionResult === 'ENVELOPE_WITHDRAWN' ? 'task-1' : null,
     };
 }
 
@@ -329,6 +342,64 @@ describe('the detail page reads an AGENT campaign', () => {
         expect(screen.getByTestId('connected-decision-select-c1')).toBeInTheDocument();
         expect(screen.queryByTestId('access-review-agent-read-only')).not.toBeInTheDocument();
         expect(screen.queryByTestId('access-review-agent-table')).not.toBeInTheDocument();
+    });
+});
+
+describe('a pack’s proposed spending withdrawals (Agent Pay 1.4, #5333)', () => {
+    const decided = [
+        agentSubject('1', { decision: 'CONFIRM', decidedAt: new Date().toISOString() }),
+        agentSubject('2', { decision: 'CONFIRM', decidedAt: new Date().toISOString() }),
+    ];
+
+    it('lists each with its rail and grounds, and offers the reviewer Withdraw and Keep', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], spendingWithdrawals: [withdrawal('w-1', '2')], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        const row = await screen.findByTestId('agent-withdrawal-w-1');
+        expect(row).toHaveTextContent('Agent Pay for Machines');
+        expect(screen.getByTestId('agent-withdrawal-grounds-w-1')).toHaveTextContent('No second person has reviewed it');
+        expect(screen.getByTestId('agent-withdrawal-grounds-w-1')).toHaveTextContent('It had expired by the end of the campaign');
+        expect(screen.getByTestId('agent-withdrawal-accept-w-1')).toHaveTextContent('Withdraw');
+        expect(screen.getByTestId('agent-withdrawal-reject-w-1')).toHaveTextContent('Keep');
+    });
+
+    it('holds the subject’s verdict while one is pending, as a narrowing does', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], spendingWithdrawals: [withdrawal('w-1', '1')], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: false, userId: 'usr_reviewer' });
+        await waitFor(() => expect(screen.getByTestId('agent-withdrawals-first-1')).toBeInTheDocument());
+        expect(screen.queryByTestId('agent-decision-select-1')).not.toBeInTheDocument();
+    });
+
+    it('gives the agent’s owner no control over it, even as an admin', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], spendingWithdrawals: [withdrawal('w-1', '1')], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: true, userId: 'usr_owner' });
+        await screen.findByTestId('agent-withdrawal-w-1');
+        expect(screen.queryByTestId('agent-withdrawal-accept-w-1')).not.toBeInTheDocument();
+    });
+
+    it('keeps Close disabled while one is pending, though every subject is decided', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], spendingWithdrawals: [withdrawal('w-1', '1')], samples: [], evidence: null };
+        renderDetail({ connectedDecisions: decided }, { isAdmin: true, userId: 'usr_admin' });
+        await screen.findByTestId('agent-withdrawal-w-1');
+        expect(screen.getByTestId('access-review-close-button')).toBeDisabled();
+    });
+
+    it('says what accepting one did', async () => {
+        packsPayload = {
+            packs: [pack('1'), pack('2')], narrowings: [],
+            spendingWithdrawals: [withdrawal('w-1', '1', 'ACCEPTED', 'ENVELOPE_WITHDRAWN'), withdrawal('w-2', '2', 'ACCEPTED', 'ENVELOPE_REDECLARED')],
+            samples: [], evidence: null,
+        };
+        renderDetail({ connectedDecisions: decided }, { isAdmin: true, userId: 'usr_admin' });
+        expect(await screen.findByTestId('agent-withdrawal-result-w-1')).toHaveTextContent('task to cancel the token');
+        expect(screen.getByTestId('agent-withdrawal-result-w-2')).toHaveTextContent('declared again');
+        expect(screen.getByTestId('access-review-close-button')).not.toBeDisabled();
+    });
+
+    it('shows no section for a campaign with none, or a response that predates them', async () => {
+        packsPayload = { packs: [pack('1'), pack('2')], narrowings: [], samples: [], evidence: null };
+        renderDetail({}, { isAdmin: true, userId: 'usr_admin' });
+        await screen.findByTestId('agent-pack-1');
+        expect(screen.queryByTestId('access-review-agent-withdrawals-table')).not.toBeInTheDocument();
     });
 });
 

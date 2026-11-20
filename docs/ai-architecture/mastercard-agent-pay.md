@@ -32,7 +32,7 @@ Purple hexagon: the Phase 0 decision. Blue: a phase not yet on `main`; it turns 
 ```mermaid
 flowchart LR
   P0{{"Phase 0 · access and the PCI line<br/>D-L1-8, D-L1-9, D-L1-10<br/>no card data, ever<br/>what Mastercard opens"}}:::gate
-  P1["Phase 1 · on the register<br/>declared spending authority<br/>four-eyes widening<br/>kill and recert reach it"]:::todo
+  P1["Phase 1 · on the register<br/>declared spending authority<br/>four-eyes widening<br/>kill and recert reach it"]:::done
   P2["Phase 2 · discover<br/>payment-capable code<br/>KYA key directory checked"]:::todo
   P3["Phase 3 · evidence<br/>per-agent artefacts<br/>governance pack report"]:::todo
   ACC["Mastercard API access<br/>gated; AP4M is a pilot"]:::gate
@@ -287,13 +287,14 @@ customer's own connection, the way directory integrations are).
       ACTIVE agent raises a HIGH finding rather than suspending it (the
       auditor-independence precedent: a later break is a finding, not a
       refusal); a review or a withdrawal closes it.
-- [ ] 1.4 Recertification: an AGENT campaign's pack gains a spending-authority
+- [x] 1.4 Recertification: an AGENT campaign's pack gains a spending-authority
       section, and a narrowing may propose reducing or withdrawing the
       envelope. Accepting it writes the declaration and opens a task for the
       owner to apply the change at the token requestor, because Inflect
       cannot apply it until Phase 4. *The pack section is built 2026-11-20
-      (#5333); the narrowing is not, and waits on the questions under
-      "Where Phase 1 stands".*
+      (#5333), and so is the withdrawal, on every ground the owner decided
+      that day (below). It proposes withdrawing, never a lower limit, and the
+      fourth ground is a reviewer's confirmation rather than a scan.*
 - [x] 1.5 Kill switch and owner-orphan pass: engaging an AGENT-scope kill, or
       containing an orphaned agent, on an agent with spending authority
       moves the row to `SUSPENDED_REQUESTED` and opens a task naming the
@@ -303,7 +304,7 @@ customer's own connection, the way directory integrations are).
       requires it) and an inventory row in the governance pack. *Both built;
       the inventory row 2026-11-20 (#5333).*
 
-**Where Phase 1 stands (2026-11-20).** 1.1, 1.2, 1.3, 1.5 and 1.6 are built:
+**Where Phase 1 stands (2026-11-20).** Every sub-phase is built. 1.1, 1.2, 1.3, 1.5 and 1.6:
 `AgentSpendingAuthority` (migration `20261112090100_agent_spending_authority`),
 its one writer `src/app-layer/usecases/agent-spending-authority.ts` and the pure
 comparison in `src/lib/agentic/spending-authority.ts`
@@ -317,15 +318,30 @@ reports each agent's rails and review standing, with two counts. An AGENT
 campaign's reviewer pack carries a spending-authority section, in the hashed
 sections, so the campaign's evidence covers it (3.3).
 
-What is not built is the half of 1.4 that changes an envelope from a campaign:
-a narrowing that proposes reducing or withdrawing it. It needs decisions this
-document does not make (`docs/implementation-notes/2026-11-20-agent-pay-register-surfaces.md`):
-on what evidence a pack proposes it, since no spend is observed before Phase 4;
-what a "reduction" is, when the pack is prepared by an agent and the plan is
-re-derived from stored rows; and whether accepting it under
-`access_reviews.decide` may write an envelope whose writer otherwise takes
-`admin.agent_registry`. Until then a reviewer narrows or withdraws on the
-register page.
+The half of 1.4 that changes an envelope from a campaign is built too
+(2026-11-20, #5333), on the owner's decisions of that day
+(`docs/implementation-notes/2026-11-20-agent-pay-envelope-withdrawal.md`). A pack
+proposes WITHDRAWING an envelope, never reducing a limit, and records each
+ground that holds: it had lapsed by the end of the campaign's window
+(`EXPIRED_BY_WINDOW_END`), it is still SUSPENDED_REQUESTED after a kill
+(`SUSPENDED_AFTER_KILL`), no second person ever reviewed the declaration on
+the row (`NEVER_REVIEWED`), or it lapses after the window but before the
+campaign's due date (`EXPIRES_DURING_CAMPAIGN`). The fourth ground the owner
+named, that the agent can no longer pay, is never derived from a scan: the
+campaign's reviewer confirms it on a rail, which opens a proposal with the
+ground `NO_PAYMENT_ABILITY_CONFIRMED` and their name, decided like the others. The proposal is a row of
+`AccessReviewAgentSpendingWithdrawal` (migration
+`20261120120000_access_review_agent_spending_withdrawal`), a sibling of the
+grant narrowing with the same one-way triggers. Accepting it under
+`access_reviews.decide` withdraws the declaration the pack described through
+the envelope writer's one internal path
+(`withdrawSpendingAuthorityForRecertificationInTx`; the public writer keeps
+`admin.agent_registry`) and opens a task for the agent's owner to revoke the
+token at its requestor. A pending withdrawal holds the subject's verdict and
+the close; the agent's owner may not decide one.
+
+A reviewer reduces an envelope, rather than withdrawing it, on the register
+page: a pack never proposes a lower limit.
 
 **Prompt.**
 ```text

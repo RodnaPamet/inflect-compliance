@@ -92,6 +92,7 @@ describe('the retained set is a compliance decision, not a convenience', () => {
             'AccessReviewConnectedDecision',
             'AccessReviewAgentPack',
             'AccessReviewAgentNarrowing',
+            'AccessReviewAgentSpendingWithdrawal',
             'AccessReviewDecisionSampleAudit',
         ]) {
             expect(TENANT_PURGE_RETAINED.has(t)).toBe(true);

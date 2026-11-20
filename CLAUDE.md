@@ -2328,6 +2328,21 @@ wrote nothing. Rules that are easy to undo:
   against A.5.18, CC6.3 (present in both SOC 2 representations since #3369
   completed CC6; a test asserts that presence, having asserted its absence
   before) and ASI03.
+- **A pack may propose WITHDRAWING a spending envelope, and nothing else**
+  (Agent Pay 1.4, owner decisions 2026-11-20). Never a lower limit. The
+  proposal is `AccessReviewAgentSpendingWithdrawal`, a sibling of the grant
+  narrowing with its own one-way triggers, not a column or a kind on it; it
+  records every ground that holds. The planned grounds are re-derived from the
+  pack's stored evidence (`spendingWithdrawalsFor`); "it can no longer pay" is
+  NEVER derived from a scan, whose missing capability is absence: the
+  campaign's reviewer states it (`NO_PAYMENT_ABILITY_CONFIRMED`, alone, with
+  `proposedByUserId`, CHECK-held, and refused in a plan). Accepting under
+  `access_reviews.decide` withdraws the declaration the pack described through
+  `withdrawSpendingAuthorityForRecertificationInTx`, never the public writer
+  and its `admin.agent_registry`, and opens the owner's token task; a
+  re-declaration since is left alone. A pending withdrawal holds the subject's
+  verdict and the close (`WITHDRAWALS_PENDING`), and the agent's owner decides
+  and confirms none of them.
 - **The sample uses the existing keyed sampler** (`selectSample`,
   `sampleSizeFor`), seeded per tenant through `deriveSubkey` and epoch-bound to
   the campaign, at close. The second human may read the pack and is neither the

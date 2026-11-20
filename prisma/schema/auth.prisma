@@ -122,6 +122,8 @@ model Tenant {
   /// Step 3a (#3674) — an AGENT campaign's packs, narrowings and decision samples.
   accessReviewAgentPacks            AccessReviewAgentPack[]
   accessReviewAgentNarrowings       AccessReviewAgentNarrowing[]
+  /// Agent Pay 1.4 (#5333) — the spending-authority withdrawals a pack proposed.
+  accessReviewAgentSpendingWithdrawals AccessReviewAgentSpendingWithdrawal[]
   accessReviewDecisionSampleAudits  AccessReviewDecisionSampleAudit[]
   trustCenterDocuments              TrustCenterDocument[]
   trustCenterAccessRequests         TrustCenterAccessRequest[]
@@ -850,6 +852,8 @@ model AccessReviewConnectedDecision {
   /// retrospective sample drawn at close.
   agentPack       AccessReviewAgentPack?
   agentNarrowings AccessReviewAgentNarrowing[]
+  /// Agent Pay 1.4 (#5333) — the spending-authority withdrawals its pack proposed.
+  agentSpendingWithdrawals AccessReviewAgentSpendingWithdrawal[]
   sampleAudits    AccessReviewDecisionSampleAudit[]
 
   @@unique([accessReviewId, subjectRef])
@@ -1044,6 +1048,8 @@ model AccessReview {
   /// CHECK on the pack compare its subject with the campaign's preparer.
   agentPacksByPreparer AccessReviewAgentPack[]         @relation("AgentPackCampaignPreparer")
   agentNarrowings    AccessReviewAgentNarrowing[]
+  /// Agent Pay 1.4 (#5333) — the spending-authority withdrawals its packs proposed.
+  agentSpendingWithdrawals AccessReviewAgentSpendingWithdrawal[]
   sampleAudits       AccessReviewDecisionSampleAudit[]
 
   /// Composite parent key used by AccessReviewDecision's compound FK

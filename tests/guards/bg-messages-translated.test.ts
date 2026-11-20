@@ -84,6 +84,8 @@ const KEPT_IN_ENGLISH: Readonly<Record<string, string>> = {
         'An example of the literal `field: field` lines the user types, which name schema fields.',
     'admin.agentDetail.spending.rail.AP4M':
         "Product name: Mastercard's own name for its machine-payments rail (#5333), as Mastercard Agent Pay is kept beside it.",
+    'accessReviews.withdrawalRail.AP4M':
+        "Product name, as admin.agentDetail.spending.rail.AP4M (#5333): Mastercard's own name for its machine-payments rail.",
     'agents.orphanPass.servicePrincipal':
         'Owner decision 2026-10-30 (#4553): "service principal" stays Microsoft\'s English term, as in Microsoft\'s Bulgarian documentation, and the line has nothing else to translate.',
 };

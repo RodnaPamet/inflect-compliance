@@ -200,6 +200,45 @@ interface AgentNarrowingRow {
     executionResult: string | null;
 }
 
+/** Agent Pay 1.4 (#5333) — a proposed withdrawal of the agent's spending authority. */
+type SpendingWithdrawalGround =
+    | 'EXPIRED_BY_WINDOW_END'
+    | 'SUSPENDED_AFTER_KILL'
+    | 'NEVER_REVIEWED'
+    | 'EXPIRES_DURING_CAMPAIGN'
+    | 'NO_PAYMENT_ABILITY_CONFIRMED';
+type SpendingWithdrawalResult =
+    | 'ENVELOPE_WITHDRAWN'
+    | 'ENVELOPE_ALREADY_WITHDRAWN'
+    | 'ENVELOPE_REDECLARED'
+    | 'ENVELOPE_ABSENT';
+const SPENDING_WITHDRAWAL_GROUNDS: readonly SpendingWithdrawalGround[] = [
+    'EXPIRED_BY_WINDOW_END', 'SUSPENDED_AFTER_KILL', 'NEVER_REVIEWED',
+    'EXPIRES_DURING_CAMPAIGN', 'NO_PAYMENT_ABILITY_CONFIRMED',
+];
+const SPENDING_WITHDRAWAL_RESULTS: readonly SpendingWithdrawalResult[] = [
+    'ENVELOPE_WITHDRAWN', 'ENVELOPE_ALREADY_WITHDRAWN', 'ENVELOPE_REDECLARED', 'ENVELOPE_ABSENT',
+];
+type SpendingRail = 'AGENT_PAY_TOKEN' | 'AP4M' | 'OTHER';
+const SPENDING_RAILS: readonly SpendingRail[] = ['AGENT_PAY_TOKEN', 'AP4M', 'OTHER'];
+
+interface AgentSpendingWithdrawalRow {
+    id: string;
+    decisionId: string;
+    packId: string;
+    rail: string;
+    declaredAt: string;
+    statusAtPack: string;
+    expiresAt: string;
+    grounds: string[];
+    outcome: NarrowingOutcome;
+    decidedAt: string | null;
+    decidedByUserId: string | null;
+    executedAt: string | null;
+    executionResult: string | null;
+    ownerTaskId: string | null;
+}
+
 interface AgentSampleRow {
     id: string;
     decisionId: string;
@@ -230,6 +269,8 @@ function preparationIsLive(p: AgentPackPreparation | null | undefined): boolean 
 interface AgentPacksResponse {
     packs: AgentPackRow[];
     narrowings: AgentNarrowingRow[];
+    /** Agent Pay 1.4 — absent from a response that predates it, which reads as none. */
+    spendingWithdrawals?: AgentSpendingWithdrawalRow[];
     samples: AgentSampleRow[];
     /** Absent from a response that predates it, which reads as none. */
     preparation?: AgentPackPreparation | null;
@@ -265,6 +306,8 @@ interface PackSummary {
      */
     spendingEnvelopes: number;
     spendingUnreviewed: number;
+    /** The rails of those envelopes, in the pack's order. */
+    spendingRails: SpendingRail[];
     /**
      * The sections whose read hit its cap (#5317), in the order shown. A
      * capped section is not every row, and the reviewer must not read it as
@@ -299,6 +342,10 @@ function readPackSummary(value: unknown): PackSummary {
         kills: Array.isArray(v.killEngagements) ? v.killEngagements.length : 0,
         spendingEnvelopes: spending.filter((e) => e.status !== 'WITHDRAWN').length,
         spendingUnreviewed: spending.filter((e) => e.unreviewed === true).length,
+        spendingRails: spending
+            .filter((e) => e.status !== 'WITHDRAWN')
+            .map((e) => SPENDING_RAILS.find((r) => r === e.rail))
+            .filter((r): r is SpendingRail => r !== undefined),
         truncated: [
             ...(v.grantsTruncated === true ? (['grants'] as const) : []),
             ...(v.timeBoundedTruncated === true ? (['timeBounded'] as const) : []),
@@ -569,12 +616,21 @@ export function AccessReviewDetailClient({
     const narrowings = useMemo(() => packsQuery.data?.narrowings ?? [], [packsQuery.data]);
     const samples = useMemo(() => packsQuery.data?.samples ?? [], [packsQuery.data]);
     const packByDecision = useMemo(() => new Map(packs.map((p) => [p.decisionId, p])), [packs]);
+    const spendingWithdrawals = useMemo(() => packsQuery.data?.spendingWithdrawals ?? [], [packsQuery.data]);
     const pendingByDecision = useMemo(() => {
         const m = new Map<string, number>();
         for (const n of narrowings) if (n.outcome === 'PENDING') m.set(n.decisionId, (m.get(n.decisionId) ?? 0) + 1);
         return m;
     }, [narrowings]);
+    // Agent Pay 1.4 — a subject waits for its spending withdrawals as for its
+    // narrowings: the server refuses its verdict while either is pending.
+    const pendingWithdrawalsByDecision = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const w of spendingWithdrawals) if (w.outcome === 'PENDING') m.set(w.decisionId, (m.get(w.decisionId) ?? 0) + 1);
+        return m;
+    }, [spendingWithdrawals]);
     const pendingNarrowings = narrowings.filter((n) => n.outcome === 'PENDING').length;
+    const pendingWithdrawals = spendingWithdrawals.filter((w) => w.outcome === 'PENDING').length;
     const agentRowById = useMemo(() => new Map(connectedRows.map((r) => [r.id, r])), [connectedRows]);
     // Every preparing agent is ACTIVE, so it is a subject too: its name is in a snapshot.
     const agentNameByAgentId = useMemo(() => {
@@ -593,7 +649,8 @@ export function AccessReviewDetailClient({
     );
     // An AGENT campaign closes only with every pack prepared and every
     // narrowing decided as well — the server's rule, stated where it is pressed.
-    const agentCloseReady = !isAgent || (packs.length === subjectCount && pendingNarrowings === 0);
+    const agentCloseReady = !isAgent
+        || (packs.length === subjectCount && pendingNarrowings === 0 && pendingWithdrawals === 0);
     const [agentBusy, setAgentBusy] = useState(false);
 
     const mutateReview = reviewQuery.mutate;
@@ -1095,7 +1152,24 @@ export function AccessReviewDetailClient({
                             </span>
                         );
                     }
+                    const pendingWithdrawalsHere = pendingWithdrawalsByDecision.get(d.id) ?? 0;
+                    if (pendingWithdrawalsHere > 0) {
+                        return (
+                            <span className="text-xs text-content-muted" data-testid={`agent-withdrawals-first-${d.id}`}>
+                                {t('agentWithdrawalsFirst', { count: pendingWithdrawalsHere })}
+                            </span>
+                        );
+                    }
+                    // Agent Pay 1.4, ground (d): a scan cannot show the agent
+                    // can no longer pay, so the reviewer says so — once per
+                    // envelope the pack describes and no withdrawal names yet.
+                    const proposedRails = new Set(
+                        spendingWithdrawals.filter((w) => w.decisionId === d.id).map((w) => w.rail),
+                    );
+                    const confirmable = readPackSummary(packByDecision.get(d.id)?.sectionsJson)
+                        .spendingRails.filter((r) => !proposedRails.has(r));
                     return (
+                        <div className="space-y-tight">
                         <select
                             className="input"
                             defaultValue=""
@@ -1112,11 +1186,22 @@ export function AccessReviewDetailClient({
                             <option value="REVOKE">{t('agentRevoke')}</option>
                             <option value="MODIFY">{t('agentModify')}</option>
                         </select>
+                        {confirmable.map((rail) => (
+                            <Button
+                                key={rail}
+                                variant="secondary"
+                                size="sm"
+                                disabled={agentBusy}
+                                data-testid={`agent-no-payment-ability-${d.id}-${rail}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals`, { decisionId: d.id, rail })}
+                            >{t('agentNoPaymentAbility', { rail: t(`withdrawalRail.${rail}`) })}</Button>
+                        ))}
+                        </div>
                     );
                 },
             },
         ]),
-        [t, packByDecision, pendingByDecision, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
+        [t, packByDecision, pendingByDecision, pendingWithdrawalsByDecision, spendingWithdrawals, canDecide, currentUserId, agentBusy, ownerOf, agentAct, apiBase, agentNameByAgentId],
     );
 
     const agentNameOf = useCallback((decisionId: string): string => {
@@ -1181,6 +1266,91 @@ export function AccessReviewDetailClient({
                                 data-testid={`agent-narrowing-reject-${n.id}`}
                                 onClick={() => void agentAct(`${apiBase}/agent-narrowings/${n.id}`, { outcome: 'REJECT' })}
                             >{t('narrowingReject')}</Button>
+                        </div>
+                    );
+                },
+            },
+        ]),
+        [t, canDecide, currentUserId, agentBusy, agentNameOf, ownerOf, agentAct, apiBase],
+    );
+
+    // Agent Pay 1.4 (#5333) — what each pack proposes to withdraw, and the
+    // person's answer. Offered where the server takes it: a reviewer or admin
+    // who does not own the agent, on an open campaign.
+    const withdrawalColumns = useMemo(
+        () => createColumns<AgentSpendingWithdrawalRow>([
+            {
+                id: 'agent',
+                header: t('colAgent'),
+                cell: ({ row }) => <span className="text-sm">{agentNameOf(row.original.decisionId)}</span>,
+            },
+            {
+                id: 'rail',
+                header: t('colWithdrawalRail'),
+                cell: ({ row }) => {
+                    const w = row.original;
+                    const rail = SPENDING_RAILS.find((r) => r === w.rail);
+                    return (
+                        <div data-testid={`agent-withdrawal-${w.id}`}>
+                            <div className="text-sm">{rail ? t(`withdrawalRail.${rail}`) : w.rail}</div>
+                            <div className="text-xs text-content-muted">
+                                {t('withdrawalDeclared', { date: formatDate(w.declaredAt) })}
+                            </div>
+                        </div>
+                    );
+                },
+            },
+            {
+                id: 'grounds',
+                header: t('colWithdrawalGrounds'),
+                cell: ({ row }) => (
+                    <ul className="text-xs text-content-muted" data-testid={`agent-withdrawal-grounds-${row.original.id}`}>
+                        {row.original.grounds.map((g) => {
+                            const known = SPENDING_WITHDRAWAL_GROUNDS.find((x) => x === g);
+                            return <li key={g}>{known ? t(`withdrawalGround.${known}`) : g}</li>;
+                        })}
+                    </ul>
+                ),
+            },
+            {
+                id: 'outcome',
+                header: t('colDecision'),
+                cell: ({ row }) => {
+                    const w = row.original;
+                    if (w.outcome !== 'PENDING') {
+                        const result = SPENDING_WITHDRAWAL_RESULTS.find((r) => r === w.executionResult);
+                        return (
+                            <div>
+                                <span className="text-sm font-medium">
+                                    {w.outcome === 'ACCEPTED' ? t('withdrawalAccepted') : t('withdrawalRejected')}
+                                </span>
+                                {result ? (
+                                    <div className="text-xs text-content-muted" data-testid={`agent-withdrawal-result-${w.id}`}>
+                                        {t(`withdrawalResult.${result}`)}
+                                    </div>
+                                ) : null}
+                            </div>
+                        );
+                    }
+                    if (!canDecide || ownerOf(w.decisionId) === currentUserId) {
+                        return <span className="text-xs text-content-muted">{t('pending')}</span>;
+                    }
+                    return (
+                        <div className="flex gap-tight">
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-withdrawal-accept-${w.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals/${w.id}`, { outcome: 'ACCEPT' })}
+                            >{t('withdrawalAccept')}</Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={agentBusy}
+                                data-testid={`agent-withdrawal-reject-${w.id}`}
+                                onClick={() => void agentAct(`${apiBase}/agent-spending-withdrawals/${w.id}`, { outcome: 'REJECT' })}
+                            >{t('withdrawalReject')}</Button>
                         </div>
                     );
                 },
@@ -1623,6 +1793,26 @@ export function AccessReviewDetailClient({
                         emptyState={t('rosterEmpty')}
                         resourceName={(p) => (p ? 'narrowings' : 'narrowing')}
                         data-testid="access-review-agent-narrowings-table"
+                    />
+                </section>
+            ) : null}
+
+            {/* Agent Pay 1.4 (#5333) — what each pack proposes to withdraw from
+                the agent's spending authority. Accepting withdraws it on the
+                register and opens a task for the owner; nothing here adds one. */}
+            {isAgent && spendingWithdrawals.length > 0 ? (
+                <section className="space-y-tight" aria-labelledby="access-review-agent-withdrawals-heading">
+                    <Heading level={3} id="access-review-agent-withdrawals-heading">
+                        {t('agentWithdrawalsTitle')}
+                    </Heading>
+                    <p className="text-xs text-content-muted max-w-prose">{t('agentWithdrawalsHint')}</p>
+                    <DataTable
+                        data={spendingWithdrawals}
+                        columns={withdrawalColumns}
+                        getRowId={(w) => w.id}
+                        emptyState={t('rosterEmpty')}
+                        resourceName={(p) => (p ? 'withdrawals' : 'withdrawal')}
+                        data-testid="access-review-agent-withdrawals-table"
                     />
                 </section>
             ) : null}

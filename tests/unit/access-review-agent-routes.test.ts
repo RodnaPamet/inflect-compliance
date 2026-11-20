@@ -18,6 +18,7 @@ const mockGetPacks = jest.fn();
 const mockReadPreparation = jest.fn();
 const mockDecideNarrowing = jest.fn();
 const mockRecordSample = jest.fn();
+const mockDecideWithdrawal = jest.fn();
 
 jest.mock('@/app-layer/usecases/access-review-connected', () => ({
     scopeOfConnectedDecision: (...a: unknown[]) => mockScopeOf(...a),
@@ -31,6 +32,7 @@ jest.mock('@/app-layer/usecases/access-review-agent', () => ({
     readAgentPackPreparation: (...a: unknown[]) => mockReadPreparation(...a),
     decideAgentNarrowing: (...a: unknown[]) => mockDecideNarrowing(...a),
     recordAgentDecisionSampleOutcome: (...a: unknown[]) => mockRecordSample(...a),
+    decideAgentSpendingWithdrawal: (...a: unknown[]) => mockDecideWithdrawal(...a),
 }));
 jest.mock('@/lib/security/permission-middleware', () => ({
     requirePermission: (_key: string, handler: unknown) => handler,
@@ -44,6 +46,7 @@ import { POST as createAgents } from '@/app/api/t/[tenantSlug]/access-reviews/ag
 import { GET as readPacks, POST as preparePacks } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-packs/route';
 import { POST as decideNarrowing } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-narrowings/[narrowingId]/route';
 import { POST as answerSample } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-samples/[sampleId]/route';
+import { POST as decideWithdrawal } from '@/app/api/t/[tenantSlug]/access-reviews/[reviewId]/agent-spending-withdrawals/[withdrawalId]/route';
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 
 type Handler = (r: Request, a: unknown, c: unknown) => Promise<Response>;
@@ -65,6 +68,7 @@ beforeEach(() => {
     mockSubmitAgent.mockResolvedValue({ via: 'agent' });
     mockDecideNarrowing.mockResolvedValue({ outcome: 'ACCEPTED' });
     mockRecordSample.mockResolvedValue({ outcome: 'CONCURRED' });
+    mockDecideWithdrawal.mockResolvedValue({ outcome: 'REJECTED' });
 });
 
 describe('the verdict route dispatches an AGENT subject to the agent decide', () => {
@@ -130,6 +134,11 @@ describe('the agent routes forward the campaign from the URL', () => {
         await call(answerSample, { reviewId: 'ar-1', sampleId: 's-1' }, { outcome: 'CONCURRED' });
         expect(mockRecordSample).toHaveBeenCalledWith(ctx, 'ar-1', 's-1', { outcome: 'CONCURRED' });
     });
+
+    it('a spending withdrawal is answered with its campaign’s id (Agent Pay 1.4)', async () => {
+        await call(decideWithdrawal, { reviewId: 'ar-1', withdrawalId: 'w-1' }, { outcome: 'REJECT' });
+        expect(mockDecideWithdrawal).toHaveBeenCalledWith(ctx, 'ar-1', 'w-1', { outcome: 'REJECT' });
+    });
 });
 
 describe('each agent route resolves to the key the roadmap names', () => {
@@ -139,6 +148,7 @@ describe('each agent route resolves to the key the roadmap names', () => {
         ['/api/t/acme/access-reviews/ar-1/agent-packs', 'POST', 'access_reviews.create'],
         ['/api/t/acme/access-reviews/ar-1/agent-narrowings/n-1', 'POST', 'access_reviews.decide'],
         ['/api/t/acme/access-reviews/ar-1/agent-samples/s-1', 'POST', 'access_reviews.decide'],
+        ['/api/t/acme/access-reviews/ar-1/agent-spending-withdrawals/w-1', 'POST', 'access_reviews.decide'],
     ] as const)('%s %s → %s', (p, method, key) => {
         expect(resolveRoutePermission(p, method)?.permission).toBe(key);
     });
