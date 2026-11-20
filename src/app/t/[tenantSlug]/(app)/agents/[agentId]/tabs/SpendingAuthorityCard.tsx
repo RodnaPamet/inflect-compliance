@@ -43,6 +43,7 @@ import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-bad
 import { Heading } from '@/components/ui/typography';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { apiErrorMessage } from '@/lib/api-error';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import {
@@ -214,6 +215,9 @@ export function SpendingAuthorityCard({
 }) {
     const t = useTranslations('admin');
     const locale = useLocale();
+    // Null until the client has painted once, so the server HTML and the
+    // first client render agree on the expired label (React #418).
+    const now = useHydratedNow();
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
     const base = `/admin/agents/${agentId}/spending-authority`;
@@ -343,7 +347,7 @@ export function SpendingAuthorityCard({
                                 </Fact>
                                 <Fact label={t('agentDetail.spending.expires')}>
                                     {formatDate(e.expiresAt)}
-                                    {new Date(e.expiresAt).getTime() < Date.now()
+                                    {now && new Date(e.expiresAt).getTime() < now.getTime()
                                         ? ` · ${t('agentDetail.spending.expired')}`
                                         : ''}
                                 </Fact>
