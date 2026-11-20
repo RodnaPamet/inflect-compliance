@@ -1,7 +1,7 @@
 {
   "@radix-ui/react-dismissable-layer": {
     "kind": "peer-bridge",
-    "reason": "Keeps every Radix dismissable surface on ONE copy of the layer stack. This package holds shared state \u2014 the stack that nested dismissable layers register in \u2014 so a split graph is two independent stacks, and a popover opened inside a dialog registers somewhere the dialog cannot see it. Measured on the 1.3.x bump (#4011): react-popover resolved its own 1.2.1 while the hoisted copy stayed 1.1.19, and 7 rendered suites failed with the popover content never mounting at all \u2014 not hidden, absent. Same shape as the @typescript-eslint entry one layer down, and as the pi-ai Provider mismatch in #4010. If a future Radix bump moves this package, this pin moves with it or it holds the stack at a stale version."
+    "reason": "Keeps every Radix dismissable surface on ONE copy of the layer stack. This package holds shared state — the stack that nested dismissable layers register in — so a split graph is two independent stacks, and a popover opened inside a dialog registers somewhere the dialog cannot see it. Measured on the 1.3.x bump (#4011): react-popover resolved its own 1.2.1 while the hoisted copy stayed 1.1.19, and 7 rendered suites failed with the popover content never mounting at all — not hidden, absent. Same shape as the @typescript-eslint entry one layer down, and as the pi-ai Provider mismatch in #4010. If a future Radix bump moves this package, this pin moves with it or it holds the stack at a stale version."
   },
   "@radix-ui/react-focus-scope": {
     "kind": "peer-bridge",
@@ -158,5 +158,11 @@
     "advisory": "GHSA-w3rx-r6r6-pgpr",
     "patchedFrom": "2.0.3",
     "reason": "Two HIGH denial-of-service advisories against the image-size parsers — GHSA-w3rx-r6r6-pgpr (ICNS, >= 0.6.3 <= 2.0.2) and GHSA-5p2g-fcmc-qvqq (JXL/HEIF, >= 1.2.0 <= 2.0.2). It is reached only through pptxgenjs@4.0.1, which pins ^1.2.1, so no version of pptxgenjs resolves them. Both records were amended on 2026-09-24 to record first_patched_version 2.0.3; before that no fixed release existed and the pair were carried as exemptions in security/audit-allowlist.json. Forcing ^2.0.3 removes them from the tree and the exemptions with them. THE OLD doNotOverride WARNING IS ANSWERED, NOT IGNORED: it called forcing 2.x 'futile AND breaking'. Futile is now false — the fix IS in 2.x. Breaking is still true of the module SHAPE (v2 exports an object with [default, disableTypes, imageSize, types] rather than a callable) and still unreachable: pptxgenjs@4.0.1 declares image-size but never loads it on any path — absent from both shipped bundles and their sourcemaps, its one sizing call site is commented-out dead code naming a different package, and a runtime check after require('pptxgenjs') plus addImage() with a data URI and a filesystem path held zero image-size entries in require.cache. tests/unit/pptx-image-size-unreachable.test.ts pins that and is mutation-proved; if it goes red, this override needs re-arguing before the next pptxgenjs bump."
+  },
+  "effect": {
+    "kind": "security",
+    "advisory": "GHSA-7589-6fvf-x4pw",
+    "patchedFrom": "3.22.1",
+    "reason": "ReDoS in Schema.TemplateLiteral's compiled regex (high), effect <=3.22.0. prisma@7.10.1 pulls it through @prisma/config@7.10.1, which depends on effect@3.20.0, and the moderate+ npm-audit gate turned main red on 2026-11-19 (CI on 5deaa0d). Forcing the patched 3.22.x line is the fix: the same major, and @prisma/config uses it only to load prisma.config.ts. Not exemptible: a released version resolves it. Drop this entry once @prisma/config depends on effect >=3.22.1 (npm ls effect then shows no rewrite)."
   }
 }
