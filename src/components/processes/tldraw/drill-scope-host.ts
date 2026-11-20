@@ -48,7 +48,7 @@ import { edgeKeyFromShapeId } from './process-edge-shape';
 import { PROCESS_NODE_SHAPE_TYPE } from './process-node-shape';
 
 /** The shape fields this module reads. Structural on purpose. */
-interface StoreShape {
+export interface StoreShape {
     id: string;
     type?: string;
     props?: {
@@ -141,6 +141,41 @@ export function collapsedHiddenKeys(editor: Editor): Set<string> {
         }
     }
     return hidden;
+}
+
+/**
+ * Where a double-click on a shape drills to, or null for a shape it does not.
+ *
+ *   • a GROUP drills into its sub-flow, on this canvas (`nodeKey`);
+ *   • an AGENT step drills out of the map, into the agent it invokes, drawn on
+ *     the agent view (Phase 2.3 of `docs/ai-architecture/langflow.md`). The
+ *     step names its rule (`dataJson.ruleId`), and the rule names the agent, so
+ *     what is returned is the RULE: the host resolves the agent from the rule
+ *     as the server stores it, never from anything the shape carries.
+ *
+ * An agent step whose map was never saved has no rule yet, and drills nowhere.
+ * Every other step drills nowhere: a double-click on it is the editor's.
+ *
+ * `ruleId` is narrowed here rather than read through `ruleIdFromDataJson`,
+ * because the node shape util imports this module and the reverse import would
+ * make the two a cycle. Same rule: a non-empty string, or nothing.
+ */
+export type DrillTarget = { kind: 'group'; nodeKey: string } | { kind: 'agent'; ruleId: string };
+
+export function drillTargetOf(shape: StoreShape | undefined): DrillTarget | null {
+    if (!shape || shape.type !== PROCESS_NODE_SHAPE_TYPE) return null;
+    const nodeType = shape.props?.nodeType;
+    if (nodeType === 'group') {
+        const key = shape.props?.nodeKey;
+        return typeof key === 'string' && key.length > 0 ? { kind: 'group', nodeKey: key } : null;
+    }
+    if (nodeType === 'agent') {
+        const data = shape.props?.dataJson;
+        if (typeof data !== 'object' || data === null) return null;
+        const ruleId = (data as { ruleId?: unknown }).ruleId;
+        return typeof ruleId === 'string' && ruleId.length > 0 ? { kind: 'agent', ruleId } : null;
+    }
+    return null;
 }
 
 /**

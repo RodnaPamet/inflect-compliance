@@ -430,7 +430,7 @@ as a node that renders and does nothing.
         positions out of a live editor, and this view has none to read before
         it draws. The page has a Canvas and an Elements tab over the same
         graph, the second listing every narrowing in words.
-- [ ] 2.3 Entry points.
+- [x] 2.3 Entry points.
       - "Open on canvas" on the agent page and the Behaviour tab: a plain link
         into the processes segment, shown only when the tenant has the module
         on. The agent pages import nothing from the canvas, so the editor stays
@@ -439,12 +439,38 @@ as a node that renders and does nothing.
         through `drill-scope-host.ts`, on tldraw maps. On a map a tenant still
         draws with xyflow, the node offers the same link; it gains no xyflow
         drill-down of its own.
-      - Partly landed: the agent page's header carries the link. The Behaviour
-        tab's link and the drill-down from a map's `agent` node are open.
-- [ ] 2.4 A diff for approvers of **form-edited** versions too: the projection
+      - Landed. Every link is built by `agent-canvas-link.ts`
+        (`src/lib/processes/agent-view/`), plain strings with no canvas import.
+        The Behaviour tab receives the agent page's link (null without the
+        module) and carries "Open on canvas" on the version in force and on the
+        open version (`?version=<id>`). The drill is `drillTargetOf` in
+        `drill-scope-host.ts`: a double-click on a group enters it, on an
+        `agent` step it hands up the step's rule id, and the workspace reads
+        the agent from the rule as the server stores it (`agentIdOfInvokeRule`)
+        before going to the view, asking first when there is unsaved work. The
+        step's inspector carries the same link for the keyboard. Both are
+        offered only to a viewer the view admits (`mayReadAgentInventory`).
+        No process map is drawn with xyflow any more (#3079), so there is no
+        xyflow node to give the link to.
+- [x] 2.4 A diff for approvers of **form-edited** versions too: the projection
       of the submitted version against the version in force, computed with
       `canvas-changes-tldraw.ts` and drawn by `CanvasDiffOverlay`, showing
       tools, skills, triggers and model tier added or removed.
+      - Landed, without those two modules, for the reason 4.3 found:
+        `canvas-changes-tldraw.ts` classifies a live editor's store events for
+        autosave, and `CanvasDiffOverlay` fetches a process map's snapshot by
+        map id; neither compares two agent versions. The comparison is the
+        pure `buildAgentViewDiff` (`agent-canvas-diff.ts`) over two
+        projections from `projectAgentForCanvas`, and the agent view's own
+        canvas draws it: each element marked added, removed or changed, what
+        the version removed still drawn as a spoke, and every change listed in
+        words above the drawing. It covers triggers, tools and skills added or
+        removed, and model tier, effort, turn limit and output kind changed.
+      - The route is the view's own, `?version=<under review>&compare=<in
+        force>`, offered on the Behaviour tab to a reviewer who may decide the
+        submitted version. A comparison the reader cannot be shown (no profile
+        layer, or a version that is not the agent's) is said, never drawn as
+        "no changes". The instructions' text diff stays on the Behaviour tab.
 - [x] 2.5 Permission parity per layer: the envelope needs what the agent page
       already needs; the profile layer needs `admin.agent_registry`, as reading
       a profile does, and answers 404 when `AGENT_PROFILES` is off. Instructions
@@ -556,8 +582,7 @@ true now:
       palette holds the agent-flow kinds only. It is the same surface as the
       Phase 2 view, so an agent's view and its editor are one canvas.
       Landed without the history sidebar, and opened from the Phase 2 view
-      rather than the Behaviour tab (the Behaviour tab's canvas link is 2.3's
-      open item). The palette is `AGENT_FLOW_PALETTE`, the schema's four kinds.
+      rather than the Behaviour tab, whose canvas link (2.3) opens that view. The palette is `AGENT_FLOW_PALETTE`, the schema's four kinds.
 - [~] 3.2 **Layout and logic kept apart**, as VR-3 does for rules. The
       agent-flow serializer meets the canvas serializer's round-trip contract
       (#2963): loading a version and saving it with no edit produces the same
@@ -677,7 +702,9 @@ re-derive it.
       the agent-flow canvas read-only (each step and connection marked added,
       removed or changed) and listed in words; it does not use
       `canvas-changes-tldraw.ts` or `CanvasDiffOverlay`, which diff process-map
-      rows. The Behaviour tab's text diff stays where approval happens.
+      rows. The Behaviour tab's text diff stays where approval happens. A
+      version's form-set changes (tools, skills, triggers, model settings) are
+      drawn by the Phase 2 view's diff (2.4).
 
 **Prompt.**
 ```text

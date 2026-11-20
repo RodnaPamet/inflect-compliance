@@ -104,10 +104,12 @@ import {
     mintNodeKey,
 } from './tldraw/create-process-node';
 import {
+    drillTargetOf,
     edgeEndpointIndex,
     collapsedHiddenKeys,
     shapeVisibilityForScope,
     visibleNodeKeys,
+    type StoreShape,
 } from './tldraw/drill-scope-host';
 import type { EdgeRefusal } from './tldraw/edge-validation';
 import { ProcessEdgeBindingUtil } from './tldraw/ProcessEdgeBindingUtil';
@@ -314,10 +316,16 @@ export interface TldrawProcessCanvasProps {
     /**
      * The user double-clicked a GROUP node and wants to go inside it.
      *
-     * Fired only for `nodeType === 'group'`: double-clicking a step is how
-     * tldraw starts label editing, and stealing that would break renaming.
+     * Fired only for `nodeType === 'group'`.
      */
     onEnterGroup?: (nodeKey: string) => void;
+    /**
+     * The user double-clicked an AGENT step and wants the agent it invokes
+     * (Phase 2.3 of `docs/ai-architecture/langflow.md`): the step's rule id,
+     * which the host resolves to the agent. Absent, an agent step drills
+     * nowhere, which is what a viewer who may not read the agent register gets.
+     */
+    onOpenAgent?: (ruleId: string) => void;
     /**
      * A picture of a map inside another surface, never a place to work (#5053:
      * the read-only preview of a proposed process map on the review surfaces).
@@ -364,6 +372,7 @@ export function TldrawProcessCanvas({
     onEdgeRefused,
     drillGroupId = null,
     onEnterGroup,
+    onOpenAgent,
     onEditorReady,
     focusNodeKey = null,
     embedded = false,
@@ -375,6 +384,7 @@ export function TldrawProcessCanvas({
     const onDirtyRef = useRef(onDirty);
     const onEdgeRefusedRef = useRef(onEdgeRefused);
     const onEnterGroupRef = useRef(onEnterGroup);
+    const onOpenAgentRef = useRef(onOpenAgent);
     // Read by the drop handler: a step dropped while drilled into a group
     // belongs to that group, or the scope filter hides it at once.
     const drillGroupIdRef = useRef(drillGroupId);
@@ -485,6 +495,9 @@ export function TldrawProcessCanvas({
     useEffect(() => {
         onEnterGroupRef.current = onEnterGroup;
     }, [onEnterGroup]);
+    useEffect(() => {
+        onOpenAgentRef.current = onOpenAgent;
+    }, [onOpenAgent]);
     useEffect(() => {
         drillGroupIdRef.current = drillGroupId;
     }, [drillGroupId]);
@@ -601,7 +614,8 @@ export function TldrawProcessCanvas({
     }, [focusNodeKey, editorReady]);
 
     /**
-     * Double-click a GROUP node to go inside it.
+     * Double-click a GROUP node to go inside it, or an AGENT step to open the
+     * agent it invokes on the agent view (`drillTargetOf` decides which).
      *
      * The event carries a POINT and no shape — `TLClickEventInfo` has
      * `{ button, name, phase, point, pointerId, type }` — so the shape has to
@@ -610,8 +624,10 @@ export function TldrawProcessCanvas({
      * position, and a second conversion is a second chance to get the camera
      * transform wrong.
      *
-     * Gated to `phase === 'up'` so one gesture fires once, and to groups so
-     * double-clicking a step still starts tldraw's label editing.
+     * Gated to `phase === 'up'` so one gesture fires once. Every other step
+     * drills nowhere: a process node is never label-edited on the canvas
+     * (`canEdit` is tldraw's default, false; renaming is the inspector's), so a
+     * double-click on an agent step takes nothing away.
      */
     useEffect(() => {
         const editor = editorRef.current;
@@ -621,11 +637,10 @@ export function TldrawProcessCanvas({
             if (info.phase !== 'up') return;
             const hit = editor.getShapeAtPoint(editor.inputs.currentPagePoint, {
                 hitInside: true,
-            }) as { type?: string; props?: { nodeKey?: unknown; nodeType?: unknown } } | undefined;
-            if (!hit || hit.type !== PROCESS_NODE_SHAPE_TYPE) return;
-            if (hit.props?.nodeType !== 'group') return;
-            const key = hit.props?.nodeKey;
-            if (typeof key === 'string' && key.length > 0) onEnterGroupRef.current?.(key);
+            }) as StoreShape | undefined;
+            const target = drillTargetOf(hit);
+            if (target?.kind === 'group') onEnterGroupRef.current?.(target.nodeKey);
+            else if (target?.kind === 'agent') onOpenAgentRef.current?.(target.ruleId);
         };
         editor.on('event', onEvent);
         return () => {

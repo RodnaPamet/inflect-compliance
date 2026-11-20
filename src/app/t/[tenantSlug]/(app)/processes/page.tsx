@@ -17,6 +17,7 @@
 import { ProcessesClient } from "./ProcessesClient";
 import { getTenantCtx } from "@/app-layer/context";
 import { listProcessMaps } from "@/app-layer/usecases/process-map";
+import { mayReadAgentInventory } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,10 @@ export default async function ProcessesPage({
             // Rule writes take `admin.manage` at the route and the Admin tier
             // in the usecase; the step inspector reads this too (#5283).
             canManageRules={ctx.permissions.canAdmin && ctx.appPermissions.admin.manage}
+            // An Agent step opens the agent it invokes on the agent view
+            // (Phase 2.3, docs/ai-architecture/langflow.md), whose page asks
+            // this same read before anything else.
+            canOpenAgentCanvas={mayReadAgentInventory(ctx.appPermissions.admin)}
         />
     );
 }

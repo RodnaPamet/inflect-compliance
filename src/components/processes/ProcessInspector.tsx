@@ -135,6 +135,12 @@ export interface ProcessInspectorProps {
     /** May the viewer change automation rules? See the automation panel (#5283). */
     canManageRules?: boolean;
     /**
+     * May an agent step link to the agent it invokes on the agent view (Phase
+     * 2.3 of `docs/ai-architecture/langflow.md`)? Only where the viewer may read
+     * the agent register. Defaults to FALSE.
+     */
+    canOpenAgentCanvas?: boolean;
+    /**
      * R28 — selected edge, or null when nothing is selected. Mutually
      * exclusive with `node` in practice: an engine may let you select both,
      * and the canvas mirrors one slot at a time with the node winning. That
@@ -217,6 +223,7 @@ export function ProcessInspector({
     onEdgeUpdate,
     mapId,
     canManageRules = false,
+    canOpenAgentCanvas = false,
 }: ProcessInspectorProps) {
     // Local state mirrors the node's data so the user can type
     // without every keystroke flushing to the canvas state. The
@@ -283,6 +290,7 @@ export function ProcessInspector({
                         unsavedOwners={fed?.unsavedOwners ?? 0}
                         tenantSlug={tenantSlug ?? ""}
                         canManageRules={canManageRules}
+                        canOpenAgentCanvas={canOpenAgentCanvas}
                     />
                 </div>
             </AsidePanel>

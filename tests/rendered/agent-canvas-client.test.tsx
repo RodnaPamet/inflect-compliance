@@ -52,14 +52,17 @@ jest.mock('@/components/ui/tooltip', () => ({
 
 // The canvas is the editor's; the page reaches it only through next/dynamic.
 jest.mock('next/dynamic', () => () => {
-    const Probe = (props: { projection: { agent: { name: string } } }) => (
-        <div data-testid="agent-canvas-probe">{props.projection.agent.name}</div>
+    const Probe = (props: { projection: { agent: { name: string } }; diff?: { to: { version: number } } | null }) => (
+        <div data-testid="agent-canvas-probe" data-diff-to={props.diff ? String(props.diff.to.version) : 'none'}>
+            {props.projection.agent.name}
+        </div>
     );
     return Probe;
 });
 
 import { AgentCanvasClient } from '@/app/t/[tenantSlug]/(app)/processes/agents/[agentId]/AgentCanvasClient';
 import type { AgentCanvasProjection } from '@/lib/agentic/agent-canvas-projection';
+import { buildAgentViewDiff } from '@/lib/processes/agent-view/agent-canvas-diff';
 
 function projection(profile: AgentCanvasProjection['profile']): AgentCanvasProjection {
     return {
@@ -132,5 +135,64 @@ describe('AgentCanvasClient', () => {
         expect(screen.queryByText('Summarise the posture in one line.')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /Profile instructions/ }));
         expect(screen.getByText('Summarise the posture in one line.')).toBeInTheDocument();
+    });
+});
+
+describe('the approver\'s diff (Phase 2.4)', () => {
+    if (SHOWN.state !== 'SHOWN') throw new Error('fixture');
+    const IN_FORCE: AgentCanvasProjection['profile'] = {
+        ...SHOWN,
+        version: 2,
+        status: 'APPROVED',
+        inForce: true,
+        runAs: 'RUN',
+        modelTier: 'fast',
+        allowedTriggers: ['ASK', 'AUTOMATION'],
+        tools: [
+            { name: 'get_compliance_posture', offered: true },
+            { name: 'list_retired', offered: false, reason: 'PROFILE_TOOL_NOT_GRANTED' },
+        ],
+    };
+
+    it('lists every change in words, draws the diff on the canvas, and marks each element', () => {
+        const diff = buildAgentViewDiff(projection(IN_FORCE), projection(SHOWN));
+        render(<AgentCanvasClient tenantSlug="acme" projection={projection(SHOWN)} diff={diff} />);
+        // The canvas is handed the diff, not only the version under review.
+        expect(screen.getByTestId('agent-canvas-probe')).toHaveAttribute('data-diff-to', '3');
+        const panel = screen.getByTestId('agent-canvas-diff');
+        expect(panel).toHaveTextContent('Changes from version 2 to version 3');
+        const list = within(panel).getByTestId('agent-canvas-diff-list');
+        expect(within(list).getByTestId('agent-canvas-diff-trigger-removed-AUTOMATION')).toHaveTextContent('Trigger removed: AUTOMATION');
+        expect(within(list).getByTestId('agent-canvas-diff-tool-added-propose_controls')).toHaveTextContent('Tool added: propose_controls');
+        expect(within(list).getByTestId('agent-canvas-diff-tool-removed-list_retired')).toHaveTextContent('Tool removed: list_retired');
+        expect(within(list).getByTestId('agent-canvas-diff-modelTier-changed')).toHaveTextContent('Model tier changed: fast → balanced');
+        // The version under review is named by the diff's heading, not by the
+        // "not in force" warning a lone view gives.
+        expect(screen.queryByTestId('agent-canvas-version-not-in-force')).toBeNull();
+
+        fireEvent.click(screen.getByRole('tab', { name: /Elements/ }));
+        const elements = screen.getByTestId('agent-canvas-elements');
+        // A removed tool is listed, marked, though the version no longer names it.
+        expect(within(elements).getByTestId('agent-canvas-element-tool:list_retired')).toHaveAttribute('data-change', 'removed');
+        expect(within(elements).getByTestId('agent-canvas-element-tool:list_retired')).toHaveTextContent('Removed in this version');
+        expect(within(elements).getByTestId('agent-canvas-element-tool:propose_controls')).toHaveAttribute('data-change', 'added');
+        expect(within(elements).getByTestId('agent-canvas-element-hub')).toHaveAttribute('data-change', 'changed');
+        expect(within(elements).getByTestId('agent-canvas-element-tool:get_compliance_posture')).toHaveAttribute('data-change', 'none');
+    });
+
+    it('a version that changes nothing says so, rather than showing an empty list', () => {
+        const diff = buildAgentViewDiff(projection({ ...SHOWN, version: 2, status: 'APPROVED' }), projection(SHOWN));
+        render(<AgentCanvasClient tenantSlug="acme" projection={projection(SHOWN)} diff={diff} />);
+        expect(screen.getByTestId('agent-canvas-diff-none')).toBeInTheDocument();
+        expect(screen.queryByTestId('agent-canvas-diff-list')).toBeNull();
+    });
+
+    it('a comparison that cannot be drawn is said, never shown as no changes', () => {
+        render(
+            <AgentCanvasClient tenantSlug="acme" projection={projection({ state: 'NOT_PERMITTED' })} diff={null} compareUnavailable />,
+        );
+        expect(screen.getByTestId('agent-canvas-diff-unavailable')).toHaveTextContent(/cannot be compared/);
+        expect(screen.queryByTestId('agent-canvas-diff')).toBeNull();
+        expect(screen.getByTestId('agent-canvas-probe')).toHaveAttribute('data-diff-to', 'none');
     });
 });

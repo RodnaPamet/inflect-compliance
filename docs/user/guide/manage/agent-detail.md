@@ -104,9 +104,11 @@ The **{{ui:admin.agentDetail.tabBehaviour}}** tab is shown only where agent prof
    - **{{ui:agents.behaviour.subagents.heading}}**: click **{{ui:agents.behaviour.subagents.add}}** to add one, up to four. Each has a name, its own instructions, a turn limit no higher than the version's, and tools and skills chosen from the version's own. A sub-agent cannot delegate further, and cannot use a tool that waits for a person.
 2. Click **{{ui:agents.behaviour.editor.save}}**. Saving creates a draft; it replaces any version still open for review. Nothing changes for the agent yet.
 3. Click **{{ui:agents.behaviour.open.submit}}**.
-4. Another person clicks **{{ui:agents.behaviour.review.approve}}** or **{{ui:agents.behaviour.review.reject}}**. {{ui:agents.behaviour.review.authorCannotDecide}} The review shows what changed from the version in force, including the sub-agents and any drawn flow, and approving approves exactly what was shown. A rejection needs a reason, which the author reads on the version.
+4. Another person clicks **{{ui:agents.behaviour.review.approve}}** or **{{ui:agents.behaviour.review.reject}}**. {{ui:agents.behaviour.review.authorCannotDecide}} The review shows what changed from the version in force, including the sub-agents and any drawn flow, and approving approves exactly what was shown. A rejection needs a reason, which the author reads on the version. Where the workspace has the process canvas, **{{ui:agents.behaviour.canvas.compare}}** draws the version's changes from the version in force [on the canvas](agent-canvas.md#comparing-two-versions).
 
 **{{ui:agents.behaviour.testRun.action}}**, on a version waiting for review or in force, starts a read-only run of that version as the agent and opens the **{{ui:admin.agentDetail.tabRuns}}** tab. It is greyed out, with the reason beside it, when the workspace's engine does not run agent profiles, when the agent is not active and assessed, when the version does not allow Test runs, when it names only propose tools, or when it carries a drawn flow.
+
+**{{ui:agents.behaviour.canvas.open}}**, on the version in force and on the version open for review, draws that version [on the canvas](agent-canvas.md). It is shown only where the workspace has the process canvas.
 
 **{{ui:agents.behaviour.open.retire}}** retires a draft, a version waiting for review, or the version in force. {{ui:agents.behaviour.open.retireInForceNote}} A retired agent's profile can no longer change.
 
