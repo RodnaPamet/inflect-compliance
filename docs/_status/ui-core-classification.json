@@ -1134,11 +1134,6 @@
   "derivation": "audited",
   "reason": "Pure SVG glyph, SVGProps passthrough only."
  },
- "packages/ui/src/components/ui/icons/file-send.tsx": {
-  "classification": "GENERIC",
-  "derivation": "audited",
-  "reason": "Pure SVG glyph, SVGProps passthrough only."
- },
  "packages/ui/src/components/ui/icons/github.tsx": {
   "classification": "GENERIC",
   "derivation": "audited",
@@ -1868,11 +1863,6 @@
   "classification": "GENERIC",
   "derivation": "audited",
   "reason": "Pure SVG brand logo, className-only prop."
- },
- "packages/ui/src/components/ui/icons/user-clock.tsx": {
-  "classification": "GENERIC",
-  "derivation": "audited",
-  "reason": "Pure SVG glyph, SVGProps passthrough only."
  },
  "packages/ui/src/components/ui/icons/veriff.tsx": {
   "classification": "GENERIC",

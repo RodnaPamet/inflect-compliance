@@ -12,7 +12,6 @@ export * from "./dub-partners";
 export * from "./dub-product-icon";
 export * from "@inflect/ui/components/ui/icons/expanding-arrow";
 export * from "@inflect/ui/components/ui/icons/file-pen";
-export * from "@inflect/ui/components/ui/icons/file-send";
 export * from "@inflect/ui/components/ui/icons/ios-app-store";
 export * from "@inflect/ui/components/ui/icons/lock-small";
 export * from "@inflect/ui/components/ui/icons/magic";
@@ -22,7 +21,6 @@ export * from "@inflect/ui/components/ui/icons/photo";
 export * from "@inflect/ui/components/ui/icons/sort-order";
 export * from "@inflect/ui/components/ui/icons/success";
 export * from "@inflect/ui/components/ui/icons/tick";
-export * from "@inflect/ui/components/ui/icons/user-clock";
 export * from "@inflect/ui/components/ui/icons/verified-badge";
 
 // loaders
