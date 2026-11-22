@@ -75,7 +75,7 @@ import type {
     ConnectionValidationResult,
     IntegrationProvider,
 } from '../../types';
-import { anthropicWorkspaceE2eOrigin } from './e2e-faux';
+import { anthropicWorkspaceE2eOrigin, nextTestModeFlag } from './e2e-faux';
 
 export const ANTHROPIC_WORKSPACE_PROVIDER_ID = 'anthropic-workspace';
 
@@ -280,7 +280,7 @@ export async function probeAnthropicWorkspace(
  */
 async function send(url: string, init: RequestInit): Promise<Response> {
     const faux = anthropicWorkspaceE2eOrigin({
-        nextTestMode: process.env.NEXT_TEST_MODE,
+        nextTestMode: nextTestModeFlag(),
         authTestMode: env.AUTH_TEST_MODE,
     });
     if (faux) {

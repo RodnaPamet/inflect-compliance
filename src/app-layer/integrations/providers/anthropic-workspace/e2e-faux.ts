@@ -41,3 +41,14 @@ export function anthropicWorkspaceE2eOrigin(flags: {
     if (flags.nextTestMode !== '1' || flags.authTestMode !== '1') return null;
     return `http://127.0.0.1:${ANTHROPIC_WORKSPACE_E2E_FAUX_PORT}`;
 }
+
+/**
+ * `NEXT_TEST_MODE` as the process has it NOW. Read raw, not through `@/env`:
+ * the variable is not in the env schema, and the rate limiters read it the same
+ * way (`apiReadRateLimit.ts`, `rate-limit-middleware.ts`). This is the one raw
+ * read the provider depends on, kept in the seam module so the provider itself
+ * holds none, and listed in `tests/unit/no-fallbacks.test.ts` for that reason.
+ */
+export function nextTestModeFlag(): string | undefined {
+    return process.env.NEXT_TEST_MODE;
+}
