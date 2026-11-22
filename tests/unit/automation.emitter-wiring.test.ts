@@ -1,9 +1,14 @@
 /**
  * Unit Test: existing audit-event emitters publish to the automation bus.
  *
- * Proves the usecase-layer wiring: calling `emitRiskCreated(...)` (as
- * every risk usecase already does) fans out to both the audit log and
- * the automation bus without the usecase knowing either consumer.
+ * Proves these helpers fan out to both the audit log and the automation
+ * bus. NOT that any usecase calls them: until 2026-11-22 none of the risk
+ * usecases did, though this header said they all did, and no "Risk created"
+ * rule ever fired. The risk usecases emit through
+ * `usecases/risk-automation-events.ts` and `emitAutomationEvent` instead
+ * (each already writes its own audit row); that path is held by
+ * `tests/integration/risk-automation-events.test.ts` and the producer
+ * guardrail `tests/guardrails/automation-trigger-has-producer.test.ts`.
  */
 
 // appendAuditEntry talks to a real DB — mock at the edge so these
@@ -75,6 +80,7 @@ describe('Domain-event wiring — audit emitters publish to automation bus', () 
                 title: 'SQLi exposure',
                 score: 15,
                 category: 'SECURITY',
+                status: 'OPEN',
             });
         }
     });
