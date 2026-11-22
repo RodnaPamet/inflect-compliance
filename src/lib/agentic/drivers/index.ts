@@ -18,6 +18,7 @@ import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 
 import { runFlueDriver } from '@/lib/agentic/flue/driver';
 import { runToolRunnerDriver } from '@/lib/agentic/tool-runner/driver';
+import { runManagedAgentsDriver } from '@/lib/agentic/managed-agents/driver';
 import { runStaticDriver } from './static-driver';
 import type { RunDriver } from './types';
 
@@ -45,6 +46,10 @@ const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     // tenant chose it and the Tool Runner is available to the workspace
     // (`AGENT_DRIVER_TOOL_RUNNER`, or its organization's choice when unset).
     'tool-runner': runToolRunnerDriver,
+    // Mapped and NOT selectable (Step 5b, #4165): `DRIVER_IMPLEMENTED
+    // ['managed-agents']` is false, so `resolveAgentDriver` never permits this
+    // key. Step 5d flips the flag; this line does not change.
+    'managed-agents': runManagedAgentsDriver,
 };
 
 /**

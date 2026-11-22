@@ -189,7 +189,7 @@ export async function haltRunAtGuard(
      * The engine's name in the message, as `haltRunAtKill` takes it (#5372): a
      * Tool Runner run settled at the guard must not read as a Flue one.
      */
-    enginePrefix: 'flue' | 'tool_runner' = 'flue',
+    enginePrefix: 'flue' | 'tool_runner' | 'managed_agents' = 'flue',
 ): Promise<string> {
     const blocked = verdict === 'QUARANTINED';
     const status = blocked ? 'ABORTED' : 'AWAITING_APPROVAL';
@@ -274,7 +274,7 @@ export async function haltRunAtKill(
     reason: string,
     alsoCapped: CapBesideKill | null = null,
     /** The engine's name in the message, so a run's error names the engine that walked it. */
-    enginePrefix: 'flue' | 'tool_runner' = 'flue',
+    enginePrefix: 'flue' | 'tool_runner' | 'managed_agents' = 'flue',
 ): Promise<string> {
     const message = `${enginePrefix}_run_agent_killed: ${reason}`;
     if (alsoCapped) {
