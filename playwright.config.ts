@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { ANTHROPIC_WORKSPACE_E2E_FAUX_PORT } from './src/app-layer/integrations/providers/anthropic-workspace/e2e-faux';
 
 const isCI = !!process.env.CI;
 // Always use a dedicated port for E2E tests to avoid conflicts with `npm run dev` on 3000.
@@ -87,7 +88,7 @@ export default defineConfig({
             use: { ...devices['Desktop Chrome'] },
         },
     ],
-    webServer: {
+    webServer: [{
         // AUTH_URL / NEXTAUTH_URL must match the actual test port. NextAuth's
         // reqWithEnvURL() rewrites the request origin to AUTH_URL for every
         // /api/auth/* request — any mismatch causes login redirects to land on
@@ -144,5 +145,17 @@ export default defineConfig({
         timeout: 120_000,
         stdout: 'pipe',
         stderr: 'pipe',
-    },
+    }, {
+        // A faux Anthropic API on loopback, for tests/e2e/anthropic-workspace.spec.ts
+        // (Step 5a). The `anthropic-workspace` provider dials it instead of
+        // api.anthropic.com only when NEXT_TEST_MODE=1 and AUTH_TEST_MODE=1, both
+        // set by the command above and nowhere in production
+        // (src/app-layer/integrations/providers/anthropic-workspace/e2e-faux.ts).
+        command: `node scripts/e2e-anthropic-workspace-faux.mjs ${ANTHROPIC_WORKSPACE_E2E_FAUX_PORT}`,
+        url: `http://127.0.0.1:${ANTHROPIC_WORKSPACE_E2E_FAUX_PORT}/__faux/health`,
+        reuseExistingServer: !isCI,
+        timeout: 30_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    }],
 });
