@@ -564,3 +564,22 @@ describe('one peer: who answers for it, and the acts on it (#4902)', () => {
         expect(screen.getByTestId('peer-credential-issued').textContent).not.toBe('');
     });
 });
+
+describe('one peer: sending to it (#3752)', () => {
+    it('lists the connection that sends to the peer, its rung, and links to its write policy', () => {
+        renderDetail(detail({ outbound: [{ id: 'conn-1', name: 'A2A → Inflect (acme.example/other)', isEnabled: true, mode: 'DRY_RUN' }] }));
+        const row = screen.getByTestId('peer-outbound-conn-1');
+        expect(row).toHaveTextContent('A2A → Inflect (acme.example/other)');
+        expect(row).toHaveTextContent('Dry run');
+        expect(within(row).getByRole('link', { name: 'External write policy' })).toHaveAttribute(
+            'href',
+            '/t/acme/admin/external-write-policy/conn-1',
+        );
+    });
+
+    it('says when no connection sends to the peer, and offers no link', () => {
+        renderDetail(detail({ outbound: [] }));
+        expect(screen.getByTestId('peer-outbound-none')).toHaveTextContent('No connection sends to this peer yet');
+        expect(screen.queryByRole('link', { name: 'External write policy' })).not.toBeInTheDocument();
+    });
+});

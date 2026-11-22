@@ -37,7 +37,7 @@ import {
 } from '@/lib/agentic/a2a/invitation';
 import { getTenantA2aAgentCard } from '@/app-layer/usecases/a2a-agent-card';
 import { resolveTenantA2aSigningKey, rotateTenantA2aSigningKey } from '@/app-layer/usecases/a2a-signing-key';
-import { approvePeerAgentCard, checkPeerAdmission, readPeerAgentCard } from '@/app-layer/usecases/peer-agents';
+import { approvePeerAgentCard, checkPeerAdmission, listPeerOutboundConnections, readPeerAgentCard } from '@/app-layer/usecases/peer-agents';
 import { revokePeerInboundCredential } from '@/app-layer/usecases/a2a-peer-credentials';
 import {
     acceptPeerInvitation,
@@ -225,6 +225,11 @@ describe('1. invite in A, accept in B, approve in A', () => {
         const bConn = await prisma.integrationConnection.findUniqueOrThrow({ where: { id: accepted.connectionId } });
         expect(bConn.provider).toBe('a2a-peer');
         expect(bConn.configJson).toEqual({ peerId: aInB.id });
+        // The peer's page reads the connection that sends to it, and its rung (#3752).
+        expect(await listPeerOutboundConnections(ownerCtx(B), aInB.id)).toEqual([
+            { id: bConn.id, name: bConn.name, isEnabled: true, mode: 'DISABLED' },
+        ]);
+        await expect(listPeerOutboundConnections(makeRequestContext('READER', { tenantId: B, tenantSlug: B, userId: world[B].ownerUserId }), aInB.id)).rejects.toThrow();
         // No stored rung reads as DISABLED (`coerceStoredMode`): sending stays off.
         expect(bConn.externalWriteMode).toBeNull();
 

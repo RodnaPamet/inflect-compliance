@@ -13674,6 +13674,19 @@
         "submit": "Approve card and connect",
         "failed": "The invitation could not be accepted.",
         "done": "Connected to {name}. They approve your card on their side."
+      },
+      "outbound": {
+        "title": "Sending to this peer",
+        "description": "The connection this workspace's agents send tasks to this peer through. Sending follows its external write policy: off, dry run (recorded, nothing sent), proposals a person approves, or automatic.",
+        "none": "No connection sends to this peer yet. Accepting or sending an invitation creates one.",
+        "connectionDisabled": "Connection disabled",
+        "policyLink": "External write policy",
+        "mode": {
+          "DISABLED": "Off",
+          "DRY_RUN": "Dry run",
+          "PROPOSE_ONLY": "Proposals only",
+          "AUTOMATIC": "Automatic"
+        }
       }
     },
     "orphanPass": {
