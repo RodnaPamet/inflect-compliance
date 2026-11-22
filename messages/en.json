@@ -11848,9 +11848,9 @@
       "tabIntegrations": "Integrations",
       "tabAgentSurface": "Agent surface",
       "agentSurface": {
-        "readOnly": "Read only. The findings below were raised by a scanner's static rules over the MCP tool definitions it read; they live in the findings register, and a scan closes one only when the same scanner reads that tool's server in full and the rule no longer fires. A finding is a suggestion to confirm, not proof: the scanner kept no text of the definition, so open the tool on its server to judge it.",
+        "readOnly": "Read only. The findings below were raised by a scanner's static rules over the tool definitions it read from tool servers; they live in the findings register, and a scan closes one only when the same scanner reads that tool's server in full and the rule no longer fires. A finding is a suggestion to confirm, not proof: the scanner kept no text of the definition, so open the tool on its server to judge it.",
         "noScansTitle": "No agent-surface rules scan",
-        "noScansBody": "Nothing has read the MCP tool definitions your agents can call, so this page can say nothing about them. A scanner with an MCP source submits its report with an API key carrying the admin:agent_rules_ingest scope, signed by a scanner key registered on the Harness matrix tab.",
+        "noScansBody": "Nothing has read the definitions of the tools your agents can call, so this page can say nothing about them. A scanner that reads tool servers submits its report with an API key carrying the admin:agent_rules_ingest scope, signed by a scanner key registered on the Harness matrix tab.",
         "sectionHeading": "{scanner}, as of {asOf}",
         "state": {
           "FINDINGS": "Rules fired",
@@ -11859,14 +11859,14 @@
           "NOT_CONCLUDED": "Not concluded"
         },
         "summary": "{subjects, plural, one {# tool definition} other {# tool definitions}} read, {flagged, plural, one {# with} other {# with}} a finding, {findings, plural, one {# finding} other {# findings}}.",
-        "nothingRead": "The MCP servers this scanner read listed no tool definition. A read of nothing is not a clean result.",
+        "nothingRead": "The tool servers this scanner read listed no tool definition. A read of nothing is not a clean result.",
         "incomplete": "Not every tool definition was read ({reason}). A finding below is real; an absence is not a clean result, and nothing on a server read in part was closed.",
-        "serversHeading": "MCP servers read",
-        "noServers": "This scan lists no MCP server.",
+        "serversHeading": "Tool servers read",
+        "noServers": "No tool servers in this scan",
         "serverComplete": "read in full: {tools, plural, one {# tool} other {# tools}}",
         "serverIncomplete": "read in part ({reason}): {tools, plural, one {# tool} other {# tools}} read",
         "findingsHeading": "Open findings",
-        "noOpenFindings": "This scanner has no open agent-surface finding.",
+        "noOpenFindings": "No open agent-surface findings",
         "findingsTruncated": "There are more open findings than this page lists. The findings register has them all.",
         "colSeverity": "Severity",
         "colFinding": "Finding",
@@ -11880,7 +11880,7 @@
           "MCP_CREDENTIAL_HARVESTING": "Possible credential harvesting"
         },
         "scannersNotShown": "{count, plural, one {# more scanner has} other {# more scanners have}} a scan this page does not show.",
-        "scannersWithoutScan": "{count, plural, one {A trusted scanner has} other {# trusted scanners have}} sent no agent-surface rules report in the scans this page read: {names}. As far as this page can see, they read nothing.",
+        "scannersWithoutScan": "{count, plural, one {# trusted scanner has} other {# trusted scanners have}} sent no agent-surface rules report in the scans this page read: {names}. As far as this page can see, they read nothing.",
         "scansTruncated": "There are more scans than this page read; the latest of each scanner is shown."
       },
       "integrations": {
