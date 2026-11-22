@@ -248,6 +248,8 @@ describe('1. invite in A, accept in B, approve in A', () => {
         expect(aConns).toHaveLength(1);
         expect(aConns[0].configJson).toEqual({ peerId: bInA.id });
         expect(aConns[0].externalWriteMode).toBeNull();
+        // The address once, not twice: the peer's name already carries it.
+        expect(aConns[0].name).toBe(`A2A → Inflect (inflect.test/${B})`);
         expect(bInA.name).toBe(`Inflect (inflect.test/${B})`);
         // The owner is told.
         expect(
