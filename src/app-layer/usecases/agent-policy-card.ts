@@ -60,6 +60,7 @@
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { isAgentRetiredDbRefusal } from '@/lib/agentic/agent-retirement';
+import { parseExternalToolName } from '@/lib/mcp/external-tool-name';
 import { DENY_CEILING, ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
     checkLadderStep,
@@ -76,7 +77,10 @@ import {
 import type { PrismaTx } from '@/lib/db-context';
 
 import { assertCanRead } from '../policies/common';
-import { assertAgentGovernanceWrite } from '../policies/agent-governance.policies';
+import {
+    assertAgentGovernanceWrite,
+    meetsAgentGovernanceWrite,
+} from '../policies/agent-governance.policies';
 import { logEvent } from '../events/audit';
 import {
     AgentPolicyCardRepository,
@@ -231,9 +235,77 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
              * own error.
              */
             withheld: inForce ? withheldAgainst(inForce, granted) : null,
+            /**
+             * The agent's granted EXTERNAL tools (a tool server's tools, A2A
+             * sends), which the editor offers beside the built-in catalogue. A
+             * card may permit one only if the agent holds the grant
+             * (`assertAddedExternalToolsGranted`), and the build's static list
+             * cannot name them, so the editor learns them here. Sent only to a
+             * caller who may edit the card: grants otherwise sit behind
+             * `admin.agent_tool_exposure`, and a reader is shown no editor.
+             */
+            permittableExternalTools: meetsAgentGovernanceWrite(ctx, 'agent_policy_card')
+                ? await externalToolsOffered(db, ctx, granted)
+                : null,
             assessmentRequired: false,
         };
     });
+}
+
+/**
+ * The agent's granted external tools, each labelled with its connection's name
+ * so the editor can say which server or peer a tool reaches. A grant whose
+ * connection is gone is still listed, under its bare name: the grant row stands
+ * and the operator should see it.
+ */
+async function externalToolsOffered(
+    db: PrismaTx,
+    ctx: RequestContext,
+    granted: readonly { toolName: string }[],
+): Promise<Array<{ name: string; label: string }>> {
+    const external = granted
+        .map((g) => ({ name: g.toolName, ref: parseExternalToolName(g.toolName) }))
+        .filter((g): g is { name: string; ref: NonNullable<typeof g.ref> } => g.ref !== null);
+    if (external.length === 0) return [];
+    const connections = await db.integrationConnection.findMany({
+        where: { tenantId: ctx.tenantId, id: { in: [...new Set(external.map((g) => g.ref.connectionId))] } },
+        select: { id: true, name: true },
+        take: 100,
+    });
+    const nameOf = new Map(connections.map((c: { id: string; name: string }) => [c.id, c.name]));
+    return external
+        .map((g) => {
+            const connection = nameOf.get(g.ref.connectionId);
+            return { name: g.name, label: connection ? `${connection}: ${g.ref.toolName}` : g.ref.toolName };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * An edit may ADD an external tool only if the agent holds its grant.
+ *
+ * A built-in name is bounded by this build's catalogue; an external name
+ * (`mcp__<connectionId>__<tool>`) is free text, so the grant is what bounds it.
+ * Only the names this edit ADDS are asked: a stored name whose grant was
+ * revoked since is never a reason to refuse an unrelated edit, and dropping one
+ * is a narrowing, which is always free.
+ */
+function assertAddedExternalToolsGranted(
+    current: AgentPolicyCardValue,
+    next: AgentPolicyCardValue,
+    granted: readonly { toolName: string }[],
+): void {
+    const grantedNames = new Set(granted.map((g) => g.toolName));
+    for (const tool of next.permittedTools) {
+        if (current.permittedTools.includes(tool)) continue;
+        if (parseExternalToolName(tool) === null) continue;
+        if (!grantedNames.has(tool)) {
+            throw badRequest(
+                `"${tool}" is not granted to this agent. A card can permit an external ` +
+                    'tool only once the agent holds it: grant it on the Tools tab first.',
+            );
+        }
+    }
 }
 
 /**
@@ -472,6 +544,11 @@ export async function updateAgentPolicyCard(
         // so it is narrowed once, here, and passed to each.
         const current = fromRow(inForce);
         assertAutonomyRaiseWithinTier(current, next, agent.riskTier);
+        assertAddedExternalToolsGranted(
+            current,
+            next,
+            await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId),
+        );
         assertDeclarationsExercisable(next);
         assertDataScopeRaiseWithinDeclaration(current, next, agent);
 
@@ -654,7 +731,7 @@ function assertDeclarationsExercisable(card: AgentPolicyCardValue): void {
         if (withheld.reason === 'NOT_IN_CATALOGUE') {
             throw badRequest(
                 `"${tool}" is not an MCP tool this build offers. A card may name only ` +
-                    'tools from the live catalogue.',
+                    'tools from the live catalogue, or an external tool the agent is granted.',
             );
         }
 

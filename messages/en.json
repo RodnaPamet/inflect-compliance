@@ -6162,6 +6162,8 @@
         },
         "unexercisableTitle": "This card would refuse a tool it permits",
         "toolsHint": "The card narrows the grants: permitting a tool nobody granted grants nothing. A tool this card's own ceilings refuse on every call cannot be permitted at all.",
+        "externalToolsHeading": "External tools",
+        "externalToolsHint": "Tools on a connected tool server or an A2A peer that this agent is granted. Each needs autonomy 2 and the data scope \"Sends data outside\" on this card first.",
         "triggersHint": "Dropping a trigger is a widening — the refusal still audits, but nothing wakes anybody.",
         "saveAction": "Save version {version}",
         "cancel": "Cancel",

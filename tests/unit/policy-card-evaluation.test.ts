@@ -87,6 +87,7 @@ import {
     evaluateCardDailyBudget,
     evaluateCardReach,
     seedPolicyCardValue,
+    withholdingReasonForTool,
     type PolicyCardInForce,
 } from '@/lib/agentic/policy-card-evaluation';
 import {
@@ -594,6 +595,56 @@ describe('a seeded card never permits what it forbids', () => {
         expect(seeded.withheld.map((w) => [w.toolName, w.reason])).toEqual([
             ['list_everything', 'NOT_IN_CATALOGUE'],
         ]);
+    });
+
+    describe('an external tool (a tool server\'s tool or an A2A send) is judged by its ceilings, not refused as unknown (#3752)', () => {
+        // Until 2026-11-22 every `mcp__<connection>__<tool>` name was
+        // NOT_IN_CATALOGUE here, so no card could permit one and no agent with
+        // a card could call one. It sits at rung 2 and EXTERNAL_EGRESS.
+        const SEND = 'mcp__conn123__a2a_send_task';
+
+        it('is exercisable at autonomy 2 and EXTERNAL_EGRESS', () => {
+            expect(withholdingReasonForTool(SEND, { maxAutonomyLevel: 2, maxDataScope: 'EXTERNAL_EGRESS' })).toBeNull();
+        });
+
+        it('is withheld below either ceiling, naming that ceiling', () => {
+            expect(withholdingReasonForTool(SEND, { maxAutonomyLevel: 1, maxDataScope: 'EXTERNAL_EGRESS' })).toEqual({
+                toolName: SEND,
+                reason: 'AUTONOMY_ABOVE_CARD',
+                requires: '2',
+                permits: '1',
+            });
+            expect(withholdingReasonForTool(SEND, { maxAutonomyLevel: 2, maxDataScope: 'WRITE_TENANT_DATA' })).toEqual({
+                toolName: SEND,
+                reason: 'DATA_SCOPE_ABOVE_CARD',
+                requires: 'EXTERNAL_EGRESS',
+                permits: 'WRITE_TENANT_DATA',
+            });
+        });
+
+        it('a malformed external-looking name is still unknown', () => {
+            for (const name of ['mcp__', 'mcp__conn123', 'mcp____a2a_send_task']) {
+                expect(
+                    withholdingReasonForTool(name, { maxAutonomyLevel: 6, maxDataScope: 'EXTERNAL_EGRESS' })?.reason,
+                ).toBe('NOT_IN_CATALOGUE');
+            }
+        });
+
+        it('a seeded card permits a granted external tool within its ceilings, and the boundary agrees', () => {
+            const seeded = seedPolicyCardValue({
+                riskTier: 'HIGH',
+                dataAccessScope: 'EXTERNAL_EGRESS',
+                grantedTools: ['list_risks', SEND],
+            });
+            expect(seeded.value.permittedTools).toEqual(['list_risks', SEND]);
+            expect(seeded.withheld).toEqual([]);
+            expect(
+                evaluateCardReach(
+                    { cardId: 'c', version: 1, value: seeded.value },
+                    { tool: SEND, dataScope: baseDataScopeForTool(SEND), requiredAutonomy: 2, actionsThisRun: 0 },
+                ).allowed,
+            ).toBe(true);
+        });
     });
 
     it('every seeded card is one the boundary can actually exercise', () => {
