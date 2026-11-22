@@ -15,8 +15,11 @@
  * - USER:   authenticated human via UI/API
  * - SYSTEM: automated middleware (e.g., Prisma audit middleware, soft-delete)
  * - JOB:    background job or scheduled task (purge, retention sweep)
+ * - API_KEY: a request authenticated by an API key (`iflk_…`), REST or
+ *           `/api/mcp`. `userId` on such a row is the key's creator, which is
+ *           why the type must say a credential acted, not that person (#5786).
  */
-export type ActorType = 'USER' | 'SYSTEM' | 'JOB';
+export type ActorType = 'USER' | 'SYSTEM' | 'JOB' | 'API_KEY';
 
 // ─── Audit Event Categories ────────────────────────────────────────
 
